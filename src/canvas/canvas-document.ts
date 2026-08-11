@@ -262,7 +262,7 @@ export function putCanvasObjectV2(
   document.transact(() => {
     const existingObjectMap = objects(document).get(object.id);
     const objectMap = existingObjectMap ?? new Y.Map<unknown>();
-    const existingKeys = new Set(objectMap.keys());
+    const existingKeys = new Set(existingObjectMap?.keys() ?? []);
 
     for (const [key, value] of Object.entries(object)) {
       objectMap.set(key, toSharedValue(value as JsonValue));
@@ -294,6 +294,19 @@ export function listCanvasObjectsV2(document: Y.Doc) {
     const object = readCanvasObjectV2(document, id);
     return object ? [object] : [];
   });
+}
+
+export function deleteCanvasObjectV2(document: Y.Doc, objectId: string) {
+  const existing = readCanvasObjectV2(document, objectId);
+  if (!existing) return undefined;
+
+  document.transact(() => {
+    objects(document).delete(objectId);
+    const index = order(document).toArray().indexOf(objectId);
+    if (index >= 0) order(document).delete(index, 1);
+  }, "canvas.object.delete");
+
+  return existing;
 }
 
 function patchRecord(

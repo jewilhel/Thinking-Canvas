@@ -3,32 +3,70 @@
 import type Konva from "konva";
 import {
   ArrowLeft,
+  Circle as CircleIcon,
+  Diamond,
   Hand,
+  Link2,
   Maximize2,
   Minus,
   MousePointer2,
   Plus,
+  RectangleHorizontal,
+  Table2,
+  Type,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Stage } from "react-konva";
+import {
+  Arrow,
+  Circle,
+  Ellipse,
+  Group,
+  Layer,
+  Line,
+  Rect,
+  Stage,
+  Text,
+  Transformer,
+} from "react-konva";
+import * as Y from "yjs";
 
 import {
   createProductCanvasDocument,
   listCanvasObjectsV2,
+  type CanvasObjectV2,
 } from "@/canvas/canvas-document";
 import {
+  anchorPointV2,
   maxCanvasScale,
   minCanvasScale,
+  resolveConnectorEndpointV2,
+  resolveConnectorPointsV2,
   zoomViewportAtPointer,
+  type CanvasAnchor,
+  type Point,
   type Viewport,
 } from "@/canvas/geometry";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { executeProductCanvasCommand } from "@/domain/canvas-command";
 
 type Props = { canvasId: string; title: string; userId: string };
-type Tool = "select" | "pan";
+type Tool =
+  | "select"
+  | "pan"
+  | "rectangle"
+  | "ellipse"
+  | "diamond"
+  | "text"
+  | "connector"
+  | "table";
+type ConnectorEndpoint = Extract<
+  CanvasObjectV2,
+  { type: "connector" }
+>["start"];
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
+const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left", "center"];
 
 function clampViewport(viewport: Viewport): Viewport {
   return {
@@ -46,22 +84,73 @@ function clampViewport(viewport: Viewport): Viewport {
   };
 }
 
+function encodeUpdate(update: Uint8Array) {
+  let binary = "";
+  for (const byte of update) binary += String.fromCharCode(byte);
+  return window.btoa(binary);
+}
+
+function decodeUpdate(value: string) {
+  return Uint8Array.from(window.atob(value), (character) =>
+    character.charCodeAt(0),
+  );
+}
+
+function baseStyle(type: CanvasObjectV2["type"]) {
+  return {
+    fill: type === "connector" ? null : "#ffffff",
+    outline: "#475569",
+    outlineWidth: 2,
+    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+    fontSize: 16,
+  };
+}
+
+function objectLabel(object: CanvasObjectV2) {
+  if (object.type === "shape")
+    return `${object.shape} — ${object.text || "Untitled"}`;
+  if (object.type === "text") return `text — ${object.text || "Untitled"}`;
+  if (object.type === "table") return `table — ${object.cells.length} rows`;
+  if (object.type === "connector") return "connector";
+  return object.type;
+}
+
+function tableText(object: Extract<CanvasObjectV2, { type: "table" }>) {
+  return object.cells.map((row) => row.join("\t")).join("\n");
+}
+
 export function ProductCanvas({ canvasId, title, userId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
+  const transformerRef = useRef<Konva.Transformer>(null);
+  const objectNodeRefs = useRef(new Map<string, Konva.Node>());
   const frameStartedAt = useRef(0);
-  const document = useMemo(
-    () => createProductCanvasDocument(canvasId),
-    [canvasId],
-  );
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const documentStorageKey = `thinking-canvas:document:${canvasId}`;
+  const viewportStorageKey = `thinking-canvas:viewport:${userId}:${canvasId}`;
+  const document = useMemo(() => {
+    const next = createProductCanvasDocument(canvasId);
+    const stored = window.localStorage.getItem(documentStorageKey);
+    if (stored) {
+      try {
+        Y.applyUpdate(next, decodeUpdate(stored), "canvas.local.restore");
+      } catch {
+        window.localStorage.removeItem(documentStorageKey);
+      }
+    }
+    return next;
+  }, [canvasId, documentStorageKey]);
+  const [objects, setObjects] = useState(() => listCanvasObjectsV2(document));
   const [size, setSize] = useState({ width: 960, height: 640 });
   const [tool, setTool] = useState<Tool>("select");
-  const storageKey = `thinking-canvas:viewport:${userId}:${canvasId}`;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [connectorStart, setConnectorStart] =
+    useState<ConnectorEndpoint | null>(null);
+  const [pointerPreview, setPointerPreview] = useState<Point | null>(null);
+  const [saveStatus, setSaveStatus] = useState("Saved");
   const [viewport, setViewport] = useState<Viewport>(() => {
-    if (typeof window === "undefined") return defaultViewport;
-    const stored = window.localStorage.getItem(storageKey);
+    const stored = window.localStorage.getItem(viewportStorageKey);
     if (!stored) return defaultViewport;
-
     try {
       return clampViewport(JSON.parse(stored) as Viewport);
     } catch {
@@ -69,27 +158,61 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
     }
   });
   const [frameTime, setFrameTime] = useState<number | null>(null);
-  const objectCount = listCanvasObjectsV2(document).length;
   const instrumentationEnabled = process.env.NODE_ENV !== "production";
+  const objectsById = useMemo(
+    () => new Map(objects.map((object) => [object.id, object])),
+    [objects],
+  );
+  const selectedObject = selectedId ? objectsById.get(selectedId) : undefined;
 
   useEffect(() => {
-    window.localStorage.setItem(storageKey, JSON.stringify(viewport));
-  }, [storageKey, viewport]);
+    function synchronize() {
+      setObjects(listCanvasObjectsV2(document));
+      setSaveStatus("Saving…");
+      window.localStorage.setItem(
+        documentStorageKey,
+        encodeUpdate(Y.encodeStateAsUpdate(document)),
+      );
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => setSaveStatus("Saved"), 180);
+    }
+
+    document.on("update", synchronize);
+    return () => {
+      document.off("update", synchronize);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [document, documentStorageKey]);
+
+  useEffect(() => {
+    window.localStorage.setItem(viewportStorageKey, JSON.stringify(viewport));
+  }, [viewportStorageKey, viewport]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-
     const observer = new ResizeObserver(([entry]) => {
       if (!entry) return;
       setSize({
         width: Math.max(320, entry.contentRect.width),
-        height: Math.max(480, window.innerHeight - 194),
+        height: Math.max(480, window.innerHeight - 250),
       });
     });
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    const transformer = transformerRef.current;
+    const node = selectedId
+      ? objectNodeRefs.current.get(selectedId)
+      : undefined;
+    if (!transformer) return;
+    transformer.nodes(
+      node && selectedObject?.type !== "connector" ? [node] : [],
+    );
+    transformer.getLayer()?.batchDraw();
+  }, [selectedId, selectedObject]);
 
   useEffect(() => {
     if (!instrumentationEnabled) return;
@@ -98,7 +221,152 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
       setFrameTime(Number((now - frameStartedAt.current).toFixed(2)));
     });
     return () => cancelAnimationFrame(frame);
-  }, [instrumentationEnabled, viewport]);
+  }, [instrumentationEnabled, objects, viewport]);
+
+  function runCommand(type: string, payload: unknown) {
+    return executeProductCanvasCommand(document, {
+      schemaVersion: 2,
+      commandId: crypto.randomUUID(),
+      canvasId,
+      actor: { id: userId, type: "human" },
+      origin: "human",
+      issuedAt: new Date().toISOString(),
+      type,
+      payload,
+    });
+  }
+
+  function createObject(
+    activeTool: Exclude<Tool, "select" | "pan" | "connector">,
+    point: Point,
+  ) {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const shared = {
+      schemaVersion: 2 as const,
+      id,
+      canvasId,
+      createdBy: userId,
+      createdAt: now,
+      updatedAt: now,
+      geometry: {
+        x: Math.round(point.x),
+        y: Math.round(point.y),
+        width: activeTool === "text" ? 220 : activeTool === "table" ? 300 : 180,
+        height: activeTool === "text" ? 72 : activeTool === "table" ? 140 : 110,
+        rotation: 0,
+      },
+      style: baseStyle(
+        activeTool === "text"
+          ? "text"
+          : activeTool === "table"
+            ? "table"
+            : "shape",
+      ),
+    };
+    const object: CanvasObjectV2 =
+      activeTool === "text"
+        ? { ...shared, type: "text", text: "New text" }
+        : activeTool === "table"
+          ? {
+              ...shared,
+              type: "table",
+              cells: [
+                ["Heading", "Value"],
+                ["Item", "Detail"],
+              ],
+            }
+          : {
+              ...shared,
+              type: "shape",
+              shape: activeTool,
+              text: "New idea",
+            };
+    runCommand("object.create", { object });
+    setSelectedId(id);
+    setTool("select");
+  }
+
+  function finishConnector(endpoint: ConnectorEndpoint) {
+    if (!connectorStart) {
+      setConnectorStart(endpoint);
+      setTool("connector");
+      return;
+    }
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const object: CanvasObjectV2 = {
+      schemaVersion: 2,
+      id,
+      canvasId,
+      createdBy: userId,
+      createdAt: now,
+      updatedAt: now,
+      type: "connector",
+      start: connectorStart,
+      end: endpoint,
+      geometry: { x: 0, y: 0, width: 24, height: 24, rotation: 0 },
+      style: baseStyle("connector"),
+    };
+    runCommand("object.create", { object });
+    setConnectorStart(null);
+    setPointerPreview(null);
+    setSelectedId(id);
+    setTool("select");
+  }
+
+  function worldPointer() {
+    const pointer = stageRef.current?.getPointerPosition();
+    if (!pointer) return null;
+    return {
+      x: (pointer.x - viewport.x) / viewport.scale,
+      y: (pointer.y - viewport.y) / viewport.scale,
+    };
+  }
+
+  function selectObject(
+    event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
+    object: CanvasObjectV2,
+  ) {
+    event.cancelBubble = true;
+    if (tool === "connector" && object.type !== "connector") {
+      finishConnector({
+        kind: "attached",
+        objectId: object.id,
+        anchor: "center",
+      });
+      return;
+    }
+    if (tool === "select") setSelectedId(object.id);
+  }
+
+  function moveObject(object: CanvasObjectV2, x: number, y: number) {
+    runCommand("object.move", { objectId: object.id, x, y });
+  }
+
+  function moveConnector(
+    connector: Extract<CanvasObjectV2, { type: "connector" }>,
+    dx: number,
+    dy: number,
+  ) {
+    for (const endpoint of ["start", "end"] as const) {
+      const point = resolveConnectorEndpointV2(
+        connector[endpoint],
+        objectsById,
+      );
+      runCommand("connector.endpoint", {
+        objectId: connector.id,
+        endpoint,
+        value: { kind: "free", x: point.x + dx, y: point.y + dy },
+      });
+    }
+  }
+
+  function deleteSelected() {
+    if (!selectedObject) return;
+    runCommand("object.delete", { objectId: selectedObject.id });
+    setSelectedId(null);
+  }
 
   function zoomAtCenter(direction: 1 | -1) {
     setViewport((current) =>
@@ -110,10 +378,6 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
     );
   }
 
-  function fitCanvas() {
-    setViewport(defaultViewport);
-  }
-
   function onWheel(event: Konva.KonvaEventObject<WheelEvent>) {
     event.evt.preventDefault();
     const pointer = stageRef.current?.getPointerPosition();
@@ -123,7 +387,67 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
     );
   }
 
+  function onStagePointerDown(
+    event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
+  ) {
+    if (event.target !== stageRef.current) return;
+    const point = worldPointer();
+    if (!point) return;
+    if (tool === "select") {
+      setSelectedId(null);
+    } else if (tool === "connector") {
+      finishConnector({ kind: "free", ...point });
+    } else if (tool !== "pan") {
+      createObject(tool, point);
+    }
+  }
+
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (
+      event.target instanceof HTMLInputElement ||
+      event.target instanceof HTMLTextAreaElement ||
+      event.target instanceof HTMLSelectElement
+    )
+      return;
+    if (
+      (event.key === "Delete" || event.key === "Backspace") &&
+      selectedObject
+    ) {
+      event.preventDefault();
+      deleteSelected();
+      return;
+    }
+    if (event.key.startsWith("Arrow") && selectedObject) {
+      event.preventDefault();
+      const amount = event.shiftKey ? 10 : 1;
+      const dx =
+        event.key === "ArrowLeft"
+          ? -amount
+          : event.key === "ArrowRight"
+            ? amount
+            : 0;
+      const dy =
+        event.key === "ArrowUp"
+          ? -amount
+          : event.key === "ArrowDown"
+            ? amount
+            : 0;
+      if (event.altKey && selectedObject.type !== "connector") {
+        runCommand("object.resize", {
+          objectId: selectedObject.id,
+          width: Math.max(24, selectedObject.geometry.width + dx),
+          height: Math.max(24, selectedObject.geometry.height + dy),
+        });
+      } else if (selectedObject.type === "connector")
+        moveConnector(selectedObject, dx, dy);
+      else
+        moveObject(
+          selectedObject,
+          selectedObject.geometry.x + dx,
+          selectedObject.geometry.y + dy,
+        );
+      return;
+    }
     if (event.key === "+" || event.key === "=") {
       event.preventDefault();
       zoomAtCenter(1);
@@ -132,7 +456,7 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
       zoomAtCenter(-1);
     } else if (event.key === "0") {
       event.preventDefault();
-      fitCanvas();
+      setViewport(defaultViewport);
     } else if (event.key === " ") {
       event.preventDefault();
       setTool((current) => (current === "pan" ? "select" : "pan"));
@@ -159,6 +483,271 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
     }
   }
 
+  function shapeNode(object: Extract<CanvasObjectV2, { type: "shape" }>) {
+    const common = {
+      width: object.geometry.width,
+      height: object.geometry.height,
+      fill: object.style.fill ?? "transparent",
+      stroke: object.style.outline,
+      strokeWidth: object.style.outlineWidth,
+    };
+    if (object.shape === "ellipse") {
+      return (
+        <Ellipse
+          {...common}
+          x={object.geometry.width / 2}
+          y={object.geometry.height / 2}
+          radiusX={object.geometry.width / 2}
+          radiusY={object.geometry.height / 2}
+        />
+      );
+    }
+    if (object.shape === "diamond") {
+      return (
+        <Line
+          points={[
+            object.geometry.width / 2,
+            0,
+            object.geometry.width,
+            object.geometry.height / 2,
+            object.geometry.width / 2,
+            object.geometry.height,
+            0,
+            object.geometry.height / 2,
+          ]}
+          closed
+          {...common}
+        />
+      );
+    }
+    return <Rect {...common} cornerRadius={12} />;
+  }
+
+  function renderTable(object: Extract<CanvasObjectV2, { type: "table" }>) {
+    const rows = object.cells.length;
+    const columns = Math.max(...object.cells.map((row) => row.length), 1);
+    const rowHeight = object.geometry.height / rows;
+    const columnWidth = object.geometry.width / columns;
+    return (
+      <>
+        <Rect
+          width={object.geometry.width}
+          height={object.geometry.height}
+          fill={object.style.fill ?? "#ffffff"}
+          stroke={object.style.outline}
+          strokeWidth={object.style.outlineWidth}
+          cornerRadius={6}
+        />
+        {Array.from({ length: rows - 1 }, (_, index) => (
+          <Line
+            key={`row-${index}`}
+            points={[
+              0,
+              rowHeight * (index + 1),
+              object.geometry.width,
+              rowHeight * (index + 1),
+            ]}
+            stroke={object.style.outline}
+            strokeWidth={1}
+          />
+        ))}
+        {Array.from({ length: columns - 1 }, (_, index) => (
+          <Line
+            key={`column-${index}`}
+            points={[
+              columnWidth * (index + 1),
+              0,
+              columnWidth * (index + 1),
+              object.geometry.height,
+            ]}
+            stroke={object.style.outline}
+            strokeWidth={1}
+          />
+        ))}
+        {object.cells.flatMap((row, rowIndex) =>
+          row.map((cell, columnIndex) => (
+            <Text
+              key={`${rowIndex}-${columnIndex}`}
+              x={columnIndex * columnWidth + 8}
+              y={rowIndex * rowHeight + 8}
+              width={columnWidth - 16}
+              height={rowHeight - 16}
+              text={cell}
+              fill="#18181b"
+              fontFamily={object.style.fontFamily}
+              fontSize={object.style.fontSize}
+              verticalAlign="middle"
+            />
+          )),
+        )}
+      </>
+    );
+  }
+
+  function renderObject(object: CanvasObjectV2) {
+    if (object.type === "connector") {
+      const points = resolveConnectorPointsV2(object, objectsById);
+      return (
+        <Group key={object.id}>
+          <Arrow
+            points={points}
+            stroke={object.style.outline}
+            fill={object.style.outline}
+            strokeWidth={object.style.outlineWidth}
+            pointerLength={10}
+            pointerWidth={8}
+            hitStrokeWidth={18}
+            onClick={(event) => selectObject(event, object)}
+            onTap={(event) => selectObject(event, object)}
+          />
+          {selectedId === object.id
+            ? (["start", "end"] as const).map((endpoint, index) => (
+                <Circle
+                  key={endpoint}
+                  x={points[index * 2]}
+                  y={points[index * 2 + 1]}
+                  radius={8}
+                  fill="#8b5cf6"
+                  stroke="#ffffff"
+                  strokeWidth={2}
+                  draggable
+                  onDragEnd={(event) =>
+                    runCommand("connector.endpoint", {
+                      objectId: object.id,
+                      endpoint,
+                      value: {
+                        kind: "free",
+                        x: event.target.x(),
+                        y: event.target.y(),
+                      },
+                    })
+                  }
+                />
+              ))
+            : null}
+        </Group>
+      );
+    }
+    if (object.type === "document" || object.type === "annotation") return null;
+    return (
+      <Group
+        key={object.id}
+        id={object.id}
+        ref={(node) => {
+          if (node) objectNodeRefs.current.set(object.id, node);
+          else objectNodeRefs.current.delete(object.id);
+        }}
+        x={object.geometry.x}
+        y={object.geometry.y}
+        rotation={object.geometry.rotation}
+        draggable={tool === "select"}
+        onClick={(event) => selectObject(event, object)}
+        onTap={(event) => selectObject(event, object)}
+        onDragEnd={(event) =>
+          moveObject(object, event.target.x(), event.target.y())
+        }
+        onTransformEnd={(event) => {
+          const node = event.target;
+          const width = Math.max(
+            24,
+            object.geometry.width * Math.abs(node.scaleX()),
+          );
+          const height = Math.max(
+            24,
+            object.geometry.height * Math.abs(node.scaleY()),
+          );
+          node.scaleX(1);
+          node.scaleY(1);
+          runCommand("object.move", {
+            objectId: object.id,
+            x: node.x(),
+            y: node.y(),
+          });
+          runCommand("object.resize", { objectId: object.id, width, height });
+        }}
+      >
+        {object.type === "shape" ? (
+          <>
+            {shapeNode(object)}
+            <Text
+              x={12}
+              y={12}
+              width={object.geometry.width - 24}
+              height={object.geometry.height - 24}
+              text={object.text}
+              fill="#18181b"
+              align="center"
+              verticalAlign="middle"
+              fontFamily={object.style.fontFamily}
+              fontSize={object.style.fontSize}
+              listening={false}
+            />
+          </>
+        ) : object.type === "text" ? (
+          <>
+            <Rect
+              width={object.geometry.width}
+              height={object.geometry.height}
+              fill={object.style.fill ?? "transparent"}
+              stroke={object.style.outline}
+              strokeWidth={object.style.outlineWidth}
+              cornerRadius={6}
+            />
+            <Text
+              x={10}
+              y={10}
+              width={object.geometry.width - 20}
+              height={object.geometry.height - 20}
+              text={object.text}
+              fill="#18181b"
+              fontFamily={object.style.fontFamily}
+              fontSize={object.style.fontSize}
+              verticalAlign="middle"
+              listening={false}
+            />
+          </>
+        ) : (
+          renderTable(object)
+        )}
+        {selectedId === object.id && object.type === "shape"
+          ? anchors.map((anchor) => {
+              const point = anchorPointV2(
+                { ...object, geometry: { ...object.geometry, x: 0, y: 0 } },
+                anchor,
+              );
+              return (
+                <Circle
+                  key={anchor}
+                  x={point.x}
+                  y={point.y}
+                  radius={6}
+                  fill="#a78bfa"
+                  stroke="#ffffff"
+                  strokeWidth={2}
+                  onClick={(event) => {
+                    event.cancelBubble = true;
+                    finishConnector({
+                      kind: "attached",
+                      objectId: object.id,
+                      anchor,
+                    });
+                  }}
+                />
+              );
+            })
+          : null}
+      </Group>
+    );
+  }
+
+  const connectorPreviewPoints =
+    connectorStart && pointerPreview
+      ? (() => {
+          const start = resolveConnectorEndpointV2(connectorStart, objectsById);
+          return [start.x, start.y, pointerPreview.x, pointerPreview.y];
+        })()
+      : null;
+
   return (
     <section
       aria-labelledby="canvas-title"
@@ -183,39 +772,47 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
         <p
           role="status"
           aria-live="polite"
+          title="Stored in this browser until durable multiplayer is connected in Slice 4"
           data-testid="canvas-save-status"
           className="rounded-full border border-emerald-900 bg-emerald-950/40 px-3 py-1 text-xs text-emerald-300"
         >
-          Saved
+          {saveStatus}
         </p>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3">
         <div
-          className="flex items-center gap-2"
+          className="flex flex-wrap items-center gap-2"
           role="toolbar"
           aria-label="Canvas tools"
         >
-          <Button
-            type="button"
-            size="sm"
-            variant={tool === "select" ? "default" : "outline"}
-            aria-pressed={tool === "select"}
-            onClick={() => setTool("select")}
-          >
-            <MousePointer2 aria-hidden="true" />
-            Select
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={tool === "pan" ? "default" : "outline"}
-            aria-pressed={tool === "pan"}
-            onClick={() => setTool("pan")}
-          >
-            <Hand aria-hidden="true" />
-            Pan
-          </Button>
+          {(
+            [
+              ["select", "Select", MousePointer2],
+              ["pan", "Pan", Hand],
+              ["rectangle", "Rectangle", RectangleHorizontal],
+              ["ellipse", "Ellipse", CircleIcon],
+              ["diamond", "Diamond", Diamond],
+              ["text", "Text", Type],
+              ["connector", "Connector", Link2],
+              ["table", "Table", Table2],
+            ] as const
+          ).map(([value, label, Icon]) => (
+            <Button
+              key={value}
+              type="button"
+              size="sm"
+              variant={tool === value ? "default" : "outline"}
+              aria-pressed={tool === value}
+              onClick={() => {
+                setTool(value);
+                if (value !== "connector") setConnectorStart(null);
+              }}
+            >
+              <Icon aria-hidden="true" />
+              {label}
+            </Button>
+          ))}
         </div>
         <div
           className="flex items-center gap-2"
@@ -252,68 +849,342 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
             size="icon-sm"
             variant="outline"
             aria-label="Zoom to fit"
-            onClick={fitCanvas}
+            onClick={() => setViewport(defaultViewport)}
           >
             <Maximize2 aria-hidden="true" />
           </Button>
         </div>
       </div>
 
-      <div
-        ref={containerRef}
-        tabIndex={0}
-        role="application"
-        aria-label={`Canvas: ${title}. Use arrow keys to pan, plus and minus to zoom, zero to fit, and space to switch tools.`}
-        onKeyDown={onKeyDown}
-        className="relative min-h-[480px] flex-1 overflow-hidden bg-[#10131a] bg-[radial-gradient(circle,#303746_1px,transparent_1px)] bg-[length:24px_24px] focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none focus-visible:ring-inset"
-        data-testid="product-canvas-surface"
-      >
-        <Stage
-          ref={stageRef}
-          width={size.width}
-          height={size.height}
-          x={viewport.x}
-          y={viewport.y}
-          scaleX={viewport.scale}
-          scaleY={viewport.scale}
-          draggable={tool === "pan"}
-          onWheel={onWheel}
-          onDragEnd={(event) => {
-            if (event.target !== stageRef.current) return;
-            setViewport((current) => ({
-              ...current,
-              x: event.target.x(),
-              y: event.target.y(),
-            }));
-          }}
-        />
+      <div className="grid flex-1 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div
+          ref={containerRef}
+          tabIndex={0}
+          role="application"
+          aria-label={`Canvas: ${title}. Choose a tool, then use the canvas. Arrow keys move a selection or pan; Delete removes a selection.`}
+          onKeyDown={onKeyDown}
+          className="relative min-h-[480px] overflow-hidden bg-[#10131a] bg-[radial-gradient(circle,#303746_1px,transparent_1px)] bg-[length:24px_24px] focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none focus-visible:ring-inset"
+          data-testid="product-canvas-surface"
+        >
+          <Stage
+            ref={stageRef}
+            width={size.width}
+            height={size.height}
+            x={viewport.x}
+            y={viewport.y}
+            scaleX={viewport.scale}
+            scaleY={viewport.scale}
+            draggable={tool === "pan"}
+            onWheel={onWheel}
+            onMouseDown={onStagePointerDown}
+            onTouchStart={onStagePointerDown}
+            onMouseMove={() => {
+              if (connectorStart) setPointerPreview(worldPointer());
+            }}
+            onDragEnd={(event) => {
+              if (event.target !== stageRef.current) return;
+              setViewport((current) => ({
+                ...current,
+                x: event.target.x(),
+                y: event.target.y(),
+              }));
+            }}
+          >
+            <Layer>
+              {objects.map(renderObject)}
+              {connectorPreviewPoints ? (
+                <Line
+                  points={connectorPreviewPoints}
+                  stroke="#a78bfa"
+                  strokeWidth={2}
+                  dash={[8, 6]}
+                  listening={false}
+                />
+              ) : null}
+              <Transformer
+                ref={transformerRef}
+                rotateEnabled={false}
+                boundBoxFunc={(oldBox, newBox) =>
+                  newBox.width < 24 || newBox.height < 24 ? oldBox : newBox
+                }
+              />
+            </Layer>
+          </Stage>
+          {objects.length === 0 ? (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center">
+              <div className="max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/85 px-6 py-5 shadow-xl backdrop-blur">
+                <p className="font-medium text-zinc-200">An empty canvas</p>
+                <p className="mt-2 text-sm leading-6 text-zinc-400">
+                  Choose shape, text, connector, or table, then click the
+                  canvas.
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {instrumentationEnabled ? (
+            <dl className="pointer-events-none absolute right-3 bottom-3 grid grid-cols-2 gap-x-4 rounded-lg border border-zinc-800 bg-zinc-950/90 px-3 py-2 text-xs">
+              <div>
+                <dt className="text-zinc-400">Objects</dt>
+                <dd data-testid="product-object-count">{objects.length}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-400">Frame</dt>
+                <dd data-testid="product-frame-time">
+                  {frameTime === null ? "—" : `${frameTime} ms`}
+                </dd>
+              </div>
+            </dl>
+          ) : null}
+        </div>
 
-        {objectCount === 0 ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center">
-            <div className="max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/85 px-6 py-5 shadow-xl backdrop-blur">
-              <p className="font-medium text-zinc-200">An empty canvas</p>
-              <p className="mt-2 text-sm leading-6 text-zinc-400">
-                Shape, text, connector, and table tools arrive in the next
-                approved slice.
-              </p>
-            </div>
-          </div>
-        ) : null}
+        <aside
+          aria-label="Canvas inspector"
+          className="border-t border-zinc-800 bg-zinc-950 p-4 lg:border-t-0 lg:border-l"
+        >
+          <h2 className="font-medium">Objects</h2>
+          {objects.length ? (
+            <ul className="mt-3 space-y-2">
+              {objects.map((object) => (
+                <li key={object.id}>
+                  <button
+                    type="button"
+                    data-testid={`object-list-item-${object.id}`}
+                    aria-pressed={selectedId === object.id}
+                    onClick={() => {
+                      setSelectedId(object.id);
+                      setTool("select");
+                    }}
+                    className="w-full rounded-md border border-zinc-800 px-3 py-2 text-left text-sm hover:border-violet-500 aria-pressed:border-violet-400 aria-pressed:bg-violet-950/30"
+                  >
+                    {objectLabel(object)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-zinc-400">No objects yet.</p>
+          )}
 
-        {instrumentationEnabled ? (
-          <dl className="pointer-events-none absolute right-3 bottom-3 grid grid-cols-2 gap-x-4 rounded-lg border border-zinc-800 bg-zinc-950/90 px-3 py-2 text-xs">
-            <div>
-              <dt className="text-zinc-400">Objects</dt>
-              <dd data-testid="product-object-count">{objectCount}</dd>
+          {selectedObject ? (
+            <div
+              className="mt-5 space-y-4 border-t border-zinc-800 pt-4"
+              data-testid="canvas-inspector-selection"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-medium capitalize">
+                  {selectedObject.type}
+                </h3>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={deleteSelected}
+                >
+                  Delete
+                </Button>
+              </div>
+              <dl className="grid grid-cols-2 gap-2 text-xs text-zinc-300">
+                <div>
+                  <dt>X</dt>
+                  <dd data-testid="selected-position-x">
+                    {Math.round(selectedObject.geometry.x)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Y</dt>
+                  <dd data-testid="selected-position-y">
+                    {Math.round(selectedObject.geometry.y)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Width</dt>
+                  <dd data-testid="selected-width">
+                    {Math.round(selectedObject.geometry.width)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Height</dt>
+                  <dd data-testid="selected-height">
+                    {Math.round(selectedObject.geometry.height)}
+                  </dd>
+                </div>
+              </dl>
+              {selectedObject.type === "shape" ||
+              selectedObject.type === "text" ? (
+                <label className="block text-xs text-zinc-300">
+                  Content
+                  <textarea
+                    aria-label="Object content"
+                    value={selectedObject.text}
+                    onChange={(event) =>
+                      runCommand("object.patch", {
+                        objectId: selectedObject.id,
+                        objectType: selectedObject.type,
+                        text: event.target.value,
+                      })
+                    }
+                    className="mt-1 min-h-20 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 text-sm text-zinc-100"
+                  />
+                </label>
+              ) : null}
+              {selectedObject.type === "table" ? (
+                <label className="block text-xs text-zinc-300">
+                  Cells
+                  <textarea
+                    aria-label="Table cells"
+                    value={tableText(selectedObject)}
+                    onChange={(event) =>
+                      runCommand("object.patch", {
+                        objectId: selectedObject.id,
+                        objectType: "table",
+                        cells: event.target.value
+                          .split("\n")
+                          .map((row) => row.split("\t")),
+                      })
+                    }
+                    className="mt-1 min-h-24 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 font-mono text-sm text-zinc-100"
+                  />
+                </label>
+              ) : null}
+              {selectedObject.type !== "connector" ? (
+                <label className="flex items-center justify-between gap-3 text-xs text-zinc-300">
+                  Fill
+                  <input
+                    aria-label="Fill color"
+                    type="color"
+                    value={selectedObject.style.fill ?? "#ffffff"}
+                    onChange={(event) =>
+                      runCommand("object.style", {
+                        objectId: selectedObject.id,
+                        style: { fill: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+              ) : null}
+              <label className="flex items-center justify-between gap-3 text-xs text-zinc-300">
+                Outline
+                <input
+                  aria-label="Outline color"
+                  type="color"
+                  value={selectedObject.style.outline}
+                  onChange={(event) =>
+                    runCommand("object.style", {
+                      objectId: selectedObject.id,
+                      style: { outline: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              {selectedObject.type !== "connector" ? (
+                <>
+                  <label className="block text-xs text-zinc-300">
+                    Typeface
+                    <select
+                      aria-label="Typeface"
+                      value={selectedObject.style.fontFamily}
+                      onChange={(event) =>
+                        runCommand("object.style", {
+                          objectId: selectedObject.id,
+                          style: { fontFamily: event.target.value },
+                        })
+                      }
+                      className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 text-sm"
+                    >
+                      <option value="Inter, ui-sans-serif, system-ui, sans-serif">
+                        Inter
+                      </option>
+                      <option value="Georgia, ui-serif, serif">Georgia</option>
+                      <option value="ui-monospace, SFMono-Regular, monospace">
+                        Monospace
+                      </option>
+                    </select>
+                  </label>
+                  <label className="block text-xs text-zinc-300">
+                    Text size
+                    <input
+                      aria-label="Text size"
+                      type="number"
+                      min={8}
+                      max={400}
+                      value={selectedObject.style.fontSize}
+                      onChange={(event) =>
+                        runCommand("object.style", {
+                          objectId: selectedObject.id,
+                          style: { fontSize: Number(event.target.value) },
+                        })
+                      }
+                      className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 text-sm"
+                    />
+                  </label>
+                </>
+              ) : null}
+              {selectedObject.type === "shape" ? (
+                <fieldset>
+                  <legend className="text-xs text-zinc-300">
+                    Connector anchors
+                  </legend>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {anchors.map((anchor) => (
+                      <Button
+                        key={anchor}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          finishConnector({
+                            kind: "attached",
+                            objectId: selectedObject.id,
+                            anchor,
+                          })
+                        }
+                      >
+                        {connectorStart
+                          ? `Attach ${anchor}`
+                          : `Start ${anchor}`}
+                      </Button>
+                    ))}
+                  </div>
+                </fieldset>
+              ) : null}
+              {selectedObject.type === "connector" ? (
+                <div className="space-y-2">
+                  <output
+                    data-testid="selected-connector-points"
+                    className="block text-xs text-zinc-300"
+                  >
+                    {resolveConnectorPointsV2(selectedObject, objectsById)
+                      .map((value) => Math.round(value))
+                      .join(",")}
+                  </output>
+                  {(["start", "end"] as const).map((endpoint) =>
+                    selectedObject[endpoint].kind === "attached" ? (
+                      <Button
+                        key={endpoint}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const point = resolveConnectorEndpointV2(
+                            selectedObject[endpoint],
+                            objectsById,
+                          );
+                          runCommand("connector.endpoint", {
+                            objectId: selectedObject.id,
+                            endpoint,
+                            value: { kind: "free", ...point },
+                          });
+                        }}
+                      >
+                        Detach {endpoint}
+                      </Button>
+                    ) : null,
+                  )}
+                </div>
+              ) : null}
             </div>
-            <div>
-              <dt className="text-zinc-400">Frame</dt>
-              <dd data-testid="product-frame-time">
-                {frameTime === null ? "—" : `${frameTime} ms`}
-              </dd>
-            </div>
-          </dl>
-        ) : null}
+          ) : null}
+        </aside>
       </div>
     </section>
   );

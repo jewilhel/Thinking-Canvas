@@ -1,4 +1,5 @@
 import type { CanvasObject } from "@/domain/canvas-object";
+import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 
 export type Point = { x: number; y: number };
 export type Viewport = { x: number; y: number; scale: number };
@@ -88,4 +89,36 @@ export function resolveConnectorPoints(
   const startAnchor = anchorToward(start, endCenter);
   const endAnchor = anchorToward(end, startCenter);
   return [startAnchor.x, startAnchor.y, endAnchor.x, endAnchor.y];
+}
+
+export type CanvasAnchor = "top" | "right" | "bottom" | "left" | "center";
+
+export function anchorPointV2(
+  object: CanvasObjectV2,
+  anchor: CanvasAnchor,
+): Point {
+  const { x, y, width, height } = object.geometry;
+  if (anchor === "top") return { x: x + width / 2, y };
+  if (anchor === "right") return { x: x + width, y: y + height / 2 };
+  if (anchor === "bottom") return { x: x + width / 2, y: y + height };
+  if (anchor === "left") return { x, y: y + height / 2 };
+  return { x: x + width / 2, y: y + height / 2 };
+}
+
+export function resolveConnectorEndpointV2(
+  endpoint: Extract<CanvasObjectV2, { type: "connector" }>["start"],
+  objectsById: ReadonlyMap<string, CanvasObjectV2>,
+): Point {
+  if (endpoint.kind === "free") return { x: endpoint.x, y: endpoint.y };
+  const object = objectsById.get(endpoint.objectId);
+  return object ? anchorPointV2(object, endpoint.anchor) : { x: 0, y: 0 };
+}
+
+export function resolveConnectorPointsV2(
+  connector: Extract<CanvasObjectV2, { type: "connector" }>,
+  objectsById: ReadonlyMap<string, CanvasObjectV2>,
+) {
+  const start = resolveConnectorEndpointV2(connector.start, objectsById);
+  const end = resolveConnectorEndpointV2(connector.end, objectsById);
+  return [start.x, start.y, end.x, end.y];
 }
