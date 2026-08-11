@@ -37,10 +37,10 @@ begin
       'insert into auth.users (
         instance_id, id, aud, role, email, encrypted_password, %I,
         raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
-        confirmation_token, email_change, recovery_token
+        confirmation_token, email_change_token_new, email_change, recovery_token
       ) values (
         %L, %L, %L, %L, %L, extensions.crypt(%L, extensions.gen_salt(''bf'')), now(),
-        %L::jsonb, %L::jsonb, now(), now(), %L, %L, %L
+        %L::jsonb, %L::jsonb, now(), now(), %L, %L, %L, %L
       ) on conflict (id) do nothing',
       confirmation_column,
       '00000000-0000-0000-0000-000000000000',
@@ -51,7 +51,7 @@ begin
       'LocalPassword1!',
       '{"provider":"email","providers":["email"]}',
       jsonb_build_object('display_name', display_names[index]),
-      '', '', ''
+      '', '', '', ''
     );
   end loop;
 

@@ -55,6 +55,13 @@ jobs:
       - name: Start local Supabase
         run: pnpm supabase:start
 
+      - name: Export local Supabase application settings
+        run: |
+          pnpm exec supabase status -o json | jq -r '
+            "NEXT_PUBLIC_SUPABASE_URL=" + .API_URL,
+            "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=" + .PUBLISHABLE_KEY
+          ' >> "$GITHUB_ENV"
+
       - name: Run database and RLS tests
         run: pnpm db:test
 
