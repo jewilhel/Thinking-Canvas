@@ -37,6 +37,25 @@ export async function POST(request: Request) {
     if (error instanceof OpenAiConfigurationError) {
       return Response.json({ error: error.message }, { status: 503 });
     }
+    const upstream = error as {
+      code?: unknown;
+      message?: unknown;
+      name?: unknown;
+      request_id?: unknown;
+      status?: unknown;
+      type?: unknown;
+    };
+    console.error("Realtime client secret creation failed.", {
+      name: upstream.name,
+      status: upstream.status,
+      code: upstream.code,
+      type: upstream.type,
+      requestId: upstream.request_id,
+      message:
+        typeof upstream.message === "string"
+          ? upstream.message.slice(0, 500)
+          : undefined,
+    });
     return Response.json(
       { error: "A Realtime session could not be started." },
       { status: 502 },
