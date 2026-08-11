@@ -9,9 +9,8 @@ import {
 import {
   buildRealtimeClientSecretRequest,
   isShortLivedRealtimeSecret,
+  realtimeModelCandidates,
 } from "@/voice/realtime-session";
-
-const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2.1";
 
 export async function createRealtimeClientSecret(
   userId: string,
@@ -20,14 +19,30 @@ export async function createRealtimeClientSecret(
   if (!apiKey) throw new OpenAiConfigurationError();
 
   const client = new OpenAI({ apiKey });
-  const secret = await client.realtime.clientSecrets.create(
-    buildRealtimeClientSecretRequest(REALTIME_MODEL),
-    {
-      headers: {
-        "OpenAI-Safety-Identifier": privacySafeIdentifier(userId),
-      },
-    },
-  );
+  const models = realtimeModelCandidates(process.env.OPENAI_REALTIME_MODEL);
+  let secret: Awaited<
+    ReturnType<typeof client.realtime.clientSecrets.create>
+  > | null = null;
+  let selectedModel = models[0];
+  let lastError: unknown;
+  for (const model of models) {
+    try {
+      secret = await client.realtime.clientSecrets.create(
+        buildRealtimeClientSecretRequest(model),
+        {
+          headers: {
+            "OpenAI-Safety-Identifier": privacySafeIdentifier(userId),
+          },
+        },
+      );
+      selectedModel = model;
+      break;
+    } catch (error) {
+      lastError = error;
+      if ((error as { status?: unknown }).status !== 400) throw error;
+    }
+  }
+  if (!secret) throw lastError;
   if (!isShortLivedRealtimeSecret(secret.expires_at)) {
     throw new Error(
       "OpenAI returned a client secret outside the expiry bound.",
@@ -40,7 +55,7 @@ export async function createRealtimeClientSecret(
     sessionId: secret.session.id,
     model:
       "model" in secret.session
-        ? (secret.session.model ?? REALTIME_MODEL)
-        : REALTIME_MODEL,
+        ? (secret.session.model ?? selectedModel)
+        : selectedModel,
   };
 }
