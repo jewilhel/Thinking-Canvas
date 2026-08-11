@@ -7,6 +7,9 @@
   PNPM_VERSION = "11.16.0"
   NETLIFY_NEXT_SKEW_PROTECTION = "true"
 
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
 [context.production.environment]
   APP_ENV = "production"
 
