@@ -1,6 +1,6 @@
 # Milestone 0 — Architecture spikes and project foundation
 
-Status: Approved for implementation
+Status: Closed
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 Plan owner: Product owner
 Last updated: 2026-08-11
@@ -146,7 +146,7 @@ Migrations are additive during this milestone. Any destructive correction requir
 - [x] Trace evidence to every build-checklist item, technical spike, library boundary, initial database item, and exit-gate clause.
 - [x] Record proposed final collaboration, persistence, rich-text, AI, and voice architecture, including any approved deviations.
 - [x] Run the complete affected suite and authenticated Netlify preview walkthrough.
-- [ ] Request product-owner closure approval; do not begin Milestone 1 until it is granted.
+- [x] Request product-owner closure approval; do not begin Milestone 1 until it is granted.
 
 ## Pull-request slices
 
@@ -198,7 +198,7 @@ The final preview walkthrough uses non-production identities and data. No test m
 
 ## Proposed final architecture
 
-Status: Proposed for the Milestone 0 closure decision; not yet product-owner approved.
+Status: Approved by the product owner on 2026-08-11.
 
 | Boundary                           | Proposed final choice                                                                                                                                                                                                                                                                                                                                                                 | Spike evidence and production constraint                                                                                                                                                                                                                                                                                      |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -289,7 +289,7 @@ The master-plan boxes remain unchanged until explicit closure approval. “Pass�
 | AI discard restores the prior field without reverting unrelated later work.                              | Slice 5 unit and hosted reversal evidence.                                                                                                          | Pass         |
 | RLS policy tests cover every documented role and denial case.                                            | 105 database assertions in protected CI.                                                                                                            | Pass         |
 | Complete authenticated Netlify preview walkthrough.                                                      | Slice 6 authenticated walkthrough on the protected Slice 5 application artifact passed collaboration, canvas, document, AI, and reversal scenarios. | Pass         |
-| Product owner approves the final architecture and exact master-plan exit gate.                           | Closure approval has not been requested yet.                                                                                                        | Open         |
+| Product owner approves the final architecture and exact master-plan exit gate.                           | Approved by the product owner on 2026-08-11.                                                                                                        | Pass         |
 
 ## Exit criteria
 
@@ -305,8 +305,8 @@ The master-plan boxes remain unchanged until explicit closure approval. “Pass�
 - [x] Discarding an AI change restores its prior value without reverting a later unrelated human edit.
 - [x] RLS policy tests prove the documented allowed and denied operations for owners, editors, commenters, viewers, non-members, and unauthenticated users.
 - [x] The authenticated Netlify preview walkthrough passes, and local-only results are not represented as preview evidence.
-- [ ] The product owner approves the final collaboration, persistence, rich-text, AI, and voice architecture.
-- [ ] The exact master-plan exit gate is satisfied: “Record spike results and approve the final collaboration, persistence, rich-text, AI, and voice architecture before feature milestones begin.”
+- [x] The product owner approves the final collaboration, persistence, rich-text, AI, and voice architecture.
+- [x] The exact master-plan exit gate is satisfied: “Record spike results and approve the final collaboration, persistence, rich-text, AI, and voice architecture before feature milestones begin.”
 
 ## Explicitly excluded work
 
@@ -444,9 +444,10 @@ Two attempted Slice 6 documentation-branch deploys, `6a7b8caea1b303c95a8c03ed` a
 | 2026-08-11 | Opened draft PR #4 and recorded the protected CI and immutable deploy-preview evidence.            | Slice 5 requires reproducible integration evidence for the exact reviewed commit before protected-main merge.                                                                                                              | GitHub Actions run `31533888178` passed, Netlify deploy `6a7b88101435a30008df5c3b` reached `ready`, and the deploy secret scan reported no matches.                                       | Product owner and engineering |
 | 2026-08-11 | Began Slice 6 evidence consolidation and final architecture review.                                | Slices 1–5 are merged and their implementation risks have direct local, CI, and hosted evidence; Milestone 0 now needs one traceable decision record and final walkthrough.                                                | Every build item, library boundary, database item, technical spike, and exit clause is mapped; the proposed final architecture is recorded without changing master-plan checkboxes.       | Product owner and engineering |
 | 2026-08-11 | Completed technical verification for Slice 6 and requested Milestone 0 closure approval.           | The complete local suite and the authenticated final review scenario now reproduce the approved spike evidence on the final application artifact.                                                                          | Milestone 0 is ready for an evidence-based architecture decision; master-plan checkboxes remain unchanged until the product owner explicitly approves closure.                            | Product owner and engineering |
+| 2026-08-11 | Approved and closed the final collaboration, persistence, rich-text, AI, and voice architecture.   | The product owner reviewed the consolidated trace, local/CI suites, authenticated preview evidence, limitations, and proposed architecture.                                                                                | Milestone 0 is closed. Its genuinely proven master-plan items are checked; later milestone requirements, decisions, and launch gates remain unchanged.                                    | Product owner                 |
 
 ## Closure
 
-Closure status: Verification complete — awaiting closure approval
-Closure approval: Pending
-Closed on: —
+Closure status: Closed
+Closure approval: Product owner approved 2026-08-11
+Closed on: 2026-08-11
