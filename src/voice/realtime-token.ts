@@ -42,7 +42,21 @@ export async function createRealtimeClientSecret(
       if ((error as { status?: unknown }).status !== 400) throw error;
     }
   }
-  if (!secret) throw lastError;
+  if (!secret) {
+    try {
+      secret = await client.realtime.clientSecrets.create(
+        {},
+        {
+          headers: {
+            "OpenAI-Safety-Identifier": privacySafeIdentifier(userId),
+          },
+        },
+      );
+      selectedModel = "provider-default";
+    } catch (error) {
+      throw error ?? lastError;
+    }
+  }
   if (!isShortLivedRealtimeSecret(secret.expires_at)) {
     throw new Error(
       "OpenAI returned a client secret outside the expiry bound.",
