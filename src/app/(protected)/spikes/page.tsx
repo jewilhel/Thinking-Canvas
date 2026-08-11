@@ -1,4 +1,5 @@
 import { CollaborationSpike } from "@/components/spikes/collaboration-spike";
+import { CanvasDocumentSpikeLoader } from "@/components/spikes/canvas-document-spike-loader";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 
@@ -23,7 +24,10 @@ export default async function SpikeWorkspacePage() {
         and reversal experiments will be mounted here as later slices land.
       </p>
       {canvas ? (
-        <CollaborationSpike canvasId={canvas.id} userId={user.id} />
+        <>
+          <CollaborationSpike canvasId={canvas.id} userId={user.id} />
+          <CanvasDocumentSpikeLoader canvasId={canvas.id} />
+        </>
       ) : (
         <p
           className="mt-10 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-amber-200"

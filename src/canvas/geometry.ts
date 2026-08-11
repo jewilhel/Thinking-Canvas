@@ -1,0 +1,91 @@
+import type { CanvasObject } from "@/domain/canvas-object";
+
+export type Point = { x: number; y: number };
+export type Viewport = { x: number; y: number; scale: number };
+
+export const minCanvasScale = 0.25;
+export const maxCanvasScale = 3;
+
+export function zoomViewportAtPointer(
+  viewport: Viewport,
+  pointer: Point,
+  wheelDelta: number,
+): Viewport {
+  const direction = wheelDelta > 0 ? -1 : 1;
+  const scale = Math.min(
+    maxCanvasScale,
+    Math.max(minCanvasScale, viewport.scale * 1.08 ** direction),
+  );
+  const worldPoint = {
+    x: (pointer.x - viewport.x) / viewport.scale,
+    y: (pointer.y - viewport.y) / viewport.scale,
+  };
+
+  return {
+    x: pointer.x - worldPoint.x * scale,
+    y: pointer.y - worldPoint.y * scale,
+    scale,
+  };
+}
+
+export function normalizeTransformedGeometry(
+  object: CanvasObject,
+  scaleX: number,
+  scaleY: number,
+): CanvasObject["geometry"] {
+  return {
+    ...object.geometry,
+    width: Math.max(24, object.geometry.width * Math.abs(scaleX)),
+    height: Math.max(24, object.geometry.height * Math.abs(scaleY)),
+  };
+}
+
+function center(object: CanvasObject): Point {
+  return {
+    x: object.geometry.x + object.geometry.width / 2,
+    y: object.geometry.y + object.geometry.height / 2,
+  };
+}
+
+export function anchorToward(object: CanvasObject, target: Point): Point {
+  const objectCenter = center(object);
+  const dx = target.x - objectCenter.x;
+  const dy = target.y - objectCenter.y;
+  const halfWidth = object.geometry.width / 2;
+  const halfHeight = object.geometry.height / 2;
+
+  if (
+    Math.abs(dx / Math.max(halfWidth, 1)) >
+    Math.abs(dy / Math.max(halfHeight, 1))
+  ) {
+    return {
+      x: objectCenter.x + Math.sign(dx || 1) * halfWidth,
+      y: objectCenter.y,
+    };
+  }
+
+  return {
+    x: objectCenter.x,
+    y: objectCenter.y + Math.sign(dy || 1) * halfHeight,
+  };
+}
+
+export function resolveConnectorPoints(
+  connector: Extract<CanvasObject, { type: "connector" }>,
+  objectsById: ReadonlyMap<string, CanvasObject>,
+): number[] {
+  const start = connector.startObjectId
+    ? objectsById.get(connector.startObjectId)
+    : undefined;
+  const end = connector.endObjectId
+    ? objectsById.get(connector.endObjectId)
+    : undefined;
+
+  if (!start || !end) return connector.points;
+
+  const startCenter = center(start);
+  const endCenter = center(end);
+  const startAnchor = anchorToward(start, endCenter);
+  const endAnchor = anchorToward(end, startCenter);
+  return [startAnchor.x, startAnchor.y, endAnchor.x, endAnchor.y];
+}
