@@ -6,7 +6,10 @@ import {
   OpenAiConfigurationError,
   privacySafeIdentifier,
 } from "@/ai/openai-responses-gateway";
-import { buildRealtimeClientSecretRequest } from "@/voice/realtime-session";
+import {
+  buildRealtimeClientSecretRequest,
+  isShortLivedRealtimeSecret,
+} from "@/voice/realtime-session";
 
 const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2.1";
 
@@ -25,6 +28,11 @@ export async function createRealtimeClientSecret(
       },
     },
   );
+  if (!isShortLivedRealtimeSecret(secret.expires_at)) {
+    throw new Error(
+      "OpenAI returned a client secret outside the expiry bound.",
+    );
+  }
 
   return {
     value: secret.value,
