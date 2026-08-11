@@ -15,9 +15,7 @@ export default async function ProtectedLayout({
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
           <div>
             <p className="font-semibold">Thinking Canvas</p>
-            <p className="text-xs text-zinc-500">
-              Protected Milestone 0 workspace
-            </p>
+            <p className="text-xs text-zinc-400">Shared spatial workspace</p>
           </div>
           <div className="flex items-center gap-3">
             <p className="hidden text-sm text-zinc-400 sm:block">
