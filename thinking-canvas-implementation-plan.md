@@ -1,10 +1,10 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Draft for review
+Status: Milestone 0 closed; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-08-10
+Last updated: 2026-08-11
 
 ## Purpose
 
@@ -39,7 +39,7 @@ This document is the build and completion ledger for the first version of Thinki
 The Responses API can stream generated results, but the first-version requirements call for a continuous, low-latency voice conversation. OpenAI documents the Realtime API as the interface for interactive voice over WebRTC. Therefore:
 
 - [x] Approve using the OpenAI Realtime API alongside the Responses API for `FR-008` through `FR-014` and `FR-060`. Approved by the product owner on 2026-08-10; implementation and preview evidence remain Milestone 0 work.
-- [ ] Keep the OpenAI API key server-side and mint short-lived Realtime client credentials from an authenticated server route.
+- [x] Keep the OpenAI API key server-side and mint short-lived Realtime client credentials from an authenticated server route.
 - [ ] If Realtime API use is not approved, revise the affected requirements from *live conversation* to turn-based record/transcribe/respond/playback before development.
 
 ## Recommended free libraries
@@ -64,12 +64,12 @@ Use exact versions selected during project initialization and commit the lockfil
 
 ### Library boundaries
 
-- [ ] Treat Konva as a renderer and interaction layer; keep the canonical canvas schema independent of Konva node serialization.
-- [ ] Treat Yjs as the collaboration state engine; persist compacted updates and snapshots in Supabase instead of relying on transient Broadcast delivery.
-- [ ] Use Supabase Presence for slow-changing participant state and Broadcast for high-frequency cursor and document-update messages.
-- [ ] Keep Zustand state local only; durable or collaborative product state must not live exclusively in a Zustand store.
-- [ ] Keep Lucide icons in the application chrome. A searchable icon library for insertion onto the canvas remains deferred.
-- [ ] Do not add a second hosted collaboration, authentication, database, or AI service without an approved architecture change.
+- [x] Treat Konva as a renderer and interaction layer; keep the canonical canvas schema independent of Konva node serialization.
+- [x] Treat Yjs as the collaboration state engine; persist compacted updates and snapshots in Supabase instead of relying on transient Broadcast delivery.
+- [x] Use Supabase Presence for slow-changing participant state and Broadcast for high-frequency cursor and document-update messages.
+- [x] Keep Zustand state local only; durable or collaborative product state must not live exclusively in a Zustand store.
+- [x] Keep Lucide icons in the application chrome. A searchable icon library for insertion onto the canvas remains deferred.
+- [x] Do not add a second hosted collaboration, authentication, database, or AI service without an approved architecture change.
 
 ## System architecture
 
@@ -90,44 +90,46 @@ Use exact versions selected during project initialization and commit the lockfil
 
 ### Initial database checklist
 
-- [ ] Create migrations for `profiles`, `canvases`, `canvas_members`, and `canvas_invitations`.
-- [ ] Create migrations for `canvas_updates` and `canvas_snapshots`, including monotonic sequence/version metadata.
-- [ ] Create migrations for `comments`, `comment_targets`, `comment_replies`, `comment_prompts`, and `comment_responses`.
-- [ ] Create migrations for `ai_change_sets`, `ai_object_changes`, and `review_decisions` with reversible before/after payloads.
-- [ ] Create migrations for `stories` and ordered `story_scenes`.
-- [ ] Create migrations for `starter_templates`.
-- [ ] Add foreign keys, ownership rules, timestamps, and indexes for all access paths.
-- [ ] Enable Row Level Security on every user-owned table before application access is enabled.
-- [ ] Prove with automated policy tests that owners, editors, commenters, and viewers receive only their permitted data and operations.
+- [x] Create migrations for `profiles`, `canvases`, `canvas_members`, and `canvas_invitations`.
+- [x] Create migrations for `canvas_updates` and `canvas_snapshots`, including monotonic sequence/version metadata.
+- [x] Create migrations for `comments`, `comment_targets`, `comment_replies`, `comment_prompts`, and `comment_responses`.
+- [x] Create migrations for `ai_change_sets`, `ai_object_changes`, and `review_decisions` with reversible before/after payloads.
+- [x] Create migrations for `stories` and ordered `story_scenes`.
+- [x] Create migrations for `starter_templates`.
+- [x] Add foreign keys, ownership rules, timestamps, and indexes for all access paths.
+- [x] Enable Row Level Security on every user-owned table before application access is enabled.
+- [x] Prove with automated policy tests that owners, editors, commenters, and viewers receive only their permitted data and operations.
 
 ## Milestone 0 — Architecture spikes and project foundation
 
 ### Build checklist
 
-- [ ] Create the GitHub repository with `main` protected by pull-request and required-test rules.
-- [ ] Scaffold a strict TypeScript Next.js App Router project with Tailwind CSS and shadcn/ui.
-- [ ] Add formatting, linting, type-checking, unit-test, and end-to-end-test commands.
-- [ ] Connect Netlify to GitHub and produce working preview and production deployment contexts.
-- [ ] Configure separate local, preview, and production environment variables without committing secrets.
-- [ ] Integrate Supabase Auth using server-readable sessions and protected application routes.
-- [ ] Commit Supabase migrations and seed only non-sensitive local development fixtures.
-- [ ] Define versioned Zod schemas for every shared object and server API payload.
-- [ ] Define one command boundary for all human and AI mutations so permissions, undo data, audit metadata, and collaboration updates cannot be bypassed.
+- [x] Create the GitHub repository with `main` protected by pull-request and required-test rules.
+- [x] Scaffold a strict TypeScript Next.js App Router project with Tailwind CSS and shadcn/ui.
+- [x] Add formatting, linting, type-checking, unit-test, and end-to-end-test commands.
+- [x] Connect Netlify to GitHub and produce working preview and production deployment contexts.
+- [x] Configure separate local, preview, and production environment variables without committing secrets.
+- [x] Integrate Supabase Auth using server-readable sessions and protected application routes.
+- [x] Commit Supabase migrations and seed only non-sensitive local development fixtures.
+- [x] Define versioned Zod schemas for every shared object and server API payload.
+- [x] Define one command boundary for all human and AI mutations so permissions, undo data, audit metadata, and collaboration updates cannot be bypassed.
 
 ### Required technical spikes
 
-- [ ] Two-browser collaboration spike proves simultaneous edits converge after reordered, repeated, and temporarily disconnected Yjs updates over Supabase Broadcast.
-- [ ] Persistence spike proves a new client can load the latest snapshot plus subsequent updates without missing edits made during connection.
-- [ ] Compaction spike proves updates can be merged into a new snapshot and old updates safely pruned without changing document state.
-- [ ] Canvas spike proves pan, zoom, select, move, resize, connector anchoring, and at least 1,000 visible mixed objects remain usable on target hardware.
-- [ ] Rich-document spike proves a Lexical editor can live inside a focused canvas document while its internal visual objects remain isolated.
-- [ ] AI spike proves the Responses API can receive a bounded, structured canvas projection and return validated domain commands with no direct database authority.
-- [ ] Voice spike proves authenticated browser-to-OpenAI WebRTC through an ephemeral credential on a Netlify preview deployment.
-- [ ] Reversal spike proves an AI change can store a before image, apply an after image, and immediately restore the prior state despite later unrelated edits.
+- [x] Two-browser collaboration spike proves simultaneous edits converge after reordered, repeated, and temporarily disconnected Yjs updates over Supabase Broadcast.
+- [x] Persistence spike proves a new client can load the latest snapshot plus subsequent updates without missing edits made during connection.
+- [x] Compaction spike proves updates can be merged into a new snapshot and old updates safely pruned without changing document state.
+- [x] Canvas spike proves pan, zoom, select, move, resize, connector anchoring, and at least 1,000 visible mixed objects remain usable on target hardware.
+- [x] Rich-document spike proves a Lexical editor can live inside a focused canvas document while its internal visual objects remain isolated.
+- [x] AI spike proves the Responses API can receive a bounded, structured canvas projection and return validated domain commands with no direct database authority.
+- [x] Voice spike proves authenticated browser-to-OpenAI WebRTC through an ephemeral credential on a Netlify preview deployment.
+- [x] Reversal spike proves an AI change can store a before image, apply an after image, and immediately restore the prior state despite later unrelated edits.
 
 ### Exit gate
 
-- [ ] Record spike results and approve the final collaboration, persistence, rich-text, AI, and voice architecture before feature milestones begin.
+- [x] Record spike results and approve the final collaboration, persistence, rich-text, AI, and voice architecture before feature milestones begin.
+
+Evidence: [Milestone 0 architecture record](docs/implementation/milestone-00-architecture-spikes-and-project-foundation.md), final protected CI run `31534352424`, immutable Netlify deploy preview `6a7b8960b7e2fe0009ee74bf`, and product-owner closure approval on 2026-08-11.
 
 ## Milestone 1 — Canvas foundation and multiplayer core
 
