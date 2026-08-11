@@ -39,18 +39,29 @@ export async function POST(request: Request) {
     }
     const upstream = error as {
       code?: unknown;
+      error?: unknown;
       message?: unknown;
       name?: unknown;
+      param?: unknown;
+      requestID?: unknown;
       request_id?: unknown;
       status?: unknown;
       type?: unknown;
     };
+    const upstreamBody =
+      upstream.error && typeof upstream.error === "object"
+        ? (upstream.error as Record<string, unknown>)
+        : undefined;
     console.error("Realtime client secret creation failed.", {
       name: upstream.name,
       status: upstream.status,
       code: upstream.code,
       type: upstream.type,
-      requestId: upstream.request_id,
+      param: upstream.param,
+      requestId: upstream.requestID ?? upstream.request_id,
+      upstreamCode: upstreamBody?.code,
+      upstreamType: upstreamBody?.type,
+      upstreamParam: upstreamBody?.param,
       message:
         typeof upstream.message === "string"
           ? upstream.message.slice(0, 500)
