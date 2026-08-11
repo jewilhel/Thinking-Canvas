@@ -1,0 +1,16 @@
+[build]
+  command = "pnpm build"
+
+[build.environment]
+  NODE_VERSION = "22.15.1"
+  PNPM_VERSION = "11.16.0"
+  NETLIFY_NEXT_SKEW_PROTECTION = "true"
+
+[context.production.environment]
+  APP_ENV = "production"
+
+[context.deploy-preview.environment]
+  APP_ENV = "preview"
+
+[context.branch-deploy.environment]
+  APP_ENV = "preview"

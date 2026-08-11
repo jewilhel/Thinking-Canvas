@@ -38,7 +38,7 @@ This document is the build and completion ledger for the first version of Thinki
 
 The Responses API can stream generated results, but the first-version requirements call for a continuous, low-latency voice conversation. OpenAI documents the Realtime API as the interface for interactive voice over WebRTC. Therefore:
 
-- [ ] Approve using the OpenAI Realtime API alongside the Responses API for `FR-008` through `FR-014` and `FR-060`.
+- [x] Approve using the OpenAI Realtime API alongside the Responses API for `FR-008` through `FR-014` and `FR-060`. Approved by the product owner on 2026-08-10; implementation and preview evidence remain Milestone 0 work.
 - [ ] Keep the OpenAI API key server-side and mint short-lived Realtime client credentials from an authenticated server route.
 - [ ] If Realtime API use is not approved, revise the affected requirements from *live conversation* to turn-based record/transcribe/respond/playback before development.
 
