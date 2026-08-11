@@ -1,7 +1,11 @@
 .next
+.netlify
 coverage
 node_modules
 playwright-report
 test-results
+src/lib/supabase/database.types.ts
 pnpm-lock.yaml
 thinking-canvas-implementation-plan.md
+supabase/config.toml
+supabase/.temp
