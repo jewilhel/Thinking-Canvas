@@ -17,7 +17,7 @@ jobs:
   quality:
     name: quality
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -52,8 +52,18 @@ jobs:
       - name: Run unit tests
         run: pnpm test
 
+      - name: Start local Supabase
+        run: pnpm supabase:start
+
+      - name: Run database and RLS tests
+        run: pnpm db:test
+
       - name: Build application
         run: pnpm build
 
       - name: Run end-to-end and accessibility tests
         run: pnpm test:e2e
+
+      - name: Stop local Supabase
+        if: always()
+        run: pnpm supabase:stop --no-backup
