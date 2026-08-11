@@ -1,7 +1,9 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Draft for review  
-Source: *Thinking Canvas — Design Brief* and its 66 functional requirements  
+Status: Draft for review
+
+Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
+
 Last updated: 2026-08-10
 
 ## Purpose
