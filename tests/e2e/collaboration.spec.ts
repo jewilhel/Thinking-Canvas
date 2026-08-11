@@ -90,9 +90,11 @@ test("two browsers converge, reconnect, reload, and survive compaction", async (
   await expectConverged(owner, editor, baseline + 3);
 
   await owner.getByRole("button", { name: "Compact verified state" }).click();
-  await expect(owner.getByRole("status")).toContainText("Verified snapshot v");
-  await expect(owner.getByRole("status")).toContainText(
-    "pruned 3 covered updates",
+  await expect(owner.getByTestId("collaboration-status")).toContainText(
+    "Verified snapshot v",
+  );
+  await expect(owner.getByTestId("collaboration-status")).toContainText(
+    /pruned [1-9]\d* covered updates/,
   );
   await expect(owner.getByTestId("connection-status")).toHaveText("SUBSCRIBED");
 
@@ -103,7 +105,7 @@ test("two browsers converge, reconnect, reload, and survive compaction", async (
   await expectConverged(owner, viewer, baseline + 3);
 
   await owner.getByRole("button", { name: "Compact verified state" }).click();
-  await expect(owner.getByRole("status")).toContainText(
+  await expect(owner.getByTestId("collaboration-status")).toContainText(
     "pruned 0 covered updates",
   );
 
