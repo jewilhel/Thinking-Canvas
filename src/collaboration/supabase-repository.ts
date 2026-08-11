@@ -160,32 +160,43 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
         this.onPresence?.(participants);
       });
 
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(
-        () => reject(new Error("Realtime channel subscription timed out.")),
-        10_000,
-      );
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(
+          () => reject(new Error("Realtime channel subscription timed out.")),
+          10_000,
+        );
 
-      channel.subscribe(async (status, error) => {
-        this.onStatus?.(status);
-        if (status === "SUBSCRIBED") {
-          window.clearTimeout(timeout);
-          const presenceStatus = await channel.track({
-            userId: this.userId,
-            connectedAt: new Date().toISOString(),
-          });
-          if (presenceStatus === "ok") resolve();
-          else reject(new Error("Presence state could not be tracked."));
-        } else if (
-          status === "CHANNEL_ERROR" ||
-          status === "TIMED_OUT" ||
-          error
-        ) {
-          window.clearTimeout(timeout);
-          reject(error ?? new Error(`Realtime channel failed: ${status}`));
-        }
+        channel.subscribe(async (status, error) => {
+          if (status === "SUBSCRIBED") {
+            window.clearTimeout(timeout);
+            const presenceStatus = await channel.track({
+              userId: this.userId,
+              connectedAt: new Date().toISOString(),
+            });
+            if (presenceStatus === "ok") {
+              this.onStatus?.(status);
+              resolve();
+            } else {
+              reject(new Error("Presence state could not be tracked."));
+            }
+          } else if (
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT" ||
+            error
+          ) {
+            window.clearTimeout(timeout);
+            this.onStatus?.(status);
+            reject(error ?? new Error(`Realtime channel failed: ${status}`));
+          }
+        });
       });
-    });
+    } catch (error) {
+      await this.supabase.removeChannel(channel);
+      if (this.channel === channel) this.channel = null;
+      this.onPresence?.([]);
+      throw error;
+    }
 
     return async () => {
       await this.supabase.removeChannel(channel);
