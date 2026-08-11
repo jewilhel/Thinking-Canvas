@@ -250,7 +250,11 @@ export function CollaborationSpike({ canvasId, userId }: Props) {
         </Button>
       </div>
 
-      <p className="mt-5 text-sm text-zinc-300" role="status">
+      <p
+        className="mt-5 text-sm text-zinc-300"
+        role="status"
+        data-testid="collaboration-status"
+      >
         {message}
       </p>
       <ul className="mt-4 space-y-2" aria-label="Durable canvas objects">

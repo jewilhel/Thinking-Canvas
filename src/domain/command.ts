@@ -119,6 +119,10 @@ export class CommandConflictError extends Error {
   }
 }
 
+export function canMutateCanvas(role: CanvasRole | null) {
+  return role === "owner" || role === "editor";
+}
+
 export async function executeCommand(
   input: unknown,
   repository: CommandRepository,
@@ -126,7 +130,7 @@ export async function executeCommand(
   const command = canvasCommandSchema.parse(input);
   const role = await repository.getRole(command.canvasId, command.actor.id);
 
-  if (role !== "owner" && role !== "editor") {
+  if (!canMutateCanvas(role)) {
     throw new CommandPermissionError();
   }
 

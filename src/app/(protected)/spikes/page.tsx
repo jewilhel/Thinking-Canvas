@@ -1,3 +1,4 @@
+import { AiVoiceReversalSpike } from "@/components/spikes/ai-voice-reversal-spike";
 import { CollaborationSpike } from "@/components/spikes/collaboration-spike";
 import { CanvasDocumentSpikeLoader } from "@/components/spikes/canvas-document-spike-loader";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
@@ -27,6 +28,7 @@ export default async function SpikeWorkspacePage() {
         <>
           <CollaborationSpike canvasId={canvas.id} userId={user.id} />
           <CanvasDocumentSpikeLoader canvasId={canvas.id} />
+          <AiVoiceReversalSpike canvasId={canvas.id} userId={user.id} />
         </>
       ) : (
         <p
