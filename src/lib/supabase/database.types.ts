@@ -714,7 +714,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      append_canvas_update: {
+        Args: { target_canvas_id: string; update_data: string }
+        Returns: {
+          created_at: string
+          sequence: number
+        }[]
+      }
+      publish_canvas_compaction: {
+        Args: {
+          covered_last_sequence: number
+          expected_state_hash: string
+          snapshot_state: string
+          target_canvas_id: string
+        }
+        Returns: {
+          last_sequence: number
+          pruned_updates: number
+          state_hash: string
+          version: number
+        }[]
+      }
     }
     Enums: {
       ai_change_status:

@@ -215,17 +215,17 @@ from policy_matrix;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
 select lives_ok(
-  $$insert into public.canvas_updates (canvas_id, sequence, update_data, actor_id)
-    values ('20000000-0000-4000-8000-000000000001', 2, decode('02', 'hex'), '10000000-0000-4000-8000-000000000002')$$,
+  $$select * from public.append_canvas_update(
+    '20000000-0000-4000-8000-000000000001', decode('02', 'hex'))$$,
   'editor may append a canvas update'
 );
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
 select throws_ok(
-  $$insert into public.canvas_updates (canvas_id, sequence, update_data, actor_id)
-    values ('20000000-0000-4000-8000-000000000001', 3, decode('03', 'hex'), '10000000-0000-4000-8000-000000000003')$$,
+  $$select * from public.append_canvas_update(
+    '20000000-0000-4000-8000-000000000001', decode('03', 'hex'))$$,
   '42501',
-  'new row violates row-level security policy for table "canvas_updates"',
+  'canvas update is not permitted',
   'commenter may not append a canvas update'
 );
 
