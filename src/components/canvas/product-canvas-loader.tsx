@@ -19,7 +19,12 @@ const ProductCanvas = dynamic(
   },
 );
 
-type Props = { canvasId: string; title: string; userId: string };
+type Props = {
+  canvasId: string;
+  title: string;
+  userId: string;
+  simulatedAiEnabled: boolean;
+};
 
 export function ProductCanvasLoader(props: Props) {
   return <ProductCanvas key={props.canvasId} {...props} />;

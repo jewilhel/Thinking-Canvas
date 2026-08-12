@@ -116,7 +116,11 @@ export function CollaborationSpike({ canvasId, userId }: Props) {
     const update = Y.encodeStateAsUpdate(loaded.document, stateVector);
 
     try {
-      const sequence = await repository.appendAndBroadcast(canvasId, update);
+      const sequence = await repository.appendAndBroadcast(
+        canvasId,
+        crypto.randomUUID(),
+        update,
+      );
       setObjects(listCanvasObjects(loaded.document));
       setStateHash(await hashCanvasState(loaded.document));
       setLastSequence(sequence);

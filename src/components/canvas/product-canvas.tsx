@@ -58,9 +58,15 @@ import {
   type Point,
   type Viewport,
 } from "@/canvas/geometry";
+import { useCanvasRecovery } from "@/collaboration/use-canvas-recovery";
 import { Button, buttonVariants } from "@/components/ui/button";
 
-type Props = { canvasId: string; title: string; userId: string };
+type Props = {
+  canvasId: string;
+  title: string;
+  userId: string;
+  simulatedAiEnabled: boolean;
+};
 type Tool =
   | "select"
   | "pan"
@@ -131,13 +137,19 @@ function tableText(object: Extract<CanvasObjectV2, { type: "table" }>) {
   return object.cells.map((row) => row.join("\t")).join("\n");
 }
 
-export function ProductCanvas({ canvasId, title, userId }: Props) {
+const simulatedAiActorId = "90000000-0000-4000-8000-000000000001";
+
+export function ProductCanvas({
+  canvasId,
+  title,
+  userId,
+  simulatedAiEnabled,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const objectNodeRefs = useRef(new Map<string, Konva.Node>());
   const frameStartedAt = useRef(0);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const documentStorageKey = `thinking-canvas:document:${canvasId}`;
   const viewportStorageKey = `thinking-canvas:viewport:${userId}:${canvasId}`;
   const document = useMemo(() => {
@@ -164,7 +176,6 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
   const [undoStack, setUndoStack] = useState<CanvasHistoryEntry[]>([]);
   const [redoStack, setRedoStack] = useState<CanvasHistoryEntry[]>([]);
   const [historyNotice, setHistoryNotice] = useState("");
-  const [saveStatus, setSaveStatus] = useState("Saved");
   const [viewport, setViewport] = useState<Viewport>(() => {
     const stored = window.localStorage.getItem(viewportStorageKey);
     if (!stored) return defaultViewport;
@@ -175,6 +186,23 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
     }
   });
   const [frameTime, setFrameTime] = useState<number | null>(null);
+  const {
+    status: saveStatus,
+    pendingCount,
+    lastSequence,
+    participants,
+    remoteCursors,
+    publishedCursorCount,
+    attemptedCursorCount,
+    cursorPublishStatus,
+    publishCursor,
+    retry,
+  } = useCanvasRecovery({
+    canvasId,
+    document,
+    selectedObjectIds: selectedIds,
+    userId,
+  });
   const instrumentationEnabled = process.env.NODE_ENV !== "production";
   const objectsById = useMemo(
     () => new Map(objects.map((object) => [object.id, object])),
@@ -190,19 +218,15 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
   useEffect(() => {
     function synchronize() {
       setObjects(listCanvasObjectsV2(document));
-      setSaveStatus("Saving…");
       window.localStorage.setItem(
         documentStorageKey,
         encodeUpdate(Y.encodeStateAsUpdate(document)),
       );
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => setSaveStatus("Saved"), 180);
     }
 
     document.on("update", synchronize);
     return () => {
       document.off("update", synchronize);
-      if (saveTimer.current) clearTimeout(saveTimer.current);
     };
   }, [document, documentStorageKey]);
 
@@ -245,13 +269,20 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
     return () => cancelAnimationFrame(frame);
   }, [instrumentationEnabled, objects, viewport]);
 
-  function executeCommand(type: string, payload: unknown) {
+  function executeCommand(
+    type: string,
+    payload: unknown,
+    actorType: "human" | "ai" = "human",
+  ) {
     return executeProductCanvasCommandWithHistory(document, {
       schemaVersion: 2,
       commandId: crypto.randomUUID(),
       canvasId,
-      actor: { id: userId, type: "human" },
-      origin: "human",
+      actor: {
+        id: actorType === "ai" ? simulatedAiActorId : userId,
+        type: actorType,
+      },
+      origin: actorType,
       issuedAt: new Date().toISOString(),
       type,
       payload,
@@ -346,6 +377,42 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
     runCommand("object.create", { object });
     setSelectedIds([id]);
     setTool("select");
+  }
+
+  function addSimulatedAiIdea() {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const result = executeCommand(
+      "object.create",
+      {
+        object: {
+          schemaVersion: 2,
+          id,
+          canvasId,
+          createdBy: simulatedAiActorId,
+          createdAt: now,
+          updatedAt: now,
+          type: "shape",
+          shape: "rectangle",
+          text: "Simulated AI idea",
+          geometry: {
+            x: 80 + (objects.length % 5) * 48,
+            y: 80 + (objects.length % 4) * 40,
+            width: 180,
+            height: 110,
+            rotation: 0,
+          },
+          style: {
+            ...baseStyle("shape"),
+            fill: "#ede9fe",
+            outline: "#7c3aed",
+          },
+        },
+      },
+      "ai",
+    );
+    recordHistory([result.history]);
+    setSelectedIds([id]);
   }
 
   function finishConnector(endpoint: ConnectorEndpoint) {
@@ -644,13 +711,22 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
   }
 
   function onStagePointerMove() {
-    if (connectorStart) setPointerPreview(worldPointer());
-    if (!marquee) return;
     const point = worldPointer();
+    if (connectorStart) setPointerPreview(point);
+    if (!marquee) return;
     if (point)
       setMarquee((current) =>
         current ? { ...current, current: point } : null,
       );
+  }
+
+  function onSurfacePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    publishCursor({
+      x: (event.clientX - bounds.left - viewport.x) / viewport.scale,
+      y: (event.clientY - bounds.top - viewport.y) / viewport.scale,
+    });
   }
 
   function objectBounds(object: CanvasObjectV2) {
@@ -1151,12 +1227,33 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
         <p
           role="status"
           aria-live="polite"
-          title="Stored in this browser until durable multiplayer is connected in Slice 4"
+          title={
+            pendingCount
+              ? `${pendingCount} local update${pendingCount === 1 ? "" : "s"} waiting for a durable acknowledgment`
+              : `Durably synchronized through sequence ${lastSequence}`
+          }
           data-testid="canvas-save-status"
-          className="rounded-full border border-emerald-900 bg-emerald-950/40 px-3 py-1 text-xs text-emerald-300"
+          data-pending-count={pendingCount}
+          className={`rounded-full border px-3 py-1 text-xs ${
+            saveStatus === "Saved"
+              ? "border-emerald-900 bg-emerald-950/40 text-emerald-300"
+              : saveStatus === "Failed"
+                ? "border-red-900 bg-red-950/40 text-red-300"
+                : "border-amber-900 bg-amber-950/40 text-amber-300"
+          }`}
         >
           {saveStatus}
         </p>
+        {saveStatus === "Failed" || saveStatus === "Unsynced" ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => void retry()}
+          >
+            Retry sync
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3">
@@ -1192,6 +1289,16 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
               {label}
             </Button>
           ))}
+          {simulatedAiEnabled ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={addSimulatedAiIdea}
+            >
+              Add simulated AI idea
+            </Button>
+          ) : null}
         </div>
         <div
           className="flex items-center gap-2"
@@ -1358,6 +1465,7 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
           role="application"
           aria-label={`Canvas: ${title}. Choose a tool, then use the canvas. Arrow keys move a selection or pan; Delete removes a selection.`}
           onKeyDown={onKeyDown}
+          onPointerMove={onSurfacePointerMove}
           className="relative min-h-[480px] overflow-hidden bg-[#10131a] bg-[radial-gradient(circle,#303746_1px,transparent_1px)] bg-[length:24px_24px] focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none focus-visible:ring-inset"
           data-testid="product-canvas-surface"
         >
@@ -1388,6 +1496,23 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
           >
             <Layer>
               {objects.map(renderObject)}
+              {remoteCursors.map((cursor) => (
+                <Group
+                  key={cursor.userId}
+                  x={cursor.x}
+                  y={cursor.y}
+                  listening={false}
+                >
+                  <Circle radius={5} fill="#a78bfa" />
+                  <Text
+                    x={9}
+                    y={-7}
+                    text="Collaborator"
+                    fontSize={12}
+                    fill="#ddd6fe"
+                  />
+                </Group>
+              ))}
               {connectorPreviewPoints ? (
                 <Line
                   points={connectorPreviewPoints}
@@ -1437,6 +1562,29 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
                 <dt className="text-zinc-400">Frame</dt>
                 <dd data-testid="product-frame-time">
                   {frameTime === null ? "—" : `${frameTime} ms`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-400">Pending</dt>
+                <dd data-testid="product-pending-count">{pendingCount}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-400">Present</dt>
+                <dd data-testid="product-participant-count">
+                  {participants.length}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-400">Cursors</dt>
+                <dd data-testid="product-remote-cursor-count">
+                  {remoteCursors.length}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-400">Cursor sends</dt>
+                <dd data-testid="product-cursor-publish-count">
+                  {publishedCursorCount}/{attemptedCursorCount} ·{" "}
+                  {cursorPublishStatus}
                 </dd>
               </div>
             </dl>

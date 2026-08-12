@@ -17,11 +17,20 @@ import type { Database } from "@/lib/supabase/database.types";
 type PresenceParticipant = {
   userId: string;
   connectedAt: string;
+  selectedObjectIds: string[];
 };
 
 type BroadcastPayload = {
+  kind: "update";
   sequence: number;
   update: string;
+};
+
+export type CursorPayload = {
+  userId: string;
+  sequence: number;
+  x: number;
+  y: number;
 };
 
 export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
@@ -32,6 +41,7 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
     private readonly userId: string,
     private readonly onPresence?: (participants: PresenceParticipant[]) => void,
     private readonly onStatus?: (status: string) => void,
+    private readonly onCursor?: (cursor: CursorPayload) => void,
   ) {}
 
   async getLatestSnapshot(canvasId: string) {
@@ -95,9 +105,14 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
     );
   }
 
-  async appendAndBroadcast(canvasId: string, update: Uint8Array) {
+  async appendAndBroadcast(
+    canvasId: string,
+    clientUpdateId: string,
+    update: Uint8Array,
+  ) {
     const { data, error } = await this.supabase.rpc("append_canvas_update", {
       target_canvas_id: canvasId,
+      client_update_id: clientUpdateId,
       update_data: bytesToPostgresBytea(update),
     });
 
@@ -109,6 +124,7 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
       type: "broadcast",
       event: "yjs-update",
       payload: {
+        kind: "update",
         sequence: persisted.sequence,
         update: bytesToBase64(update),
       } satisfies BroadcastPayload,
@@ -132,7 +148,7 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
     const channel = this.supabase.channel(`canvas:${canvasId}`, {
       config: {
         private: true,
-        broadcast: { ack: true, self: false },
+        broadcast: { ack: false, self: false },
         presence: { key: this.userId },
       },
     });
@@ -140,11 +156,24 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
 
     channel
       .on("broadcast", { event: "yjs-update" }, ({ payload }) => {
-        const message = payload as BroadcastPayload;
-        onUpdate({
-          sequence: message.sequence,
-          update: base64ToBytes(message.update),
-        });
+        const message = payload as
+          BroadcastPayload | { kind: "cursor"; cursor: CursorPayload };
+        if (message.kind === "update") {
+          onUpdate({
+            sequence: message.sequence,
+            update: base64ToBytes(message.update),
+          });
+          return;
+        }
+        const cursor = message.cursor;
+        if (
+          cursor.userId !== this.userId &&
+          Number.isFinite(cursor.sequence) &&
+          Number.isFinite(cursor.x) &&
+          Number.isFinite(cursor.y)
+        ) {
+          this.onCursor?.(cursor);
+        }
       })
       .on("presence", { event: "sync" }, () => {
         const participants = Object.values(channel.presenceState()).flatMap(
@@ -154,6 +183,9 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
               return {
                 userId: String(presence.userId ?? "unknown"),
                 connectedAt: String(presence.connectedAt ?? "unknown"),
+                selectedObjectIds: Array.isArray(presence.selectedObjectIds)
+                  ? presence.selectedObjectIds.map(String)
+                  : [],
               };
             }),
         );
@@ -173,6 +205,7 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
             const presenceStatus = await channel.track({
               userId: this.userId,
               connectedAt: new Date().toISOString(),
+              selectedObjectIds: [],
             });
             if (presenceStatus === "ok") {
               this.onStatus?.(status);
@@ -204,5 +237,19 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
       this.onStatus?.("DISCONNECTED");
       this.onPresence?.([]);
     };
+  }
+
+  async updatePresence(selectedObjectIds: string[]) {
+    if (!this.channel) return "error" as const;
+    return this.channel.track({
+      userId: this.userId,
+      connectedAt: new Date().toISOString(),
+      selectedObjectIds,
+    });
+  }
+
+  async broadcastCursor(cursor: CursorPayload) {
+    if (!this.channel) return "error" as const;
+    return this.channel.httpSend("yjs-update", { kind: "cursor", cursor });
   }
 }
