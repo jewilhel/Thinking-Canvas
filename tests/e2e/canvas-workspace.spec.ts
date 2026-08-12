@@ -125,6 +125,9 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
   }
 
   const select = page.getByRole("button", { name: "Select", exact: true });
+  const pressedTools = dock.locator('button[aria-pressed="true"]');
+  await expect(select).toHaveAttribute("aria-pressed", "true");
+  await expect(pressedTools).toHaveCount(1);
   await select.focus();
   await select.press("ArrowRight");
   await expect(
@@ -139,6 +142,9 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
   const shapes = page.getByRole("button", { name: "Shapes", exact: true });
   await shapes.click();
   await expect(page.getByText("Choose a shape")).toBeVisible();
+  await expect(shapes).toHaveAttribute("aria-pressed", "true");
+  await expect(select).toHaveAttribute("aria-pressed", "false");
+  await expect(pressedTools).toHaveCount(1);
   await shapes.click();
   await expect(page.getByText("Choose a shape")).not.toBeVisible();
   await expect(select).toHaveAttribute("aria-pressed", "true");
@@ -147,6 +153,8 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
     const tool = page.getByRole("button", { name: label, exact: true });
     await tool.click();
     await expect(tool).toHaveAttribute("aria-pressed", "true");
+    await expect(select).toHaveAttribute("aria-pressed", "false");
+    await expect(pressedTools).toHaveCount(1);
     await tool.click();
     await expect(select).toHaveAttribute("aria-pressed", "true");
   }
@@ -156,6 +164,11 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
   await expect(
     page.getByText("Vector pen arrives in Milestone 6"),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Drawing", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(select).toHaveAttribute("aria-pressed", "false");
+  await expect(pressedTools).toHaveCount(1);
   await expect(page.getByTestId("product-object-count")).toHaveText(baseline);
   await page
     .getByRole("button", { name: "Drawing", exact: true })
@@ -171,12 +184,22 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
   await expect(
     page.getByText("Contextual feedback arrives in Milestone 3"),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Comments", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(select).toHaveAttribute("aria-pressed", "false");
+  await expect(pressedTools).toHaveCount(1);
   await expect(page.getByTestId("product-object-count")).toHaveText(baseline);
   await page.getByRole("button", { name: "Comments", exact: true }).click();
   await expect(select).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: "More tools", exact: true }).click();
   await expect(page.getByText("The dock is ready to grow")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "More tools", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(select).toHaveAttribute("aria-pressed", "false");
+  await expect(pressedTools).toHaveCount(1);
   await expect(page.getByTestId("product-object-count")).toHaveText(baseline);
   await page.getByRole("button", { name: "More tools", exact: true }).click();
   await expect(select).toHaveAttribute("aria-pressed", "true");

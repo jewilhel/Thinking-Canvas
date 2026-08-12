@@ -96,6 +96,8 @@ export function WorkspacePrimaryDock({
   const toolbarRef = useRef<HTMLDivElement>(null);
   const paletteInvokerRef = useRef<HTMLButtonElement | null>(null);
   const [openPalette, setOpenPalette] = useState<Palette>(null);
+  const toolIsPressed = (tool: CanvasTool) =>
+    openPalette === null && activeTool === tool;
 
   function chooseTool(tool: CanvasTool) {
     onChooseTool(activeTool === tool && tool !== "select" ? "select" : tool);
@@ -258,7 +260,7 @@ export function WorkspacePrimaryDock({
             size="icon"
             variant="outline"
             aria-label={label}
-            aria-pressed={activeTool === value}
+            aria-pressed={toolIsPressed(value)}
             aria-keyshortcuts={shortcut}
             title={`${label} (${shortcut})`}
             className={iconButtonClass}
@@ -273,6 +275,7 @@ export function WorkspacePrimaryDock({
           size="icon"
           variant="outline"
           aria-label="Drawing"
+          aria-pressed={openPalette === "drawing"}
           aria-expanded={openPalette === "drawing"}
           aria-controls="workspace-drawing-palette"
           title="Drawing (Milestone 6)"
@@ -287,7 +290,7 @@ export function WorkspacePrimaryDock({
           size="icon"
           variant="outline"
           aria-label="Sticky note"
-          aria-pressed={activeTool === "sticky"}
+          aria-pressed={toolIsPressed("sticky")}
           aria-keyshortcuts="S"
           title="Sticky note (S)"
           className={iconButtonClass}
@@ -301,9 +304,11 @@ export function WorkspacePrimaryDock({
           size="icon"
           variant="outline"
           aria-label="Shapes"
-          aria-pressed={shapeOptions.some(
-            (option) => option.value === activeTool,
-          )}
+          aria-pressed={
+            openPalette === "shape" ||
+            (openPalette === null &&
+              shapeOptions.some((option) => option.value === activeTool))
+          }
           aria-expanded={openPalette === "shape"}
           aria-controls="workspace-shape-palette"
           aria-keyshortcuts="R"
@@ -323,7 +328,7 @@ export function WorkspacePrimaryDock({
               size="icon"
               variant="outline"
               aria-label={label}
-              aria-pressed={activeTool === value}
+              aria-pressed={toolIsPressed(value)}
               aria-keyshortcuts={shortcut}
               title={`${label} (${shortcut})`}
               className={iconButtonClass}
@@ -338,6 +343,7 @@ export function WorkspacePrimaryDock({
           size="icon"
           variant="outline"
           aria-label="Comments"
+          aria-pressed={openPalette === "comments"}
           aria-expanded={openPalette === "comments"}
           aria-controls="workspace-comments-palette"
           title="Comments (Milestone 3)"
@@ -352,6 +358,7 @@ export function WorkspacePrimaryDock({
           size="icon"
           variant="outline"
           aria-label="More tools"
+          aria-pressed={openPalette === "more"}
           aria-expanded={openPalette === "more"}
           aria-controls="workspace-more-palette"
           title="More tools"
