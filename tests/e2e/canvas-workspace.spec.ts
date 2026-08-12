@@ -16,7 +16,7 @@ async function chooseShape(
   page: Page,
   shape: "Rectangle" | "Ellipse" | "Diamond",
 ) {
-  await page.getByRole("button", { name: "Choose shape" }).click();
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page.getByRole("menuitemradio", { name: shape, exact: true }).click();
 }
 
@@ -133,8 +133,23 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
 
   await chooseShape(page, "Ellipse");
   await expect(
-    page.getByRole("button", { name: "Shape: Ellipse", exact: true }),
+    page.getByRole("button", { name: "Shapes", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
+
+  const shapes = page.getByRole("button", { name: "Shapes", exact: true });
+  await shapes.click();
+  await expect(page.getByText("Choose a shape")).toBeVisible();
+  await shapes.click();
+  await expect(page.getByText("Choose a shape")).not.toBeVisible();
+  await expect(select).toHaveAttribute("aria-pressed", "true");
+
+  for (const label of ["Pan", "Sticky note", "Connector", "Text", "Table"]) {
+    const tool = page.getByRole("button", { name: label, exact: true });
+    await tool.click();
+    await expect(tool).toHaveAttribute("aria-pressed", "true");
+    await tool.click();
+    await expect(select).toHaveAttribute("aria-pressed", "true");
+  }
 
   const baseline = await page.getByTestId("product-object-count").innerText();
   await page.getByRole("button", { name: "Drawing", exact: true }).click();
@@ -148,16 +163,23 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
   await expect(
     page.getByRole("button", { name: "Drawing", exact: true }),
   ).toBeFocused();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await expect(select).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: "Comments", exact: true }).click();
   await expect(
     page.getByText("Contextual feedback arrives in Milestone 3"),
   ).toBeVisible();
   await expect(page.getByTestId("product-object-count")).toHaveText(baseline);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await expect(select).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: "More tools", exact: true }).click();
   await expect(page.getByText("The dock is ready to grow")).toBeVisible();
   await expect(page.getByTestId("product-object-count")).toHaveText(baseline);
+  await page.getByRole("button", { name: "More tools", exact: true }).click();
+  await expect(select).toHaveAttribute("aria-pressed", "true");
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);

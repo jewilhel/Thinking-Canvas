@@ -111,9 +111,9 @@ function decodeUpdate(value: string) {
 
 function baseStyle(type: CanvasObjectV2["type"]) {
   return {
-    fill: type === "connector" ? null : "#ffffff",
+    fill: type === "connector" || type === "text" ? null : "#ffffff",
     outline: "#475569",
-    outlineWidth: 2,
+    outlineWidth: type === "text" ? 0 : 2,
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
     fontSize: 16,
   };
@@ -1188,28 +1188,15 @@ export function ProductCanvas({
             />
           </>
         ) : object.type === "text" ? (
-          <>
-            <Rect
-              width={object.geometry.width}
-              height={object.geometry.height}
-              fill={object.style.fill ?? "transparent"}
-              stroke={object.style.outline}
-              strokeWidth={object.style.outlineWidth}
-              cornerRadius={6}
-            />
-            <Text
-              x={10}
-              y={10}
-              width={object.geometry.width - 20}
-              height={object.geometry.height - 20}
-              text={object.text}
-              fill="#18181b"
-              fontFamily={object.style.fontFamily}
-              fontSize={object.style.fontSize}
-              verticalAlign="middle"
-              listening={false}
-            />
-          </>
+          <Text
+            width={object.geometry.width}
+            height={object.geometry.height}
+            text={object.text}
+            fill="#18181b"
+            fontFamily={object.style.fontFamily}
+            fontSize={object.style.fontSize}
+            verticalAlign="middle"
+          />
         ) : (
           renderTable(object)
         )}
@@ -1791,7 +1778,8 @@ export function ProductCanvas({
                   />
                 </label>
               ) : null}
-              {selectedObject.type !== "connector" ? (
+              {selectedObject.type !== "connector" &&
+              selectedObject.type !== "text" ? (
                 <label className="flex items-center justify-between gap-3 text-xs text-zinc-600">
                   Fill
                   <input
@@ -1807,20 +1795,22 @@ export function ProductCanvas({
                   />
                 </label>
               ) : null}
-              <label className="flex items-center justify-between gap-3 text-xs text-zinc-600">
-                Outline
-                <input
-                  aria-label="Outline color"
-                  type="color"
-                  value={selectedObject.style.outline}
-                  onChange={(event) =>
-                    runCommand("object.style", {
-                      objectId: selectedObject.id,
-                      style: { outline: event.target.value },
-                    })
-                  }
-                />
-              </label>
+              {selectedObject.type !== "text" ? (
+                <label className="flex items-center justify-between gap-3 text-xs text-zinc-600">
+                  Outline
+                  <input
+                    aria-label="Outline color"
+                    type="color"
+                    value={selectedObject.style.outline}
+                    onChange={(event) =>
+                      runCommand("object.style", {
+                        objectId: selectedObject.id,
+                        style: { outline: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+              ) : null}
               {selectedObject.type !== "connector" ? (
                 <>
                   <label className="block text-xs text-zinc-600">

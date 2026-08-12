@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ChevronDown,
   Circle,
   Diamond,
   Hand,
@@ -19,7 +18,6 @@ import {
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 export type CanvasTool =
   | "select"
@@ -100,7 +98,7 @@ export function WorkspacePrimaryDock({
   const [openPalette, setOpenPalette] = useState<Palette>(null);
 
   function chooseTool(tool: CanvasTool) {
-    onChooseTool(tool);
+    onChooseTool(activeTool === tool && tool !== "select" ? "select" : tool);
     setOpenPalette(null);
   }
 
@@ -109,7 +107,12 @@ export function WorkspacePrimaryDock({
     invoker: HTMLButtonElement,
   ) {
     paletteInvokerRef.current = invoker;
-    setOpenPalette((current) => (current === palette ? null : palette));
+    if (openPalette === palette) {
+      onChooseTool("select");
+      setOpenPalette(null);
+      return;
+    }
+    setOpenPalette(palette);
   }
 
   function closePalette() {
@@ -293,39 +296,23 @@ export function WorkspacePrimaryDock({
           <StickyNote aria-hidden="true" />
         </Button>
 
-        <div className="flex shrink-0 rounded-xl border border-zinc-200 bg-white">
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            aria-label={`Shape: ${shapeLabel(recentShape)}`}
-            aria-pressed={shapeOptions.some(
-              (option) => option.value === activeTool,
-            )}
-            aria-keyshortcuts="R"
-            title={`Shape: ${shapeLabel(recentShape)} (R)`}
-            className={cn(iconButtonClass, "rounded-r-none border-0")}
-            onClick={() => chooseTool(recentShape)}
-          >
-            <Shapes aria-hidden="true" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            aria-label="Choose shape"
-            aria-expanded={openPalette === "shape"}
-            aria-controls="workspace-shape-palette"
-            title="Choose shape"
-            className={cn(
-              iconButtonClass,
-              "w-11 rounded-l-none border-y-0 border-r-0 border-l border-l-zinc-200",
-            )}
-            onClick={(event) => togglePalette("shape", event.currentTarget)}
-          >
-            <ChevronDown aria-hidden="true" className="size-3.5" />
-          </Button>
-        </div>
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          aria-label="Shapes"
+          aria-pressed={shapeOptions.some(
+            (option) => option.value === activeTool,
+          )}
+          aria-expanded={openPalette === "shape"}
+          aria-controls="workspace-shape-palette"
+          aria-keyshortcuts="R"
+          title={`Shapes — recent: ${shapeLabel(recentShape)} (R)`}
+          className={iconButtonClass}
+          onClick={(event) => togglePalette("shape", event.currentTarget)}
+        >
+          <Shapes aria-hidden="true" />
+        </Button>
 
         {creationTools
           .slice(1)

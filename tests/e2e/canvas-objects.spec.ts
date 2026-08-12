@@ -30,7 +30,7 @@ async function createAt(
   position: { x: number; y: number },
 ) {
   if (["Rectangle", "Ellipse", "Diamond"].includes(tool)) {
-    await page.getByRole("button", { name: "Choose shape" }).click();
+    await page.getByRole("button", { name: "Shapes", exact: true }).click();
     await page.getByRole("menuitemradio", { name: tool, exact: true }).click();
   } else {
     await page.getByRole("button", { name: tool, exact: true }).click();
@@ -140,7 +140,17 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   );
 
   await createAt(page, "Text", { x: 420, y: 120 });
+  await expect(page.getByLabel("Fill color")).not.toBeVisible();
+  await expect(page.getByLabel("Outline color")).not.toBeVisible();
   await page.getByLabel("Object content").fill("A text primitive");
+  await surface.click({ position: { x: 300, y: 500 } });
+  await expect(
+    page.getByTestId("canvas-inspector-selection"),
+  ).not.toBeVisible();
+  await surface.click({ position: { x: 430, y: 156 } });
+  await expect(page.getByLabel("Object content")).toHaveValue(
+    "A text primitive",
+  );
   await surface.focus();
   await surface.press("ArrowDown");
   await surface.press("Alt+ArrowDown");
