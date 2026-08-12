@@ -1,0 +1,288 @@
+# Milestone 2 — Workspace experience and interaction system
+
+Status: Approved for implementation  
+Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)  
+Plan owner: Product owner  
+Last updated: 2026-08-12
+
+## Goal and user-visible outcome
+
+Turn the functional Milestone 1 canvas into a canvas-first Thinking Canvas workspace without changing its proven collaboration, persistence, permission, or command boundaries.
+
+When this milestone is complete, an authenticated participant enters a full-bleed spatial workspace whose permanent chrome is limited to compact identity, collaboration, primary-tool, and navigation controls. Tool variants appear only when relevant; selecting an object exposes applicable formatting and editing actions near the selection; object navigation and future comments or AI surfaces open in a shared dismissible panel system rather than occupying a permanent inspector column.
+
+The workspace remains usable with keyboard and touch-sized controls at the approved desktop and tablet viewports. Every Milestone 1 create, edit, style, organize, history, zoom, persistence, reconnect, and multiplayer behavior remains available through the refined interface. The result follows the supplied FigJam references for spatial clarity, progressive disclosure, and contextual interaction while using original Thinking Canvas tokens, language, and branding.
+
+## Requirements covered
+
+This plan covers the exact Milestone 2 experience requirements in the master ledger:
+
+- **Full-bleed canvas workspace.** The authenticated canvas uses the available viewport as the primary work surface, with application chrome layered around it instead of permanently reducing the editable canvas to a dashboard-like content region.
+- **Compact workspace identity and collaboration controls.** Canvas navigation and identity remain compact at the upper left, while participant presence, sharing, save or connection state, and other collaboration controls remain compact at the upper right.
+- **Floating primary tool dock.** Select, pan, drawing, sticky-note, shape, connector, text, table, comment, and extensibility entry points use a coherent floating dock with icon labels, active states, tooltips, keyboard shortcuts, and touch-sized targets.
+- **Progressive tool disclosure.** Tool families expose relevant variants and recent choices through flyouts or secondary palettes without showing every possible action at all times.
+- **Contextual selection controls.** Selecting an object or mixed selection exposes only applicable formatting and editing actions in a nearby contextual toolbar or popover; destructive and infrequent commands remain available without dominating the workspace.
+- **Contextual styling controls.** Fill, outline, text, connector, drawing, and sticky-note controls use consistent palettes, menus, and state indicators and persist changes through the existing command and collaboration boundaries.
+- **Collapsible workspace panels.** Comments, object navigation, AI interaction, and later review experiences use a shared docked or floating panel system that opens on demand, preserves canvas context, and can be dismissed without losing work.
+- **Canvas navigation controls.** Zoom, zoom-to-fit, help, and any approved overview or minimap control remain discoverable while occupying minimal canvas space.
+- **Coherent visual system.** The workspace defines and uses shared tokens and reusable components for color, typography, spacing, sizing, radius, elevation, iconography, motion, focus, hover, selected, disabled, loading, error, and synchronization states.
+- **Responsive workspace behavior.** The interface remains usable at supported desktop and tablet viewport sizes, including overflow, panel placement, tool access, touch targets, and virtual-keyboard behavior.
+- **Accessible interaction parity.** Every visible workspace action has an operable keyboard path, meaningful accessible name, visible focus treatment, non-color-only state communication, and appropriate reduced-motion behavior.
+- **Preserved canvas capabilities.** The Milestone 1 create, manipulate, style, organize, history, zoom, persistence, reconnect, and multiplayer behaviors remain available through the refined interface with no loss of durable data or command-boundary enforcement.
+- **Distinct Thinking Canvas identity.** The experience applies the spatial clarity, progressive disclosure, and contextual interaction principles demonstrated by the approved FigJam references while retaining original Thinking Canvas branding and avoiding a pixel-for-pixel reproduction.
+
+The exact Milestone 2 exit gate is:
+
+> On an authenticated Netlify preview, a participant completes the approved create-and-format, connect-and-organize, comment-panel placeholder, zoom-and-navigate, keyboard-only, tablet-viewport, reconnect, and two-collaborator scenarios through the refined workspace; retained screenshots and interaction evidence show no permanent wall of action buttons, no permanently required inspector, and no regression of verified Milestone 1 behavior.
+
+Milestone 2 does not complete a new `FR-###` item. It preserves the already closed `FR-001` through `FR-007` behavior while establishing an interaction system used by later requirements.
+
+## Decisions required
+
+The product owner approved all five recommended decisions on 2026-08-12. The decisions do not change the approved service or state architecture.
+
+| Decision                                | Owner         | Options and consequences                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Required timing                                           | Status                                                                                                                      |
+| --------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Workspace visual direction              | Product owner | **Recommended:** use a light, neutral canvas surface and light floating chrome with violet as the primary Thinking Canvas interaction accent; retain dark color only where it improves contrast or status meaning. **Alternative:** retain the current dark-first workspace, which reduces visual change but diverges more strongly from the supplied spatial references. A future adaptive light/dark theme remains possible but would enlarge this milestone's token and testing surface.                                                                                  | Before Slice 1 token and shell work begins.               | Approved 2026-08-12: use the recommended light-first direction.                                                             |
+| Deferred tool entry behavior            | Product owner | **Recommended:** make sticky notes a preset of the existing standard rectangle/text primitive; let Comment open the required non-persisted panel placeholder; let Drawing and extensibility open clearly labeled, non-mutating palettes that identify their later milestone without implying the feature works. **Alternative:** remove those entries until their later milestones, which conflicts with the current Milestone 2 dock wording; or promote freeform drawing/comments into this milestone, which materially expands scope and requires a master-ledger change. | Before Slice 2 dock implementation.                       | Approved 2026-08-12: use the bounded recommendation; do not promote `FR-023` through `FR-030` or `FR-036` through `FR-043`. |
+| Object navigation and selection details | Product owner | **Recommended:** remove the permanent inspector, keep common formatting in the contextual toolbar, and place the complete object list plus detailed geometry/attachment controls in an on-demand Object navigator panel. **Alternative:** keep a collapsible inspector rail, which is simpler but consumes more canvas space when open.                                                                                                                                                                                                                                      | Before Slices 3–4.                                        | Approved 2026-08-12: use the on-demand Object navigator panel.                                                              |
+| Supported responsive acceptance sizes   | Product owner | **Recommended:** desktop acceptance at `1440 × 900` CSS pixels and tablet acceptance at `1024 × 768`, plus a narrow-tablet stress check at `768 × 1024`; primary dock controls use at least `44 × 44` CSS-pixel targets in touch mode. Other sizes remain best-effort until the production compatibility matrix in Milestone 11.                                                                                                                                                                                                                                             | Before responsive test fixtures are finalized in Slice 1. | Approved 2026-08-12: use `1440 × 900`, `1024 × 768`, and the `768 × 1024` stress check.                                     |
+| Minimap scope                           | Product owner | **Recommended:** keep compact zoom, zoom-to-fit, and help controls but do not add a minimap in Milestone 2. **Alternative:** add an overview/minimap, which requires viewport projection, interaction, accessibility, and performance work not necessary for the current exit gate.                                                                                                                                                                                                                                                                                          | Before Slice 4 navigation work.                           | Approved 2026-08-12: defer the minimap and retain compact zoom, zoom-to-fit, and help controls.                             |
+
+No unresolved `PD-###` product decision blocks this milestone. `PD-007 — Performance budgets` remains owned by Milestone 11; this milestone protects the existing development measurements without claiming a production performance budget.
+
+## Technical approach
+
+### Route and rendering boundaries
+
+- Keep `/app/canvases/[canvasId]` as an authenticated Next.js Server Component that validates the UUID, loads the authorized canvas through Supabase Row Level Security, and returns the same non-disclosing not-found state for inaccessible canvases.
+- Keep Konva and browser-only collaboration behavior behind the existing Client Component boundary. Continue loading the product canvas from a Client Component with `next/dynamic({ ssr: false })`, which matches the installed Next.js 16.3 guidance for browser-only libraries.
+- Remove the generic protected-page header from the canvas viewport while retaining it on dashboard/authenticated list pages. Compose canvas-specific server-rendered identity/navigation controls with the interactive client workspace instead of turning the entire authenticated layout into a Client Component.
+- Pass only serializable canvas and identity data across the Server/Client boundary. Keep Supabase server clients, session checks, secrets, and authorization logic out of the workspace client bundle.
+- Provide a compact Share control that can copy the current canvas URL and clearly states that the link grants no access by itself. Membership/invitation management is not silently introduced by this presentation milestone.
+
+### Workspace composition and state
+
+- Refactor the current single large `ProductCanvas` presentation into focused workspace components while retaining one owning canvas/recovery controller during the transition:
+  - compact canvas identity/navigation cluster;
+  - collaboration/save-state cluster;
+  - primary tool dock and tool-family palettes;
+  - contextual selection toolbar and style popovers;
+  - shared panel host with Object navigator and placeholder surfaces;
+  - compact zoom/help cluster;
+  - canvas stage, empty state, status announcements, and test-only instrumentation.
+- Keep canonical object content in Yjs, durable updates in Supabase, and every lasting mutation in the existing validated domain-command executor.
+- Keep active tool, open palette, open panel, focused control, selection presentation, and recent style choice ephemeral. Use component state while ownership remains local; use a narrowly scoped Zustand workspace store only where extracted sibling components require shared ephemeral state. Do not persist these values as collaborative or durable product content.
+- Preserve stable accessible names and test IDs for proven Milestone 1 actions where practical. When the visible arrangement changes, update tests to use user-facing roles/names rather than DOM placement.
+
+### Full-bleed shell and visual system
+
+- Make the canvas stage fill the authenticated viewport and place chrome above it in explicit overlay layers. Account for safe areas and virtual-keyboard/visual-viewport changes without resizing durable canvas coordinates.
+- Define Thinking Canvas workspace tokens for surface, chrome, text, border, accent, destructive, focus, success, warning, error, collaborator colors, spacing, sizing, radius, elevation, and motion. Reuse semantic shadcn/Tailwind variables rather than scattering one-off colors through workspace components.
+- Use original Lucide application icons, original labels, and Thinking Canvas styling. Do not copy Figma marks, control geometry, exact color values, or proprietary wording.
+- Keep state distinguishable without color alone. Active tools use icon, label/tooltip, pressed state, and shape treatment; sync states use text and icon; collaborator indicators include accessible identity text.
+- Respect `prefers-reduced-motion`; workspace chrome may fade or scale subtly, but core actions must not depend on animation and focus must never be delayed by motion.
+
+### Primary tools and progressive disclosure
+
+- Replace the permanent row of eight labeled buttons with one floating primary dock using icon buttons, visible selected state, accessible names, discoverable shortcuts, and tooltips. Arrow-key navigation follows toolbar conventions while Tab enters and exits the dock predictably.
+- Keep Select and Pan as direct tools.
+- Group rectangle, ellipse, and diamond under Shape. Opening the Shape palette exposes the variants and remembers the last chosen shape for the dock's primary action without persisting that preference to shared state.
+- Keep Connector, Text, and Table as working domain-command tools.
+- Implement Sticky note as an existing rectangle/text object created with an approved sticky-note size, fill, outline, and editable placeholder text. It remains a standard object and uses the same style and collaboration commands; no new persisted object type or format-specific mode is introduced.
+- Under the recommended deferred boundary, Drawing opens a non-mutating palette that names vector pen behavior as Milestone 6 work; Comment opens the required shared-panel placeholder for Milestone 3; extensibility opens a small menu shell for later tool families. These entry points must be keyboard operable and explicit about unavailable behavior.
+- Never expose the simulated-AI preview driver as a normal production tool. Keep it in an explicitly test/preview-only overflow or instrumentation surface.
+
+### Contextual selection and styling
+
+- Show a floating selection toolbar only when one or more objects are selected. Position it relative to the visible selection bounds, clamp it to the viewport, and move it to a safe docked edge when selection bounds or the virtual keyboard make anchoring impractical.
+- Derive actions from the selected object types. Mixed selection exposes only common valid actions and clearly communicates when a style is mixed.
+- Put frequent formatting actions—fill, outline, typography, text size, and applicable connector/sticky options—in consistent popovers. Continue writing every change through current style/patch commands so persistence, multiplayer convergence, undo, and redo are unchanged.
+- Put group/ungroup, order, duplicate, copy/cut/paste, delete, and less frequent selection details in a predictable overflow menu or the Object navigator. Destructive actions remain labeled and separated from routine formatting.
+- Preserve keyboard shortcuts for selection, organization, clipboard, undo/redo, deletion, movement, and resizing. Opening or closing a popover returns focus to the invoking control; Escape closes only the topmost transient surface before affecting selection.
+
+### Panels, navigation, and responsive behavior
+
+- Build one panel host that supports overlay/floating presentation at desktop and a viewport-constrained sheet at tablet sizes. It owns open/close behavior, focus management, heading/description semantics, Escape handling, and focus restoration.
+- Move the current object list and detailed selection controls into the Object navigator panel without reducing their current keyboard operability. Selecting an object from the list focuses it on canvas and does not mutate durable state.
+- Add the required Comments placeholder to the same host. It must contain no comment query, mutation, fake thread, or completion claim; persisted comments remain Milestone 3.
+- Reserve panel identities for later AI and review experiences but do not render empty permanent controls for them unless they are part of the approved extensibility menu.
+- Keep zoom out, current zoom, zoom in, zoom-to-fit, and help in a compact navigation cluster. Help exposes current workspace shortcuts and interaction guidance; a minimap remains excluded under the recommended decision.
+- At tablet sizes, keep every primary tool reachable through a compact or horizontally scrollable dock, prevent panels/popovers from escaping the visual viewport, and preserve a usable canvas region when the virtual keyboard is present. Do not convert the canvas into a dashboard stack.
+
+### Failure, observability, and deployment behavior
+
+- Preserve the existing visible `Saved`, `Saving`, `Reconnecting`, `Unsynced`, and `Failed` states plus retry behavior. Compact placement must not hide pending work or authorization loss.
+- Keep the last valid canvas visible during collaboration recovery and UI errors. A panel or palette failure must not clear canonical canvas content.
+- Retain development/test instrumentation for object count, frame time, pending updates, participant count, and cursor traffic, but move it behind an explicit test/instrumentation surface so normal workspace chrome stays minimal.
+- Deploy only to authenticated non-production Netlify branch/deploy previews until closure. No production launch, domain change, public data, or production credential change is authorized.
+
+## Database and security changes
+
+No database migration, new table, policy change, provider integration, or secret is planned for Milestone 2.
+
+- Continue relying on the existing authenticated server route, canvas membership Row Level Security, private Supabase Broadcast/Presence authorization, idempotent update append function, snapshot/update loading, and command authorization.
+- Sticky notes remain existing shared canvas objects; panel state, palettes, recent tools, and layout preferences remain ephemeral and create no relational record.
+- The Comments placeholder performs no read or write against the existing comment tables. Real comment authorization and persistence remain Milestone 3.
+- The Drawing and extensibility entry experiences perform no domain mutation under the recommended scope boundary.
+- Run the existing database/RLS and collaboration-durability suites as regression gates even though no schema change is expected.
+- If implementation reveals a need for durable per-user workspace preferences, stop and propose the data ownership, RLS, migration, retention, and rollback behavior before adding it.
+
+Rollback is presentation-only: preserve the Milestone 1 workspace component until each replacement slice passes its regression scenarios; a failing slice can restore the prior shell without rewriting Yjs documents or relational data.
+
+## Ordered task checklist
+
+### Slice 1 — Full-bleed workspace shell and visual foundations
+
+- [x] Record the approved visual direction, responsive acceptance sizes, and minimap decision in this document.
+- [ ] Extract dashboard-only authenticated chrome so the canvas route can use the full viewport without weakening the server authentication boundary.
+- [ ] Define semantic Thinking Canvas workspace tokens and reusable surface, floating-chrome, icon-button, status, tooltip, and focus treatments.
+- [ ] Refactor the product canvas into a full-bleed stage with compact upper-left identity/navigation and upper-right collaboration/save controls.
+- [ ] Add the bounded Share-link control and prove that it neither grants membership nor discloses the canvas to a non-member.
+- [ ] Keep loading, empty, authorization, sync, retry, and test instrumentation states legible in the new shell.
+- [ ] Add focused component or end-to-end coverage for viewport fill, semantic controls, focus, sync states, and unchanged authorized/non-member routing.
+
+### Slice 2 — Primary dock and progressive tool families
+
+- [x] Record the approved deferred-tool boundary before exposing the new dock.
+- [ ] Implement the floating primary dock with toolbar keyboard behavior, meaningful accessible names, visible active state, tooltips, shortcuts, and touch-size behavior.
+- [ ] Group rectangle, ellipse, and diamond in a Shape palette with a remembered recent choice while retaining all existing create commands.
+- [ ] Implement Sticky note as a styled standard primitive through the existing create/style command path and prove reload/multiplayer persistence.
+- [ ] Add the bounded Drawing, Comment, and extensibility entry experiences without implementing later-milestone persistence or vector behavior.
+- [ ] Keep the preview-only simulated AI driver out of normal production chrome while preserving automated convergence coverage.
+- [ ] Add keyboard, pointer, touch-emulation, palette overflow, object-creation, persistence, and accessibility tests for the dock.
+
+### Slice 3 — Contextual selection, style controls, and action overflow
+
+- [ ] Implement a viewport-clamped contextual toolbar for single and mixed selections.
+- [ ] Implement consistent fill, outline, typography, text-size, connector, and sticky-note popovers using the existing command and history boundaries.
+- [ ] Move grouping, ordering, duplicate, clipboard, undo/redo, delete, and detailed actions into a clear contextual/overflow hierarchy without removing their shortcuts.
+- [ ] Preserve connector anchors, attachment/detachment, table editing, transform handles, marquee selection, and mixed-selection semantics.
+- [ ] Add unit/end-to-end coverage for action applicability, mixed values, focus restoration, Escape behavior, undo/redo, collaboration convergence, and reload persistence.
+
+### Slice 4 — Shared panel system, navigation, tablet, and keyboard parity
+
+- [x] Record the approved Object navigator presentation decision.
+- [ ] Build the dismissible shared panel host with desktop overlay and tablet sheet behavior, focus containment, Escape handling, and invoker focus restoration.
+- [ ] Move the complete object list and detailed selection/geometry/attachment controls into the Object navigator panel.
+- [ ] Add the honest, non-persisted Comments placeholder and the approved help/shortcut surface.
+- [ ] Implement compact zoom controls and zoom-to-fit without adding a minimap under the recommended scope.
+- [ ] Verify dock/panel/popover placement, overflow, touch targets, canvas visibility, and virtual-keyboard response at the approved desktop and tablet sizes.
+- [ ] Add keyboard-only and automated axe coverage for every visible action and workspace state.
+
+### Slice 5 — Regression, multiplayer, preview evidence, and closure review
+
+- [ ] Run the complete local quality, unit, database/RLS, build, Chromium end-to-end, and accessibility suites from a clean local state.
+- [ ] Exercise the full Milestone 1 object/action, grouping/history, connector, reconnect, reload, and simulated-AI regression scenarios through the refined interface.
+- [ ] Run the approved create-and-format, connect-and-organize, comment-placeholder, zoom/navigation, keyboard-only, tablet, reconnect, and two-collaborator scenarios on one authenticated Git-backed Netlify deploy preview.
+- [ ] Retain desktop, contextual-toolbar, open-panel, and tablet screenshots plus the preview deploy identifier, exact commit SHA, identities/browsers, and results.
+- [ ] Confirm the normal workspace has no permanent wall of actions, no required permanent inspector, no exposed preview-only AI tool in production presentation, and no Figma branding or pixel-copy treatment.
+- [ ] Trace evidence to every Milestone 2 experience requirement and the exact exit gate, then request separate product-owner closure approval.
+
+## Pull-request slices
+
+Pull requests are proposed for reviewability but are not authorized by plan approval alone. Open a pull request only after the product owner explicitly requests or approves it.
+
+| Slice                               | Depends on              | Demoable outcome                                                                                                                                  | Tests                                                                                                             | Rollback or compensating path                                                                  |
+| ----------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 1. Workspace shell and tokens       | Approved plan decisions | The authenticated canvas fills the viewport with compact identity, share-link, sync, and navigation chrome while existing content remains usable. | Focused shell/component tests, authorized/non-member/share-link E2E, sync-state checks, `pnpm check`.             | Restore the Milestone 1 route/header composition; no data change.                              |
+| 2. Primary dock and tool families   | Slice 1                 | Existing creation tools plus sticky-note preset are accessible from a floating dock; bounded later-tool entries are explicit and non-mutating.    | Dock keyboard/pointer/touch tests, create/reload checks, axe, `pnpm check`, focused E2E.                          | Restore the prior toolbar; existing commands and schemas remain intact.                        |
+| 3. Contextual selection and styling | Slice 2                 | Formatting and common selection actions appear only for applicable selections, with overflow for infrequent actions.                              | Object/action matrix, mixed-selection, connector, history/clipboard, focus/Escape, multiplayer/reload regression. | Restore prior action rows/inspector while preserving the same command calls.                   |
+| 4. Panels and responsive workspace  | Slice 3                 | Object navigation, detailed selection controls, comments placeholder, help, and zoom work through dismissible desktop/tablet surfaces.            | Panel focus tests, keyboard-only flow, tablet/virtual-keyboard checks, screenshots, axe, full E2E.                | Restore the inspector column and prior zoom group; no durable state change.                    |
+| 5. Evidence and closure readiness   | Slices 1–4              | One immutable authenticated preview demonstrates the entire refined workflow with no Milestone 1 regression.                                      | Full local suite, database/RLS regression, protected CI, authenticated preview matrix, two collaborators.         | Keep the milestone open and correct the failing presentation slice; do not check ledger items. |
+
+## Automated and manual tests
+
+| Area                                  | Automated verification                                                                                                                                                                                                           | Manual/preview scenario                                                                                                                                                                                   | Expected result and retained evidence                                                                                                                                                                                                                               |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Static quality                        | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, and `pnpm build`; use `pnpm check` as the combined quality gate.                                                                                                             | Inspect production build output and client/server import boundaries.                                                                                                                                      | All commands exit zero; server-only Supabase/auth modules remain absent from the client workspace graph.                                                                                                                                                            |
+| Unit and component behavior           | `pnpm test` plus focused tests for tool/panel state, action applicability, style values, viewport clamping, and responsive helpers.                                                                                              | Exercise palette, popover, panel, and focus transitions in current Chrome.                                                                                                                                | State transitions are deterministic; no durable command fires from a deferred entry; focus returns to the invoker.                                                                                                                                                  |
+| Database and authorization regression | Start/reset local Supabase, then run the existing RLS and collaboration-durability suites through the repository's canonical CI path; use direct local PostgreSQL execution only if the documented macOS wrapper failure recurs. | Owner opens an allowed canvas; non-member attempts the same UUID.                                                                                                                                         | Existing allowed/denied matrix passes; non-member receives the same nondisclosing unavailable state.                                                                                                                                                                |
+| Identity, sharing, and access         | Playwright clipboard and authorization scenarios using owner and non-member identities.                                                                                                                                          | Copy the current canvas link as the owner, then attempt to open it as a non-member.                                                                                                                       | Share copies the correct URL and explains the membership boundary; it creates no membership and the non-member still receives the nondisclosing unavailable state.                                                                                                  |
+| Existing canvas capabilities          | `pnpm test:e2e` with updated `canvas-objects.spec.ts` and `canvas-workspace.spec.ts`.                                                                                                                                            | Create, edit, style, connect, group, order, duplicate, clipboard, undo/redo, delete, zoom, reload, and reopen through the refined controls.                                                               | Every Milestone 1 behavior remains available and durable; no object schema conversion or data loss occurs.                                                                                                                                                          |
+| Dock and progressive disclosure       | Playwright pointer, keyboard, and touch-emulation scenarios at desktop and tablet sizes.                                                                                                                                         | Use Select, Pan, Shape variants, Sticky note, Connector, Text, Table, Drawing entry, Comment entry, and extensibility entry.                                                                              | Working tools mutate only through approved commands; bounded entries are operable and honest; all controls remain reachable without a permanent action wall.                                                                                                        |
+| Contextual selection and styling      | Playwright single/mixed-selection matrix plus existing domain-command/history unit tests.                                                                                                                                        | Format a shape, sticky note, text, connector, and table; use overflow actions; reload and undo/redo.                                                                                                      | Only applicable controls appear; mixed values are explicit; styles persist and converge; focus and Escape behavior are predictable.                                                                                                                                 |
+| Panels and navigation                 | Playwright focus-order, Escape, focus-return, zoom, panel, and axe scenarios.                                                                                                                                                    | Open Object navigator, select an object, open/close Comments placeholder and Help, zoom, and zoom-to-fit.                                                                                                 | Panels preserve canvas context, do not lose selection/work, and are dismissible without a permanent inspector. Axe reports zero detectable violations on covered routes/states.                                                                                     |
+| Responsive and virtual keyboard       | Playwright projects or page viewports at `1440 × 900`, `1024 × 768`, and `768 × 1024`, including touch and virtual-keyboard/visual-viewport simulation where supported.                                                          | Create and edit text/table content with a tablet viewport, open each panel/palette, and navigate the dock.                                                                                                | No control escapes the viewport; touch targets meet the approved size; keyboard appearance leaves a usable canvas and reachable dismissal path.                                                                                                                     |
+| Reconnect and multiplayer             | Existing two-context Playwright scenario plus an authenticated owner/editor preview walkthrough.                                                                                                                                 | Two humans create/move/delete, observe cursors/selections, disconnect one participant, make pending edits, reconnect, reload both, and invoke the preview-only simulated AI driver from its test surface. | Both sessions converge with zero lost committed edits; pending work and save state stay visible in compact chrome; the normal production workspace does not expose the driver.                                                                                      |
+| Visual direction                      | Retain Playwright screenshots for deterministic workspace states; use manual perceptual review for design quality.                                                                                                               | Capture full workspace, active tool palette, selected-object toolbar/style popover, Object navigator/Comments placeholder, and tablet layout.                                                             | Screenshots show a canvas-first original Thinking Canvas system with progressive disclosure, no permanent action wall/inspector, and no Figma branding or pixel-for-pixel reproduction. Store accepted evidence under `docs/implementation/evidence/milestone-02/`. |
+| Authenticated Netlify preview         | Git-backed deploy preview for the exact reviewed commit; record deploy ID, URL, context, SHA, and secret-scan result.                                                                                                            | Run the exact master exit-gate scenarios as authenticated owner/editor identities in current Chrome, with tablet viewport emulation for the responsive case.                                              | Every scenario passes on one immutable non-production preview; retained evidence is traceable to the exact commit and no result is inferred from local-only testing.                                                                                                |
+
+## Risks and assumptions
+
+| Risk or assumption                                                                                               | Likelihood / impact | Mitigation or experiment                                                                                                                                                     | Owner                         | Status                   |
+| ---------------------------------------------------------------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------ |
+| The dock wording could accidentally promote vector drawing or persisted comments into Milestone 2.               | High / high         | Apply the approved bounded deferred-entry decision; add tests proving those entries issue no domain mutation or data request.                                                | Product owner and engineering | Boundary approved.       |
+| Moving the permanent inspector can make detailed geometry, connector, or object-list actions harder to discover. | Medium / high       | Keep common formatting contextual; retain all detailed controls in a clearly labeled Object navigator; test both pointer and keyboard discovery.                             | Product owner and engineering | Proposed approach.       |
+| Splitting the 1,800-line client component could disturb command, history, or collaboration ownership.            | Medium / high       | Extract presentation incrementally around one owning controller; do not rewrite Yjs/recovery logic as part of visual decomposition; run regression suites after every slice. | Engineering                   | Planned mitigation.      |
+| Overlay chrome can intercept stage gestures or obscure selected objects.                                         | Medium / high       | Define explicit pointer-event layers, viewport-safe clamping, selection-toolbar fallback placement, and E2E gestures near all viewport edges.                                | Engineering                   | Planned mitigation.      |
+| Light-first styling may reduce contrast or conflict with the current dark authenticated dashboard.               | Medium / medium     | Use semantic tokens, automated axe checks, manual contrast/perceptual review, and route-scoped workspace styling; dashboard redesign remains outside scope.                  | Product owner and engineering | Direction approved.      |
+| Tooltips may be unavailable to touch or assistive-technology users.                                              | Medium / medium     | Give every icon button a meaningful accessible name, pressed/expanded state, and help/shortcut surface; tooltips supplement rather than carry meaning.                       | Engineering                   | Planned mitigation.      |
+| Tablet panels or the virtual keyboard may leave too little visible canvas.                                       | Medium / high       | Test approved landscape/portrait sizes early; use constrained sheets and `visualViewport`-aware placement without changing durable coordinates.                              | Engineering                   | Planned mitigation.      |
+| New chrome could hide unsynced work or reconnect failure.                                                        | Low / high          | Keep text status and retry visible in the compact collaboration cluster; retain navigation/sign-out protection and reconnect E2E coverage.                                   | Engineering                   | Planned mitigation.      |
+| Existing E2E tests are coupled to the permanent inspector and visible button rows.                               | High / medium       | Update locators toward stable roles, names, and explicit panel actions while retaining test IDs for state readback; do not weaken behavioral assertions.                     | Engineering                   | Expected test migration. |
+| A minimap could expand scope and add render cost without being required.                                         | Medium / medium     | Apply the approved deferral; retain zoom-to-fit and help as the current navigation solution.                                                                                 | Product owner                 | Deferral approved.       |
+
+## Exit criteria
+
+- [x] The product owner approved the Milestone 2 plan and all five recorded decisions; the document status is `Approved for implementation` before product changes begin.
+- [ ] **Full-bleed canvas workspace:** retained desktop and tablet screenshots show the authenticated canvas as the primary viewport surface with overlay chrome rather than dashboard-style rows/columns.
+- [ ] **Compact workspace identity and collaboration controls:** navigation/title/identity occupy the upper-left cluster, while participants, sync/retry, bounded Share-link behavior, and account controls occupy a compact upper-right cluster without hiding failure state; copying a link does not grant membership.
+- [ ] **Floating primary tool dock:** every named dock entry has an accessible name, visible state, tooltip/help path, approved shortcut behavior, and touch-sized acceptance at the approved tablet viewport.
+- [ ] **Progressive tool disclosure:** Shape and applicable tool families expose variants/recent choice through a palette, and the normal workspace does not show every variant/action permanently.
+- [ ] **Contextual selection controls:** single and mixed selections expose only applicable common actions near the selection or at the documented safe fallback edge; infrequent/destructive commands remain reachable without a permanent action row.
+- [ ] **Contextual styling controls:** fill, outline, typography, text size, connector, and sticky-note changes pass through current commands, survive reload, converge across two collaborators, and undo/redo correctly; deferred Drawing controls do not claim persisted vector behavior.
+- [ ] **Collapsible workspace panels:** Object navigator and Comments placeholder use the same dismissible panel host, preserve selection/canvas state, restore focus, and require no permanent inspector.
+- [ ] **Canvas navigation controls:** zoom out/current level/zoom in/zoom-to-fit/help remain keyboard operable and compact; the approved minimap decision is honored.
+- [ ] **Coherent visual system:** implementation uses documented semantic tokens/components for all listed visual and interaction states, passes automated accessibility checks, and receives product-owner perceptual approval from retained screenshots.
+- [ ] **Responsive workspace behavior:** all approved desktop/tablet scenarios pass without clipped essential controls, unreachable dismissal, unusable canvas area, or durable-coordinate corruption during virtual-keyboard changes.
+- [ ] **Accessible interaction parity:** the keyboard-only acceptance completes every visible workspace action needed by the milestone; focus, names, status announcements, non-color communication, toolbar/panel semantics, and reduced-motion behavior are verified.
+- [ ] **Preserved canvas capabilities:** the complete Milestone 1 unit, database/RLS, build, object/action, history/clipboard, connector, reconnect, reload, and multiplayer regression gates pass through the refined interface with no schema or authorization regression.
+- [ ] **Distinct Thinking Canvas identity:** product-owner review confirms original branding/tokens/language and no Figma marks, proprietary wording, or pixel-for-pixel reproduction.
+- [ ] The exact Milestone 2 exit-gate create-and-format, connect-and-organize, comment-panel placeholder, zoom-and-navigate, keyboard-only, tablet-viewport, reconnect, and two-collaborator scenarios pass on one authenticated Git-backed Netlify deploy preview for the exact reviewed commit.
+- [ ] Evidence retains the local commands/results, protected CI run, preview URL/deploy ID, exact SHA, browser/viewport/identity matrix, screenshots, limitations, and follow-up defects.
+- [ ] The milestone reaches `Verification complete — awaiting closure approval`; master-plan Milestone 2 checkboxes remain unchecked until the product owner separately approves closure.
+
+## Explicitly excluded work
+
+- Persisted anchored comments, threads, prompts, responses, resolution, or comment-overlay behavior (`FR-023` through `FR-030`, Milestone 3). Milestone 2 supplies only the approved panel placeholder.
+- Real OpenAI reasoning, typed AI chat, AI permissions, grounded feedback, or product AI mutation UI (`FR-015` through `FR-022`, Milestone 4). The deterministic simulated AI remains preview/test-only regression support.
+- Reviewable AI changes and guided review (`FR-031` through `FR-035`, Milestone 5).
+- Freeform vector pen strokes, stroke editing, overlap attachment, temporary annotation overlays, or promotion (`FR-036` through `FR-043`, Milestone 6). Milestone 2 may show only the approved non-mutating Drawing entry.
+- First-class document product behavior (`FR-044` through `FR-053`, Milestone 7).
+- Guided stories (`FR-054` through `FR-062`, Milestone 8), live conversation (`FR-008` through `FR-014`, Milestone 9), and conversational templates (`FR-063` through `FR-066`, Milestone 10).
+- Production launch, complete cross-browser matrix, final non-visual object-list experience, production performance budgets, observability, custom domain, or release operations (Milestone 11).
+- A new canvas object schema solely for sticky notes; sticky notes remain a style/content preset on standard primitives.
+- A minimap under the recommended decision; advanced overview/navigation can be proposed later if zoom-to-fit and object navigation prove insufficient.
+- Persistent user workspace-layout preferences, a dashboard redesign, mobile-phone acceptance, Figma branding/assets, or a pixel-for-pixel clone of the supplied references.
+- Canvas membership/invitation management beyond copying the URL for an already-authorized collaborator; any future invite flow must preserve the existing server authorization and RLS boundaries.
+- Specialist AI agents, branching stories, story snapshots, cross-boundary document connectors, specialized document types, a canvas icon library, or AI image generation (explicitly deferred in the master ledger).
+
+## Implementation record
+
+Implementation authorized on 2026-08-12. No product change is recorded yet; Slice 1 is the first authorized implementation work.
+
+## Verification evidence
+
+No Milestone 2 implementation or preview verification has been run. Planning inspection on 2026-08-12 confirmed:
+
+- the branch begins at merged Milestone 1 commit `4966ffb` plus documentation commit `4ed4f65`;
+- the current workspace uses a generic protected header, two permanent action rows, a canvas-plus-`18rem` inspector grid, and one large client canvas component;
+- existing tests cover authenticated create/reopen, the essential object/action matrix, connector behavior, history/clipboard, reconnect, two-human convergence, preview-only simulated AI, and automated accessibility;
+- the supplied seven FigJam screenshots establish full-bleed layout, compact corner chrome, a floating dock, tool-family palettes, contextual formatting, a dismissible comments panel, and contextual color controls;
+- no Milestone 2 database or product-code change has begun.
+
+These observations inform the plan but are not completion evidence.
+
+## Change record
+
+| Date       | Change or decision                                                                                                                                                                                  | Rationale                                                                                                                                         | Impact                                                                                                                                                                                                          | Approved by   |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| 2026-08-12 | Created the first detailed Milestone 2 plan from the closed Milestone 1 implementation, updated master ledger, supplied visual references, current code/tests, and installed Next.js 16.3 guidance. | The master ledger identifies Workspace experience and interaction system as the next milestone, and no Milestone 2 implementation record existed. | Defines proposed decisions, technical boundaries, dependency-ordered slices, verification, risks, and closure gates; product implementation remains blocked on explicit approval.                               | Pending       |
+| 2026-08-12 | Approved the Milestone 2 plan and all five recommended decisions for implementation.                                                                                                                | The product owner explicitly approved the reviewed plan and selected every recommended decision.                                                  | Status changed to `Approved for implementation`; the five documented slices are authorized, while later-milestone behavior, PR creation, master-plan completion, and milestone closure remain separately gated. | Product owner |
+
+## Closure
+
+Closure status: Not ready  
+Closure approval: Pending  
+Closed on: —
