@@ -34,6 +34,7 @@ const canvasObjectBaseSchema = z.strictObject({
   createdBy: uuid,
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+  groupId: uuid.nullable().optional(),
   geometry: geometrySchema,
   style: styleSchema,
 });
@@ -294,6 +295,27 @@ export function listCanvasObjectsV2(document: Y.Doc) {
     const object = readCanvasObjectV2(document, id);
     return object ? [object] : [];
   });
+}
+
+export function readCanvasOrderV2(document: Y.Doc) {
+  return order(document).toArray();
+}
+
+export function setCanvasOrderV2(document: Y.Doc, objectIds: string[]) {
+  const currentIds = [...objects(document).keys()].sort();
+  const proposedIds = [...objectIds].sort();
+  if (
+    currentIds.length !== proposedIds.length ||
+    currentIds.some((id, index) => id !== proposedIds[index])
+  ) {
+    throw new Error("Canvas order must contain every object exactly once.");
+  }
+
+  document.transact(() => {
+    const currentOrder = order(document);
+    currentOrder.delete(0, currentOrder.length);
+    currentOrder.push(objectIds);
+  }, "canvas.order.set");
 }
 
 export function deleteCanvasObjectV2(document: Y.Doc, objectId: string) {

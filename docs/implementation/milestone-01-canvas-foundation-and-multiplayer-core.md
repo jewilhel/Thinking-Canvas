@@ -147,11 +147,11 @@ Rollback or compensation: disable the product canvas route if the document upgra
 
 ### Slice 3 — Selection depth, organization, clipboard, and history
 
-- [ ] Implement modifier multiselection, marquee selection, mixed-selection behavior, and deterministic selection focus.
-- [ ] Implement group, ungroup, stacking-order, duplicate, copy, cut, and paste commands, including ID/reference remapping.
-- [ ] Implement actor-local undo and redo as conflict-aware compensating commands through the shared executor.
-- [ ] Add keyboard navigation and discoverable shortcuts for the supported canvas, selection, organization, clipboard, and history actions.
-- [ ] Add unit and end-to-end coverage for group/order/reference integrity, clipboard validation, undo/redo after collaboration, focus, and keyboard behavior.
+- [x] Implement modifier multiselection, marquee selection, mixed-selection behavior, and deterministic selection focus.
+- [x] Implement group, ungroup, stacking-order, duplicate, copy, cut, and paste commands, including ID/reference remapping.
+- [x] Implement actor-local undo and redo as conflict-aware compensating commands through the shared executor.
+- [x] Add keyboard navigation and discoverable shortcuts for the supported canvas, selection, organization, clipboard, and history actions.
+- [x] Add unit and end-to-end coverage for group/order/reference integrity, clipboard validation, undo/redo after collaboration, focus, and keyboard behavior.
 
 ### Slice 4 — Durable multiplayer and temporary disconnect recovery
 
@@ -308,6 +308,15 @@ Implementation began on 2026-08-11 after explicit plan approval.
 - Constructed a 7-object mind map, 7-object procedure, 4-object mood board, and 4-object storyboard through the same visible toolbar, object outline, inspector, and command executor. The retained screenshots under `docs/implementation/evidence/milestone-01/` show no format-specific mode or schema.
 - Published commit `7e69651` to private non-production Netlify branch deploy `6a7bb6a6b980d884e4ad0760`. The authenticated hosted walkthrough created, styled, connected, moved, reloaded, and read back a rectangle, ellipse, connector, text object, and two-row table. Moving the source shape changed its attached endpoint from `350,84` to `360,84`; all five objects remained after reload.
 
+### Slice 3 — Selection depth, organization, clipboard, and history
+
+- Added modifier and marquee multiselection, grouped-object selection expansion, a deterministic primary focus for mixed selections, group-aware drag/keyboard movement, and an accessible selection count and object outline.
+- Extended the shared command schema for group, ungroup, reorder, and multi-object duplicate. The canvas document now validates complete stacking order and stores optional group identity without changing the renderer-independent object vocabulary.
+- Added a strict versioned clipboard payload. Copy and cut retain an in-app fallback when system permission is unavailable; paste remaps object IDs, complete-group IDs, and internal connector references, converts external connector references to safe free endpoints, rejects untrusted fields, and offsets pasted geometry.
+- Added batched actor-local undo/redo history. Each user action captures field-level before/after changes plus order; compensation restores only fields that still match the action's after-image, preserves later unrelated fields, and reports rather than overwrites same-field divergence.
+- Added visible organization/history controls and `aria-keyshortcuts` for select all, group/ungroup, duplicate, copy, cut, paste, undo, and redo. Keyboard movement/resizing batches multiselection changes into one history action.
+- Added unit and Chromium coverage for nested-group rejection, order, internal/external connector remapping, malicious clipboard payloads, create/reorder history, later unrelated changes, same-field conflicts, modifier selection, marquee, grouped selection, organization, clipboard, and grouped undo/redo.
+
 ## Verification evidence
 
 Milestone 0 spike evidence demonstrates feasibility only and is not represented as Milestone 1 product acceptance.
@@ -321,6 +330,8 @@ Milestone 0 spike evidence demonstrates feasibility only and is not represented 
 | 2026-08-11 | Local Supabase Auth and Chromium               | `pnpm test:e2e` after adding `canvas-objects.spec.ts`                                                                           | Pass: all 18 scenarios completed. The new matrix exercised shape, text, connector, and table creation, selection, movement, resize, edit, style, reload, and deletion; attachment follow/detach, endpoint resizing, and all four arrangement demonstrations passed; covered routes reported zero axe violations. | Playwright output                                                 | Slice 2 essential object/action matrix, connector geometry, style, accessibility  |
 | 2026-08-11 | Local Chromium and retained screenshots        | Construct mind-map, procedure, mood-board, and storyboard arrangements through shared product controls                          | Pass: the general-purpose object vocabulary produced the four representative layouts with 7, 7, 4, and 4 objects respectively; the final storyboard survived reload. Four PNGs retain the visible results without introducing format-specific product behavior.                                                  | `docs/implementation/evidence/milestone-01/slice-02-*.png`        | Slice 2 general-purpose arrangement demonstration                                 |
 | 2026-08-11 | Authenticated Netlify branch deploy and Chrome | Deploy `6a7bb6a6b980d884e4ad0760` for commit `7e69651`; create, style, attach, move, and reload the essential object vocabulary | Pass: the private branch deploy rendered the product controls; the source-to-target connector followed a 10-pixel keyboard move (`350,84` to `360,84`); rectangle, ellipse, connector, text, and table content/style remained present after reload with `Saved` status.                                          | Netlify deploy details, signed-in Chrome readback, and screenshot | Slice 2 hosted essential objects, attachment geometry, style, and reload          |
+| 2026-08-11 | Local repository                               | `pnpm check` after the Slice 3 selection, clipboard, and history implementation                                                 | Pass: Prettier, ESLint with zero warnings, strict TypeScript, 64 Vitest tests across 19 files, and the Next.js 16.3 production build completed.                                                                                                                                                                  | Local command output                                              | Slice 3 schemas, clipboard validation, conflict-aware history, build, regressions |
+| 2026-08-11 | Local Supabase Auth and Chromium               | `pnpm test:e2e` with the Slice 3 organization scenario                                                                          | Pass: all 19 scenarios completed. Modifier and marquee selection, group/ungroup, stacking, duplicate, copy/cut/paste, grouped movement, undo/redo, shortcut behavior, reload, and every earlier product/spike regression passed.                                                                                 | Playwright output                                                 | Slice 3 organization, keyboard, focus, clipboard, and history acceptance          |
 
 ## Change record
 

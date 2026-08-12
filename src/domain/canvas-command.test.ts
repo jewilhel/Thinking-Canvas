@@ -5,6 +5,7 @@ import {
   listCanvasObjectsV2,
   putCanvasObjectV2,
   readCanvasObjectV2,
+  readCanvasOrderV2,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
 import { resolveConnectorPointsV2 } from "@/canvas/geometry";
@@ -187,5 +188,61 @@ describe("product canvas command boundary", () => {
         }),
       ),
     ).toThrow(ProductCanvasCommandConflictError);
+  });
+
+  it("groups, ungroups, reorders, and duplicates validated selections", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, shape());
+    putCanvasObjectV2(document, shape(secondShapeId));
+    const groupId = "66666666-6666-4666-8666-666666666666";
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("selection.group", {
+        objectIds: [shapeId, secondShapeId],
+        groupId,
+      }),
+    );
+    expect(readCanvasObjectV2(document, shapeId)?.groupId).toBe(groupId);
+    expect(readCanvasObjectV2(document, secondShapeId)?.groupId).toBe(groupId);
+
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("selection.group", {
+          objectIds: [shapeId, secondShapeId],
+          groupId: "88888888-8888-4888-8888-888888888888",
+        }),
+      ),
+    ).toThrow("Nested groups are not supported.");
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.reorder", { objectId: shapeId, direction: "front" }),
+    );
+    expect(readCanvasOrderV2(document)).toEqual([secondShapeId, shapeId]);
+
+    const duplicatedId = "77777777-7777-4777-8777-777777777777";
+    executeProductCanvasCommand(
+      document,
+      baseCommand("selection.duplicate", {
+        objects: [
+          {
+            ...shape(duplicatedId),
+            geometry: { ...shape().geometry, x: 52, y: 72 },
+          },
+        ],
+      }),
+    );
+    expect(readCanvasObjectV2(document, duplicatedId)).toMatchObject({
+      geometry: { x: 52, y: 72 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("selection.ungroup", { groupId }),
+    );
+    expect(readCanvasObjectV2(document, shapeId)?.groupId).toBeNull();
+    expect(readCanvasObjectV2(document, secondShapeId)?.groupId).toBeNull();
   });
 });

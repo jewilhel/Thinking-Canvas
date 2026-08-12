@@ -32,10 +32,21 @@ import {
 import * as Y from "yjs";
 
 import {
+  createCanvasClipboardPayload,
+  parseCanvasClipboard,
+  remapCanvasClipboard,
+  serializeCanvasClipboard,
+} from "@/canvas/canvas-clipboard";
+import {
   createProductCanvasDocument,
   listCanvasObjectsV2,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
+import {
+  applyCanvasHistoryEntry,
+  executeProductCanvasCommandWithHistory,
+  type CanvasHistoryEntry,
+} from "@/canvas/canvas-history";
 import {
   anchorPointV2,
   maxCanvasScale,
@@ -48,7 +59,6 @@ import {
   type Viewport,
 } from "@/canvas/geometry";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { executeProductCanvasCommand } from "@/domain/canvas-command";
 
 type Props = { canvasId: string; title: string; userId: string };
 type Tool =
@@ -64,6 +74,8 @@ type ConnectorEndpoint = Extract<
   CanvasObjectV2,
   { type: "connector" }
 >["start"];
+type Marquee = { start: Point; current: Point; additive: boolean };
+type CommandDefinition = { type: string; payload: unknown };
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
 const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left", "center"];
@@ -143,10 +155,15 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
   const [objects, setObjects] = useState(() => listCanvasObjectsV2(document));
   const [size, setSize] = useState({ width: 960, height: 640 });
   const [tool, setTool] = useState<Tool>("select");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [connectorStart, setConnectorStart] =
     useState<ConnectorEndpoint | null>(null);
   const [pointerPreview, setPointerPreview] = useState<Point | null>(null);
+  const [marquee, setMarquee] = useState<Marquee | null>(null);
+  const [clipboardText, setClipboardText] = useState("");
+  const [undoStack, setUndoStack] = useState<CanvasHistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<CanvasHistoryEntry[]>([]);
+  const [historyNotice, setHistoryNotice] = useState("");
   const [saveStatus, setSaveStatus] = useState("Saved");
   const [viewport, setViewport] = useState<Viewport>(() => {
     const stored = window.localStorage.getItem(viewportStorageKey);
@@ -163,6 +180,11 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
   );
+  const selectedId = selectedIds.at(-1) ?? null;
+  const selectedObjects = selectedIds.flatMap((id) => {
+    const object = objectsById.get(id);
+    return object ? [object] : [];
+  });
   const selectedObject = selectedId ? objectsById.get(selectedId) : undefined;
 
   useEffect(() => {
@@ -223,8 +245,8 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
     return () => cancelAnimationFrame(frame);
   }, [instrumentationEnabled, objects, viewport]);
 
-  function runCommand(type: string, payload: unknown) {
-    return executeProductCanvasCommand(document, {
+  function executeCommand(type: string, payload: unknown) {
+    return executeProductCanvasCommandWithHistory(document, {
       schemaVersion: 2,
       commandId: crypto.randomUUID(),
       canvasId,
@@ -234,6 +256,45 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
       type,
       payload,
     });
+  }
+
+  function recordHistory(entries: CanvasHistoryEntry[]) {
+    const first = entries[0];
+    const last = entries.at(-1);
+    if (!first || !last) return;
+    const beforeObjects: CanvasHistoryEntry["beforeObjects"] = {};
+    const afterObjects: CanvasHistoryEntry["afterObjects"] = {};
+    for (const entry of entries) {
+      for (const [id, object] of Object.entries(entry.beforeObjects)) {
+        if (!(id in beforeObjects)) beforeObjects[id] = object;
+      }
+      Object.assign(afterObjects, entry.afterObjects);
+    }
+    const history: CanvasHistoryEntry = {
+      commandId: first.commandId,
+      actorId: first.actorId,
+      beforeObjects,
+      afterObjects,
+      beforeOrder: first.beforeOrder,
+      afterOrder: last.afterOrder,
+    };
+    setUndoStack((current) => [...current, history]);
+    setRedoStack([]);
+    setHistoryNotice("");
+  }
+
+  function runCommand(type: string, payload: unknown) {
+    const result = executeCommand(type, payload);
+    recordHistory([result.history]);
+    return result;
+  }
+
+  function runCommandBatch(commands: CommandDefinition[]) {
+    const results = commands.map((command) =>
+      executeCommand(command.type, command.payload),
+    );
+    recordHistory(results.map((result) => result.history));
+    return results;
   }
 
   function createObject(
@@ -283,7 +344,7 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
               text: "New idea",
             };
     runCommand("object.create", { object });
-    setSelectedId(id);
+    setSelectedIds([id]);
     setTool("select");
   }
 
@@ -311,7 +372,7 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
     runCommand("object.create", { object });
     setConnectorStart(null);
     setPointerPreview(null);
-    setSelectedId(id);
+    setSelectedIds([id]);
     setTool("select");
   }
 
@@ -337,35 +398,211 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
       });
       return;
     }
-    if (tool === "select") setSelectedId(object.id);
+    if (tool === "select") {
+      const modifier =
+        event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey;
+      updateSelectionForObject(object, modifier);
+    }
   }
 
-  function moveObject(object: CanvasObjectV2, x: number, y: number) {
-    runCommand("object.move", { objectId: object.id, x, y });
+  function updateSelectionForObject(object: CanvasObjectV2, modifier: boolean) {
+    const groupIds = object.groupId
+      ? objects
+          .filter((candidate) => candidate.groupId === object.groupId)
+          .map((candidate) => candidate.id)
+      : [object.id];
+    setSelectedIds((current) => {
+      if (!modifier) return groupIds;
+      const everySelected = groupIds.every((id) => current.includes(id));
+      return everySelected
+        ? current.filter((id) => !groupIds.includes(id))
+        : [...current.filter((id) => !groupIds.includes(id)), ...groupIds];
+    });
   }
 
-  function moveConnector(
+  function moveSelectionFromDrag(object: CanvasObjectV2, x: number, y: number) {
+    const dx = x - object.geometry.x;
+    const dy = y - object.geometry.y;
+    const commands: CommandDefinition[] = [];
+    for (const selected of selectedObjects) {
+      if (selected.type === "connector")
+        commands.push(...moveConnectorCommands(selected, dx, dy, true));
+      else
+        commands.push({
+          type: "object.move",
+          payload: {
+            objectId: selected.id,
+            x: selected.geometry.x + dx,
+            y: selected.geometry.y + dy,
+          },
+        });
+    }
+    runCommandBatch(commands);
+  }
+
+  function moveConnectorCommands(
     connector: Extract<CanvasObjectV2, { type: "connector" }>,
     dx: number,
     dy: number,
+    preserveAttached = false,
   ) {
+    const commands: CommandDefinition[] = [];
     for (const endpoint of ["start", "end"] as const) {
+      if (preserveAttached && connector[endpoint].kind === "attached") continue;
       const point = resolveConnectorEndpointV2(
         connector[endpoint],
         objectsById,
       );
-      runCommand("connector.endpoint", {
-        objectId: connector.id,
-        endpoint,
-        value: { kind: "free", x: point.x + dx, y: point.y + dy },
+      commands.push({
+        type: "connector.endpoint",
+        payload: {
+          objectId: connector.id,
+          endpoint,
+          value: { kind: "free", x: point.x + dx, y: point.y + dy },
+        },
       });
     }
+    return commands;
   }
 
   function deleteSelected() {
-    if (!selectedObject) return;
-    runCommand("object.delete", { objectId: selectedObject.id });
-    setSelectedId(null);
+    if (!selectedObjects.length) return;
+    runCommandBatch(
+      [...selectedObjects].reverse().map((object) => ({
+        type: "object.delete",
+        payload: { objectId: object.id },
+      })),
+    );
+    setSelectedIds([]);
+  }
+
+  function groupSelected() {
+    if (selectedIds.length < 2) return;
+    runCommand("selection.group", {
+      objectIds: selectedIds,
+      groupId: crypto.randomUUID(),
+    });
+  }
+
+  function ungroupSelected() {
+    const groupIds = [
+      ...new Set(
+        selectedObjects.flatMap((object) =>
+          object.groupId ? [object.groupId] : [],
+        ),
+      ),
+    ];
+    runCommandBatch(
+      groupIds.map((groupId) => ({
+        type: "selection.ungroup",
+        payload: { groupId },
+      })),
+    );
+  }
+
+  function reorderSelected(
+    direction: "front" | "forward" | "backward" | "back",
+  ) {
+    runCommandBatch(
+      selectedIds.map((objectId) => ({
+        type: "object.reorder",
+        payload: { objectId, direction },
+      })),
+    );
+  }
+
+  function duplicatedSelection(offset = 32) {
+    if (!selectedIds.length) return [];
+    const payload = createCanvasClipboardPayload(objects, selectedIds);
+    return remapCanvasClipboard(payload, {
+      canvasId,
+      actorId: userId,
+      issuedAt: new Date().toISOString(),
+      offset,
+    });
+  }
+
+  function duplicateSelected() {
+    const duplicates = duplicatedSelection();
+    if (!duplicates.length) return;
+    runCommand("selection.duplicate", { objects: duplicates });
+    setSelectedIds(duplicates.map((object) => object.id));
+  }
+
+  async function copySelected() {
+    if (!selectedIds.length) return "";
+    const value = serializeCanvasClipboard(
+      createCanvasClipboardPayload(objects, selectedIds),
+    );
+    setClipboardText(value);
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // The validated in-app clipboard remains available when browser permission is absent.
+    }
+    return value;
+  }
+
+  async function cutSelected() {
+    if (!(await copySelected())) return;
+    deleteSelected();
+  }
+
+  async function pasteSelected() {
+    let value = clipboardText;
+    if (!value) {
+      try {
+        value = await navigator.clipboard.readText();
+      } catch {
+        setHistoryNotice("Clipboard access is unavailable.");
+        return;
+      }
+    }
+    try {
+      const pasted = remapCanvasClipboard(parseCanvasClipboard(value), {
+        canvasId,
+        actorId: userId,
+        issuedAt: new Date().toISOString(),
+      });
+      runCommand("selection.duplicate", { objects: pasted });
+      setSelectedIds(pasted.map((object) => object.id));
+    } catch {
+      setHistoryNotice("Clipboard content is not a valid canvas selection.");
+    }
+  }
+
+  function undo() {
+    const entry = undoStack.at(-1);
+    if (!entry) return;
+    const result = applyCanvasHistoryEntry(document, entry, "undo");
+    const existingIds = new Set(
+      listCanvasObjectsV2(document).map((object) => object.id),
+    );
+    setSelectedIds((current) => current.filter((id) => existingIds.has(id)));
+    setUndoStack((current) => current.slice(0, -1));
+    setRedoStack((current) => [...current, entry]);
+    setHistoryNotice(
+      result.conflicts.length
+        ? `Undo preserved ${result.conflicts.length} conflicting field${result.conflicts.length === 1 ? "" : "s"}.`
+        : "Undo complete.",
+    );
+  }
+
+  function redo() {
+    const entry = redoStack.at(-1);
+    if (!entry) return;
+    const result = applyCanvasHistoryEntry(document, entry, "redo");
+    const existingIds = new Set(
+      listCanvasObjectsV2(document).map((object) => object.id),
+    );
+    setSelectedIds((current) => current.filter((id) => existingIds.has(id)));
+    setRedoStack((current) => current.slice(0, -1));
+    setUndoStack((current) => [...current, entry]);
+    setHistoryNotice(
+      result.conflicts.length
+        ? `Redo preserved ${result.conflicts.length} conflicting field${result.conflicts.length === 1 ? "" : "s"}.`
+        : "Redo complete.",
+    );
   }
 
   function zoomAtCenter(direction: 1 | -1) {
@@ -394,12 +631,80 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
     const point = worldPointer();
     if (!point) return;
     if (tool === "select") {
-      setSelectedId(null);
+      setMarquee({
+        start: point,
+        current: point,
+        additive: event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey,
+      });
     } else if (tool === "connector") {
       finishConnector({ kind: "free", ...point });
     } else if (tool !== "pan") {
       createObject(tool, point);
     }
+  }
+
+  function onStagePointerMove() {
+    if (connectorStart) setPointerPreview(worldPointer());
+    if (!marquee) return;
+    const point = worldPointer();
+    if (point)
+      setMarquee((current) =>
+        current ? { ...current, current: point } : null,
+      );
+  }
+
+  function objectBounds(object: CanvasObjectV2) {
+    if (object.type !== "connector") return object.geometry;
+    const points = resolveConnectorPointsV2(object, objectsById);
+    const xs = [points[0]!, points[2]!];
+    const ys = [points[1]!, points[3]!];
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    return {
+      x,
+      y,
+      width: Math.max(1, Math.max(...xs) - x),
+      height: Math.max(1, Math.max(...ys) - y),
+    };
+  }
+
+  function finishMarquee() {
+    if (!marquee) return;
+    const x = Math.min(marquee.start.x, marquee.current.x);
+    const y = Math.min(marquee.start.y, marquee.current.y);
+    const width = Math.abs(marquee.current.x - marquee.start.x);
+    const height = Math.abs(marquee.current.y - marquee.start.y);
+    const directMatches =
+      width < 3 && height < 3
+        ? []
+        : objects
+            .filter((object) => {
+              const bounds = objectBounds(object);
+              return (
+                bounds.x < x + width &&
+                bounds.x + bounds.width > x &&
+                bounds.y < y + height &&
+                bounds.y + bounds.height > y
+              );
+            })
+            .map((object) => object.id);
+    const matchedGroupIds = new Set(
+      directMatches.flatMap((id) => {
+        const groupId = objectsById.get(id)?.groupId;
+        return groupId ? [groupId] : [];
+      }),
+    );
+    const matches = objects
+      .filter(
+        (object) =>
+          directMatches.includes(object.id) ||
+          (object.groupId != null && matchedGroupIds.has(object.groupId)),
+      )
+      .map((object) => object.id);
+    setSelectedIds((current) =>
+      marquee.additive ? [...new Set([...current, ...matches])] : matches,
+    );
+    setMarquee(null);
   }
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -409,15 +714,53 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
       event.target instanceof HTMLSelectElement
     )
       return;
+    const accelerator = event.metaKey || event.ctrlKey;
+    if (accelerator && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) redo();
+      else undo();
+      return;
+    }
+    if (accelerator && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      setSelectedIds(objects.map((object) => object.id));
+      return;
+    }
+    if (accelerator && event.key.toLowerCase() === "c") {
+      event.preventDefault();
+      void copySelected();
+      return;
+    }
+    if (accelerator && event.key.toLowerCase() === "x") {
+      event.preventDefault();
+      void cutSelected();
+      return;
+    }
+    if (accelerator && event.key.toLowerCase() === "v") {
+      event.preventDefault();
+      void pasteSelected();
+      return;
+    }
+    if (accelerator && event.key.toLowerCase() === "d") {
+      event.preventDefault();
+      duplicateSelected();
+      return;
+    }
+    if (accelerator && event.key.toLowerCase() === "g") {
+      event.preventDefault();
+      if (event.shiftKey) ungroupSelected();
+      else groupSelected();
+      return;
+    }
     if (
       (event.key === "Delete" || event.key === "Backspace") &&
-      selectedObject
+      selectedObjects.length
     ) {
       event.preventDefault();
       deleteSelected();
       return;
     }
-    if (event.key.startsWith("Arrow") && selectedObject) {
+    if (event.key.startsWith("Arrow") && selectedObjects.length) {
       event.preventDefault();
       const amount = event.shiftKey ? 10 : 1;
       const dx =
@@ -432,20 +775,37 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
           : event.key === "ArrowDown"
             ? amount
             : 0;
-      if (event.altKey && selectedObject.type !== "connector") {
-        runCommand("object.resize", {
-          objectId: selectedObject.id,
-          width: Math.max(24, selectedObject.geometry.width + dx),
-          height: Math.max(24, selectedObject.geometry.height + dy),
-        });
-      } else if (selectedObject.type === "connector")
-        moveConnector(selectedObject, dx, dy);
-      else
-        moveObject(
-          selectedObject,
-          selectedObject.geometry.x + dx,
-          selectedObject.geometry.y + dy,
-        );
+      const commands: CommandDefinition[] = [];
+      for (const object of selectedObjects) {
+        if (event.altKey && object.type !== "connector") {
+          commands.push({
+            type: "object.resize",
+            payload: {
+              objectId: object.id,
+              width: Math.max(24, object.geometry.width + dx),
+              height: Math.max(24, object.geometry.height + dy),
+            },
+          });
+        } else if (object.type === "connector")
+          commands.push(
+            ...moveConnectorCommands(
+              object,
+              dx,
+              dy,
+              selectedObjects.length > 1,
+            ),
+          );
+        else
+          commands.push({
+            type: "object.move",
+            payload: {
+              objectId: object.id,
+              x: object.geometry.x + dx,
+              y: object.geometry.y + dy,
+            },
+          });
+      }
+      runCommandBatch(commands);
       return;
     }
     if (event.key === "+" || event.key === "=") {
@@ -600,7 +960,7 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
             onClick={(event) => selectObject(event, object)}
             onTap={(event) => selectObject(event, object)}
           />
-          {selectedId === object.id
+          {selectedIds.includes(object.id)
             ? (["start", "end"] as const).map((endpoint, index) => (
                 <Circle
                   key={endpoint}
@@ -643,8 +1003,19 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
         draggable={tool === "select"}
         onClick={(event) => selectObject(event, object)}
         onTap={(event) => selectObject(event, object)}
+        onDragStart={() => {
+          if (!selectedIds.includes(object.id)) {
+            setSelectedIds(
+              object.groupId
+                ? objects
+                    .filter((candidate) => candidate.groupId === object.groupId)
+                    .map((candidate) => candidate.id)
+                : [object.id],
+            );
+          }
+        }}
         onDragEnd={(event) =>
-          moveObject(object, event.target.x(), event.target.y())
+          moveSelectionFromDrag(object, event.target.x(), event.target.y())
         }
         onTransformEnd={(event) => {
           const node = event.target;
@@ -709,7 +1080,7 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
         ) : (
           renderTable(object)
         )}
-        {selectedId === object.id && object.type === "shape"
+        {selectedIds.includes(object.id) && object.type === "shape"
           ? anchors.map((anchor) => {
               const point = anchorPointV2(
                 { ...object, geometry: { ...object.geometry, x: 0, y: 0 } },
@@ -747,6 +1118,14 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
           return [start.x, start.y, pointerPreview.x, pointerPreview.y];
         })()
       : null;
+  const marqueeRect = marquee
+    ? {
+        x: Math.min(marquee.start.x, marquee.current.x),
+        y: Math.min(marquee.start.y, marquee.current.y),
+        width: Math.abs(marquee.current.x - marquee.start.x),
+        height: Math.abs(marquee.current.y - marquee.start.y),
+      }
+    : null;
 
   return (
     <section
@@ -856,6 +1235,122 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
         </div>
       </div>
 
+      <div
+        className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-4 py-2"
+        role="toolbar"
+        aria-label="Selection and history actions"
+      >
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={
+            selectedIds.length < 2 ||
+            selectedObjects.some((object) => object.groupId != null)
+          }
+          aria-keyshortcuts="Control+G Meta+G"
+          onClick={groupSelected}
+        >
+          Group
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!selectedObjects.some((object) => object.groupId != null)}
+          aria-keyshortcuts="Control+Shift+G Meta+Shift+G"
+          onClick={ungroupSelected}
+        >
+          Ungroup
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!selectedIds.length}
+          onClick={() => reorderSelected("front")}
+        >
+          Bring to front
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!selectedIds.length}
+          onClick={() => reorderSelected("back")}
+        >
+          Send to back
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!selectedIds.length}
+          aria-keyshortcuts="Control+D Meta+D"
+          onClick={duplicateSelected}
+        >
+          Duplicate
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!selectedIds.length}
+          aria-keyshortcuts="Control+C Meta+C"
+          onClick={() => void copySelected()}
+        >
+          Copy
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!selectedIds.length}
+          aria-keyshortcuts="Control+X Meta+X"
+          onClick={() => void cutSelected()}
+        >
+          Cut
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          aria-keyshortcuts="Control+V Meta+V"
+          onClick={() => void pasteSelected()}
+        >
+          Paste
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!undoStack.length}
+          aria-keyshortcuts="Control+Z Meta+Z"
+          onClick={undo}
+        >
+          Undo
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!redoStack.length}
+          aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
+          onClick={redo}
+        >
+          Redo
+        </Button>
+        <output
+          className="ml-auto text-xs text-zinc-400"
+          aria-live="polite"
+          data-testid="selection-status"
+        >
+          {selectedIds.length
+            ? `${selectedIds.length} selected`
+            : historyNotice || "No selection"}
+        </output>
+      </div>
+
       <div className="grid flex-1 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div
           ref={containerRef}
@@ -878,9 +1373,10 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
             onWheel={onWheel}
             onMouseDown={onStagePointerDown}
             onTouchStart={onStagePointerDown}
-            onMouseMove={() => {
-              if (connectorStart) setPointerPreview(worldPointer());
-            }}
+            onMouseMove={onStagePointerMove}
+            onTouchMove={onStagePointerMove}
+            onMouseUp={finishMarquee}
+            onTouchEnd={finishMarquee}
             onDragEnd={(event) => {
               if (event.target !== stageRef.current) return;
               setViewport((current) => ({
@@ -898,6 +1394,16 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
                   stroke="#a78bfa"
                   strokeWidth={2}
                   dash={[8, 6]}
+                  listening={false}
+                />
+              ) : null}
+              {marqueeRect ? (
+                <Rect
+                  {...marqueeRect}
+                  fill="rgba(139, 92, 246, 0.12)"
+                  stroke="#a78bfa"
+                  strokeWidth={1}
+                  dash={[6, 4]}
                   listening={false}
                 />
               ) : null}
@@ -949,9 +1455,12 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
                   <button
                     type="button"
                     data-testid={`object-list-item-${object.id}`}
-                    aria-pressed={selectedId === object.id}
-                    onClick={() => {
-                      setSelectedId(object.id);
+                    aria-pressed={selectedIds.includes(object.id)}
+                    onClick={(event) => {
+                      updateSelectionForObject(
+                        object,
+                        event.shiftKey || event.metaKey || event.ctrlKey,
+                      );
                       setTool("select");
                     }}
                     className="w-full rounded-md border border-zinc-800 px-3 py-2 text-left text-sm hover:border-violet-500 aria-pressed:border-violet-400 aria-pressed:bg-violet-950/30"
@@ -972,7 +1481,9 @@ export function ProductCanvas({ canvasId, title, userId }: Props) {
             >
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-medium capitalize">
-                  {selectedObject.type}
+                  {selectedIds.length > 1
+                    ? `Mixed selection · ${selectedObject.type} focused`
+                    : selectedObject.type}
                 </h3>
                 <Button
                   type="button"

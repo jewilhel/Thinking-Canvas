@@ -339,3 +339,74 @@ test("constructs mind-map, procedure, mood-board, and storyboard arrangements fr
   await page.reload();
   await expect(page.getByTestId("product-object-count")).toHaveText("4");
 });
+
+test("multiselects, marquees, groups, orders, duplicates, uses the clipboard, and walks actor-local history", async ({
+  page,
+}) => {
+  const surface = await openFreshCanvas(page);
+  await createLabeledShape(page, "Rectangle", "Alpha", { x: 120, y: 140 });
+  await createLabeledShape(page, "Rectangle", "Beta", { x: 380, y: 140 });
+  await createLabeledShape(page, "Rectangle", "Gamma", { x: 680, y: 140 });
+
+  await page.getByRole("button", { name: /Alpha/ }).click();
+  await page
+    .getByRole("button", { name: /Beta/ })
+    .click({ modifiers: ["Shift"] });
+  await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
+  await expect(
+    page.getByRole("heading", { name: /Mixed selection/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Group", exact: true }).click();
+
+  await page.getByRole("button", { name: /Alpha/ }).click();
+  await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
+  await page.getByRole("button", { name: "Ungroup", exact: true }).click();
+
+  const box = await surface.boundingBox();
+  if (!box) throw new Error("Canvas surface bounds are unavailable.");
+  await page.mouse.move(box.x + 80, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 600, box.y + 300, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
+
+  const primaryX = await selectedNumber(page, "selected-position-x");
+  await surface.focus();
+  await surface.press("ArrowRight");
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    String(primaryX + 1),
+  );
+
+  await page.getByRole("button", { name: /Alpha/ }).click();
+  await page
+    .getByRole("button", { name: "Bring to front", exact: true })
+    .click();
+  const orderedLabels = await page
+    .locator('[data-testid^="object-list-item-"]')
+    .allTextContents();
+  expect(orderedLabels.at(-1)).toContain("Alpha");
+
+  await page.getByRole("button", { name: "Duplicate", exact: true }).click();
+  await expect(page.getByTestId("product-object-count")).toHaveText("4");
+  await page.getByRole("button", { name: "Copy", exact: true }).click();
+  await page.getByRole("button", { name: "Cut", exact: true }).click();
+  await expect(page.getByTestId("product-object-count")).toHaveText("3");
+  await page.getByRole("button", { name: "Paste", exact: true }).click();
+  await expect(page.getByTestId("product-object-count")).toHaveText("4");
+
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.getByTestId("product-object-count")).toHaveText("3");
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await expect(page.getByTestId("product-object-count")).toHaveText("4");
+
+  await surface.focus();
+  await surface.press("Control+A");
+  await expect(page.getByTestId("selection-status")).toHaveText("4 selected");
+  await surface.press("Control+D");
+  await expect(page.getByTestId("product-object-count")).toHaveText("8");
+  await surface.press("Control+Z");
+  await expect(page.getByTestId("product-object-count")).toHaveText("4");
+
+  await page.reload();
+  await expect(page.getByTestId("product-object-count")).toHaveText("4");
+});
