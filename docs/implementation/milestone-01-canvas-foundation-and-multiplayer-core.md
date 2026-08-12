@@ -1,6 +1,6 @@
 # Milestone 1 — Canvas foundation and multiplayer core
 
-Status: Verification complete — awaiting closure approval
+Status: Closed
 
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 
@@ -370,11 +370,12 @@ Milestone 0 spike evidence demonstrates feasibility only and is not represented 
 | 2026-08-11 | Completed hosted Slice 4 verification and corrected the preview-only AI build flag.                                | The first hosted deploy omitted the test driver because its runtime environment did not expose the planned context signal.                                                                           | Commits `3f37ef0` and `2b1f92a` restrict the driver to explicit preview builds; deploy `6a7bd01ba1b30369ab8c03c1` proves authenticated durable simulated-AI creation and reload. Slice 5 remains required before milestone closure.                       | Engineering   |
 | 2026-08-11 | Ran final automated and hosted one-owner recovery verification; opened PR #6 for protected CI.                     | The product owner approved non-production credential submission and a draft PR solely to complete the remaining verification gates.                                                                  | CI run `31562387782` passed for `dd30ab8`. Git-backed deploy `6a7bf3aa5bddb900086ced49` binds commit `3f5707c` to a clean Netlify secret scan and durable owner readback. Hosted two-human convergence and same-preview arrangement evidence remain open. | Engineering   |
 | 2026-08-12 | Completed the remaining hosted acceptance scenarios and moved the plan to closure review.                          | The product owner confirmed the two-human plus simulated-AI result after reconnect and reload; the hosted arrangement walkthrough retained all four general-purpose examples after durable readback. | All Milestone 1 exit criteria are evidenced. The plan is now `Verification complete — awaiting closure approval`; master-ledger requirements remain unchecked until separate product-owner closure approval.                                              | Engineering   |
+| 2026-08-12 | Approved Milestone 1 closure.                                                                                      | The product owner explicitly approved closure after reviewing the recorded evidence.                                                                                                                 | The master ledger now marks only the verified Milestone 1 requirements, supporting work, and exit gate complete.                                                                                                                                          | Product owner |
 
 ## Closure
 
-Closure status: Verification complete — awaiting closure approval
+Closure status: Closed
 
-Closure approval: Pending
+Closure approval: Approved by the product owner on 2026-08-12
 
-Closed on: —
+Closed on: 2026-08-12
