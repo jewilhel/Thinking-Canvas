@@ -32,8 +32,7 @@ export default async function CanvasPage({
         userId={user.id}
         simulatedAiEnabled={
           process.env.NODE_ENV !== "production" ||
-          process.env.CONTEXT === "deploy-preview" ||
-          process.env.CONTEXT === "branch-deploy"
+          process.env.APP_ENV === "preview"
         }
       />
     </main>
