@@ -12,6 +12,14 @@ async function signIn(page: Page, email = "owner@thinking-canvas.local") {
   await expect(page).toHaveURL(/\/app$/);
 }
 
+async function chooseShape(
+  page: Page,
+  shape: "Rectangle" | "Ellipse" | "Diamond",
+) {
+  await page.getByRole("button", { name: "Choose shape" }).click();
+  await page.getByRole("menuitemradio", { name: shape, exact: true }).click();
+}
+
 test("creates, reopens, restores the viewport, and survives sign-out", async ({
   page,
 }) => {
@@ -99,6 +107,62 @@ test("copies a member-safe canvas link without granting access", async ({
   await nonmemberContext.close();
 });
 
+test("offers a keyboard-operable progressive dock without mutating from deferred entries", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await signIn(page);
+  await page.goto(`/app/canvases/${seedCanvasId}`);
+
+  const dock = page.getByTestId("workspace-primary-dock");
+  await expect(dock).toBeVisible();
+  const dockButtons = dock.getByRole("button");
+  for (const button of await dockButtons.all()) {
+    const bounds = await button.boundingBox();
+    if (!bounds) throw new Error("A primary dock button is not rendered.");
+    expect(bounds.width).toBeGreaterThanOrEqual(44);
+    expect(bounds.height).toBeGreaterThanOrEqual(44);
+  }
+
+  const select = page.getByRole("button", { name: "Select", exact: true });
+  await select.focus();
+  await select.press("ArrowRight");
+  await expect(
+    page.getByRole("button", { name: "Pan", exact: true }),
+  ).toBeFocused();
+
+  await chooseShape(page, "Ellipse");
+  await expect(
+    page.getByRole("button", { name: "Shape: Ellipse", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  const baseline = await page.getByTestId("product-object-count").innerText();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await expect(
+    page.getByText("Vector pen arrives in Milestone 6"),
+  ).toBeVisible();
+  await expect(page.getByTestId("product-object-count")).toHaveText(baseline);
+  await page
+    .getByRole("button", { name: "Drawing", exact: true })
+    .press("Escape");
+  await expect(
+    page.getByRole("button", { name: "Drawing", exact: true }),
+  ).toBeFocused();
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await expect(
+    page.getByText("Contextual feedback arrives in Milestone 3"),
+  ).toBeVisible();
+  await expect(page.getByTestId("product-object-count")).toHaveText(baseline);
+
+  await page.getByRole("button", { name: "More tools", exact: true }).click();
+  await expect(page.getByText("The dock is ready to grow")).toBeVisible();
+  await expect(page.getByTestId("product-object-count")).toHaveText(baseline);
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
 test("queues edits through a temporary disconnect, protects navigation, and converges after reconnect", async ({
   browser,
 }) => {
@@ -111,7 +175,7 @@ test("queues edits through a temporary disconnect, protects navigation, and conv
   await expect(owner.getByTestId("canvas-save-status")).toHaveText("Saved");
 
   await ownerContext.setOffline(true);
-  await owner.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await chooseShape(owner, "Rectangle");
   await owner.getByTestId("product-canvas-surface").click({
     position: { x: 240, y: 180 },
   });
@@ -184,8 +248,8 @@ test("two product canvases converge after concurrent work and a disconnected edi
     await owner.getByTestId("product-object-count").textContent(),
   );
   await Promise.all([
-    owner.getByRole("button", { name: "Rectangle", exact: true }).click(),
-    editor.getByRole("button", { name: "Ellipse", exact: true }).click(),
+    chooseShape(owner, "Rectangle"),
+    chooseShape(editor, "Ellipse"),
   ]);
   await Promise.all([
     owner
@@ -209,12 +273,12 @@ test("two product canvases converge after concurrent work and a disconnected edi
   );
 
   await editorContext.setOffline(true);
-  await editor.getByRole("button", { name: "Diamond", exact: true }).click();
+  await chooseShape(editor, "Diamond");
   await editor
     .getByTestId("product-canvas-surface")
     .click({ position: { x: 700, y: 360 } });
   await expect(editor.getByTestId("canvas-save-status")).toHaveText("Unsynced");
-  await owner.getByRole("button", { name: "Text", exact: true }).click();
+  await owner.getByRole("button", { name: "Sticky note", exact: true }).click();
   await owner
     .getByTestId("product-canvas-surface")
     .click({ position: { x: 360, y: 420 } });
@@ -232,6 +296,7 @@ test("two product canvases converge after concurrent work and a disconnected edi
   await expect(editor.getByTestId("product-object-count")).toHaveText(
     String(baseline + 4),
   );
+  await owner.getByRole("button", { name: "More tools", exact: true }).click();
   await owner.getByRole("button", { name: "Add simulated AI idea" }).click();
   await expect(owner.getByTestId("product-object-count")).toHaveText(
     String(baseline + 5),
@@ -239,6 +304,12 @@ test("two product canvases converge after concurrent work and a disconnected edi
   await expect(editor.getByTestId("product-object-count")).toHaveText(
     String(baseline + 5),
   );
+  await expect(
+    owner.getByRole("button", { name: /rectangle — Sticky note/ }).last(),
+  ).toBeVisible();
+  await expect(
+    editor.getByRole("button", { name: /rectangle — Sticky note/ }).last(),
+  ).toBeVisible();
   await Promise.all([owner.reload(), editor.reload()]);
   await expect(owner.getByTestId("product-object-count")).toHaveText(
     String(baseline + 5),

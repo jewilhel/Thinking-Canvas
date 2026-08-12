@@ -4,20 +4,12 @@ import type Konva from "konva";
 import {
   ArrowLeft,
   Check,
-  Circle as CircleIcon,
   Cloud,
-  Diamond,
-  Hand,
-  Link2,
   LogOut,
   Maximize2,
   Minus,
-  MousePointer2,
   Plus,
-  RectangleHorizontal,
   Share2,
-  Table2,
-  Type,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -65,6 +57,11 @@ import {
   type Viewport,
 } from "@/canvas/geometry";
 import { useCanvasRecovery } from "@/collaboration/use-canvas-recovery";
+import {
+  WorkspacePrimaryDock,
+  type CanvasShapeTool,
+  type CanvasTool,
+} from "@/components/canvas/workspace-primary-dock";
 import { Button, buttonVariants } from "@/components/ui/button";
 
 type Props = {
@@ -74,15 +71,6 @@ type Props = {
   userIdentity: string;
   simulatedAiEnabled: boolean;
 };
-type Tool =
-  | "select"
-  | "pan"
-  | "rectangle"
-  | "ellipse"
-  | "diamond"
-  | "text"
-  | "connector"
-  | "table";
 type ConnectorEndpoint = Extract<
   CanvasObjectV2,
   { type: "connector" }
@@ -174,7 +162,8 @@ export function ProductCanvas({
   }, [canvasId, documentStorageKey]);
   const [objects, setObjects] = useState(() => listCanvasObjectsV2(document));
   const [size, setSize] = useState({ width: 960, height: 640 });
-  const [tool, setTool] = useState<Tool>("select");
+  const [tool, setTool] = useState<CanvasTool>("select");
+  const [recentShape, setRecentShape] = useState<CanvasShapeTool>("rectangle");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [connectorStart, setConnectorStart] =
     useState<ConnectorEndpoint | null>(null);
@@ -349,7 +338,7 @@ export function ProductCanvas({
   }
 
   function createObject(
-    activeTool: Exclude<Tool, "select" | "pan" | "connector">,
+    activeTool: Exclude<CanvasTool, "select" | "pan" | "connector">,
     point: Point,
   ) {
     const id = crypto.randomUUID();
@@ -364,17 +353,38 @@ export function ProductCanvas({
       geometry: {
         x: Math.round(point.x),
         y: Math.round(point.y),
-        width: activeTool === "text" ? 220 : activeTool === "table" ? 300 : 180,
-        height: activeTool === "text" ? 72 : activeTool === "table" ? 140 : 110,
+        width:
+          activeTool === "text"
+            ? 220
+            : activeTool === "table"
+              ? 300
+              : activeTool === "sticky"
+                ? 200
+                : 180,
+        height:
+          activeTool === "text"
+            ? 72
+            : activeTool === "table"
+              ? 140
+              : activeTool === "sticky"
+                ? 160
+                : 110,
         rotation: 0,
       },
-      style: baseStyle(
-        activeTool === "text"
-          ? "text"
-          : activeTool === "table"
-            ? "table"
-            : "shape",
-      ),
+      style:
+        activeTool === "sticky"
+          ? {
+              ...baseStyle("shape"),
+              fill: "#fef3c7",
+              outline: "#f59e0b",
+            }
+          : baseStyle(
+              activeTool === "text"
+                ? "text"
+                : activeTool === "table"
+                  ? "table"
+                  : "shape",
+            ),
     };
     const object: CanvasObjectV2 =
       activeTool === "text"
@@ -391,12 +401,25 @@ export function ProductCanvas({
           : {
               ...shared,
               type: "shape",
-              shape: activeTool,
-              text: "New idea",
+              shape: activeTool === "sticky" ? "rectangle" : activeTool,
+              text: activeTool === "sticky" ? "Sticky note" : "New idea",
             };
     runCommand("object.create", { object });
     setSelectedIds([id]);
     setTool("select");
+  }
+
+  function chooseTool(nextTool: CanvasTool) {
+    setTool(nextTool);
+    if (nextTool !== "connector") {
+      setConnectorStart(null);
+      setPointerPreview(null);
+    }
+  }
+
+  function chooseShape(shape: CanvasShapeTool) {
+    setRecentShape(shape);
+    chooseTool(shape);
   }
 
   function addSimulatedAiIdea() {
@@ -916,26 +939,40 @@ export function ProductCanvas({
     } else if (event.key === " ") {
       event.preventDefault();
       setTool((current) => (current === "pan" ? "select" : "pan"));
-    } else if (event.key.startsWith("Arrow")) {
-      event.preventDefault();
-      const step = 32;
-      setViewport((current) => ({
-        ...current,
-        x:
-          current.x +
-          (event.key === "ArrowLeft"
-            ? step
-            : event.key === "ArrowRight"
-              ? -step
-              : 0),
-        y:
-          current.y +
-          (event.key === "ArrowUp"
-            ? step
-            : event.key === "ArrowDown"
-              ? -step
-              : 0),
-      }));
+    } else if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+      const shortcutTool = {
+        v: "select",
+        h: "pan",
+        s: "sticky",
+        r: recentShape,
+        c: "connector",
+        t: "text",
+        b: "table",
+      }[event.key.toLowerCase()] as CanvasTool | undefined;
+      if (shortcutTool) {
+        event.preventDefault();
+        chooseTool(shortcutTool);
+      } else if (event.key.startsWith("Arrow")) {
+        event.preventDefault();
+        const step = 32;
+        setViewport((current) => ({
+          ...current,
+          x:
+            current.x +
+            (event.key === "ArrowLeft"
+              ? step
+              : event.key === "ArrowRight"
+                ? -step
+                : 0),
+          y:
+            current.y +
+            (event.key === "ArrowUp"
+              ? step
+              : event.key === "ArrowDown"
+                ? -step
+                : 0),
+        }));
+      }
     }
   }
 
@@ -1345,90 +1382,50 @@ export function ProductCanvas({
         {shareNotice}
       </p>
 
-      <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 flex-nowrap items-center justify-between gap-3 overflow-x-auto rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-2 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50 [&_button[aria-pressed=true]]:border-violet-600 [&_button[aria-pressed=true]]:bg-violet-600 [&_button[aria-pressed=true]]:text-white dark:[&_button[aria-pressed=true]]:border-violet-600 dark:[&_button[aria-pressed=true]]:bg-violet-600 dark:[&_button[aria-pressed=true]]:text-white">
-        <div
-          className="flex flex-nowrap items-center gap-2"
-          role="toolbar"
-          aria-label="Canvas tools"
+      <WorkspacePrimaryDock
+        activeTool={tool}
+        recentShape={recentShape}
+        simulatedAiEnabled={simulatedAiEnabled}
+        onChooseTool={chooseTool}
+        onChooseShape={chooseShape}
+        onAddSimulatedAiIdea={addSimulatedAiIdea}
+      />
+
+      <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label="Zoom out"
+          onClick={() => zoomAtCenter(-1)}
         >
-          {(
-            [
-              ["select", "Select", MousePointer2],
-              ["pan", "Pan", Hand],
-              ["rectangle", "Rectangle", RectangleHorizontal],
-              ["ellipse", "Ellipse", CircleIcon],
-              ["diamond", "Diamond", Diamond],
-              ["text", "Text", Type],
-              ["connector", "Connector", Link2],
-              ["table", "Table", Table2],
-            ] as const
-          ).map(([value, label, Icon]) => (
-            <Button
-              key={value}
-              type="button"
-              size="sm"
-              variant={tool === value ? "default" : "outline"}
-              aria-pressed={tool === value}
-              onClick={() => {
-                setTool(value);
-                if (value !== "connector") setConnectorStart(null);
-              }}
-            >
-              <Icon aria-hidden="true" />
-              {label}
-            </Button>
-          ))}
-          {simulatedAiEnabled ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={addSimulatedAiIdea}
-            >
-              Add simulated AI idea
-            </Button>
-          ) : null}
-        </div>
-        <div
-          className="flex items-center gap-2"
-          role="group"
-          aria-label="Canvas zoom"
+          <Minus aria-hidden="true" />
+        </Button>
+        <output
+          aria-label="Canvas zoom level"
+          data-testid="product-canvas-scale"
+          className="min-w-14 text-center text-xs text-zinc-500"
         >
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="outline"
-            aria-label="Zoom out"
-            onClick={() => zoomAtCenter(-1)}
-          >
-            <Minus aria-hidden="true" />
-          </Button>
-          <output
-            aria-label="Canvas zoom level"
-            data-testid="product-canvas-scale"
-            className="min-w-14 text-center text-xs text-zinc-500"
-          >
-            {Math.round(viewport.scale * 100)}%
-          </output>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="outline"
-            aria-label="Zoom in"
-            onClick={() => zoomAtCenter(1)}
-          >
-            <Plus aria-hidden="true" />
-          </Button>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="outline"
-            aria-label="Zoom to fit"
-            onClick={() => setViewport(defaultViewport)}
-          >
-            <Maximize2 aria-hidden="true" />
-          </Button>
-        </div>
+          {Math.round(viewport.scale * 100)}%
+        </output>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label="Zoom in"
+          onClick={() => zoomAtCenter(1)}
+        >
+          <Plus aria-hidden="true" />
+        </Button>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label="Zoom to fit"
+          onClick={() => setViewport(defaultViewport)}
+        >
+          <Maximize2 aria-hidden="true" />
+        </Button>
       </div>
 
       <div

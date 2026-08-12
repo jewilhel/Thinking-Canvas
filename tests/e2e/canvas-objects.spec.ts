@@ -29,7 +29,12 @@ async function createAt(
   tool: "Rectangle" | "Ellipse" | "Diamond" | "Text" | "Table",
   position: { x: number; y: number },
 ) {
-  await page.getByRole("button", { name: tool, exact: true }).click();
+  if (["Rectangle", "Ellipse", "Diamond"].includes(tool)) {
+    await page.getByRole("button", { name: "Choose shape" }).click();
+    await page.getByRole("menuitemradio", { name: tool, exact: true }).click();
+  } else {
+    await page.getByRole("button", { name: tool, exact: true }).click();
+  }
   await page.getByTestId("product-canvas-surface").click({ position });
   await expect(page.getByTestId("canvas-inspector-selection")).toBeVisible();
 }
