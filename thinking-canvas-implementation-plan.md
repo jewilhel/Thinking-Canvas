@@ -378,7 +378,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [ ] **PD-006 — Permission ownership:** define which human roles may change the AI permission level in `FR-022`.
 - [ ] **PD-007 — Performance budgets:** approve target hardware, representative canvas size, latency thresholds, and maximum acceptable degradation.
 - [ ] **PD-008 — Voice data:** approve consent, transcript visibility, retention, deletion, and whether audio is ever recorded.
-- [ ] **PD-009 — Offline behavior:** decide whether the first version supports deliberate offline editing or only temporary disconnect recovery.
+- [x] **PD-009 — Offline behavior:** decide whether the first version supports deliberate offline editing or only temporary disconnect recovery. **Decision:** the first version supports temporary disconnect recovery only; a fully loaded canvas may retain and retry pending edits through a transient connection loss, while deliberate offline entry and opening an uncached canvas offline remain unsupported.
 - [ ] **PD-010 — Export and portability:** decide whether a user-facing export is a launch requirement; it is prudent for recovery but not stated in the source brief.
 
 ## Explicitly deferred
