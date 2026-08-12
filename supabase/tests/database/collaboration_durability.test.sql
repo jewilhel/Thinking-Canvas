@@ -95,6 +95,52 @@ select throws_ok(
   'compaction rejects a state whose digest does not match'
 );
 
+select results_eq(
+  $$select sequence, inserted from public.append_canvas_update(
+    '20000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    decode('04', 'hex'))$$,
+  $$values (4::bigint, true)$$,
+  'an idempotent append stores a new client update once'
+);
+
+select results_eq(
+  $$select sequence, inserted from public.append_canvas_update(
+    '20000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    decode('04', 'hex'))$$,
+  $$values (4::bigint, false)$$,
+  'an ambiguous retry returns the original sequence without a second append'
+);
+
+select throws_ok(
+  $$select * from public.append_canvas_update(
+    '20000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    decode('ff', 'hex'))$$,
+  '22000',
+  'client update id was reused with different content',
+  'a client update id cannot be reused for different bytes'
+);
+
+reset role;
+
+delete from public.canvas_members
+where canvas_id = '20000000-0000-4000-8000-000000000001'
+  and user_id = '10000000-0000-4000-8000-000000000002';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
+select throws_ok(
+  $$select * from public.append_canvas_update(
+    '20000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000002',
+    decode('05', 'hex'))$$,
+  '42501',
+  'canvas update is not permitted',
+  'an editor whose membership is removed immediately loses append authority'
+);
+
 reset role;
 
 select is(

@@ -262,6 +262,7 @@ export type Database = {
         Row: {
           actor_id: string
           canvas_id: string
+          client_update_id: string
           created_at: string
           id: number
           sequence: number
@@ -270,6 +271,7 @@ export type Database = {
         Insert: {
           actor_id: string
           canvas_id: string
+          client_update_id?: string
           created_at?: string
           id?: never
           sequence: number
@@ -278,6 +280,7 @@ export type Database = {
         Update: {
           actor_id?: string
           canvas_id?: string
+          client_update_id?: string
           created_at?: string
           id?: never
           sequence?: number
@@ -714,13 +717,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      append_canvas_update: {
-        Args: { target_canvas_id: string; update_data: string }
-        Returns: {
-          created_at: string
-          sequence: number
-        }[]
-      }
+      append_canvas_update:
+        | {
+            Args: {
+              client_update_id: string
+              target_canvas_id: string
+              update_data: string
+            }
+            Returns: {
+              created_at: string
+              inserted: boolean
+              sequence: number
+            }[]
+          }
+        | {
+            Args: { target_canvas_id: string; update_data: string }
+            Returns: {
+              created_at: string
+              sequence: number
+            }[]
+          }
       publish_canvas_compaction: {
         Args: {
           covered_last_sequence: number

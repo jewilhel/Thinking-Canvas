@@ -1,10 +1,10 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestone 0 closed; later milestones remain draft
+Status: Milestones 0–1 closed; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-08-11
+Last updated: 2026-08-12
 
 ## Purpose
 
@@ -135,25 +135,27 @@ Evidence: [Milestone 0 architecture record](docs/implementation/milestone-00-arc
 
 ### Product requirements
 
-- [ ] **FR-001 — Create canvas.** A participant can create a canvas and reopen the same persisted canvas after signing out and back in.
-- [ ] **FR-002 — Manipulate essential objects.** A participant can create, select, move, resize, and delete shapes, text, connectors, and tables; end-to-end tests cover every object/action combination.
-- [ ] **FR-003 — Shape connection points.** Selecting or hovering an eligible shape exposes usable connection points.
-- [ ] **FR-004 — Persistent connector attachment.** Attached connector endpoints follow their shapes during movement and resize without visual detachment.
-- [ ] **FR-005 — Object styling.** Applicable objects expose fill, outline, typography, and text-size controls and persist the selected values.
-- [ ] **FR-006 — General-purpose primitives.** A user can construct representative mind-map, procedure, mood-board, and storyboard arrangements without entering a dedicated creation mode.
-- [ ] **FR-007 — Simultaneous collaborators.** At least two humans and one simulated AI identity can edit the same canvas concurrently and converge on one state.
+- [x] **FR-001 — Create canvas.** A participant can create a canvas and reopen the same persisted canvas after signing out and back in.
+- [x] **FR-002 — Manipulate essential objects.** A participant can create, select, move, resize, and delete shapes, text, connectors, and tables; end-to-end tests cover every object/action combination.
+- [x] **FR-003 — Shape connection points.** Selecting or hovering an eligible shape exposes usable connection points.
+- [x] **FR-004 — Persistent connector attachment.** Attached connector endpoints follow their shapes during movement and resize without visual detachment.
+- [x] **FR-005 — Object styling.** Applicable objects expose fill, outline, typography, and text-size controls and persist the selected values.
+- [x] **FR-006 — General-purpose primitives.** A user can construct representative mind-map, procedure, mood-board, and storyboard arrangements without entering a dedicated creation mode.
+- [x] **FR-007 — Simultaneous collaborators.** At least two humans and one simulated AI identity can edit the same canvas concurrently and converge on one state.
 
 ### Supporting work
 
-- [ ] Implement camera pan, pointer-centered zoom, zoom-to-fit, keyboard navigation, and viewport restoration.
-- [ ] Implement selection, multiselection, grouping, ordering, duplicate, clipboard, undo, and redo through domain commands.
-- [ ] Render collaborator cursors and selections without persisting cursor movement as canvas history.
-- [ ] Add autosave status, reconnect status, retry behavior, and unsynced-change protection.
-- [ ] Add object-count and frame-time instrumentation used only in development and test environments.
+- [x] Implement camera pan, pointer-centered zoom, zoom-to-fit, keyboard navigation, and viewport restoration.
+- [x] Implement selection, multiselection, grouping, ordering, duplicate, clipboard, undo, and redo through domain commands.
+- [x] Render collaborator cursors and selections without persisting cursor movement as canvas history.
+- [x] Add autosave status, reconnect status, retry behavior, and unsynced-change protection.
+- [x] Add object-count and frame-time instrumentation used only in development and test environments.
 
 ### Exit gate
 
-- [ ] Run a documented multi-browser session covering concurrent object creation, movement, deletion, reconnect, and reload with zero lost committed edits.
+- [x] Run a documented multi-browser session covering concurrent object creation, movement, deletion, reconnect, and reload with zero lost committed edits.
+
+Evidence: [Milestone 1 implementation and verification record](docs/implementation/milestone-01-canvas-foundation-and-multiplayer-core.md), protected CI [run `31620288083`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/31620288083), Git-backed Netlify deploy preview `6a7bf41b02a9bf0008ad1ed6`, and product-owner closure approval on 2026-08-12.
 
 ## Milestone 2 — Comments and structured feedback
 
@@ -378,7 +380,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [ ] **PD-006 — Permission ownership:** define which human roles may change the AI permission level in `FR-022`.
 - [ ] **PD-007 — Performance budgets:** approve target hardware, representative canvas size, latency thresholds, and maximum acceptable degradation.
 - [ ] **PD-008 — Voice data:** approve consent, transcript visibility, retention, deletion, and whether audio is ever recorded.
-- [ ] **PD-009 — Offline behavior:** decide whether the first version supports deliberate offline editing or only temporary disconnect recovery.
+- [x] **PD-009 — Offline behavior:** decide whether the first version supports deliberate offline editing or only temporary disconnect recovery. **Decision:** the first version supports temporary disconnect recovery only; a fully loaded canvas may retain and retry pending edits through a transient connection loss, while deliberate offline entry and opening an uncached canvas offline remain unsupported.
 - [ ] **PD-010 — Export and portability:** decide whether a user-facing export is a launch requirement; it is prudent for recovery but not stated in the source brief.
 
 ## Explicitly deferred
