@@ -1,8 +1,8 @@
 # Milestone 2 — Workspace experience and interaction system
 
-Status: Approved for implementation  
-Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)  
-Plan owner: Product owner  
+Status: Approved for implementation
+Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
+Plan owner: Product owner
 Last updated: 2026-08-12
 
 ## Goal and user-visible outcome
@@ -135,12 +135,12 @@ Rollback is presentation-only: preserve the Milestone 1 workspace component unti
 ### Slice 1 — Full-bleed workspace shell and visual foundations
 
 - [x] Record the approved visual direction, responsive acceptance sizes, and minimap decision in this document.
-- [ ] Extract dashboard-only authenticated chrome so the canvas route can use the full viewport without weakening the server authentication boundary.
-- [ ] Define semantic Thinking Canvas workspace tokens and reusable surface, floating-chrome, icon-button, status, tooltip, and focus treatments.
-- [ ] Refactor the product canvas into a full-bleed stage with compact upper-left identity/navigation and upper-right collaboration/save controls.
-- [ ] Add the bounded Share-link control and prove that it neither grants membership nor discloses the canvas to a non-member.
-- [ ] Keep loading, empty, authorization, sync, retry, and test instrumentation states legible in the new shell.
-- [ ] Add focused component or end-to-end coverage for viewport fill, semantic controls, focus, sync states, and unchanged authorized/non-member routing.
+- [x] Extract dashboard-only authenticated chrome so the canvas route can use the full viewport without weakening the server authentication boundary.
+- [x] Define semantic Thinking Canvas workspace tokens and reusable surface, floating-chrome, icon-button, status, tooltip, and focus treatments.
+- [x] Refactor the product canvas into a full-bleed stage with compact upper-left identity/navigation and upper-right collaboration/save controls.
+- [x] Add the bounded Share-link control and prove that it neither grants membership nor discloses the canvas to a non-member.
+- [x] Keep loading, empty, authorization, sync, retry, and test instrumentation states legible in the new shell.
+- [x] Add focused component or end-to-end coverage for viewport fill, semantic controls, focus, sync states, and unchanged authorized/non-member routing.
 
 ### Slice 2 — Primary dock and progressive tool families
 
@@ -260,29 +260,47 @@ Pull requests are proposed for reviewability but are not authorized by plan appr
 
 ## Implementation record
 
-Implementation authorized on 2026-08-12. No product change is recorded yet; Slice 1 is the first authorized implementation work.
+Implementation authorized on 2026-08-12.
+
+Slice 1 is implemented locally on `codex/milestone-2-workspace-direction`:
+
+- The protected layout still enforces server authentication, while a reusable authenticated header now remains on non-canvas authenticated routes and the canvas route owns the full viewport.
+- The canvas workspace uses route-scoped light semantic tokens, reduced-motion handling, full-bleed stage sizing, compact identity/navigation and collaboration/sync clusters, and legible loading, empty, retry, authorization, and instrumentation states.
+- Share copies the current URL, explicitly says access remains limited to members, and creates no membership or authorization mutation.
+- The existing Milestone 1 tool row, selection actions, and inspector remain as temporary light floating surfaces so all proven behavior stays reachable until Slices 2 through 4 replace them with the approved dock, contextual controls, and panel host.
+- Browser inspection caught dark-on-dark transitional controls and instrumentation overlap; both were corrected before Slice 1 was recorded complete.
 
 ## Verification evidence
 
-No Milestone 2 implementation or preview verification has been run. Planning inspection on 2026-08-12 confirmed:
+Slice 1 local verification on 2026-08-12:
+
+| Evidence                                     | Result                                                                                                                                                                                         |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm check`                                 | Passed formatting, ESLint, strict TypeScript, all 66 Vitest tests across 20 files, and the production build.                                                                                   |
+| Focused `tests/e2e/canvas-workspace.spec.ts` | 6 passed, including viewport-fill and member-safe Share-link authorization coverage.                                                                                                           |
+| Full `pnpm test:e2e`                         | 22 passed, preserving the Milestone 1 object, history, connector, reconnect, authorization, collaboration, and accessibility scenarios.                                                        |
+| Authenticated in-app browser inspection      | Passed after correcting transitional-control contrast and moving instrumentation clear of the bottom action surfaces. This is local evidence only, not authenticated Netlify preview evidence. |
+
+Planning inspection on 2026-08-12 had established that:
 
 - the branch begins at merged Milestone 1 commit `4966ffb` plus documentation commit `4ed4f65`;
-- the current workspace uses a generic protected header, two permanent action rows, a canvas-plus-`18rem` inspector grid, and one large client canvas component;
+- the pre-Slice 1 workspace used a generic protected header, two permanent action rows, a canvas-plus-`18rem` inspector grid, and one large client canvas component;
 - existing tests cover authenticated create/reopen, the essential object/action matrix, connector behavior, history/clipboard, reconnect, two-human convergence, preview-only simulated AI, and automated accessibility;
 - the supplied seven FigJam screenshots establish full-bleed layout, compact corner chrome, a floating dock, tool-family palettes, contextual formatting, a dismissible comments panel, and contextual color controls;
-- no Milestone 2 database or product-code change has begun.
+- no Milestone 2 database change was needed for Slice 1.
 
-These observations inform the plan but are not completion evidence.
+The local results complete only Slice 1. Slices 2 through 5, exact-head protected CI, authenticated Netlify preview evidence, full milestone verification, master-ledger completion, and closure approval remain open.
 
 ## Change record
 
-| Date       | Change or decision                                                                                                                                                                                  | Rationale                                                                                                                                         | Impact                                                                                                                                                                                                          | Approved by   |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| 2026-08-12 | Created the first detailed Milestone 2 plan from the closed Milestone 1 implementation, updated master ledger, supplied visual references, current code/tests, and installed Next.js 16.3 guidance. | The master ledger identifies Workspace experience and interaction system as the next milestone, and no Milestone 2 implementation record existed. | Defines proposed decisions, technical boundaries, dependency-ordered slices, verification, risks, and closure gates; product implementation remains blocked on explicit approval.                               | Pending       |
-| 2026-08-12 | Approved the Milestone 2 plan and all five recommended decisions for implementation.                                                                                                                | The product owner explicitly approved the reviewed plan and selected every recommended decision.                                                  | Status changed to `Approved for implementation`; the five documented slices are authorized, while later-milestone behavior, PR creation, master-plan completion, and milestone closure remain separately gated. | Product owner |
+| Date       | Change or decision                                                                                                                                                                                  | Rationale                                                                                                                                         | Impact                                                                                                                                                                                                          | Approved by                 |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| 2026-08-12 | Created the first detailed Milestone 2 plan from the closed Milestone 1 implementation, updated master ledger, supplied visual references, current code/tests, and installed Next.js 16.3 guidance. | The master ledger identifies Workspace experience and interaction system as the next milestone, and no Milestone 2 implementation record existed. | Defines proposed decisions, technical boundaries, dependency-ordered slices, verification, risks, and closure gates; product implementation remains blocked on explicit approval.                               | Pending                     |
+| 2026-08-12 | Approved the Milestone 2 plan and all five recommended decisions for implementation.                                                                                                                | The product owner explicitly approved the reviewed plan and selected every recommended decision.                                                  | Status changed to `Approved for implementation`; the five documented slices are authorized, while later-milestone behavior, PR creation, master-plan completion, and milestone closure remain separately gated. | Product owner               |
+| 2026-08-12 | Implemented and locally verified Slice 1, including the full-bleed light workspace shell, compact route chrome, bounded Share-link behavior, semantic tokens, and focused regression coverage.      | Establish the approved visual and route foundations before replacing the Milestone 1 tool, selection, and panel presentations in later slices.    | Slice 1 checklist is complete; temporary floating Milestone 1 controls remain intentionally visible until Slices 2 through 4, with no schema or authorization-boundary change.                                  | Product owner plan approval |
 
 ## Closure
 
-Closure status: Not ready  
-Closure approval: Pending  
+Closure status: Not ready
+Closure approval: Pending
 Closed on: —

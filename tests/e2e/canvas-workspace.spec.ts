@@ -23,8 +23,19 @@ test("creates, reopens, restores the viewport, and survives sign-out", async ({
   await expect(page).toHaveURL(/\/app\/canvases\/[0-9a-f-]+$/);
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
   await expect(page.getByTestId("product-canvas-surface")).toBeVisible();
+  await expect(page.getByTestId("thinking-workspace")).toBeVisible();
+  await expect(page.getByTestId("workspace-top-chrome")).toBeVisible();
   await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
   await expect(page.getByTestId("product-object-count")).toHaveText("0");
+
+  const workspaceBounds = await page
+    .getByTestId("thinking-workspace")
+    .boundingBox();
+  const viewport = page.viewportSize();
+  if (!workspaceBounds || !viewport)
+    throw new Error("Workspace or viewport dimensions are unavailable.");
+  expect(Math.round(workspaceBounds.width)).toBe(viewport.width);
+  expect(Math.round(workspaceBounds.height)).toBe(viewport.height);
 
   const initialScale = await page
     .getByTestId("product-canvas-scale")
@@ -55,6 +66,37 @@ test("creates, reopens, restores the viewport, and survives sign-out", async ({
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
+});
+
+test("copies a member-safe canvas link without granting access", async ({
+  browser,
+}) => {
+  const ownerContext = await browser.newContext({
+    permissions: ["clipboard-read", "clipboard-write"],
+  });
+  const nonmemberContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const nonmember = await nonmemberContext.newPage();
+  await signIn(owner);
+  await owner.goto(`/app/canvases/${seedCanvasId}`);
+  await owner.getByRole("button", { name: "Copy canvas link" }).click();
+  await expect(owner.getByTestId("share-link-status")).toHaveText(
+    "Canvas link copied. Access is still limited to members.",
+  );
+  const copiedLink = await owner.evaluate(() => navigator.clipboard.readText());
+  expect(copiedLink).toBe(owner.url());
+
+  await signIn(nonmember, "nonmember@thinking-canvas.local");
+  await nonmember.goto(copiedLink);
+  await expect(
+    nonmember.getByRole("heading", { name: "This canvas cannot be opened." }),
+  ).toBeVisible();
+  await expect(
+    nonmember.getByText("Synthetic architecture spike canvas"),
+  ).not.toBeVisible();
+
+  await ownerContext.close();
+  await nonmemberContext.close();
 });
 
 test("queues edits through a temporary disconnect, protects navigation, and converges after reconnect", async ({
@@ -148,10 +190,10 @@ test("two product canvases converge after concurrent work and a disconnected edi
   await Promise.all([
     owner
       .getByTestId("product-canvas-surface")
-      .click({ position: { x: 220, y: 180 } }),
+      .click({ position: { x: 80, y: 500 } }),
     editor
       .getByTestId("product-canvas-surface")
-      .click({ position: { x: 480, y: 280 } }),
+      .click({ position: { x: 850, y: 500 } }),
   ]);
   await expect(owner.getByTestId("canvas-save-status")).toHaveText("Saved", {
     timeout: 15_000,

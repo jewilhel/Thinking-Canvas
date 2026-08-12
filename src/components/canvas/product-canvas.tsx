@@ -3,17 +3,22 @@
 import type Konva from "konva";
 import {
   ArrowLeft,
+  Check,
   Circle as CircleIcon,
+  Cloud,
   Diamond,
   Hand,
   Link2,
+  LogOut,
   Maximize2,
   Minus,
   MousePointer2,
   Plus,
   RectangleHorizontal,
+  Share2,
   Table2,
   Type,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -31,6 +36,7 @@ import {
 } from "react-konva";
 import * as Y from "yjs";
 
+import { signOut } from "@/app/auth/actions";
 import {
   createCanvasClipboardPayload,
   parseCanvasClipboard,
@@ -65,6 +71,7 @@ type Props = {
   canvasId: string;
   title: string;
   userId: string;
+  userIdentity: string;
   simulatedAiEnabled: boolean;
 };
 type Tool =
@@ -143,6 +150,7 @@ export function ProductCanvas({
   canvasId,
   title,
   userId,
+  userIdentity,
   simulatedAiEnabled,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -176,6 +184,7 @@ export function ProductCanvas({
   const [undoStack, setUndoStack] = useState<CanvasHistoryEntry[]>([]);
   const [redoStack, setRedoStack] = useState<CanvasHistoryEntry[]>([]);
   const [historyNotice, setHistoryNotice] = useState("");
+  const [shareNotice, setShareNotice] = useState("");
   const [viewport, setViewport] = useState<Viewport>(() => {
     const stored = window.localStorage.getItem(viewportStorageKey);
     if (!stored) return defaultViewport;
@@ -241,7 +250,7 @@ export function ProductCanvas({
       if (!entry) return;
       setSize({
         width: Math.max(320, entry.contentRect.width),
-        height: Math.max(480, window.innerHeight - 250),
+        height: Math.max(480, entry.contentRect.height),
       });
     });
     observer.observe(container);
@@ -326,6 +335,17 @@ export function ProductCanvas({
     );
     recordHistory(results.map((result) => result.history));
     return results;
+  }
+
+  async function copyShareLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setShareNotice("Canvas link copied. Access is still limited to members.");
+    } catch {
+      setShareNotice(
+        "Copy is unavailable. Use the address bar; access is still limited to members.",
+      );
+    }
   }
 
   function createObject(
@@ -1206,59 +1226,128 @@ export function ProductCanvas({
   return (
     <section
       aria-labelledby="canvas-title"
-      className="flex min-h-full flex-col"
+      className="thinking-workspace relative h-full min-h-[640px] overflow-hidden text-[var(--workspace-foreground)]"
+      data-testid="thinking-workspace"
     >
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-900/70 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
+      <div
+        className="pointer-events-none absolute inset-x-4 top-4 z-30 flex items-start justify-between gap-4"
+        data-testid="workspace-top-chrome"
+      >
+        <div className="pointer-events-auto flex min-w-0 items-center gap-3 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-2 shadow-[var(--workspace-shadow)] backdrop-blur-xl">
           <Link
             href="/app"
             aria-label="Back to canvases"
-            className={buttonVariants({ variant: "outline", size: "icon-sm" })}
+            className={buttonVariants({
+              variant: "outline",
+              size: "icon",
+              className:
+                "border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50",
+            })}
           >
             <ArrowLeft aria-hidden="true" />
           </Link>
           <div className="min-w-0">
-            <h1 id="canvas-title" className="truncate font-medium">
+            <h1
+              id="canvas-title"
+              className="max-w-[min(42vw,28rem)] truncate font-semibold text-zinc-900"
+            >
               {title}
             </h1>
-            <p className="text-xs text-zinc-400">Canvas foundation</p>
+            <p className="text-xs text-zinc-500">Thinking Canvas workspace</p>
           </div>
         </div>
-        <p
-          role="status"
-          aria-live="polite"
-          title={
-            pendingCount
-              ? `${pendingCount} local update${pendingCount === 1 ? "" : "s"} waiting for a durable acknowledgment`
-              : `Durably synchronized through sequence ${lastSequence}`
-          }
-          data-testid="canvas-save-status"
-          data-pending-count={pendingCount}
-          className={`rounded-full border px-3 py-1 text-xs ${
-            saveStatus === "Saved"
-              ? "border-emerald-900 bg-emerald-950/40 text-emerald-300"
-              : saveStatus === "Failed"
-                ? "border-red-900 bg-red-950/40 text-red-300"
-                : "border-amber-900 bg-amber-950/40 text-amber-300"
-          }`}
-        >
-          {saveStatus}
-        </p>
-        {saveStatus === "Failed" || saveStatus === "Unsynced" ? (
+
+        <div className="pointer-events-auto flex max-w-[min(58vw,48rem)] flex-wrap items-center justify-end gap-2 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-2 shadow-[var(--workspace-shadow)] backdrop-blur-xl">
+          <span
+            className="inline-flex h-9 items-center gap-2 rounded-xl px-2.5 text-sm text-zinc-600"
+            aria-label={`${participants.length} participants present`}
+            title={`${participants.length} participants present`}
+          >
+            <Users aria-hidden="true" className="size-4 text-violet-600" />
+            <span data-testid="workspace-participant-count">
+              {participants.length}
+            </span>
+          </span>
+          <p
+            role="status"
+            aria-live="polite"
+            title={
+              pendingCount
+                ? `${pendingCount} local update${pendingCount === 1 ? "" : "s"} waiting for a durable acknowledgment`
+                : `Durably synchronized through sequence ${lastSequence}`
+            }
+            data-testid="canvas-save-status"
+            data-pending-count={pendingCount}
+            className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-medium ${
+              saveStatus === "Saved"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : saveStatus === "Failed"
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
+            }`}
+          >
+            {saveStatus === "Saved" ? (
+              <Check aria-hidden="true" className="size-3.5" />
+            ) : (
+              <Cloud aria-hidden="true" className="size-3.5" />
+            )}
+            {saveStatus}
+          </p>
+          {saveStatus === "Failed" || saveStatus === "Unsynced" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-9 border-amber-200 bg-white text-amber-800 dark:border-amber-200 dark:bg-white dark:text-amber-800"
+              onClick={() => void retry()}
+            >
+              Retry sync
+            </Button>
+          ) : null}
           <Button
             type="button"
-            size="sm"
+            size="icon"
             variant="outline"
-            onClick={() => void retry()}
+            aria-label="Copy canvas link"
+            title="Copy canvas link"
+            className="border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50"
+            onClick={() => void copyShareLink()}
           >
-            Retry sync
+            <Share2 aria-hidden="true" />
           </Button>
-        ) : null}
+          <span
+            className="hidden max-w-48 truncate px-1 text-xs text-zinc-500 xl:block"
+            title={userIdentity}
+          >
+            {userIdentity}
+          </span>
+          <form action={signOut}>
+            <Button
+              type="submit"
+              size="icon"
+              variant="outline"
+              aria-label={`Sign out ${userIdentity}`}
+              title="Sign out"
+              className="border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50"
+            >
+              <LogOut aria-hidden="true" />
+            </Button>
+          </form>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3">
+      <p
+        role="status"
+        aria-live="polite"
+        data-testid="share-link-status"
+        className="pointer-events-none absolute top-24 right-4 z-30 max-w-sm rounded-xl bg-zinc-900 px-3 py-2 text-xs text-white shadow-lg empty:hidden"
+      >
+        {shareNotice}
+      </p>
+
+      <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 flex-nowrap items-center justify-between gap-3 overflow-x-auto rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-2 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50 [&_button[aria-pressed=true]]:border-violet-600 [&_button[aria-pressed=true]]:bg-violet-600 [&_button[aria-pressed=true]]:text-white dark:[&_button[aria-pressed=true]]:border-violet-600 dark:[&_button[aria-pressed=true]]:bg-violet-600 dark:[&_button[aria-pressed=true]]:text-white">
         <div
-          className="flex flex-wrap items-center gap-2"
+          className="flex flex-nowrap items-center gap-2"
           role="toolbar"
           aria-label="Canvas tools"
         >
@@ -1317,7 +1406,7 @@ export function ProductCanvas({
           <output
             aria-label="Canvas zoom level"
             data-testid="product-canvas-scale"
-            className="min-w-14 text-center text-xs text-zinc-400"
+            className="min-w-14 text-center text-xs text-zinc-500"
           >
             {Math.round(viewport.scale * 100)}%
           </output>
@@ -1343,7 +1432,7 @@ export function ProductCanvas({
       </div>
 
       <div
-        className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-4 py-2"
+        className="absolute bottom-20 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 flex-nowrap items-center gap-2 overflow-x-auto rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-2 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50"
         role="toolbar"
         aria-label="Selection and history actions"
       >
@@ -1448,7 +1537,7 @@ export function ProductCanvas({
           Redo
         </Button>
         <output
-          className="ml-auto text-xs text-zinc-400"
+          className="ml-auto text-xs text-zinc-500"
           aria-live="polite"
           data-testid="selection-status"
         >
@@ -1458,7 +1547,7 @@ export function ProductCanvas({
         </output>
       </div>
 
-      <div className="grid flex-1 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="absolute inset-0">
         <div
           ref={containerRef}
           tabIndex={0}
@@ -1466,7 +1555,7 @@ export function ProductCanvas({
           aria-label={`Canvas: ${title}. Choose a tool, then use the canvas. Arrow keys move a selection or pan; Delete removes a selection.`}
           onKeyDown={onKeyDown}
           onPointerMove={onSurfacePointerMove}
-          className="relative min-h-[480px] overflow-hidden bg-[#10131a] bg-[radial-gradient(circle,#303746_1px,transparent_1px)] bg-[length:24px_24px] focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none focus-visible:ring-inset"
+          className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] bg-[radial-gradient(circle,var(--workspace-dot)_1px,transparent_1px)] bg-[length:24px_24px] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
           data-testid="product-canvas-surface"
         >
           <Stage
@@ -1543,9 +1632,9 @@ export function ProductCanvas({
           </Stage>
           {objects.length === 0 ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center">
-              <div className="max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/85 px-6 py-5 shadow-xl backdrop-blur">
-                <p className="font-medium text-zinc-200">An empty canvas</p>
-                <p className="mt-2 text-sm leading-6 text-zinc-400">
+              <div className="max-w-sm rounded-2xl border border-[var(--workspace-border)] bg-white/90 px-6 py-5 text-zinc-900 shadow-xl backdrop-blur">
+                <p className="font-medium">An empty canvas</p>
+                <p className="mt-2 text-sm leading-6 text-zinc-500">
                   Choose shape, text, connector, or table, then click the
                   canvas.
                 </p>
@@ -1553,7 +1642,7 @@ export function ProductCanvas({
             </div>
           ) : null}
           {instrumentationEnabled ? (
-            <dl className="pointer-events-none absolute right-3 bottom-3 grid grid-cols-2 gap-x-4 rounded-lg border border-zinc-800 bg-zinc-950/90 px-3 py-2 text-xs">
+            <dl className="pointer-events-none absolute top-24 left-4 grid grid-cols-2 gap-x-4 rounded-lg border border-zinc-200 bg-white/90 px-3 py-2 text-xs text-zinc-700 shadow-lg backdrop-blur">
               <div>
                 <dt className="text-zinc-400">Objects</dt>
                 <dd data-testid="product-object-count">{objects.length}</dd>
@@ -1593,7 +1682,7 @@ export function ProductCanvas({
 
         <aside
           aria-label="Canvas inspector"
-          className="border-t border-zinc-800 bg-zinc-950 p-4 lg:border-t-0 lg:border-l"
+          className="absolute top-28 right-4 bottom-24 z-20 w-72 overflow-y-auto rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-4 text-zinc-900 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50"
         >
           <h2 className="font-medium">Objects</h2>
           {objects.length ? (
@@ -1611,7 +1700,7 @@ export function ProductCanvas({
                       );
                       setTool("select");
                     }}
-                    className="w-full rounded-md border border-zinc-800 px-3 py-2 text-left text-sm hover:border-violet-500 aria-pressed:border-violet-400 aria-pressed:bg-violet-950/30"
+                    className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50"
                   >
                     {objectLabel(object)}
                   </button>
@@ -1619,12 +1708,12 @@ export function ProductCanvas({
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-sm text-zinc-400">No objects yet.</p>
+            <p className="mt-2 text-sm text-zinc-500">No objects yet.</p>
           )}
 
           {selectedObject ? (
             <div
-              className="mt-5 space-y-4 border-t border-zinc-800 pt-4"
+              className="mt-5 space-y-4 border-t border-zinc-200 pt-4"
               data-testid="canvas-inspector-selection"
             >
               <div className="flex items-center justify-between gap-3">
@@ -1642,7 +1731,7 @@ export function ProductCanvas({
                   Delete
                 </Button>
               </div>
-              <dl className="grid grid-cols-2 gap-2 text-xs text-zinc-300">
+              <dl className="grid grid-cols-2 gap-2 text-xs text-zinc-600">
                 <div>
                   <dt>X</dt>
                   <dd data-testid="selected-position-x">
@@ -1670,7 +1759,7 @@ export function ProductCanvas({
               </dl>
               {selectedObject.type === "shape" ||
               selectedObject.type === "text" ? (
-                <label className="block text-xs text-zinc-300">
+                <label className="block text-xs text-zinc-600">
                   Content
                   <textarea
                     aria-label="Object content"
@@ -1682,12 +1771,12 @@ export function ProductCanvas({
                         text: event.target.value,
                       })
                     }
-                    className="mt-1 min-h-20 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 text-sm text-zinc-100"
+                    className="mt-1 min-h-20 w-full rounded-md border border-zinc-200 bg-white p-2 text-sm text-zinc-900"
                   />
                 </label>
               ) : null}
               {selectedObject.type === "table" ? (
-                <label className="block text-xs text-zinc-300">
+                <label className="block text-xs text-zinc-600">
                   Cells
                   <textarea
                     aria-label="Table cells"
@@ -1701,12 +1790,12 @@ export function ProductCanvas({
                           .map((row) => row.split("\t")),
                       })
                     }
-                    className="mt-1 min-h-24 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 font-mono text-sm text-zinc-100"
+                    className="mt-1 min-h-24 w-full rounded-md border border-zinc-200 bg-white p-2 font-mono text-sm text-zinc-900"
                   />
                 </label>
               ) : null}
               {selectedObject.type !== "connector" ? (
-                <label className="flex items-center justify-between gap-3 text-xs text-zinc-300">
+                <label className="flex items-center justify-between gap-3 text-xs text-zinc-600">
                   Fill
                   <input
                     aria-label="Fill color"
@@ -1721,7 +1810,7 @@ export function ProductCanvas({
                   />
                 </label>
               ) : null}
-              <label className="flex items-center justify-between gap-3 text-xs text-zinc-300">
+              <label className="flex items-center justify-between gap-3 text-xs text-zinc-600">
                 Outline
                 <input
                   aria-label="Outline color"
@@ -1737,7 +1826,7 @@ export function ProductCanvas({
               </label>
               {selectedObject.type !== "connector" ? (
                 <>
-                  <label className="block text-xs text-zinc-300">
+                  <label className="block text-xs text-zinc-600">
                     Typeface
                     <select
                       aria-label="Typeface"
@@ -1748,7 +1837,7 @@ export function ProductCanvas({
                           style: { fontFamily: event.target.value },
                         })
                       }
-                      className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 text-sm"
+                      className="mt-1 w-full rounded-md border border-zinc-200 bg-white p-2 text-sm text-zinc-900"
                     >
                       <option value="Inter, ui-sans-serif, system-ui, sans-serif">
                         Inter
@@ -1759,7 +1848,7 @@ export function ProductCanvas({
                       </option>
                     </select>
                   </label>
-                  <label className="block text-xs text-zinc-300">
+                  <label className="block text-xs text-zinc-600">
                     Text size
                     <input
                       aria-label="Text size"
@@ -1773,14 +1862,14 @@ export function ProductCanvas({
                           style: { fontSize: Number(event.target.value) },
                         })
                       }
-                      className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 text-sm"
+                      className="mt-1 w-full rounded-md border border-zinc-200 bg-white p-2 text-sm text-zinc-900"
                     />
                   </label>
                 </>
               ) : null}
               {selectedObject.type === "shape" ? (
                 <fieldset>
-                  <legend className="text-xs text-zinc-300">
+                  <legend className="text-xs text-zinc-600">
                     Connector anchors
                   </legend>
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -1810,7 +1899,7 @@ export function ProductCanvas({
                 <div className="space-y-2">
                   <output
                     data-testid="selected-connector-points"
-                    className="block text-xs text-zinc-300"
+                    className="block text-xs text-zinc-600"
                   >
                     {resolveConnectorPointsV2(selectedObject, objectsById)
                       .map((value) => Math.round(value))

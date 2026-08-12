@@ -1,4 +1,5 @@
 import { AiVoiceReversalSpike } from "@/components/spikes/ai-voice-reversal-spike";
+import { AuthenticatedHeader } from "@/components/app/authenticated-header";
 import { CollaborationSpike } from "@/components/spikes/collaboration-spike";
 import { CanvasDocumentSpikeLoader } from "@/components/spikes/canvas-document-spike-loader";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
@@ -15,30 +16,35 @@ export default async function SpikeWorkspacePage() {
     .maybeSingle();
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-16">
-      <p className="text-sm font-medium text-amber-300">Development evidence</p>
-      <h1 className="mt-4 text-4xl font-semibold">
-        Architecture spike workspace
-      </h1>
-      <p className="mt-4 max-w-2xl leading-7 text-zinc-400">
-        Reproducible collaboration, persistence, canvas, document, AI, voice,
-        and reversal experiments will be mounted here as later slices land.
-      </p>
-      {canvas ? (
-        <>
-          <CollaborationSpike canvasId={canvas.id} userId={user.id} />
-          <CanvasDocumentSpikeLoader canvasId={canvas.id} />
-          <AiVoiceReversalSpike canvasId={canvas.id} userId={user.id} />
-        </>
-      ) : (
-        <p
-          className="mt-10 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-amber-200"
-          role="status"
-        >
-          This account does not have a canvas available for collaboration
-          evidence.
+    <>
+      <AuthenticatedHeader identity={user.email ?? user.id} />
+      <main className="mx-auto max-w-6xl px-6 py-16">
+        <p className="text-sm font-medium text-amber-300">
+          Development evidence
         </p>
-      )}
-    </main>
+        <h1 className="mt-4 text-4xl font-semibold">
+          Architecture spike workspace
+        </h1>
+        <p className="mt-4 max-w-2xl leading-7 text-zinc-400">
+          Reproducible collaboration, persistence, canvas, document, AI, voice,
+          and reversal experiments will be mounted here as later slices land.
+        </p>
+        {canvas ? (
+          <>
+            <CollaborationSpike canvasId={canvas.id} userId={user.id} />
+            <CanvasDocumentSpikeLoader canvasId={canvas.id} />
+            <AiVoiceReversalSpike canvasId={canvas.id} userId={user.id} />
+          </>
+        ) : (
+          <p
+            className="mt-10 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-amber-200"
+            role="status"
+          >
+            This account does not have a canvas available for collaboration
+            evidence.
+          </p>
+        )}
+      </main>
+    </>
   );
 }

@@ -25,11 +25,12 @@ export default async function CanvasPage({
   if (error || !canvas) notFound();
 
   return (
-    <main className="min-h-[calc(100vh-73px)] bg-zinc-950">
+    <main className="h-dvh min-h-[640px] overflow-hidden bg-zinc-950">
       <ProductCanvasLoader
         canvasId={canvas.id}
         title={canvas.title}
         userId={user.id}
+        userIdentity={user.email ?? user.id}
         simulatedAiEnabled={
           process.env.NODE_ENV !== "production" ||
           process.env.NEXT_PUBLIC_APP_ENV === "preview"
