@@ -13,6 +13,7 @@
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.12.52 PM.png`
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.13.04 PM.png`
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.13.16 PM.png`
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 2.04.42 PM.png`
 - Browser-rendered implementation:
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-dark-context-toolbar-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-object-context-menu-local.png`
@@ -22,6 +23,7 @@
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-fill-palette-v2-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-stroke-palette-v2-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-text-color-v2-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-custom-color-picker-local.png`
 - Route: authenticated local canvas workspace at `/app/canvases/[canvasId]`
 - State: two selected shapes for the contextual toolbar and selection-actions menu; one selected linked text primitive with Bookish, Large, bold, centered, numbered formatting and the Text style panel open.
 
@@ -32,6 +34,7 @@
 - Additional text-formatting source crops are `618 × 272`, `400 × 644`, and `346 × 428` pixels. The text-style implementation capture is `1280 × 720` pixels at the same `1280 × 720` CSS viewport and density `1`.
 - The latest focused source crops are `394 × 190`, `268 × 154`, `778 × 792`, and `156 × 128` pixels. Their three implementation states are full `1280 × 720` captures at device scale factor `1`; the toolbar and open-menu regions were compared at visible rendered scale.
 - Density normalization: the comparison judged the shared focused UI surfaces at their visible rendered scale rather than treating the source crop dimensions as a required application viewport. Browser chrome, surrounding canvas area, and source-crop density were excluded from mismatch findings.
+- The custom-picker source is `474 × 790` pixels. Its implementation evidence is a `1280 × 720` browser capture at a `1280 × 720` CSS viewport and device scale factor `1`, with a focused `405px`-wide picker surface. The focused picker regions were compared at their visible rendered scale; the source's surrounding palette fragment and the implementation's surrounding workspace were excluded from mismatch findings.
 
 ## Full-view comparison evidence
 
@@ -45,6 +48,8 @@ The two supplied color-control references and the latest fill/outline implementa
 
 The four 2026-08-13 refinement references and the three latest implementation captures were opened together in one comparison input. The resulting toolbar follows Fill, Stroke, Text style order; Stroke uses the requested horizontal-bar icon instead of a current-color swatch; and the fill, stroke, and text surfaces use the same circular rainbow custom-color entry. The implementation intentionally keeps custom stroke out of the fill palette while preserving coordinated fill presets.
 
+The supplied custom-picker reference and `slice-04-custom-color-picker-local.png` were opened together in one comparison input after setting the implementation hex field to the reference value `#C2E5FF`. The focused comparison confirms the near-black rounded surface, eyedropper action, large editable hex field, horizontal hue and opacity controls with circular handles, and a full-width saturation/brightness field with the selected blue hue. The implementation adds an explicit close button and visible focus treatment for keyboard clarity.
+
 ## Findings
 
 - No actionable P0, P1, or P2 visual differences remain.
@@ -54,6 +59,7 @@ The four 2026-08-13 refinement references and the three latest implementation ca
 - Image quality and asset fidelity: the new transparent `128 × 128` rainbow-wheel asset remains crisp at its `36px` rendered size and matches the supplied custom-color reference; the remaining controls use the established icon library and stay stylistically consistent.
 - Copy and content: Group/Ungroup, ordering, clipboard, duplicate, delete, typeface, size, alignment, list, and link labels are concise and applicable to the product's existing command model.
 - Accessibility and behavior: semantic menu roles, disabled/pressed states, initial focus, arrow/Home/End movement, Escape dismissal, Shift+F10/Context Menu access, right-click, Control-click, labeled text controls, safe-link actions, and custom-size keyboard commit are covered. Automated axe checks report no detectable violations in the tested states.
+- Custom color picker: the native browser picker has been replaced with one consistent fill, stroke, and text-color dialog. Hex entry, optional browser eyedropper, hue, opacity, saturation, brightness, Escape/focus restoration, outside dismissal, and pointer/keyboard adjustment are all represented by labeled controls. The large color field and the hue/opacity composition match the supplied interaction reference without changing the persisted style command boundary.
 
 ## Comparison history
 
@@ -62,6 +68,8 @@ The four 2026-08-13 refinement references and the three latest implementation ca
 - Text styling pass 2: fixed by applying a viewport-derived maximum height and vertical overflow to the text panel. Post-fix browser measurement showed the menu bottom at `608.99px` and dock top at `646px`; the latest implementation screenshot was compared with all three text references and no P0/P1/P2 finding remains.
 - Color and anchor refinement pass 1: no P0/P1/P2 findings. The source and implementation palettes share the intended round-swatch hierarchy; the contextual toolbar now shows the current fill and outline as round swatches, and removing the center connector anchor clears the natural double-click editing target.
 - Color-control refinement pass 2: no P0/P1/P2 findings. The toolbar ordering, stroke icon, removal of the stroke swatch and fill-panel custom-stroke field, circular rainbow custom entries, and text-color entry match the supplied focused references at the implementation's normalized `1280 × 720` viewport.
+- Custom-picker pass 1: the initial implementation included every required interaction but used a compact `340px` panel and `220px` saturation/brightness field, producing a P2 density and proportion mismatch against the tall reference picker.
+- Custom-picker pass 2: expanded the panel to `405px`, enlarged the saturation/brightness field to `405 × 405`, increased top-section spacing, set the implementation to `#C2E5FF`, and recaptured the same open state. The combined source/implementation comparison found no remaining actionable P0/P1/P2 difference.
 
 ## Primary interactions tested
 
@@ -71,6 +79,7 @@ The four 2026-08-13 refinement references and the three latest implementation ca
 - Authenticated in-app browser text styling covered automatic ordered-list entry, Bookish/Large/bold/centered controls, safe URL normalization, selected-state presentation, panel/dock bounds, and zero console warnings/errors.
 - Authenticated in-app browser color styling confirmed that Light blue applies fill `#dbeafe` with darker outline `#2563eb`, custom fill and stroke remain independently editable through their applicable palettes, the `T` control opens Text style, and Connector controls expose top/right/bottom/left with no center anchor. Browser logs contained only normal local React DevTools and HMR messages.
 - The second color pass confirmed the exact Fill → Stroke → Text style order, no visible current-stroke swatch, no custom-stroke input inside Fill, rainbow custom entries at the end of Fill and Stroke, a round custom text-color entry, and persisted text color. Automated axe coverage remains clean, and the in-app browser emitted no application errors.
+- The custom-picker browser pass changed fill through the editable `#C2E5FF` hex field, confirmed the open dialog and labeled Hue, Opacity, and Saturation and brightness controls, verified persistence through the existing object-style path, and found no application console errors. Browser logs contained only normal React DevTools and local HMR messages. The complete 29-scenario Chromium suite passed after the native color inputs were replaced.
 
 ## Follow-up polish
 

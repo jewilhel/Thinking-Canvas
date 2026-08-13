@@ -13,7 +13,7 @@ import {
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { CustomColorSwatch } from "@/components/canvas/color-style-panel";
+import { CustomColorPicker } from "@/components/canvas/custom-color-picker";
 
 export type TextStylePatch = {
   fontFamily?: string;
@@ -193,7 +193,7 @@ export function TextStylePanel({
         role="group"
         aria-label="Text formatting"
       >
-        <CustomColorSwatch
+        <CustomColorPicker
           label="Custom text color"
           value={textColor ?? "#18181b"}
           onChange={(color) => onApply({ textColor: color })}

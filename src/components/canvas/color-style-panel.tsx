@@ -1,7 +1,8 @@
 "use client";
 
 import { Check, Slash } from "lucide-react";
-import Image from "next/image";
+
+import { CustomColorPicker } from "@/components/canvas/custom-color-picker";
 
 type ColorPair = {
   name: string;
@@ -18,13 +19,6 @@ type Props = {
   onApplyPair: (pair: ColorPair) => void;
   onApplyFill: (fill: string | null) => void;
   onApplyOutline: (outline: string) => void;
-};
-
-type CustomColorSwatchProps = {
-  label: string;
-  value: string;
-  mixed?: boolean;
-  onChange: (color: string) => void;
 };
 
 const colorPairs: ColorPair[] = [
@@ -49,38 +43,6 @@ const colorPairs: ColorPair[] = [
   { name: "Light violet", fill: "#ede9fe", outline: "#7c3aed" },
   { name: "Light pink", fill: "#fce7f3", outline: "#db2777" },
 ];
-
-export function CustomColorSwatch({
-  label,
-  value,
-  mixed,
-  onChange,
-}: CustomColorSwatchProps) {
-  return (
-    <label
-      className="relative size-9 cursor-pointer rounded-full outline-none focus-within:ring-2 focus-within:ring-violet-500"
-      title={label}
-    >
-      <span className="sr-only">{label}</span>
-      <Image
-        src="/assets/color-wheel-swatch.png"
-        alt=""
-        width={36}
-        height={36}
-        className="size-9 rounded-full"
-        aria-hidden="true"
-      />
-      <input
-        aria-label={label}
-        type="color"
-        value={value}
-        data-mixed={mixed}
-        className="absolute inset-0 size-full cursor-pointer rounded-full opacity-0"
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </label>
-  );
-}
 
 export function ColorStylePanel({
   mode,
@@ -150,7 +112,7 @@ export function ColorStylePanel({
               </button>
             );
           })}
-          <CustomColorSwatch
+          <CustomColorPicker
             label={
               mode === "fill" ? "Custom fill color" : "Custom stroke color"
             }

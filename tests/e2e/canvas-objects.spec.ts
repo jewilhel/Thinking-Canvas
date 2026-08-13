@@ -71,7 +71,15 @@ async function deleteSelection(page: Page) {
 
 async function setFill(page: Page, value: string) {
   await openContextPanel(page, "Fill");
-  await page.getByLabel("Custom fill color").fill(value);
+  await setCustomColor(page, "Custom fill color", value);
+}
+
+async function setCustomColor(page: Page, label: string, value: string) {
+  await page.getByLabel(label).click();
+  const input = page.getByLabel(`${label} hex`);
+  await input.fill(value);
+  await input.press("Enter");
+  await page.getByRole("button", { name: "Close color picker" }).click();
 }
 
 async function createLabeledShape(
@@ -150,7 +158,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await editSelectedText(page, "Styled planning idea");
   await setFill(page, "#fef3c7");
   await openContextPanel(page, "Stroke color");
-  await page.getByLabel("Custom stroke color").fill("#d97706");
+  await setCustomColor(page, "Custom stroke color", "#d97706");
   await openContextPanel(page, "Text style");
   await page.getByLabel("Typeface").selectOption({ label: "Bookish" });
   await page.getByLabel("Custom text size").fill("22");
@@ -228,9 +236,15 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await expect(page.getByTestId("product-object-count")).toHaveText("5");
   await page.getByRole("button", { name: /Styled planning idea/ }).click();
   await openContextPanel(page, "Fill");
-  await expect(page.getByLabel("Custom fill color")).toHaveValue("#fef3c7");
+  await page.getByLabel("Custom fill color").click();
+  await expect(page.getByLabel("Custom fill color hex")).toHaveValue("#FEF3C7");
+  await page.getByRole("button", { name: "Close color picker" }).click();
   await openContextPanel(page, "Stroke color");
-  await expect(page.getByLabel("Custom stroke color")).toHaveValue("#d97706");
+  await page.getByLabel("Custom stroke color").click();
+  await expect(page.getByLabel("Custom stroke color hex")).toHaveValue(
+    "#D97706",
+  );
+  await page.getByRole("button", { name: "Close color picker" }).click();
   await openContextPanel(page, "Text style");
   await expect(page.getByLabel("Typeface")).toHaveValue(
     "Georgia, ui-serif, serif",
@@ -336,6 +350,25 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
     "data-mixed",
     "true",
   );
+  await page.getByLabel("Custom fill color").click();
+  await expect(
+    page.getByRole("dialog", { name: "Custom fill color picker" }),
+  ).toBeVisible();
+  await expect(page.getByRole("slider", { name: "Hue" })).toHaveAttribute(
+    "aria-valuenow",
+  );
+  await expect(page.getByRole("slider", { name: "Opacity" })).toHaveAttribute(
+    "aria-valuenow",
+    "100",
+  );
+  await expect(
+    page.getByRole("slider", { name: "Saturation and brightness" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("dialog", { name: "Custom fill color picker" }),
+  ).not.toBeVisible();
+  await expect(page.getByLabel("Custom fill color")).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(
     page.getByRole("dialog", { name: "fill selection controls" }),
@@ -344,16 +377,28 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
 
   await fillTrigger.click();
   await page.getByRole("button", { name: "Light blue fill" }).click();
-  await expect(page.getByLabel("Custom fill color")).toHaveValue("#dbeafe");
+  await page.getByLabel("Custom fill color").click();
+  await expect(page.getByLabel("Custom fill color hex")).toHaveValue("#DBEAFE");
+  await page.getByRole("button", { name: "Close color picker" }).click();
   await expect(page.getByLabel("Custom stroke color")).not.toBeVisible();
   await openContextPanel(page, "Stroke color");
-  await expect(page.getByLabel("Custom stroke color")).toHaveValue("#2563eb");
-  await page.getByLabel("Custom stroke color").fill("#1d4ed8");
+  await page.getByLabel("Custom stroke color").click();
+  await expect(page.getByLabel("Custom stroke color hex")).toHaveValue(
+    "#2563EB",
+  );
+  await page.getByRole("button", { name: "Close color picker" }).click();
+  await setCustomColor(page, "Custom stroke color", "#1d4ed8");
   await page.getByRole("button", { name: /Context alpha/ }).click();
   await openContextPanel(page, "Fill");
-  await expect(page.getByLabel("Custom fill color")).toHaveValue("#dbeafe");
+  await page.getByLabel("Custom fill color").click();
+  await expect(page.getByLabel("Custom fill color hex")).toHaveValue("#DBEAFE");
+  await page.getByRole("button", { name: "Close color picker" }).click();
   await openContextPanel(page, "Stroke color");
-  await expect(page.getByLabel("Custom stroke color")).toHaveValue("#1d4ed8");
+  await page.getByLabel("Custom stroke color").click();
+  await expect(page.getByLabel("Custom stroke color hex")).toHaveValue(
+    "#1D4ED8",
+  );
+  await page.getByRole("button", { name: "Close color picker" }).click();
   await expect(page.getByTestId("current-fill-swatch")).toHaveCSS(
     "background-color",
     "rgb(219, 234, 254)",
@@ -460,7 +505,7 @@ test("styles canvas text with type, size, weight, alignment, lists, and a safe l
   await page.getByRole("button", { name: "Bold", exact: true }).click();
   await page.getByRole("button", { name: "Align right" }).click();
   await page.getByRole("button", { name: "Bulleted list" }).click();
-  await page.getByLabel("Custom text color").fill("#7c3aed");
+  await setCustomColor(page, "Custom text color", "#7c3aed");
   await page.getByLabel("Text link URL").fill("example.com/notes");
   await page.getByRole("button", { name: "Apply link" }).click();
 
@@ -480,7 +525,9 @@ test("styles canvas text with type, size, weight, alignment, lists, and a safe l
   await expect(page.getByLabel("Text link URL")).toHaveValue(
     "https://example.com/notes",
   );
-  await expect(page.getByLabel("Custom text color")).toHaveValue("#7c3aed");
+  await page.getByLabel("Custom text color").click();
+  await expect(page.getByLabel("Custom text color hex")).toHaveValue("#7C3AED");
+  await page.getByRole("button", { name: "Close color picker" }).click();
   await expect(
     page.getByRole("button", { name: "Open text link" }),
   ).toBeVisible();
@@ -515,7 +562,9 @@ test("styles canvas text with type, size, weight, alignment, lists, and a safe l
   await expect(page.getByLabel("Text link URL")).toHaveValue(
     "https://example.com/notes",
   );
-  await expect(page.getByLabel("Custom text color")).toHaveValue("#7c3aed");
+  await page.getByLabel("Custom text color").click();
+  await expect(page.getByLabel("Custom text color hex")).toHaveValue("#7C3AED");
+  await page.getByRole("button", { name: "Close color picker" }).click();
 });
 
 test("creates, reattaches, and detaches connectors with direct pointer gestures", async ({
