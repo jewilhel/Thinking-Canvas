@@ -4,10 +4,12 @@ import type Konva from "konva";
 import {
   ArrowLeft,
   Check,
+  CircleHelp,
   Cloud,
   Copy,
   Ellipsis,
   Link2,
+  ListTree,
   LogOut,
   Maximize2,
   Minus,
@@ -68,6 +70,7 @@ import {
   type CanvasShapeTool,
   type CanvasTool,
 } from "@/components/canvas/workspace-primary-dock";
+import { WorkspacePanel } from "@/components/canvas/workspace-panel";
 import { Button, buttonVariants } from "@/components/ui/button";
 
 type Props = {
@@ -95,6 +98,7 @@ type ReconnectingEndpoint = {
 };
 type ContextPanel =
   "fill" | "outline" | "text" | "table" | "connector" | "more";
+type SharedPanel = "objects" | "comments" | "help";
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
 const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left", "center"];
@@ -194,6 +198,9 @@ export function ProductCanvas({
     useState<ReconnectingEndpoint | null>(null);
   const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
   const [contextPanel, setContextPanel] = useState<ContextPanel | null>(null);
+  const [sharedPanel, setSharedPanel] = useState<SharedPanel | null>(null);
+  const [sharedPanelInvoker, setSharedPanelInvoker] =
+    useState<HTMLButtonElement | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [clipboardText, setClipboardText] = useState("");
   const [undoStack, setUndoStack] = useState<CanvasHistoryEntry[]>([]);
@@ -962,6 +969,62 @@ export function ProductCanvas({
     );
   }
 
+  function zoomToFit() {
+    if (!objects.length) {
+      setViewport(defaultViewport);
+      return;
+    }
+    const bounds = objects.reduce(
+      (current, object) => {
+        const next = objectBounds(object);
+        return {
+          x: Math.min(current.x, next.x),
+          y: Math.min(current.y, next.y),
+          right: Math.max(current.right, next.x + next.width),
+          bottom: Math.max(current.bottom, next.y + next.height),
+        };
+      },
+      (() => {
+        const first = objectBounds(objects[0]!);
+        return {
+          x: first.x,
+          y: first.y,
+          right: first.x + first.width,
+          bottom: first.y + first.height,
+        };
+      })(),
+    );
+    const contentWidth = Math.max(1, bounds.right - bounds.x);
+    const contentHeight = Math.max(1, bounds.bottom - bounds.y);
+    const availableWidth = Math.max(160, size.width - 160);
+    const availableHeight = Math.max(160, size.height - 240);
+    const scale = Math.min(
+      maxCanvasScale,
+      Math.max(
+        minCanvasScale,
+        Math.min(
+          availableWidth / contentWidth,
+          availableHeight / contentHeight,
+        ),
+      ),
+    );
+    setViewport({
+      scale,
+      x: (size.width - contentWidth * scale) / 2 - bounds.x * scale,
+      y: (size.height - contentHeight * scale) / 2 - bounds.y * scale,
+    });
+  }
+
+  function toggleSharedPanel(panel: SharedPanel, invoker: HTMLButtonElement) {
+    if (sharedPanel === panel) {
+      setSharedPanel(null);
+      return;
+    }
+    setSharedPanelInvoker(invoker);
+    setContextPanel(null);
+    setSharedPanel(panel);
+  }
+
   function onWheel(event: Konva.KonvaEventObject<WheelEvent>) {
     event.evt.preventDefault();
     const pointer = stageRef.current?.getPointerPosition();
@@ -1562,7 +1625,7 @@ export function ProductCanvas({
   return (
     <section
       aria-labelledby="canvas-title"
-      className="thinking-workspace relative h-full min-h-[640px] overflow-hidden text-[var(--workspace-foreground)]"
+      className="thinking-workspace relative h-full min-h-[480px] overflow-hidden text-[var(--workspace-foreground)]"
       data-testid="thinking-workspace"
     >
       <div
@@ -1591,6 +1654,21 @@ export function ProductCanvas({
             </h1>
             <p className="text-xs text-zinc-500">Thinking Canvas workspace</p>
           </div>
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            aria-label="Open Object navigator"
+            aria-expanded={sharedPanel === "objects"}
+            aria-controls="workspace-shared-panel"
+            title="Object navigator"
+            className="size-11 border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700"
+            onClick={(event) =>
+              toggleSharedPanel("objects", event.currentTarget)
+            }
+          >
+            <ListTree aria-hidden="true" />
+          </Button>
         </div>
 
         <div className="pointer-events-auto flex max-w-[min(58vw,48rem)] flex-wrap items-center justify-end gap-2 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-2 shadow-[var(--workspace-shadow)] backdrop-blur-xl">
@@ -1688,9 +1766,11 @@ export function ProductCanvas({
         onChooseTool={chooseTool}
         onChooseShape={chooseShape}
         onAddSimulatedAiIdea={addSimulatedAiIdea}
+        commentsPanelOpen={sharedPanel === "comments"}
+        onToggleComments={(invoker) => toggleSharedPanel("comments", invoker)}
       />
 
-      <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
+      <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
         <Button
           type="button"
           size="icon-sm"
@@ -1721,11 +1801,68 @@ export function ProductCanvas({
           size="icon-sm"
           variant="outline"
           aria-label="Zoom to fit"
-          onClick={() => setViewport(defaultViewport)}
+          onClick={zoomToFit}
         >
           <Maximize2 aria-hidden="true" />
         </Button>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label="Open canvas help"
+          aria-expanded={sharedPanel === "help"}
+          aria-controls="workspace-shared-panel"
+          onClick={(event) => toggleSharedPanel("help", event.currentTarget)}
+        >
+          <CircleHelp aria-hidden="true" />
+        </Button>
       </div>
+
+      {sharedPanel ? (
+        <WorkspacePanel
+          title={
+            sharedPanel === "objects"
+              ? "Object navigator"
+              : sharedPanel === "comments"
+                ? "Comments"
+                : "Canvas help"
+          }
+          description={
+            sharedPanel === "objects"
+              ? "Browse objects and inspect detailed selection geometry."
+              : sharedPanel === "comments"
+                ? "A preview of the collaboration surface planned for Milestone 3."
+                : "Keyboard shortcuts for moving around and editing this canvas."
+          }
+          invoker={sharedPanelInvoker}
+          onDismiss={() => setSharedPanel(null)}
+        >
+          {sharedPanel === "objects" ? (
+            <ObjectNavigatorContent
+              objects={objects}
+              objectsById={objectsById}
+              selectedIds={selectedIds}
+              selectedObject={selectedObject}
+              onSelect={(object, modifier) => {
+                updateSelectionForObject(object, modifier);
+                setTool("select");
+              }}
+            />
+          ) : sharedPanel === "comments" ? (
+            <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+              <p className="font-medium text-violet-950">
+                Contextual feedback arrives in Milestone 3
+              </p>
+              <p className="mt-2 text-sm leading-6 text-violet-800">
+                No comments can be entered, loaded, or saved here yet. This
+                placeholder does not change canvas content.
+              </p>
+            </div>
+          ) : (
+            <ShortcutHelp />
+          )}
+        </WorkspacePanel>
+      ) : null}
 
       {tool === "select" && selectedObject && contextualToolbarPosition ? (
         <div
@@ -2341,90 +2478,138 @@ export function ProductCanvas({
             </dl>
           ) : null}
         </div>
-
-        <aside
-          aria-label="Canvas inspector"
-          className="absolute top-28 right-4 bottom-24 z-20 w-72 overflow-y-auto rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-4 text-zinc-900 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50"
-        >
-          <h2 className="font-medium">Objects</h2>
-          {objects.length ? (
-            <ul className="mt-3 space-y-2">
-              {objects.map((object) => (
-                <li key={object.id}>
-                  <button
-                    type="button"
-                    data-testid={`object-list-item-${object.id}`}
-                    aria-pressed={selectedIds.includes(object.id)}
-                    onClick={(event) => {
-                      updateSelectionForObject(
-                        object,
-                        event.shiftKey || event.metaKey || event.ctrlKey,
-                      );
-                      setTool("select");
-                    }}
-                    className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50"
-                  >
-                    {objectLabel(object)}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-sm text-zinc-500">No objects yet.</p>
-          )}
-
-          {selectedObject ? (
-            <div
-              className="mt-5 space-y-4 border-t border-zinc-200 pt-4"
-              data-testid="canvas-inspector-selection"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-medium capitalize">
-                  {selectedIds.length > 1
-                    ? `Mixed selection · ${selectedObject.type} focused`
-                    : selectedObject.type}
-                </h3>
-              </div>
-              <dl className="grid grid-cols-2 gap-2 text-xs text-zinc-600">
-                <div>
-                  <dt>X</dt>
-                  <dd data-testid="selected-position-x">
-                    {Math.round(selectedObject.geometry.x)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Y</dt>
-                  <dd data-testid="selected-position-y">
-                    {Math.round(selectedObject.geometry.y)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Width</dt>
-                  <dd data-testid="selected-width">
-                    {Math.round(selectedObject.geometry.width)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Height</dt>
-                  <dd data-testid="selected-height">
-                    {Math.round(selectedObject.geometry.height)}
-                  </dd>
-                </div>
-              </dl>
-              {selectedObject.type === "connector" ? (
-                <output
-                  data-testid="selected-connector-points"
-                  className="block text-xs text-zinc-600"
-                >
-                  {resolveConnectorPointsV2(selectedObject, objectsById)
-                    .map((value) => Math.round(value))
-                    .join(",")}
-                </output>
-              ) : null}
-            </div>
-          ) : null}
-        </aside>
       </div>
     </section>
+  );
+}
+
+function ObjectNavigatorContent({
+  objects,
+  objectsById,
+  selectedIds,
+  selectedObject,
+  onSelect,
+}: {
+  objects: CanvasObjectV2[];
+  objectsById: Map<string, CanvasObjectV2>;
+  selectedIds: string[];
+  selectedObject: CanvasObjectV2 | undefined;
+  onSelect: (object: CanvasObjectV2, modifier: boolean) => void;
+}) {
+  return (
+    <div className="text-zinc-900">
+      <h3 className="text-sm font-medium">Objects</h3>
+      {objects.length ? (
+        <ul className="mt-3 space-y-2">
+          {objects.map((object) => (
+            <li key={object.id}>
+              <button
+                type="button"
+                data-testid={`object-list-item-${object.id}`}
+                aria-pressed={selectedIds.includes(object.id)}
+                onClick={(event) =>
+                  onSelect(
+                    object,
+                    event.shiftKey || event.metaKey || event.ctrlKey,
+                  )
+                }
+                className="min-h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50"
+              >
+                {objectLabel(object)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-zinc-500">No objects yet.</p>
+      )}
+
+      {selectedObject ? (
+        <div
+          className="mt-5 space-y-4 border-t border-zinc-200 pt-4"
+          data-testid="canvas-inspector-selection"
+        >
+          <h3 className="text-sm font-medium capitalize">
+            {selectedIds.length > 1
+              ? `Mixed selection · ${selectedObject.type} focused`
+              : selectedObject.type}
+          </h3>
+          <dl className="grid grid-cols-2 gap-3 text-xs text-zinc-600">
+            <div>
+              <dt>X</dt>
+              <dd data-testid="selected-position-x">
+                {Math.round(selectedObject.geometry.x)}
+              </dd>
+            </div>
+            <div>
+              <dt>Y</dt>
+              <dd data-testid="selected-position-y">
+                {Math.round(selectedObject.geometry.y)}
+              </dd>
+            </div>
+            <div>
+              <dt>Width</dt>
+              <dd data-testid="selected-width">
+                {Math.round(selectedObject.geometry.width)}
+              </dd>
+            </div>
+            <div>
+              <dt>Height</dt>
+              <dd data-testid="selected-height">
+                {Math.round(selectedObject.geometry.height)}
+              </dd>
+            </div>
+          </dl>
+          {selectedObject.type === "connector" ? (
+            <div>
+              <p className="text-xs font-medium text-zinc-500">
+                Resolved connector points
+              </p>
+              <output
+                data-testid="selected-connector-points"
+                className="mt-1 block text-xs text-zinc-600"
+              >
+                {resolveConnectorPointsV2(selectedObject, objectsById)
+                  .map((value) => Math.round(value))
+                  .join(",")}
+              </output>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const shortcutGroups = [
+  ["V / H / Space", "Select or pan"],
+  ["S / R / C / T / B", "Sticky, recent shape, connector, text, or table"],
+  ["Arrow / Shift+Arrow", "Move by 1 or 10 pixels"],
+  ["Alt+Arrow", "Resize the selected object"],
+  ["Mod+A / C / X / V / D", "Select all, copy, cut, paste, or duplicate"],
+  ["Mod+G / Mod+Shift+G", "Group or ungroup"],
+  ["Mod+Z / Mod+Shift+Z", "Undo or redo"],
+  ["+ / - / 0", "Zoom in, zoom out, or reset view"],
+  ["Delete", "Delete the selection"],
+  ["Escape", "Close the active panel or cancel inline editing"],
+] as const;
+
+function ShortcutHelp() {
+  return (
+    <dl className="space-y-3">
+      {shortcutGroups.map(([shortcut, description]) => (
+        <div
+          key={shortcut}
+          className="grid grid-cols-[minmax(8rem,auto)_1fr] gap-4 border-b border-zinc-100 pb-3 text-sm last:border-0"
+        >
+          <dt>
+            <kbd className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-xs text-zinc-800">
+              {shortcut}
+            </kbd>
+          </dt>
+          <dd className="text-zinc-600">{description}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

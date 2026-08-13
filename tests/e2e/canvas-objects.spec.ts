@@ -12,6 +12,14 @@ import {
 
 const password = "LocalPassword1!";
 
+async function ensureObjectNavigator(page: Page) {
+  if (
+    !(await page.getByRole("dialog", { name: "Object navigator" }).isVisible())
+  ) {
+    await page.getByRole("button", { name: "Open Object navigator" }).click();
+  }
+}
+
 async function openFreshCanvas(page: Page) {
   await page.goto("/auth/sign-in");
   await page.getByLabel("Email").fill("owner@thinking-canvas.local");
@@ -21,6 +29,7 @@ async function openFreshCanvas(page: Page) {
   await page.getByLabel("Canvas name").fill(`Object matrix ${Date.now()}`);
   await page.getByRole("button", { name: "Create canvas" }).click();
   await expect(page).toHaveURL(/\/app\/canvases\/[0-9a-f-]+$/);
+  await ensureObjectNavigator(page);
   return page.getByTestId("product-canvas-surface");
 }
 
@@ -203,6 +212,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   ).toBeVisible();
 
   await page.reload();
+  await ensureObjectNavigator(page);
   await expect(page.getByTestId("product-object-count")).toHaveText("5");
   await page.getByRole("button", { name: /Styled planning idea/ }).click();
   await openContextPanel(page, "Fill");
@@ -434,6 +444,7 @@ test("attaches connectors to anchors, follows geometry, detaches safely, and sup
     detachedPoints,
   );
   await page.reload();
+  await ensureObjectNavigator(page);
   await page.getByRole("button", { name: "connector", exact: true }).click();
   await expect(page.getByTestId("selected-connector-points")).toBeVisible();
   await deleteSelection(page);
@@ -515,6 +526,7 @@ test("constructs mind-map, procedure, mood-board, and storyboard arrangements fr
   await retainArrangement(surface, testInfo, "storyboard");
 
   await page.reload();
+  await ensureObjectNavigator(page);
   await expect(page.getByTestId("product-object-count")).toHaveText("4");
 });
 
@@ -593,5 +605,6 @@ test("multiselects, marquees, groups, orders, duplicates, uses the clipboard, an
   await expect(page.getByTestId("product-object-count")).toHaveText("4");
 
   await page.reload();
+  await ensureObjectNavigator(page);
   await expect(page.getByTestId("product-object-count")).toHaveText("4");
 });

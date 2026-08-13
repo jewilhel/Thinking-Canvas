@@ -25,7 +25,7 @@ export default async function CanvasPage({
   if (error || !canvas) notFound();
 
   return (
-    <main className="h-dvh min-h-[640px] overflow-hidden bg-zinc-950">
+    <main className="h-dvh min-h-[480px] overflow-hidden bg-zinc-950">
       <ProductCanvasLoader
         canvasId={canvas.id}
         title={canvas.title}

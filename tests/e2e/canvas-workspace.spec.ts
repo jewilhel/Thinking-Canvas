@@ -208,6 +208,99 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
   expect(accessibility.violations).toEqual([]);
 });
 
+test("uses dismissible responsive panels with focus containment, help, and true zoom-to-fit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await signIn(page);
+  await page.goto(`/app/canvases/${seedCanvasId}`);
+
+  const objectInvoker = page.getByRole("button", {
+    name: "Open Object navigator",
+  });
+  await objectInvoker.click();
+  const objectPanel = page.getByRole("dialog", { name: "Object navigator" });
+  await expect(objectPanel).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Close Object navigator" }),
+  ).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(objectPanel.locator(":focus")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(objectPanel).not.toBeVisible();
+  await expect(objectInvoker).toBeFocused();
+
+  const commentsInvoker = page.getByRole("button", {
+    name: "Comments",
+    exact: true,
+  });
+  const pendingCountBeforeComments = await page
+    .getByTestId("product-pending-count")
+    .innerText();
+  await commentsInvoker.click();
+  const commentsPanel = page.getByRole("dialog", { name: "Comments" });
+  await expect(commentsPanel).toContainText(
+    "No comments can be entered, loaded, or saved here yet.",
+  );
+  await expect(page.getByTestId("product-pending-count")).toHaveText(
+    pendingCountBeforeComments,
+  );
+  const commentsAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(commentsAccessibility.violations).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(commentsInvoker).toBeFocused();
+
+  const helpInvoker = page.getByRole("button", { name: "Open canvas help" });
+  await helpInvoker.click();
+  const helpPanel = page.getByRole("dialog", { name: "Canvas help" });
+  await expect(helpPanel).toContainText("Mod+Z / Mod+Shift+Z");
+  const helpAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(helpAccessibility.violations).toEqual([]);
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 768, height: 1024 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const chrome of [
+      helpPanel,
+      page.getByTestId("workspace-primary-dock"),
+      page.getByRole("button", { name: "Zoom to fit" }),
+    ]) {
+      const bounds = await chrome.boundingBox();
+      if (!bounds) throw new Error("Responsive workspace chrome is missing.");
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.y).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+    }
+  }
+
+  await page.setViewportSize({ width: 768, height: 520 });
+  const panelBounds = await helpPanel.boundingBox();
+  if (!panelBounds) throw new Error("The responsive panel is not rendered.");
+  expect(panelBounds.x).toBeGreaterThanOrEqual(0);
+  expect(panelBounds.y).toBeGreaterThanOrEqual(0);
+  expect(panelBounds.x + panelBounds.width).toBeLessThanOrEqual(768);
+  expect(panelBounds.y + panelBounds.height).toBeLessThanOrEqual(520);
+  const closeBounds = await page
+    .getByRole("button", { name: "Close Canvas help" })
+    .boundingBox();
+  if (!closeBounds) throw new Error("The panel close action is not rendered.");
+  expect(closeBounds.width).toBeGreaterThanOrEqual(44);
+  expect(closeBounds.height).toBeGreaterThanOrEqual(44);
+  await page.keyboard.press("Escape");
+
+  const beforeFit = await page.getByTestId("product-canvas-scale").innerText();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await expect(page.getByTestId("product-canvas-scale")).not.toHaveText(
+    beforeFit,
+  );
+  const zoomed = await page.getByTestId("product-canvas-scale").innerText();
+  await page.getByRole("button", { name: "Zoom to fit" }).click();
+  await expect(page.getByTestId("product-canvas-scale")).not.toHaveText(zoomed);
+});
+
 test("queues edits through a temporary disconnect, protects navigation, and converges after reconnect", async ({
   browser,
 }) => {
@@ -349,6 +442,10 @@ test("two product canvases converge after concurrent work and a disconnected edi
   await expect(editor.getByTestId("product-object-count")).toHaveText(
     String(baseline + 5),
   );
+  await Promise.all([
+    owner.getByRole("button", { name: "Open Object navigator" }).click(),
+    editor.getByRole("button", { name: "Open Object navigator" }).click(),
+  ]);
   await expect(
     owner.getByRole("button", { name: /rectangle — Sticky note/ }).last(),
   ).toBeVisible();

@@ -35,7 +35,7 @@ export type CanvasShapeTool = Extract<
   "rectangle" | "ellipse" | "diamond"
 >;
 
-type Palette = "shape" | "drawing" | "comments" | "more" | null;
+type Palette = "shape" | "drawing" | "more" | null;
 
 type Props = {
   activeTool: CanvasTool;
@@ -44,6 +44,8 @@ type Props = {
   onChooseTool: (tool: CanvasTool) => void;
   onChooseShape: (shape: CanvasShapeTool) => void;
   onAddSimulatedAiIdea: () => void;
+  commentsPanelOpen: boolean;
+  onToggleComments: (invoker: HTMLButtonElement) => void;
 };
 
 const shapeOptions = [
@@ -92,12 +94,14 @@ export function WorkspacePrimaryDock({
   onChooseTool,
   onChooseShape,
   onAddSimulatedAiIdea,
+  commentsPanelOpen,
+  onToggleComments,
 }: Props) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const paletteInvokerRef = useRef<HTMLButtonElement | null>(null);
   const [openPalette, setOpenPalette] = useState<Palette>(null);
   const toolIsPressed = (tool: CanvasTool) =>
-    openPalette === null && activeTool === tool;
+    openPalette === null && !commentsPanelOpen && activeTool === tool;
 
   function chooseTool(tool: CanvasTool) {
     onChooseTool(activeTool === tool && tool !== "select" ? "select" : tool);
@@ -158,7 +162,7 @@ export function WorkspacePrimaryDock({
     "size-11 border-zinc-200 bg-white text-zinc-700 shadow-none hover:bg-violet-50 hover:text-violet-700 aria-pressed:border-violet-600 aria-pressed:bg-violet-600 aria-pressed:text-white dark:border-zinc-200 dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50 dark:hover:text-violet-700 dark:aria-pressed:border-violet-600 dark:aria-pressed:bg-violet-600 dark:aria-pressed:text-white";
 
   return (
-    <div className="pointer-events-auto absolute right-44 bottom-4 left-4 z-40 lg:right-auto lg:left-1/2 lg:max-w-[calc(100%-2rem)] lg:-translate-x-1/2">
+    <div className="pointer-events-auto absolute right-64 bottom-4 left-4 z-40 lg:right-auto lg:left-1/2 lg:max-w-[calc(100%-2rem)] lg:-translate-x-1/2">
       {openPalette ? (
         <div
           id={`workspace-${openPalette}-palette`}
@@ -203,14 +207,6 @@ export function WorkspacePrimaryDock({
               eyebrow="Drawing"
               title="Vector pen arrives in Milestone 6"
               description="This entry is a preview of the workspace vocabulary. It does not add or change canvas content yet."
-            />
-          ) : null}
-
-          {openPalette === "comments" ? (
-            <PaletteMessage
-              eyebrow="Comments"
-              title="Contextual feedback arrives in Milestone 3"
-              description="No comment thread is loaded or saved from this placeholder. The shared panel experience lands in a later slice."
             />
           ) : null}
 
@@ -307,6 +303,7 @@ export function WorkspacePrimaryDock({
           aria-pressed={
             openPalette === "shape" ||
             (openPalette === null &&
+              !commentsPanelOpen &&
               shapeOptions.some((option) => option.value === activeTool))
           }
           aria-expanded={openPalette === "shape"}
@@ -343,12 +340,15 @@ export function WorkspacePrimaryDock({
           size="icon"
           variant="outline"
           aria-label="Comments"
-          aria-pressed={openPalette === "comments"}
-          aria-expanded={openPalette === "comments"}
-          aria-controls="workspace-comments-palette"
+          aria-pressed={commentsPanelOpen}
+          aria-expanded={commentsPanelOpen}
+          aria-controls="workspace-shared-panel"
           title="Comments (Milestone 3)"
           className={iconButtonClass}
-          onClick={(event) => togglePalette("comments", event.currentTarget)}
+          onClick={(event) => {
+            setOpenPalette(null);
+            onToggleComments(event.currentTarget);
+          }}
         >
           <MessageCircle aria-hidden="true" />
         </Button>

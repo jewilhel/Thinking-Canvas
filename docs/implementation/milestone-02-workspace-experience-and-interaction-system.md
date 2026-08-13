@@ -166,12 +166,12 @@ Rollback is presentation-only: preserve the Milestone 1 workspace component unti
 ### Slice 4 — Shared panel system, navigation, tablet, and keyboard parity
 
 - [x] Record the approved Object navigator presentation decision.
-- [ ] Build the dismissible shared panel host with desktop overlay and tablet sheet behavior, focus containment, Escape handling, and invoker focus restoration.
-- [ ] Move the complete object list and detailed selection/geometry/attachment controls into the Object navigator panel.
-- [ ] Add the honest, non-persisted Comments placeholder and the approved help/shortcut surface.
-- [ ] Implement compact zoom controls and zoom-to-fit without adding a minimap under the recommended scope.
-- [ ] Verify dock/panel/popover placement, overflow, touch targets, canvas visibility, and virtual-keyboard response at the approved desktop and tablet sizes.
-- [ ] Add keyboard-only and automated axe coverage for every visible action and workspace state.
+- [x] Build the dismissible shared panel host with desktop overlay and tablet sheet behavior, focus containment, Escape handling, and invoker focus restoration.
+- [x] Move the complete object list and detailed selection/geometry/attachment controls into the Object navigator panel.
+- [x] Add the honest, non-persisted Comments placeholder and the approved help/shortcut surface.
+- [x] Implement compact zoom controls and zoom-to-fit without adding a minimap under the recommended scope.
+- [x] Verify dock/panel/popover placement, overflow, touch targets, canvas visibility, and virtual-keyboard response at the approved desktop and tablet sizes.
+- [x] Add keyboard-only and automated axe coverage for every visible action and workspace state.
 
 ### Slice 5 — Regression, multiplayer, preview evidence, and closure review
 
@@ -306,6 +306,14 @@ The remaining Slice 3 contextual-control work is implemented locally:
 - Grouping, ordering, duplicate, clipboard, history, and delete live behind More actions. Existing shortcuts remain authoritative when no selection exists, including paste and history after Cut removes the selected objects.
 - Escape closes a contextual panel and restores its trigger focus. Completed style and overflow actions close their panel so the floating surface does not obstruct the next canvas gesture.
 
+Slice 4 is implemented locally:
+
+- Object navigation, detailed selection geometry, and resolved connector coordinates now live in one dismissible shared panel rather than a permanent inspector. It appears as a right-side desktop overlay and a bounded tablet sheet while remaining below canvas toolbars so contextual actions stay reachable.
+- The shared panel contains focus, closes on Escape, and restores focus to the exact Object navigator, Comments, or Help invoker. Its close control and object rows meet the approved `44 × 44` touch target.
+- Comments opens an explicit Milestone 3 placeholder with no input, load, persistence, or canvas mutation path. Canvas help lists only currently implemented keyboard commands.
+- The compact zoom cluster now includes true zoom-to-fit across every durable object bound, including free or attached connectors. The approved scope still has no minimap.
+- The workspace and loading route can contract to `480px` height so a reduced tablet viewport retains the sheet close action. Automated placement checks cover `1440 × 900`, `1024 × 768`, `768 × 1024`, and a `768 × 520` virtual-keyboard stress height.
+
 ## Verification evidence
 
 Slice 1 local verification on 2026-08-12:
@@ -353,6 +361,16 @@ Slice 3 contextual-control local verification on 2026-08-12:
 | Clean-reset full `pnpm test:e2e`           | 26 passed after `pnpm db:reset` with the local OpenAI key intentionally unset, including authentication, authorization, persistence, reconnect, two-product-canvas convergence, compaction, full object/history/connector coverage, inline editing, contextual controls, and automated accessibility.                                                                                                                        |
 | Slice 3 contextual-control preview build   | Deploy `6a7d3bf981f7f27295396f5c` reached `ready` at `https://6a7d3bf981f7f27295396f5c--thinking-canvas.netlify.app` from pushed commit `dff66ee`. It is a protected non-production CLI deploy titled `Milestone 2 Slice 3 contextual controls dff66ee`; an unauthenticated request correctly received `401`, Netlify attached no Git `commit_ref`, and the final authenticated hosted scenario matrix remains Slice 5 work. |
 
+Slice 4 shared-panel and responsive-workspace local verification on 2026-08-12:
+
+| Evidence                                   | Result                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm check`                               | Passed formatting, ESLint, strict TypeScript, all 67 Vitest tests across 20 files, and the production build.                                                                                                                                                                                                                                                                             |
+| Focused panel and regression scenarios     | Passed shared-panel focus containment, Escape dismissal, exact invoker focus restoration, Comments non-persistence messaging, Help content, true zoom-to-fit, contextual-toolbar layering, Object navigator selection/geometry behavior, multiplayer object visibility, and zero detectable axe violations in open Comments, Object navigator, and contextual-control states.            |
+| Responsive and reduced-height verification | Automated bounds and touch-target assertions passed at the approved `1440 × 900`, `1024 × 768`, and `768 × 1024` sizes. A `768 × 520` reduced-height stress case also kept the panel and its `44 × 44` close control inside the viewport.                                                                                                                                                |
+| Clean-reset full `pnpm test:e2e`           | 27 passed after `pnpm db:reset` with local Supabase application values injected and the OpenAI key intentionally unset. The first attempted full run omitted the required local Supabase variables and was stopped after environment-only failures; the next run identified panel layering, semantic-role, and reduced-height issues, which were corrected before the clean passing run. |
+| Durable behavior boundary                  | No schema, migration, RLS, authentication, object format, or collaboration protocol changed. The Object navigator is a presentation move, Comments has no durable action, Help is static, and zoom-to-fit changes only the user-scoped local viewport.                                                                                                                                   |
+
 Planning inspection on 2026-08-12 had established that:
 
 - the branch begins at merged Milestone 1 commit `4966ffb` plus documentation commit `4ed4f65`;
@@ -361,7 +379,7 @@ Planning inspection on 2026-08-12 had established that:
 - the supplied seven FigJam screenshots establish full-bleed layout, compact corner chrome, a floating dock, tool-family palettes, contextual formatting, a dismissible comments panel, and contextual color controls;
 - no Milestone 2 database change was needed for Slice 1.
 
-The recorded results complete Slices 1 and 2. Slices 3 through 5, exact-head protected CI, authenticated Git-backed Netlify preview evidence, full milestone verification, master-ledger completion, and closure approval remain open.
+The recorded results complete Slices 1 through 4. Slice 5, exact-head protected CI, authenticated Git-backed Netlify preview evidence, full milestone verification, master-ledger completion, and closure approval remain open.
 
 ## Change record
 
@@ -375,6 +393,7 @@ The recorded results complete Slices 1 and 2. Slices 3 through 5, exact-head pro
 | 2026-08-12 | Added direct inline editing and connector gesture refinements to Slice 3.                                                                                                                           | Product-owner preview review requested in-place text editing, visually separated connection anchors, direct connector creation, endpoint reattachment, and free endpoint drops.                                    | Expands Slice 3 into explicit internal increments while preserving the current object schema, command/history boundary, collaboration behavior, keyboard anchor fallback, and Milestone 2 closure gates.                                         | Product owner               |
 | 2026-08-12 | Implemented and locally verified the approved Slice 3 direct-manipulation increments.                                                                                                               | Deliver the requested inline editing and connector gestures before the remaining contextual toolbar and action-overflow work.                                                                                      | Adds canvas-aligned text editing, offset circular handles, attached/free drag resolution, focused regression coverage, and a protected Netlify preview; the remaining Slice 3 controls and Slices 4–5 stay open.                                 | Engineering                 |
 | 2026-08-12 | Implemented the remaining Slice 3 contextual selection, styling, and action hierarchy.                                                                                                              | Replace the transitional permanent action wall with selection-near progressive disclosure while keeping all proven commands and shortcuts available.                                                               | Completes Slice 3 locally with clamped single/mixed controls, consistent styling/editing panels, overflow actions, mixed values, focus restoration, and focused accessibility/regression coverage; Slices 4–5 and milestone closure remain open. | Engineering                 |
+| 2026-08-12 | Implemented and locally verified Slice 4 shared panels, object navigation, help, zoom-to-fit, and responsive keyboard parity.                                                                       | Remove the transitional permanent inspector and finish the approved desktop/tablet progressive-disclosure system without expanding durable product scope.                                                          | Completes Slice 4 locally with dismissible panels, an honest non-persisted Comments surface, current shortcuts, true zoom-to-fit, reduced-height handling, and responsive/axe regression coverage; Slice 5 and closure remain open.              | Engineering                 |
 | 2026-08-12 | Implemented and locally verified Slice 1, including the full-bleed light workspace shell, compact route chrome, bounded Share-link behavior, semantic tokens, and focused regression coverage.      | Establish the approved visual and route foundations before replacing the Milestone 1 tool, selection, and panel presentations in later slices.                                                                     | Slice 1 checklist is complete; temporary floating Milestone 1 controls remain intentionally visible until Slices 2 through 4, with no schema or authorization-boundary change.                                                                   | Product owner plan approval |
 
 ## Closure
