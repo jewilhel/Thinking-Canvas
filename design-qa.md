@@ -14,6 +14,7 @@
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.13.04 PM.png`
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.13.16 PM.png`
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 2.04.42 PM.png`
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 2.28.09 PM.png`
 - Browser-rendered implementation:
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-dark-context-toolbar-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-object-context-menu-local.png`
@@ -24,6 +25,7 @@
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-stroke-palette-v2-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-text-color-v2-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-custom-color-picker-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-compact-custom-color-picker-local.png`
 - Route: authenticated local canvas workspace at `/app/canvases/[canvasId]`
 - State: two selected shapes for the contextual toolbar and selection-actions menu; one selected linked text primitive with Bookish, Large, bold, centered, numbered formatting and the Text style panel open.
 
@@ -35,6 +37,7 @@
 - The latest focused source crops are `394 × 190`, `268 × 154`, `778 × 792`, and `156 × 128` pixels. Their three implementation states are full `1280 × 720` captures at device scale factor `1`; the toolbar and open-menu regions were compared at visible rendered scale.
 - Density normalization: the comparison judged the shared focused UI surfaces at their visible rendered scale rather than treating the source crop dimensions as a required application viewport. Browser chrome, surrounding canvas area, and source-crop density were excluded from mismatch findings.
 - The custom-picker source is `474 × 790` pixels. Its implementation evidence is a `1280 × 720` browser capture at a `1280 × 720` CSS viewport and device scale factor `1`, with a focused `405px`-wide picker surface. The focused picker regions were compared at their visible rendered scale; the source's surrounding palette fragment and the implementation's surrounding workspace were excluded from mismatch findings.
+- The compact-placement feedback source is `1090 × 1076` pixels. Its implementation evidence is a `1280 × 720` browser capture at a `1280 × 720` CSS viewport and device scale factor `1`, with a `320 × 440` picker. The different viewport heights intentionally exercise opposite placement branches: the screenshot-sized geometry fits below the swatch, while the shorter in-app browser viewport correctly falls back above it.
 
 ## Full-view comparison evidence
 
@@ -50,6 +53,8 @@ The four 2026-08-13 refinement references and the three latest implementation ca
 
 The supplied custom-picker reference and `slice-04-custom-color-picker-local.png` were opened together in one comparison input after setting the implementation hex field to the reference value `#C2E5FF`. The focused comparison confirms the near-black rounded surface, eyedropper action, large editable hex field, horizontal hue and opacity controls with circular handles, and a full-width saturation/brightness field with the selected blue hue. The implementation adds an explicit close button and visible focus treatment for keyboard clarity.
 
+The `2.28.09 PM` product-feedback capture and `slice-04-compact-custom-color-picker-local.png` were opened together in one comparison input. The implementation reduces the picker from `405px` to `320px` wide and the color field from `405px` to `270px` tall while preserving the reference controls, hierarchy, and selected hue. Its right edge remains aligned to the rainbow swatch; placement prefers an `8px` gap below when the measured panel fits and otherwise moves above without leaving the viewport.
+
 ## Findings
 
 - No actionable P0, P1, or P2 visual differences remain.
@@ -60,6 +65,7 @@ The supplied custom-picker reference and `slice-04-custom-color-picker-local.png
 - Copy and content: Group/Ungroup, ordering, clipboard, duplicate, delete, typeface, size, alignment, list, and link labels are concise and applicable to the product's existing command model.
 - Accessibility and behavior: semantic menu roles, disabled/pressed states, initial focus, arrow/Home/End movement, Escape dismissal, Shift+F10/Context Menu access, right-click, Control-click, labeled text controls, safe-link actions, and custom-size keyboard commit are covered. Automated axe checks report no detectable violations in the tested states.
 - Custom color picker: the native browser picker has been replaced with one consistent fill, stroke, and text-color dialog. Hex entry, optional browser eyedropper, hue, opacity, saturation, brightness, Escape/focus restoration, outside dismissal, and pointer/keyboard adjustment are all represented by labeled controls. The large color field and the hue/opacity composition match the supplied interaction reference without changing the persisted style command boundary.
+- Compact placement: the revised picker no longer dominates the canvas. A pure placement resolver and browser-visible `data-placement` state cover below, above, and viewport-clamped cases while retaining right-edge alignment to the invoking swatch.
 
 ## Comparison history
 
@@ -70,6 +76,7 @@ The supplied custom-picker reference and `slice-04-custom-color-picker-local.png
 - Color-control refinement pass 2: no P0/P1/P2 findings. The toolbar ordering, stroke icon, removal of the stroke swatch and fill-panel custom-stroke field, circular rainbow custom entries, and text-color entry match the supplied focused references at the implementation's normalized `1280 × 720` viewport.
 - Custom-picker pass 1: the initial implementation included every required interaction but used a compact `340px` panel and `220px` saturation/brightness field, producing a P2 density and proportion mismatch against the tall reference picker.
 - Custom-picker pass 2: expanded the panel to `405px`, enlarged the saturation/brightness field to `405 × 405`, increased top-section spacing, set the implementation to `#C2E5FF`, and recaptured the same open state. The combined source/implementation comparison found no remaining actionable P0/P1/P2 difference.
+- Custom-picker pass 3: product review identified the `405 × 599` implementation as a P2 workspace-density issue and requested swatch-relative placement. The picker was reduced to `320 × 440`, its color field to `320 × 270`, and placement changed to prefer below with an `8px` gap before falling back above or clamping. The final combined comparison has no remaining actionable P0/P1/P2 difference.
 
 ## Primary interactions tested
 
@@ -80,6 +87,7 @@ The supplied custom-picker reference and `slice-04-custom-color-picker-local.png
 - Authenticated in-app browser color styling confirmed that Light blue applies fill `#dbeafe` with darker outline `#2563eb`, custom fill and stroke remain independently editable through their applicable palettes, the `T` control opens Text style, and Connector controls expose top/right/bottom/left with no center anchor. Browser logs contained only normal local React DevTools and HMR messages.
 - The second color pass confirmed the exact Fill → Stroke → Text style order, no visible current-stroke swatch, no custom-stroke input inside Fill, rainbow custom entries at the end of Fill and Stroke, a round custom text-color entry, and persisted text color. Automated axe coverage remains clean, and the in-app browser emitted no application errors.
 - The custom-picker browser pass changed fill through the editable `#C2E5FF` hex field, confirmed the open dialog and labeled Hue, Opacity, and Saturation and brightness controls, verified persistence through the existing object-style path, and found no application console errors. Browser logs contained only normal React DevTools and local HMR messages. The complete 29-scenario Chromium suite passed after the native color inputs were replaced.
+- The compact-placement browser pass measured the final picker at `320 × 440`, right-aligned with its `36px` rainbow trigger. At the active `1280 × 720` viewport it selected the expected `above` fallback because the trigger bottom was `552px`; unit coverage verifies `below` placement for the supplied `1090 × 1076` geometry and the fully constrained fallback. No application console warnings or errors were emitted.
 
 ## Follow-up polish
 

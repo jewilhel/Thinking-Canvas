@@ -12,6 +12,11 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import {
+  type PickerPlacement,
+  resolvePickerPosition,
+} from "@/components/canvas/custom-color-picker-position";
+
 type Hsva = {
   h: number;
   s: number;
@@ -31,14 +36,14 @@ type EyeDropperConstructor = new () => {
   open: () => Promise<EyeDropperResult>;
 };
 
-const PANEL_WIDTH = 405;
-const PANEL_HEIGHT = 640;
-const HUE_WIDTH = 341;
+const PANEL_WIDTH = 320;
+const PANEL_HEIGHT = 448;
+const HUE_WIDTH = 280;
 const HUE_HEIGHT = 24;
-const ALPHA_WIDTH = 341;
+const ALPHA_WIDTH = 280;
 const ALPHA_HEIGHT = 24;
-const FIELD_WIDTH = 405;
-const FIELD_HEIGHT = 405;
+const FIELD_WIDTH = 320;
+const FIELD_HEIGHT = 270;
 
 function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
@@ -207,7 +212,11 @@ export function CustomColorPicker({ label, value, mixed, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(fallback);
   const [hexDraft, setHexDraft] = useState(toHex(fallback));
-  const [position, setPosition] = useState({ left: 12, top: 12 });
+  const [position, setPosition] = useState<{
+    left: number;
+    top: number;
+    placement: PickerPlacement;
+  }>({ left: 12, top: 12, placement: "below" });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const hueRef = useRef<HTMLCanvasElement>(null);
@@ -222,17 +231,15 @@ export function CustomColorPicker({ label, value, mixed, onChange }: Props) {
 
     function placePanel() {
       const rect = trigger!.getBoundingClientRect();
-      const left = clamp(
-        rect.right - PANEL_WIDTH,
-        12,
-        Math.max(12, window.innerWidth - PANEL_WIDTH - 12),
+      const panelHeight =
+        panelRef.current?.getBoundingClientRect().height ?? PANEL_HEIGHT;
+      setPosition(
+        resolvePickerPosition(
+          rect,
+          { width: PANEL_WIDTH, height: panelHeight },
+          { width: window.innerWidth, height: window.innerHeight },
+        ),
       );
-      const below = rect.bottom + 10;
-      const top =
-        below + PANEL_HEIGHT <= window.innerHeight - 12
-          ? below
-          : Math.max(12, rect.top - PANEL_HEIGHT - 10);
-      setPosition({ left, top });
     }
 
     function closeOnOutside(event: MouseEvent) {
@@ -369,11 +376,12 @@ export function CustomColorPicker({ label, value, mixed, onChange }: Props) {
               ref={panelRef}
               role="dialog"
               aria-modal="false"
+              data-placement={position.placement}
               aria-labelledby={titleId}
-              className="fixed z-100 w-[405px] overflow-hidden rounded-3xl border border-black/60 bg-zinc-900 text-white shadow-2xl"
+              className="fixed z-100 w-80 overflow-hidden rounded-2xl border border-black/60 bg-zinc-900 text-white shadow-2xl"
               style={{ left: position.left, top: position.top }}
             >
-              <div className="space-y-5 p-8 pb-7">
+              <div className="space-y-4 p-5 pb-5">
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
@@ -523,7 +531,7 @@ export function CustomColorPicker({ label, value, mixed, onChange }: Props) {
                 </div>
               </div>
 
-              <div className="relative h-[405px] bg-black">
+              <div className="relative h-[270px] bg-black">
                 <canvas
                   ref={fieldRef}
                   width={FIELD_WIDTH}
