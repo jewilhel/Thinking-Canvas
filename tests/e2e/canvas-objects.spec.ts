@@ -328,6 +328,83 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
   expect(accessibility.violations).toEqual([]);
 });
 
+test("uses dark contextual controls and opens selection actions from right-click, Control-click, and keyboard", async ({
+  page,
+}) => {
+  const surface = await openFreshCanvas(page);
+  await createLabeledShape(page, "Rectangle", "Menu alpha", {
+    x: 180,
+    y: 140,
+  });
+  await createLabeledShape(page, "Rectangle", "Menu beta", {
+    x: 520,
+    y: 140,
+  });
+
+  await page.getByRole("button", { name: /Menu alpha/ }).click();
+  await page
+    .getByRole("button", { name: /Menu beta/ })
+    .click({ modifiers: ["Shift"] });
+  const contextualToolbar = page.getByTestId("contextual-selection-controls");
+  await expect(contextualToolbar.getByRole("toolbar")).toHaveClass(
+    /bg-zinc-900/,
+  );
+  await openContextPanel(page, "Fill");
+  await expect(
+    page.getByRole("dialog", { name: "fill selection controls" }),
+  ).toHaveClass(/bg-zinc-900/);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Close Object navigator" }).click();
+
+  const menu = page.getByRole("menu", { name: "Selection actions" });
+  await surface.focus();
+  await surface.press("Shift+F10");
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await surface.dispatchEvent("contextmenu", {
+    clientX: 230,
+    clientY: 170,
+    bubbles: true,
+    cancelable: true,
+  });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: /Group/ })).toBeEnabled();
+  await expect(menu.getByRole("menuitem", { name: /Ungroup/ })).toBeDisabled();
+  await menu.getByRole("menuitem", { name: /Group/ }).click();
+
+  await surface.dispatchEvent("contextmenu", {
+    clientX: 230,
+    clientY: 170,
+    bubbles: true,
+    cancelable: true,
+  });
+  await expect(menu.getByRole("menuitem", { name: /Ungroup/ })).toBeEnabled();
+  await menu.getByRole("menuitem", { name: /Ungroup/ }).click();
+
+  await surface.click({ position: { x: 320, y: 500 } });
+  await surface.click({
+    position: { x: 230, y: 170 },
+    modifiers: ["Control"],
+  });
+  await expect(menu).toBeVisible();
+  await menu.getByRole("menuitem", { name: "Bring to front" }).click();
+  await ensureObjectNavigator(page);
+  await expect(
+    page.locator('[data-testid^="object-list-item-"]').last(),
+  ).toContainText("Menu alpha");
+
+  await surface.focus();
+  await surface.press("Shift+F10");
+  await expect(menu).toBeVisible();
+  await expect(
+    menu.getByRole("menuitem", { name: "Bring to front" }),
+  ).toBeFocused();
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(surface).toBeFocused();
+});
+
 test("creates, reattaches, and detaches connectors with direct pointer gestures", async ({
   page,
 }) => {

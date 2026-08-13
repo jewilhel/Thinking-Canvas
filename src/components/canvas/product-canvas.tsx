@@ -65,6 +65,7 @@ import {
   type Viewport,
 } from "@/canvas/geometry";
 import { useCanvasRecovery } from "@/collaboration/use-canvas-recovery";
+import { ObjectContextMenu } from "@/components/canvas/object-context-menu";
 import {
   WorkspacePrimaryDock,
   type CanvasShapeTool,
@@ -99,6 +100,7 @@ type ReconnectingEndpoint = {
 type ContextPanel =
   "fill" | "outline" | "text" | "table" | "connector" | "more";
 type SharedPanel = "objects" | "comments" | "help";
+type ObjectContextMenuPosition = { x: number; y: number; maxHeight: number };
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
 const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left", "center"];
@@ -198,6 +200,8 @@ export function ProductCanvas({
     useState<ReconnectingEndpoint | null>(null);
   const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
   const [contextPanel, setContextPanel] = useState<ContextPanel | null>(null);
+  const [objectContextMenu, setObjectContextMenu] =
+    useState<ObjectContextMenuPosition | null>(null);
   const [sharedPanel, setSharedPanel] = useState<SharedPanel | null>(null);
   const [sharedPanelInvoker, setSharedPanelInvoker] =
     useState<HTMLButtonElement | null>(null);
@@ -507,6 +511,7 @@ export function ProductCanvas({
 
   function chooseTool(nextTool: CanvasTool) {
     setContextPanel(null);
+    setObjectContextMenu(null);
     setTool(nextTool);
     if (nextTool !== "connector") {
       setConnectorStart(null);
@@ -611,6 +616,7 @@ export function ProductCanvas({
 
   function toggleContextPanel(panel: ContextPanel, trigger: HTMLButtonElement) {
     contextPanelTriggerRef.current = trigger;
+    setObjectContextMenu(null);
     setContextPanel((current) => (current === panel ? null : panel));
   }
 
@@ -742,6 +748,10 @@ export function ProductCanvas({
     object: CanvasObjectV2,
   ) {
     event.cancelBubble = true;
+    if (event.evt instanceof MouseEvent && event.evt.ctrlKey) {
+      openObjectContextMenu(event, object);
+      return;
+    }
     if (tool === "connector" && object.type !== "connector") {
       finishConnector({
         kind: "attached",
@@ -751,14 +761,81 @@ export function ProductCanvas({
       return;
     }
     if (tool === "select") {
-      const modifier =
-        event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey;
+      const modifier = event.evt.shiftKey || event.evt.metaKey;
       updateSelectionForObject(object, modifier);
     }
   }
 
+  function showObjectContextMenu(x: number, y: number) {
+    const menuWidth = 288;
+    const preferredHeight = 520;
+    const safeX = Number.isFinite(x) ? x : size.width / 2;
+    const safeY = Number.isFinite(y) ? y : size.height / 2;
+    const left = Math.min(
+      Math.max(8, safeX),
+      Math.max(8, size.width - menuWidth - 8),
+    );
+    const top = Math.min(
+      Math.max(8, safeY),
+      Math.max(8, size.height - preferredHeight - 16),
+    );
+    setContextPanel(null);
+    setObjectContextMenu({
+      x: left,
+      y: top,
+      maxHeight: Math.max(220, size.height - top - 16),
+    });
+  }
+
+  function openObjectContextMenu(
+    event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
+    object: CanvasObjectV2,
+  ) {
+    event.cancelBubble = true;
+    event.evt.preventDefault();
+    if (!(event.evt instanceof MouseEvent)) return;
+    openObjectContextMenuFromPointer(
+      object,
+      event.evt.clientX,
+      event.evt.clientY,
+    );
+  }
+
+  function openObjectContextMenuFromPointer(
+    object: CanvasObjectV2,
+    clientX: number,
+    clientY: number,
+  ) {
+    if (!selectedIds.includes(object.id))
+      updateSelectionForObject(object, false);
+    setTool("select");
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    showObjectContextMenu(clientX - bounds.left, clientY - bounds.top);
+  }
+
+  function objectAtClientPoint(clientX: number, clientY: number) {
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!bounds) return undefined;
+    const point = {
+      x: (clientX - bounds.left - viewport.x) / viewport.scale,
+      y: (clientY - bounds.top - viewport.y) / viewport.scale,
+    };
+    return [...objects].reverse().find((candidate) => {
+      const objectBox = objectBounds(candidate);
+      const padding = candidate.type === "connector" ? 12 : 0;
+      return (
+        point.x >= objectBox.x - padding &&
+        point.x <= objectBox.x + objectBox.width + padding &&
+        point.y >= objectBox.y - padding &&
+        point.y <= objectBox.y + objectBox.height + padding
+      );
+    });
+  }
+
   function updateSelectionForObject(object: CanvasObjectV2, modifier: boolean) {
     setContextPanel(null);
+    setObjectContextMenu(null);
     const groupIds = object.groupId
       ? objects
           .filter((candidate) => candidate.groupId === object.groupId)
@@ -828,6 +905,7 @@ export function ProductCanvas({
     );
     setSelectedIds([]);
     setContextPanel(null);
+    setObjectContextMenu(null);
   }
 
   function groupSelected() {
@@ -1135,6 +1213,18 @@ export function ProductCanvas({
     )
       return;
     const accelerator = event.metaKey || event.ctrlKey;
+    if (
+      selectedObjects.length &&
+      ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu")
+    ) {
+      event.preventDefault();
+      const keyboardX = contextualToolbarPosition?.left ?? size.width / 2;
+      const keyboardY = contextualToolbarPosition
+        ? contextualToolbarPosition.top + 48
+        : size.height / 2;
+      showObjectContextMenu(keyboardX, keyboardY);
+      return;
+    }
     if (accelerator && event.key.toLowerCase() === "z") {
       event.preventDefault();
       if (event.shiftKey) redo();
@@ -1382,7 +1472,7 @@ export function ProductCanvas({
     if (object.type === "connector") {
       const points = resolveConnectorPointsV2(object, objectsById);
       return (
-        <Group key={object.id}>
+        <Group key={object.id} id={object.id}>
           <Arrow
             points={points}
             stroke={object.style.outline}
@@ -1393,6 +1483,7 @@ export function ProductCanvas({
             hitStrokeWidth={18}
             onClick={(event) => selectObject(event, object)}
             onTap={(event) => selectObject(event, object)}
+            onContextMenu={(event) => openObjectContextMenu(event, object)}
           />
           {selectedIds.includes(object.id)
             ? (["start", "end"] as const).map((endpoint, index) => (
@@ -1438,6 +1529,7 @@ export function ProductCanvas({
         }
         onClick={(event) => selectObject(event, object)}
         onTap={(event) => selectObject(event, object)}
+        onContextMenu={(event) => openObjectContextMenu(event, object)}
         onDblClick={(event) => {
           event.cancelBubble = true;
           if (object.type === "shape" || object.type === "text") {
@@ -1572,6 +1664,33 @@ export function ProductCanvas({
     );
   }
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const canvasContainer = container;
+    function openFromMouse(event: MouseEvent) {
+      if (
+        !(event.target instanceof Node) ||
+        !canvasContainer.contains(event.target)
+      )
+        return;
+      const object =
+        objectAtClientPoint(event.clientX, event.clientY) ?? selectedObject;
+      if (!object) return;
+      event.preventDefault();
+      openObjectContextMenuFromPointer(object, event.clientX, event.clientY);
+    }
+    function onMouseDown(event: MouseEvent) {
+      if (event.button === 2 || event.ctrlKey) openFromMouse(event);
+    }
+    window.addEventListener("mousedown", onMouseDown, true);
+    window.addEventListener("contextmenu", openFromMouse, true);
+    return () => {
+      window.removeEventListener("mousedown", onMouseDown, true);
+      window.removeEventListener("contextmenu", openFromMouse, true);
+    };
+  });
+
   const connectorPreviewPoints =
     connectorStart && pointerPreview
       ? (() => {
@@ -1627,6 +1746,15 @@ export function ProductCanvas({
       aria-labelledby="canvas-title"
       className="thinking-workspace relative h-full min-h-[480px] overflow-hidden text-[var(--workspace-foreground)]"
       data-testid="thinking-workspace"
+      onPointerDownCapture={(event) => {
+        const target = event.target;
+        if (
+          target instanceof Element &&
+          target.closest("[data-object-context-menu]")
+        )
+          return;
+        setObjectContextMenu(null);
+      }}
     >
       <div
         className="pointer-events-none absolute inset-x-4 top-4 z-30 flex items-start justify-between gap-4"
@@ -1864,6 +1992,28 @@ export function ProductCanvas({
         </WorkspacePanel>
       ) : null}
 
+      {objectContextMenu && selectedObjects.length ? (
+        <ObjectContextMenu
+          {...objectContextMenu}
+          canGroup={
+            selectedIds.length >= 2 &&
+            !selectedObjects.some((object) => object.groupId != null)
+          }
+          canUngroup={selectedObjects.some((object) => object.groupId != null)}
+          onGroup={groupSelected}
+          onUngroup={ungroupSelected}
+          onReorder={reorderSelected}
+          onDuplicate={duplicateSelected}
+          onCopy={() => void copySelected()}
+          onCut={() => void cutSelected()}
+          onDelete={deleteSelected}
+          onDismiss={() => {
+            setObjectContextMenu(null);
+            requestAnimationFrame(() => containerRef.current?.focus());
+          }}
+        />
+      ) : null}
+
       {tool === "select" && selectedObject && contextualToolbarPosition ? (
         <div
           className="absolute z-40 -translate-x-1/2"
@@ -1871,7 +2021,7 @@ export function ProductCanvas({
           data-testid="contextual-selection-controls"
         >
           <div
-            className="relative flex max-w-[calc(100vw-2rem)] items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 [&_button:hover]:bg-violet-50"
+            className="relative flex max-w-[calc(100vw-2rem)] items-center gap-1 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-white shadow-2xl [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-zinc-100 [&_button:hover]:bg-white/10 [&_button[aria-expanded=true]]:bg-violet-600 [&_button[aria-expanded=true]]:text-white"
             role="toolbar"
             aria-label="Selection controls"
             onKeyDown={(event) => {
@@ -1883,7 +2033,7 @@ export function ProductCanvas({
             }}
           >
             <output
-              className="px-2 text-xs whitespace-nowrap text-zinc-500"
+              className="px-2 text-xs whitespace-nowrap text-zinc-300"
               aria-live="polite"
               data-testid="selection-status"
             >
@@ -1995,7 +2145,7 @@ export function ProductCanvas({
               <div
                 role="dialog"
                 aria-label={`${contextPanel} selection controls`}
-                className="absolute top-full left-1/2 mt-2 w-72 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-[var(--workspace-border)] bg-white p-3 text-zinc-900 shadow-xl"
+                className="absolute top-full left-1/2 mt-2 w-72 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-white/10 bg-zinc-900 p-3 text-white shadow-2xl [&_button]:border-white/10 [&_button]:bg-zinc-800 [&_button]:text-zinc-100 [&_button:hover]:bg-zinc-700"
                 onKeyDown={(event) => {
                   if (event.key === "Escape") {
                     event.preventDefault();
@@ -2014,6 +2164,7 @@ export function ProductCanvas({
                         commonStyleValue(fillObjects, "fill") === undefined
                       }
                       value={commonStyleValue(fillObjects, "fill") ?? "#ffffff"}
+                      className="size-10 rounded-lg border border-white/15 bg-zinc-800 p-1"
                       onChange={(event) =>
                         completeContextAction(() =>
                           applyStyleToObjects(fillObjects, {
@@ -2037,6 +2188,7 @@ export function ProductCanvas({
                       value={
                         commonStyleValue(outlineObjects, "outline") ?? "#475569"
                       }
+                      className="size-10 rounded-lg border border-white/15 bg-zinc-800 p-1"
                       onChange={(event) =>
                         completeContextAction(() =>
                           applyStyleToObjects(outlineObjects, {
@@ -2049,7 +2201,7 @@ export function ProductCanvas({
                 ) : null}
                 {contextPanel === "text" ? (
                   <div className="space-y-3">
-                    <label className="block text-xs text-zinc-600">
+                    <label className="block text-xs text-zinc-300">
                       Typeface
                       <select
                         aria-label="Typeface"
@@ -2063,7 +2215,7 @@ export function ProductCanvas({
                             }),
                           )
                         }
-                        className="mt-1 w-full rounded-md border border-zinc-200 bg-white p-2 text-sm text-zinc-900"
+                        className="mt-1 w-full rounded-lg border border-white/15 bg-zinc-800 p-2 text-sm text-white"
                       >
                         <option value="" disabled>
                           Mixed
@@ -2079,7 +2231,7 @@ export function ProductCanvas({
                         </option>
                       </select>
                     </label>
-                    <label className="block text-xs text-zinc-600">
+                    <label className="block text-xs text-zinc-300">
                       Text size
                       <input
                         aria-label="Text size"
@@ -2097,13 +2249,13 @@ export function ProductCanvas({
                             }),
                           )
                         }
-                        className="mt-1 w-full rounded-md border border-zinc-200 bg-white p-2 text-sm text-zinc-900"
+                        className="mt-1 w-full rounded-lg border border-white/15 bg-zinc-800 p-2 text-sm text-white"
                       />
                     </label>
                   </div>
                 ) : null}
                 {contextPanel === "table" && selectedObject.type === "table" ? (
-                  <label className="block text-xs text-zinc-600">
+                  <label className="block text-xs text-zinc-300">
                     Table cells
                     <textarea
                       aria-label="Table cells"
@@ -2117,7 +2269,7 @@ export function ProductCanvas({
                             .map((row) => row.split("\t")),
                         })
                       }
-                      className="mt-1 min-h-24 w-full rounded-md border border-zinc-200 bg-white p-2 font-mono text-sm text-zinc-900"
+                      className="mt-1 min-h-24 w-full rounded-lg border border-white/15 bg-zinc-800 p-2 font-mono text-sm text-white"
                     />
                   </label>
                 ) : null}
@@ -2126,7 +2278,7 @@ export function ProductCanvas({
                     {selectedObject.type === "shape" &&
                     selectedIds.length === 1 ? (
                       <fieldset>
-                        <legend className="text-xs text-zinc-600">
+                        <legend className="text-xs text-zinc-300">
                           Connector anchors
                         </legend>
                         <div className="mt-2 flex flex-wrap gap-2">
