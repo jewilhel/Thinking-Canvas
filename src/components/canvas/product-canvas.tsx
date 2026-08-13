@@ -5,11 +5,17 @@ import {
   ArrowLeft,
   Check,
   Cloud,
+  Copy,
+  Ellipsis,
+  Link2,
   LogOut,
   Maximize2,
   Minus,
+  Palette,
   Plus,
   Share2,
+  Trash2,
+  Type,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -87,6 +93,8 @@ type ReconnectingEndpoint = {
   connectorId: string;
   endpoint: "start" | "end";
 };
+type ContextPanel =
+  "fill" | "outline" | "text" | "table" | "connector" | "more";
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
 const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left", "center"];
@@ -155,6 +163,7 @@ export function ProductCanvas({
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const inlineEditorRef = useRef<HTMLTextAreaElement>(null);
+  const contextPanelTriggerRef = useRef<HTMLButtonElement | null>(null);
   const objectNodeRefs = useRef(new Map<string, Konva.Node>());
   const frameStartedAt = useRef(0);
   const documentStorageKey = `thinking-canvas:document:${canvasId}`;
@@ -184,6 +193,7 @@ export function ProductCanvas({
   const [reconnectingEndpoint, setReconnectingEndpoint] =
     useState<ReconnectingEndpoint | null>(null);
   const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
+  const [contextPanel, setContextPanel] = useState<ContextPanel | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [clipboardText, setClipboardText] = useState("");
   const [undoStack, setUndoStack] = useState<CanvasHistoryEntry[]>([]);
@@ -229,6 +239,56 @@ export function ProductCanvas({
     return object ? [object] : [];
   });
   const selectedObject = selectedId ? objectsById.get(selectedId) : undefined;
+  const selectedBounds = selectedObjects.length
+    ? selectedObjects.reduce(
+        (bounds, object) => {
+          const next = objectBounds(object);
+          return {
+            x: Math.min(bounds.x, next.x),
+            y: Math.min(bounds.y, next.y),
+            right: Math.max(bounds.right, next.x + next.width),
+            bottom: Math.max(bounds.bottom, next.y + next.height),
+          };
+        },
+        (() => {
+          const first = objectBounds(selectedObjects[0]!);
+          return {
+            x: first.x,
+            y: first.y,
+            right: first.x + first.width,
+            bottom: first.y + first.height,
+          };
+        })(),
+      )
+    : null;
+  const contextualToolbarPosition = selectedBounds
+    ? {
+        left: Math.min(
+          Math.max(
+            viewport.x +
+              ((selectedBounds.x + selectedBounds.right) / 2) * viewport.scale,
+            190,
+          ),
+          Math.max(190, size.width - 190),
+        ),
+        top: Math.max(112, viewport.y + selectedBounds.y * viewport.scale - 66),
+      }
+    : null;
+  const fillObjects = selectedObjects.filter(
+    (object) => object.type === "shape" || object.type === "table",
+  );
+  const outlineObjects = selectedObjects.filter(
+    (object) =>
+      object.type !== "text" &&
+      object.type !== "document" &&
+      object.type !== "annotation",
+  );
+  const textStyleObjects = selectedObjects.filter(
+    (object) =>
+      object.type === "shape" ||
+      object.type === "text" ||
+      object.type === "table",
+  );
 
   useEffect(() => {
     function synchronize() {
@@ -439,6 +499,7 @@ export function ProductCanvas({
   }
 
   function chooseTool(nextTool: CanvasTool) {
+    setContextPanel(null);
     setTool(nextTool);
     if (nextTool !== "connector") {
       setConnectorStart(null);
@@ -539,6 +600,49 @@ export function ProductCanvas({
     }
     setInlineTextEditor(null);
     requestAnimationFrame(() => containerRef.current?.focus());
+  }
+
+  function toggleContextPanel(panel: ContextPanel, trigger: HTMLButtonElement) {
+    contextPanelTriggerRef.current = trigger;
+    setContextPanel((current) => (current === panel ? null : panel));
+  }
+
+  function closeContextPanel(restoreFocus = true) {
+    setContextPanel(null);
+    if (restoreFocus) {
+      requestAnimationFrame(() => contextPanelTriggerRef.current?.focus());
+    }
+  }
+
+  function completeContextAction(action: () => void) {
+    action();
+    closeContextPanel(false);
+  }
+
+  function applyStyleToObjects(
+    targets: CanvasObjectV2[],
+    style: {
+      fill?: string | null;
+      outline?: string;
+      fontFamily?: string;
+      fontSize?: number;
+    },
+  ) {
+    if (!targets.length) return;
+    runCommandBatch(
+      targets.map((object) => ({
+        type: "object.style",
+        payload: { objectId: object.id, style },
+      })),
+    );
+  }
+
+  function commonStyleValue<
+    K extends "fill" | "outline" | "fontFamily" | "fontSize",
+  >(targets: CanvasObjectV2[], field: K) {
+    const values = targets.map((object) => object.style[field]);
+    const first = values[0];
+    return values.every((value) => value === first) ? first : undefined;
   }
 
   function connectionHandlePoint(object: CanvasObjectV2, anchor: CanvasAnchor) {
@@ -647,6 +751,7 @@ export function ProductCanvas({
   }
 
   function updateSelectionForObject(object: CanvasObjectV2, modifier: boolean) {
+    setContextPanel(null);
     const groupIds = object.groupId
       ? objects
           .filter((candidate) => candidate.groupId === object.groupId)
@@ -715,6 +820,7 @@ export function ProductCanvas({
       })),
     );
     setSelectedIds([]);
+    setContextPanel(null);
   }
 
   function groupSelected() {
@@ -869,6 +975,7 @@ export function ProductCanvas({
     event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
   ) {
     if (event.target !== stageRef.current) return;
+    setContextPanel(null);
     const point = worldPointer();
     if (!point) return;
     if (tool === "select") {
@@ -1620,121 +1727,458 @@ export function ProductCanvas({
         </Button>
       </div>
 
-      <div
-        className="absolute bottom-20 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 flex-nowrap items-center gap-2 overflow-x-auto rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-2 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50"
-        role="toolbar"
-        aria-label="Selection and history actions"
-      >
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={
-            selectedIds.length < 2 ||
-            selectedObjects.some((object) => object.groupId != null)
-          }
-          aria-keyshortcuts="Control+G Meta+G"
-          onClick={groupSelected}
+      {tool === "select" && selectedObject && contextualToolbarPosition ? (
+        <div
+          className="absolute z-40 -translate-x-1/2"
+          style={contextualToolbarPosition}
+          data-testid="contextual-selection-controls"
         >
-          Group
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedObjects.some((object) => object.groupId != null)}
-          aria-keyshortcuts="Control+Shift+G Meta+Shift+G"
-          onClick={ungroupSelected}
-        >
-          Ungroup
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedIds.length}
-          onClick={() => reorderSelected("front")}
-        >
-          Bring to front
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedIds.length}
-          onClick={() => reorderSelected("back")}
-        >
-          Send to back
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedIds.length}
-          aria-keyshortcuts="Control+D Meta+D"
-          onClick={duplicateSelected}
-        >
-          Duplicate
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedIds.length}
-          aria-keyshortcuts="Control+C Meta+C"
-          onClick={() => void copySelected()}
-        >
-          Copy
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedIds.length}
-          aria-keyshortcuts="Control+X Meta+X"
-          onClick={() => void cutSelected()}
-        >
-          Cut
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          aria-keyshortcuts="Control+V Meta+V"
-          onClick={() => void pasteSelected()}
-        >
-          Paste
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!undoStack.length}
-          aria-keyshortcuts="Control+Z Meta+Z"
-          onClick={undo}
-        >
-          Undo
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!redoStack.length}
-          aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
-          onClick={redo}
-        >
-          Redo
-        </Button>
+          <div
+            className="relative flex max-w-[calc(100vw-2rem)] items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 [&_button:hover]:bg-violet-50"
+            role="toolbar"
+            aria-label="Selection controls"
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && contextPanel) {
+                event.preventDefault();
+                event.stopPropagation();
+                closeContextPanel();
+              }
+            }}
+          >
+            <output
+              className="px-2 text-xs whitespace-nowrap text-zinc-500"
+              aria-live="polite"
+              data-testid="selection-status"
+            >
+              {selectedIds.length === 1
+                ? objectLabel(selectedObject)
+                : `${selectedIds.length} selected`}
+            </output>
+            {(selectedObject.type === "shape" ||
+              selectedObject.type === "text") &&
+            selectedIds.length === 1 ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Edit text on canvas"
+                title="Edit text"
+                onClick={() => startInlineEditing(selectedObject)}
+              >
+                <Type aria-hidden="true" />
+              </Button>
+            ) : null}
+            {fillObjects.length ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Fill"
+                aria-expanded={contextPanel === "fill"}
+                title="Fill"
+                onClick={(event) =>
+                  toggleContextPanel("fill", event.currentTarget)
+                }
+              >
+                <Palette aria-hidden="true" />
+              </Button>
+            ) : null}
+            {outlineObjects.length ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-expanded={contextPanel === "outline"}
+                onClick={(event) =>
+                  toggleContextPanel("outline", event.currentTarget)
+                }
+              >
+                Outline
+              </Button>
+            ) : null}
+            {textStyleObjects.length ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-expanded={contextPanel === "text"}
+                onClick={(event) =>
+                  toggleContextPanel("text", event.currentTarget)
+                }
+              >
+                Text style
+              </Button>
+            ) : null}
+            {selectedObject.type === "table" && selectedIds.length === 1 ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-expanded={contextPanel === "table"}
+                onClick={(event) =>
+                  toggleContextPanel("table", event.currentTarget)
+                }
+              >
+                Edit table
+              </Button>
+            ) : null}
+            {selectedObjects.some(
+              (object) =>
+                object.type === "shape" || object.type === "connector",
+            ) ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Connector controls"
+                aria-expanded={contextPanel === "connector"}
+                title="Connector controls"
+                onClick={(event) =>
+                  toggleContextPanel("connector", event.currentTarget)
+                }
+              >
+                <Link2 aria-hidden="true" />
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="outline"
+              aria-label="More selection actions"
+              aria-expanded={contextPanel === "more"}
+              title="More actions"
+              onClick={(event) =>
+                toggleContextPanel("more", event.currentTarget)
+              }
+            >
+              <Ellipsis aria-hidden="true" />
+            </Button>
+
+            {contextPanel ? (
+              <div
+                role="dialog"
+                aria-label={`${contextPanel} selection controls`}
+                className="absolute top-full left-1/2 mt-2 w-72 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-[var(--workspace-border)] bg-white p-3 text-zinc-900 shadow-xl"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeContextPanel();
+                  }
+                }}
+              >
+                {contextPanel === "fill" ? (
+                  <label className="flex items-center justify-between gap-3 text-sm">
+                    Fill color
+                    <input
+                      aria-label="Fill color"
+                      type="color"
+                      data-mixed={
+                        commonStyleValue(fillObjects, "fill") === undefined
+                      }
+                      value={commonStyleValue(fillObjects, "fill") ?? "#ffffff"}
+                      onChange={(event) =>
+                        completeContextAction(() =>
+                          applyStyleToObjects(fillObjects, {
+                            fill: event.target.value,
+                          }),
+                        )
+                      }
+                    />
+                  </label>
+                ) : null}
+                {contextPanel === "outline" ? (
+                  <label className="flex items-center justify-between gap-3 text-sm">
+                    Outline color
+                    <input
+                      aria-label="Outline color"
+                      type="color"
+                      data-mixed={
+                        commonStyleValue(outlineObjects, "outline") ===
+                        undefined
+                      }
+                      value={
+                        commonStyleValue(outlineObjects, "outline") ?? "#475569"
+                      }
+                      onChange={(event) =>
+                        completeContextAction(() =>
+                          applyStyleToObjects(outlineObjects, {
+                            outline: event.target.value,
+                          }),
+                        )
+                      }
+                    />
+                  </label>
+                ) : null}
+                {contextPanel === "text" ? (
+                  <div className="space-y-3">
+                    <label className="block text-xs text-zinc-600">
+                      Typeface
+                      <select
+                        aria-label="Typeface"
+                        value={
+                          commonStyleValue(textStyleObjects, "fontFamily") ?? ""
+                        }
+                        onChange={(event) =>
+                          completeContextAction(() =>
+                            applyStyleToObjects(textStyleObjects, {
+                              fontFamily: event.target.value,
+                            }),
+                          )
+                        }
+                        className="mt-1 w-full rounded-md border border-zinc-200 bg-white p-2 text-sm text-zinc-900"
+                      >
+                        <option value="" disabled>
+                          Mixed
+                        </option>
+                        <option value="Inter, ui-sans-serif, system-ui, sans-serif">
+                          Inter
+                        </option>
+                        <option value="Georgia, ui-serif, serif">
+                          Georgia
+                        </option>
+                        <option value="ui-monospace, SFMono-Regular, monospace">
+                          Monospace
+                        </option>
+                      </select>
+                    </label>
+                    <label className="block text-xs text-zinc-600">
+                      Text size
+                      <input
+                        aria-label="Text size"
+                        type="number"
+                        min={8}
+                        max={400}
+                        value={
+                          commonStyleValue(textStyleObjects, "fontSize") ?? ""
+                        }
+                        placeholder="Mixed"
+                        onChange={(event) =>
+                          completeContextAction(() =>
+                            applyStyleToObjects(textStyleObjects, {
+                              fontSize: Number(event.target.value),
+                            }),
+                          )
+                        }
+                        className="mt-1 w-full rounded-md border border-zinc-200 bg-white p-2 text-sm text-zinc-900"
+                      />
+                    </label>
+                  </div>
+                ) : null}
+                {contextPanel === "table" && selectedObject.type === "table" ? (
+                  <label className="block text-xs text-zinc-600">
+                    Table cells
+                    <textarea
+                      aria-label="Table cells"
+                      value={tableText(selectedObject)}
+                      onChange={(event) =>
+                        runCommand("object.patch", {
+                          objectId: selectedObject.id,
+                          objectType: "table",
+                          cells: event.target.value
+                            .split("\n")
+                            .map((row) => row.split("\t")),
+                        })
+                      }
+                      className="mt-1 min-h-24 w-full rounded-md border border-zinc-200 bg-white p-2 font-mono text-sm text-zinc-900"
+                    />
+                  </label>
+                ) : null}
+                {contextPanel === "connector" ? (
+                  <div className="space-y-3">
+                    {selectedObject.type === "shape" &&
+                    selectedIds.length === 1 ? (
+                      <fieldset>
+                        <legend className="text-xs text-zinc-600">
+                          Connector anchors
+                        </legend>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {anchors.map((anchor) => (
+                            <Button
+                              key={anchor}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                finishConnector({
+                                  kind: "attached",
+                                  objectId: selectedObject.id,
+                                  anchor,
+                                })
+                              }
+                            >
+                              {connectorStart
+                                ? `Attach ${anchor}`
+                                : `Start ${anchor}`}
+                            </Button>
+                          ))}
+                        </div>
+                      </fieldset>
+                    ) : null}
+                    {selectedObject.type === "connector" ? (
+                      <>
+                        {(["start", "end"] as const).map((endpoint) =>
+                          selectedObject[endpoint].kind === "attached" ? (
+                            <Button
+                              key={endpoint}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const point = resolveConnectorEndpointV2(
+                                  selectedObject[endpoint],
+                                  objectsById,
+                                );
+                                runCommand("connector.endpoint", {
+                                  objectId: selectedObject.id,
+                                  endpoint,
+                                  value: { kind: "free", ...point },
+                                });
+                              }}
+                            >
+                              Detach {endpoint}
+                            </Button>
+                          ) : null,
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+                {contextPanel === "more" ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        selectedIds.length < 2 ||
+                        selectedObjects.some((object) => object.groupId != null)
+                      }
+                      aria-keyshortcuts="Control+G Meta+G"
+                      onClick={() => completeContextAction(groupSelected)}
+                    >
+                      Group
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        !selectedObjects.some(
+                          (object) => object.groupId != null,
+                        )
+                      }
+                      aria-keyshortcuts="Control+Shift+G Meta+Shift+G"
+                      onClick={() => completeContextAction(ungroupSelected)}
+                    >
+                      Ungroup
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        completeContextAction(() => reorderSelected("front"))
+                      }
+                    >
+                      Bring to front
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        completeContextAction(() => reorderSelected("back"))
+                      }
+                    >
+                      Send to back
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-keyshortcuts="Control+D Meta+D"
+                      onClick={() => completeContextAction(duplicateSelected)}
+                    >
+                      Duplicate
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-keyshortcuts="Control+C Meta+C"
+                      onClick={() =>
+                        completeContextAction(() => void copySelected())
+                      }
+                    >
+                      <Copy aria-hidden="true" /> Copy
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-keyshortcuts="Control+X Meta+X"
+                      onClick={() =>
+                        completeContextAction(() => void cutSelected())
+                      }
+                    >
+                      Cut
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-keyshortcuts="Control+V Meta+V"
+                      onClick={() =>
+                        completeContextAction(() => void pasteSelected())
+                      }
+                    >
+                      Paste
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!undoStack.length}
+                      aria-keyshortcuts="Control+Z Meta+Z"
+                      onClick={() => completeContextAction(undo)}
+                    >
+                      Undo
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!redoStack.length}
+                      aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
+                      onClick={() => completeContextAction(redo)}
+                    >
+                      Redo
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="col-span-2 text-red-600!"
+                      onClick={() => completeContextAction(deleteSelected)}
+                    >
+                      <Trash2 aria-hidden="true" /> Delete
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : (
         <output
-          className="ml-auto text-xs text-zinc-500"
+          className="sr-only"
           aria-live="polite"
           data-testid="selection-status"
         >
-          {selectedIds.length
-            ? `${selectedIds.length} selected`
-            : historyNotice || "No selection"}
+          {historyNotice || "No selection"}
         </output>
-      </div>
+      )}
 
       <div className="absolute inset-0">
         <div
@@ -1940,14 +2384,6 @@ export function ProductCanvas({
                     ? `Mixed selection · ${selectedObject.type} focused`
                     : selectedObject.type}
                 </h3>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={deleteSelected}
-                >
-                  Delete
-                </Button>
               </div>
               <dl className="grid grid-cols-2 gap-2 text-xs text-zinc-600">
                 <div>
@@ -1975,174 +2411,15 @@ export function ProductCanvas({
                   </dd>
                 </div>
               </dl>
-              {selectedObject.type === "shape" ||
-              selectedObject.type === "text" ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => startInlineEditing(selectedObject)}
-                >
-                  Edit text on canvas
-                </Button>
-              ) : null}
-              {selectedObject.type === "table" ? (
-                <label className="block text-xs text-zinc-600">
-                  Cells
-                  <textarea
-                    aria-label="Table cells"
-                    value={tableText(selectedObject)}
-                    onChange={(event) =>
-                      runCommand("object.patch", {
-                        objectId: selectedObject.id,
-                        objectType: "table",
-                        cells: event.target.value
-                          .split("\n")
-                          .map((row) => row.split("\t")),
-                      })
-                    }
-                    className="mt-1 min-h-24 w-full rounded-md border border-zinc-200 bg-white p-2 font-mono text-sm text-zinc-900"
-                  />
-                </label>
-              ) : null}
-              {selectedObject.type !== "connector" &&
-              selectedObject.type !== "text" ? (
-                <label className="flex items-center justify-between gap-3 text-xs text-zinc-600">
-                  Fill
-                  <input
-                    aria-label="Fill color"
-                    type="color"
-                    value={selectedObject.style.fill ?? "#ffffff"}
-                    onChange={(event) =>
-                      runCommand("object.style", {
-                        objectId: selectedObject.id,
-                        style: { fill: event.target.value },
-                      })
-                    }
-                  />
-                </label>
-              ) : null}
-              {selectedObject.type !== "text" ? (
-                <label className="flex items-center justify-between gap-3 text-xs text-zinc-600">
-                  Outline
-                  <input
-                    aria-label="Outline color"
-                    type="color"
-                    value={selectedObject.style.outline}
-                    onChange={(event) =>
-                      runCommand("object.style", {
-                        objectId: selectedObject.id,
-                        style: { outline: event.target.value },
-                      })
-                    }
-                  />
-                </label>
-              ) : null}
-              {selectedObject.type !== "connector" ? (
-                <>
-                  <label className="block text-xs text-zinc-600">
-                    Typeface
-                    <select
-                      aria-label="Typeface"
-                      value={selectedObject.style.fontFamily}
-                      onChange={(event) =>
-                        runCommand("object.style", {
-                          objectId: selectedObject.id,
-                          style: { fontFamily: event.target.value },
-                        })
-                      }
-                      className="mt-1 w-full rounded-md border border-zinc-200 bg-white p-2 text-sm text-zinc-900"
-                    >
-                      <option value="Inter, ui-sans-serif, system-ui, sans-serif">
-                        Inter
-                      </option>
-                      <option value="Georgia, ui-serif, serif">Georgia</option>
-                      <option value="ui-monospace, SFMono-Regular, monospace">
-                        Monospace
-                      </option>
-                    </select>
-                  </label>
-                  <label className="block text-xs text-zinc-600">
-                    Text size
-                    <input
-                      aria-label="Text size"
-                      type="number"
-                      min={8}
-                      max={400}
-                      value={selectedObject.style.fontSize}
-                      onChange={(event) =>
-                        runCommand("object.style", {
-                          objectId: selectedObject.id,
-                          style: { fontSize: Number(event.target.value) },
-                        })
-                      }
-                      className="mt-1 w-full rounded-md border border-zinc-200 bg-white p-2 text-sm text-zinc-900"
-                    />
-                  </label>
-                </>
-              ) : null}
-              {selectedObject.type === "shape" ? (
-                <fieldset>
-                  <legend className="text-xs text-zinc-600">
-                    Connector anchors
-                  </legend>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {anchors.map((anchor) => (
-                      <Button
-                        key={anchor}
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          finishConnector({
-                            kind: "attached",
-                            objectId: selectedObject.id,
-                            anchor,
-                          })
-                        }
-                      >
-                        {connectorStart
-                          ? `Attach ${anchor}`
-                          : `Start ${anchor}`}
-                      </Button>
-                    ))}
-                  </div>
-                </fieldset>
-              ) : null}
               {selectedObject.type === "connector" ? (
-                <div className="space-y-2">
-                  <output
-                    data-testid="selected-connector-points"
-                    className="block text-xs text-zinc-600"
-                  >
-                    {resolveConnectorPointsV2(selectedObject, objectsById)
-                      .map((value) => Math.round(value))
-                      .join(",")}
-                  </output>
-                  {(["start", "end"] as const).map((endpoint) =>
-                    selectedObject[endpoint].kind === "attached" ? (
-                      <Button
-                        key={endpoint}
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          const point = resolveConnectorEndpointV2(
-                            selectedObject[endpoint],
-                            objectsById,
-                          );
-                          runCommand("connector.endpoint", {
-                            objectId: selectedObject.id,
-                            endpoint,
-                            value: { kind: "free", ...point },
-                          });
-                        }}
-                      >
-                        Detach {endpoint}
-                      </Button>
-                    ) : null,
-                  )}
-                </div>
+                <output
+                  data-testid="selected-connector-points"
+                  className="block text-xs text-zinc-600"
+                >
+                  {resolveConnectorPointsV2(selectedObject, objectsById)
+                    .map((value) => Math.round(value))
+                    .join(",")}
+                </output>
               ) : null}
             </div>
           ) : null}

@@ -47,8 +47,22 @@ async function clearCanvas(page: Page) {
   const objects = page.locator('[data-testid^="object-list-item-"]');
   while ((await objects.count()) > 0) {
     await objects.first().click();
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await deleteSelection(page);
   }
+}
+
+async function openContextPanel(page: Page, name: string) {
+  await page.getByRole("button", { name, exact: true }).click();
+}
+
+async function deleteSelection(page: Page) {
+  await openContextPanel(page, "More selection actions");
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+}
+
+async function setFill(page: Page, value: string) {
+  await openContextPanel(page, "Fill");
+  await page.getByLabel("Fill color").fill(value);
 }
 
 async function createLabeledShape(
@@ -77,10 +91,12 @@ async function connectLabels(
   targetAnchor = "center",
 ) {
   await page.getByRole("button", { name: new RegExp(source) }).click();
+  await openContextPanel(page, "Connector controls");
   await page
     .getByRole("button", { name: `Start ${startAnchor}`, exact: true })
     .click();
   await page.getByRole("button", { name: new RegExp(target) }).click();
+  await openContextPanel(page, "Connector controls");
   await page
     .getByRole("button", { name: `Attach ${targetAnchor}`, exact: true })
     .click();
@@ -111,9 +127,12 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
 
   await createAt(page, "Rectangle", { x: 180, y: 140 });
   await editSelectedText(page, "Styled planning idea");
-  await page.getByLabel("Fill color").fill("#fef3c7");
+  await setFill(page, "#fef3c7");
+  await openContextPanel(page, "Outline");
   await page.getByLabel("Outline color").fill("#d97706");
+  await openContextPanel(page, "Text style");
   await page.getByLabel("Typeface").selectOption({ label: "Georgia" });
+  await openContextPanel(page, "Text style");
   await page.getByLabel("Text size").fill("22");
 
   const xBeforeKeyboard = await selectedNumber(page, "selected-position-x");
@@ -134,7 +153,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   if (!box) throw new Error("Canvas surface bounds are unavailable.");
   const pointerStart = {
     x: box.x + 80 + xBeforePointer + (widthBeforeKeyboard + 1) / 4,
-    y: box.y + 80 + yBeforePointer + 55,
+    y: box.y + 80 + yBeforePointer + 30,
   };
   await page.mouse.move(pointerStart.x, pointerStart.y);
   await page.mouse.down();
@@ -164,6 +183,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await surface.press("Alt+ArrowDown");
 
   await createAt(page, "Table", { x: 360, y: 330 });
+  await openContextPanel(page, "Edit table");
   await page.getByLabel("Table cells").fill("Owner\tAction\nJason\tReview");
   await surface.focus();
   await surface.press("ArrowLeft");
@@ -185,8 +205,11 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await page.reload();
   await expect(page.getByTestId("product-object-count")).toHaveText("5");
   await page.getByRole("button", { name: /Styled planning idea/ }).click();
+  await openContextPanel(page, "Fill");
   await expect(page.getByLabel("Fill color")).toHaveValue("#fef3c7");
+  await openContextPanel(page, "Outline");
   await expect(page.getByLabel("Outline color")).toHaveValue("#d97706");
+  await openContextPanel(page, "Text style");
   await expect(page.getByLabel("Typeface")).toHaveValue(
     "Georgia, ui-serif, serif",
   );
@@ -200,7 +223,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
     /diamond/,
   ]) {
     await page.getByRole("button", { name: label }).click();
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await deleteSelection(page);
   }
   await expect(page.getByTestId("product-object-count")).toHaveText("0");
 
@@ -240,6 +263,59 @@ test("edits shape, sticky-note, and text content inline with commit and cancel b
   await expect(
     page.getByRole("button", { name: /text — New text/ }),
   ).toBeVisible();
+});
+
+test("clamps contextual controls, exposes mixed values, and restores focus on Escape", async ({
+  page,
+}) => {
+  const surface = await openFreshCanvas(page);
+  await createLabeledShape(page, "Rectangle", "Context alpha", {
+    x: 20,
+    y: 20,
+  });
+  await setFill(page, "#fee2e2");
+  await createLabeledShape(page, "Rectangle", "Context beta", {
+    x: 360,
+    y: 220,
+  });
+
+  await page.getByRole("button", { name: /Context alpha/ }).click();
+  await page
+    .getByRole("button", { name: /Context beta/ })
+    .click({ modifiers: ["Shift"] });
+  const toolbar = page.getByTestId("contextual-selection-controls");
+  await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
+  const [surfaceBox, toolbarBox] = await Promise.all([
+    surface.boundingBox(),
+    toolbar.boundingBox(),
+  ]);
+  if (!surfaceBox || !toolbarBox) throw new Error("Canvas bounds unavailable.");
+  expect(toolbarBox.x).toBeGreaterThanOrEqual(surfaceBox.x);
+  expect(toolbarBox.x + toolbarBox.width).toBeLessThanOrEqual(
+    surfaceBox.x + surfaceBox.width,
+  );
+  expect(toolbarBox.y).toBeGreaterThanOrEqual(surfaceBox.y);
+
+  const fillTrigger = page.getByRole("button", { name: "Fill", exact: true });
+  await fillTrigger.click();
+  await expect(page.getByLabel("Fill color")).toHaveAttribute(
+    "data-mixed",
+    "true",
+  );
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("dialog", { name: "fill selection controls" }),
+  ).not.toBeVisible();
+  await expect(fillTrigger).toBeFocused();
+
+  await fillTrigger.click();
+  await page.getByLabel("Fill color").fill("#dbeafe");
+  await page.getByRole("button", { name: /Context alpha/ }).click();
+  await openContextPanel(page, "Fill");
+  await expect(page.getByLabel("Fill color")).toHaveValue("#dbeafe");
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
 });
 
 test("creates, reattaches, and detaches connectors with direct pointer gestures", async ({
@@ -297,6 +373,7 @@ test("attaches connectors to anchors, follows geometry, detaches safely, and sup
   await editSelectedText(page, "Target");
 
   await page.getByRole("button", { name: /Source/ }).click();
+  await openContextPanel(page, "Connector controls");
   await page.getByRole("button", { name: "Start right", exact: true }).click();
   await page.getByRole("button", { name: /Target/ }).click();
   await page.getByRole("button", { name: "Connector", exact: true }).click();
@@ -359,7 +436,7 @@ test("attaches connectors to anchors, follows geometry, detaches safely, and sup
   await page.reload();
   await page.getByRole("button", { name: "connector", exact: true }).click();
   await expect(page.getByTestId("selected-connector-points")).toBeVisible();
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await deleteSelection(page);
   await expect(
     page.getByRole("button", { name: "connector", exact: true }),
   ).not.toBeVisible();
@@ -408,15 +485,16 @@ test("constructs mind-map, procedure, mood-board, and storyboard arrangements fr
     x: 90,
     y: 90,
   });
-  await page.getByLabel("Fill color").fill("#fed7aa");
+  await setFill(page, "#fed7aa");
   await createLabeledShape(page, "Ellipse", "Calm direction", {
     x: 340,
     y: 90,
   });
-  await page.getByLabel("Fill color").fill("#bfdbfe");
+  await setFill(page, "#bfdbfe");
   await createAt(page, "Text", { x: 600, y: 110 });
   await editSelectedText(page, "Mood words\nClear · Human · Spacious");
   await createAt(page, "Table", { x: 270, y: 310 });
+  await openContextPanel(page, "Edit table");
   await page
     .getByLabel("Table cells")
     .fill("Tone\tUse\nAmber\tEnergy\nBlue\tTrust");
@@ -456,10 +534,12 @@ test("multiselects, marquees, groups, orders, duplicates, uses the clipboard, an
   await expect(
     page.getByRole("heading", { name: /Mixed selection/ }),
   ).toBeVisible();
+  await openContextPanel(page, "More selection actions");
   await page.getByRole("button", { name: "Group", exact: true }).click();
 
   await page.getByRole("button", { name: /Alpha/ }).click();
   await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
+  await openContextPanel(page, "More selection actions");
   await page.getByRole("button", { name: "Ungroup", exact: true }).click();
 
   const box = await surface.boundingBox();
@@ -478,6 +558,7 @@ test("multiselects, marquees, groups, orders, duplicates, uses the clipboard, an
   );
 
   await page.getByRole("button", { name: /Alpha/ }).click();
+  await openContextPanel(page, "More selection actions");
   await page
     .getByRole("button", { name: "Bring to front", exact: true })
     .click();
@@ -486,17 +567,21 @@ test("multiselects, marquees, groups, orders, duplicates, uses the clipboard, an
     .allTextContents();
   expect(orderedLabels.at(-1)).toContain("Alpha");
 
+  await openContextPanel(page, "More selection actions");
   await page.getByRole("button", { name: "Duplicate", exact: true }).click();
   await expect(page.getByTestId("product-object-count")).toHaveText("4");
+  await openContextPanel(page, "More selection actions");
   await page.getByRole("button", { name: "Copy", exact: true }).click();
+  await openContextPanel(page, "More selection actions");
   await page.getByRole("button", { name: "Cut", exact: true }).click();
   await expect(page.getByTestId("product-object-count")).toHaveText("3");
-  await page.getByRole("button", { name: "Paste", exact: true }).click();
+  await surface.focus();
+  await surface.press("Control+V");
   await expect(page.getByTestId("product-object-count")).toHaveText("4");
 
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await surface.press("Control+Z");
   await expect(page.getByTestId("product-object-count")).toHaveText("3");
-  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await surface.press("Control+Shift+Z");
   await expect(page.getByTestId("product-object-count")).toHaveText("4");
 
   await surface.focus();
