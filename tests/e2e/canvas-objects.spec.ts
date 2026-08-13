@@ -85,19 +85,31 @@ async function createLabeledShape(
 }
 
 async function editSelectedText(page: Page, text: string) {
-  await page.getByRole("button", { name: "Edit text on canvas" }).click();
+  await openInlineEditorForSelection(page);
   const editor = page.getByLabel("Edit object text on canvas");
   await editor.fill(text);
   await editor.press("Control+Enter");
   await expect(editor).not.toBeVisible();
 }
 
+async function openInlineEditorForSelection(page: Page) {
+  const [x, y, width, height] = await Promise.all([
+    selectedNumber(page, "selected-position-x"),
+    selectedNumber(page, "selected-position-y"),
+    selectedNumber(page, "selected-width"),
+    selectedNumber(page, "selected-height"),
+  ]);
+  await page.getByTestId("product-canvas-surface").dblclick({
+    position: { x: 80 + x + width / 4, y: 80 + y + height / 4 },
+  });
+}
+
 async function connectLabels(
   page: Page,
   source: string,
   target: string,
-  startAnchor = "center",
-  targetAnchor = "center",
+  startAnchor = "right",
+  targetAnchor = "left",
 ) {
   await page.getByRole("button", { name: new RegExp(source) }).click();
   await openContextPanel(page, "Connector controls");
@@ -175,7 +187,6 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await expect(page.getByTestId("selected-position-y")).toHaveText(
     String(yBeforePointer + 24),
   );
-
   await createAt(page, "Text", { x: 420, y: 120 });
   await expect(page.getByLabel("Fill color")).not.toBeVisible();
   await expect(page.getByLabel("Outline color")).not.toBeVisible();
@@ -281,13 +292,13 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
 }) => {
   const surface = await openFreshCanvas(page);
   await createLabeledShape(page, "Rectangle", "Context alpha", {
-    x: 20,
-    y: 20,
+    x: 120,
+    y: 200,
   });
   await setFill(page, "#fee2e2");
   await createLabeledShape(page, "Rectangle", "Context beta", {
     x: 360,
-    y: 220,
+    y: 320,
   });
 
   await page.getByRole("button", { name: /Context alpha/ }).click();
@@ -320,10 +331,22 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
   await expect(fillTrigger).toBeFocused();
 
   await fillTrigger.click();
-  await page.getByLabel("Fill color").fill("#dbeafe");
+  await page.getByRole("button", { name: "Light blue fill" }).click();
+  await expect(page.getByLabel("Fill color")).toHaveValue("#dbeafe");
+  await expect(page.getByLabel("Outline color")).toHaveValue("#2563eb");
+  await page.getByLabel("Outline color").fill("#1d4ed8");
   await page.getByRole("button", { name: /Context alpha/ }).click();
   await openContextPanel(page, "Fill");
   await expect(page.getByLabel("Fill color")).toHaveValue("#dbeafe");
+  await expect(page.getByLabel("Outline color")).toHaveValue("#1d4ed8");
+  await expect(page.getByTestId("current-fill-swatch")).toHaveCSS(
+    "background-color",
+    "rgb(219, 234, 254)",
+  );
+  await expect(page.getByTestId("current-outline-swatch")).toHaveCSS(
+    "background-color",
+    "rgb(29, 78, 216)",
+  );
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
@@ -416,6 +439,10 @@ test("styles canvas text with type, size, weight, alignment, lists, and a safe l
   await openContextPanel(page, "Text style");
   const panel = page.getByTestId("text-style-panel");
   await expect(panel).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Edit text on canvas" }),
+  ).not.toBeVisible();
+  await expect(page.getByTestId("selection-status")).toHaveClass(/sr-only/);
   await page.getByLabel("Typeface").selectOption({ label: "Scribbled" });
   await page.getByLabel("Text size preset").selectOption({ label: "Large" });
   await page.getByRole("button", { name: "Bold", exact: true }).click();
@@ -445,7 +472,7 @@ test("styles canvas text with type, size, weight, alignment, lists, and a safe l
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Text style", exact: true }).click();
-  await page.getByRole("button", { name: "Edit text on canvas" }).click();
+  await openInlineEditorForSelection(page);
   const editor = page.getByLabel("Edit object text on canvas");
   await editor.fill("1. First\nSecond");
   await editor.press("Control+Enter");
@@ -532,6 +559,9 @@ test("attaches connectors to anchors, follows geometry, detaches safely, and sup
 
   await page.getByRole("button", { name: /Source/ }).click();
   await openContextPanel(page, "Connector controls");
+  await expect(
+    page.getByRole("button", { name: "Start center", exact: true }),
+  ).not.toBeVisible();
   await page.getByRole("button", { name: "Start right", exact: true }).click();
   await page.getByRole("button", { name: /Target/ }).click();
   await page.getByRole("button", { name: "Connector", exact: true }).click();
@@ -610,8 +640,8 @@ test("constructs mind-map, procedure, mood-board, and storyboard arrangements fr
     x: 350,
     y: 220,
   });
-  await createLabeledShape(page, "Ellipse", "Evidence", { x: 80, y: 80 });
-  await createLabeledShape(page, "Ellipse", "Options", { x: 620, y: 80 });
+  await createLabeledShape(page, "Ellipse", "Evidence", { x: 80, y: 160 });
+  await createLabeledShape(page, "Ellipse", "Options", { x: 620, y: 160 });
   await createLabeledShape(page, "Diamond", "Decision", { x: 350, y: 390 });
   await connectLabels(page, "Core question", "Evidence", "left", "bottom");
   await connectLabels(page, "Core question", "Options", "right", "bottom");
@@ -642,12 +672,12 @@ test("constructs mind-map, procedure, mood-board, and storyboard arrangements fr
   await clearCanvas(page);
   await createLabeledShape(page, "Diamond", "Warm direction", {
     x: 90,
-    y: 90,
+    y: 170,
   });
   await setFill(page, "#fed7aa");
   await createLabeledShape(page, "Ellipse", "Calm direction", {
     x: 340,
-    y: 90,
+    y: 170,
   });
   await setFill(page, "#bfdbfe");
   await createAt(page, "Text", { x: 600, y: 110 });
@@ -662,8 +692,8 @@ test("constructs mind-map, procedure, mood-board, and storyboard arrangements fr
 
   await clearCanvas(page);
   const storyboardFrames = [
-    { x: 80, y: 90, label: "1 · Context" },
-    { x: 420, y: 90, label: "2 · Tension" },
+    { x: 80, y: 170, label: "1 · Context" },
+    { x: 420, y: 170, label: "2 · Tension" },
     { x: 80, y: 320, label: "3 · Choice" },
     { x: 420, y: 320, label: "4 · Outcome" },
   ];

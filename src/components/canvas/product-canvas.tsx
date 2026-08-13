@@ -14,7 +14,6 @@ import {
   LogOut,
   Maximize2,
   Minus,
-  Palette,
   Plus,
   Share2,
   Trash2,
@@ -66,6 +65,10 @@ import {
   type Viewport,
 } from "@/canvas/geometry";
 import { useCanvasRecovery } from "@/collaboration/use-canvas-recovery";
+import {
+  ColorStylePanel,
+  type ColorPair,
+} from "@/components/canvas/color-style-panel";
 import { ObjectContextMenu } from "@/components/canvas/object-context-menu";
 import {
   TextStylePanel,
@@ -110,7 +113,7 @@ type SharedPanel = "objects" | "comments" | "help";
 type ObjectContextMenuPosition = { x: number; y: number; maxHeight: number };
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
-const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left", "center"];
+const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left"];
 
 function formatListText(
   text: string,
@@ -721,6 +724,13 @@ export function ProductCanvas({
     );
   }
 
+  function applyColorPair(targets: CanvasObjectV2[], pair: ColorPair) {
+    applyStyleToObjects(targets, {
+      fill: pair.fill,
+      outline: pair.outline,
+    });
+  }
+
   function commonStyleValue<K extends keyof CanvasObjectV2["style"]>(
     targets: CanvasObjectV2[],
     field: K,
@@ -732,6 +742,17 @@ export function ProductCanvas({
 
   function connectionHandlePoint(object: CanvasObjectV2, anchor: CanvasAnchor) {
     return connectionHandlePointV2(object, anchor, 18 / viewport.scale);
+  }
+
+  function nearestExteriorAnchor(object: CanvasObjectV2, point: Point) {
+    return anchors.reduce((nearest, anchor) => {
+      const candidate = connectionHandlePoint(object, anchor);
+      const nearestPoint = connectionHandlePoint(object, nearest);
+      return Math.hypot(candidate.x - point.x, candidate.y - point.y) <
+        Math.hypot(nearestPoint.x - point.x, nearestPoint.y - point.y)
+        ? anchor
+        : nearest;
+    }, anchors[0]!);
   }
 
   function endpointAtDrop(point: Point, excludedObjectId?: string) {
@@ -825,10 +846,11 @@ export function ProductCanvas({
       return;
     }
     if (tool === "connector" && object.type !== "connector") {
+      const point = eventWorldPointer(event);
       finishConnector({
         kind: "attached",
         objectId: object.id,
-        anchor: "center",
+        anchor: point ? nearestExteriorAnchor(object, point) : "right",
       });
       return;
     }
@@ -2112,7 +2134,11 @@ export function ProductCanvas({
             }}
           >
             <output
-              className="px-2 text-xs whitespace-nowrap text-zinc-300"
+              className={
+                selectedIds.length === 1
+                  ? "sr-only"
+                  : "px-2 text-xs whitespace-nowrap text-zinc-300"
+              }
               aria-live="polite"
               data-testid="selection-status"
             >
@@ -2120,16 +2146,17 @@ export function ProductCanvas({
                 ? objectLabel(selectedObject)
                 : `${selectedIds.length} selected`}
             </output>
-            {(selectedObject.type === "shape" ||
-              selectedObject.type === "text") &&
-            selectedIds.length === 1 ? (
+            {textStyleObjects.length ? (
               <Button
                 type="button"
                 size="icon-sm"
                 variant="outline"
-                aria-label="Edit text on canvas"
-                title="Edit text"
-                onClick={() => startInlineEditing(selectedObject)}
+                aria-label="Text style"
+                aria-expanded={contextPanel === "text"}
+                title="Text style"
+                onClick={(event) =>
+                  toggleContextPanel("text", event.currentTarget)
+                }
               >
                 <Type aria-hidden="true" />
               </Button>
@@ -2146,33 +2173,40 @@ export function ProductCanvas({
                   toggleContextPanel("fill", event.currentTarget)
                 }
               >
-                <Palette aria-hidden="true" />
+                <span
+                  aria-hidden="true"
+                  data-testid="current-fill-swatch"
+                  className="size-6 rounded-full border-2 border-white/70"
+                  style={{
+                    backgroundColor:
+                      commonStyleValue(fillObjects, "fill") === null
+                        ? "transparent"
+                        : (commonStyleValue(fillObjects, "fill") ?? "#71717a"),
+                  }}
+                />
               </Button>
             ) : null}
             {outlineObjects.length ? (
               <Button
                 type="button"
-                size="sm"
+                size="icon-sm"
                 variant="outline"
+                aria-label="Outline"
                 aria-expanded={contextPanel === "outline"}
+                title="Outline"
                 onClick={(event) =>
                   toggleContextPanel("outline", event.currentTarget)
                 }
               >
-                Outline
-              </Button>
-            ) : null}
-            {textStyleObjects.length ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                aria-expanded={contextPanel === "text"}
-                onClick={(event) =>
-                  toggleContextPanel("text", event.currentTarget)
-                }
-              >
-                Text style
+                <span
+                  aria-hidden="true"
+                  data-testid="current-outline-swatch"
+                  className="size-6 rounded-full border-2 border-white/70"
+                  style={{
+                    backgroundColor:
+                      commonStyleValue(outlineObjects, "outline") ?? "#71717a",
+                  }}
+                />
               </Button>
             ) : null}
             {selectedIds.length === 1 &&
@@ -2239,7 +2273,7 @@ export function ProductCanvas({
               <div
                 role="dialog"
                 aria-label={`${contextPanel} selection controls`}
-                className={`absolute top-full left-1/2 mt-2 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-white/10 bg-zinc-900 p-3 text-white shadow-2xl [&_button]:border-white/10 [&_button]:bg-zinc-800 [&_button]:text-zinc-100 [&_button:hover]:bg-zinc-700 ${contextPanel === "text" ? "w-96 overflow-y-auto" : "w-72"}`}
+                className={`absolute top-full left-1/2 mt-2 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-white/10 bg-zinc-900 p-3 text-white shadow-2xl [&_button]:border-white/10 [&_button]:bg-zinc-800 [&_button]:text-zinc-100 [&_button:hover]:bg-zinc-700 ${contextPanel === "text" ? "w-96 overflow-y-auto" : contextPanel === "fill" || contextPanel === "outline" ? "w-96" : "w-72"}`}
                 style={
                   contextPanel === "text"
                     ? {
@@ -2259,49 +2293,40 @@ export function ProductCanvas({
                 }}
               >
                 {contextPanel === "fill" ? (
-                  <label className="flex items-center justify-between gap-3 text-sm">
-                    Fill color
-                    <input
-                      aria-label="Fill color"
-                      type="color"
-                      data-mixed={
-                        commonStyleValue(fillObjects, "fill") === undefined
-                      }
-                      value={commonStyleValue(fillObjects, "fill") ?? "#ffffff"}
-                      className="size-10 rounded-lg border border-white/15 bg-zinc-800 p-1"
-                      onChange={(event) =>
-                        completeContextAction(() =>
-                          applyStyleToObjects(fillObjects, {
-                            fill: event.target.value,
-                          }),
-                        )
-                      }
-                    />
-                  </label>
+                  <ColorStylePanel
+                    mode="fill"
+                    fill={commonStyleValue(fillObjects, "fill")}
+                    outline={commonStyleValue(fillObjects, "outline")}
+                    mixedFill={
+                      commonStyleValue(fillObjects, "fill") === undefined
+                    }
+                    mixedOutline={
+                      commonStyleValue(fillObjects, "outline") === undefined
+                    }
+                    onApplyPair={(pair) => applyColorPair(fillObjects, pair)}
+                    onApplyFill={(fill) =>
+                      applyStyleToObjects(fillObjects, { fill })
+                    }
+                    onApplyOutline={(outline) =>
+                      applyStyleToObjects(fillObjects, { outline })
+                    }
+                  />
                 ) : null}
                 {contextPanel === "outline" ? (
-                  <label className="flex items-center justify-between gap-3 text-sm">
-                    Outline color
-                    <input
-                      aria-label="Outline color"
-                      type="color"
-                      data-mixed={
-                        commonStyleValue(outlineObjects, "outline") ===
-                        undefined
-                      }
-                      value={
-                        commonStyleValue(outlineObjects, "outline") ?? "#475569"
-                      }
-                      className="size-10 rounded-lg border border-white/15 bg-zinc-800 p-1"
-                      onChange={(event) =>
-                        completeContextAction(() =>
-                          applyStyleToObjects(outlineObjects, {
-                            outline: event.target.value,
-                          }),
-                        )
-                      }
-                    />
-                  </label>
+                  <ColorStylePanel
+                    mode="outline"
+                    fill={null}
+                    outline={commonStyleValue(outlineObjects, "outline")}
+                    mixedFill={false}
+                    mixedOutline={
+                      commonStyleValue(outlineObjects, "outline") === undefined
+                    }
+                    onApplyPair={() => undefined}
+                    onApplyFill={() => undefined}
+                    onApplyOutline={(outline) =>
+                      applyStyleToObjects(outlineObjects, { outline })
+                    }
+                  />
                 ) : null}
                 {contextPanel === "text" ? (
                   <TextStylePanel

@@ -3,7 +3,8 @@
 ## Comparison target
 
 - Source visual truth:
-  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.12.25 PM.png`
+  - `/Users/jasonwilhelm/Desktop/untitled folder/Screenshot 2026-08-12 at 9.12.25 PM.png`
+  - `/Users/jasonwilhelm/Desktop/untitled folder/Screenshot 2026-08-12 at 9.13.32 PM.png`
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.14.46 PM.png`
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.12.52 PM.png`
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.13.04 PM.png`
@@ -12,6 +13,8 @@
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-dark-context-toolbar-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-object-context-menu-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-text-styling-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-color-swatches-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-exterior-anchors-local.png`
 - Route: authenticated local canvas workspace at `/app/canvases/[canvasId]`
 - State: two selected shapes for the contextual toolbar and selection-actions menu; one selected linked text primitive with Bookish, Large, bold, centered, numbered formatting and the Text style panel open.
 
@@ -30,6 +33,8 @@ The full implementation captures confirm that the dark controls preserve the exi
 
 The source and implementation toolbar images were opened together in one comparison input, followed by the source and implementation context-menu images in a second comparison input. The three supplied text-formatting references and the latest implementation screenshot were then opened together in one comparison input. The focused comparisons show the intended near-black surface, white primary copy/icons, subtle gray dividers, rounded elevation, purple active/focus state, selected alignment/list controls, preset sizing with a custom field, and differentiated typeface choices. The implementation intentionally consolidates the reference's nested menus into one scrollable Thinking Canvas panel while preserving its visual direction and behavior.
 
+The two supplied color-control references and the latest fill/outline implementation were also opened together in one comparison input. The implementation preserves the reference's compact circular palette, selected violet ring, near-black elevated surface, and current-color indicators while adding the requested paired fill/darker-outline behavior and independently editable custom values. A second implementation capture confirms that only the four exterior connector anchors remain.
+
 ## Findings
 
 - No actionable P0, P1, or P2 visual differences remain.
@@ -45,6 +50,7 @@ The source and implementation toolbar images were opened together in one compari
 - Pass 1: no P0/P1/P2 findings. No visual correction loop was required after the combined source/implementation comparison.
 - Text styling pass 1: P2 persistent-control overlap at `1280 × 720`; the initial full-height text panel extended into the floating primary dock.
 - Text styling pass 2: fixed by applying a viewport-derived maximum height and vertical overflow to the text panel. Post-fix browser measurement showed the menu bottom at `608.99px` and dock top at `646px`; the latest implementation screenshot was compared with all three text references and no P0/P1/P2 finding remains.
+- Color and anchor refinement pass 1: no P0/P1/P2 findings. The source and implementation palettes share the intended round-swatch hierarchy; the contextual toolbar now shows the current fill and outline as round swatches, and removing the center connector anchor clears the natural double-click editing target.
 
 ## Primary interactions tested
 
@@ -52,6 +58,7 @@ The source and implementation toolbar images were opened together in one compari
 - Automated right-click, Control-click, Shift+F10, Escape dismissal, grouping, ungrouping, layer ordering, focus restoration, and axe coverage passed.
 - Browser console warnings/errors checked: none.
 - Authenticated in-app browser text styling covered automatic ordered-list entry, Bookish/Large/bold/centered controls, safe URL normalization, selected-state presentation, panel/dock bounds, and zero console warnings/errors.
+- Authenticated in-app browser color styling confirmed that Light blue applies fill `#dbeafe` with darker outline `#2563eb`, both custom inputs remain independently editable, the toolbar reflects both current colors, the `T` control opens Text style, and Connector controls expose top/right/bottom/left with no center anchor. Browser logs contained only normal local React DevTools and HMR messages.
 
 ## Follow-up polish
 
