@@ -38,6 +38,7 @@ const styleSchema = z.strictObject({
   textAlign: z.enum(["left", "center", "right"]).optional(),
   listStyle: z.enum(["none", "bullet", "numbered"]).optional(),
   linkUrl: textLink.nullable().optional(),
+  textColor: color.optional(),
 });
 
 const canvasObjectBaseSchema = z.strictObject({
@@ -190,6 +191,7 @@ function defaultStyle(type: CanvasObject["type"]) {
     textAlign: type === "shape" ? ("center" as const) : ("left" as const),
     listStyle: "none" as const,
     linkUrl: null,
+    textColor: "#18181b",
   };
 }
 

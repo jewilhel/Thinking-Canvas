@@ -5,6 +5,10 @@
 - Source visual truth:
   - `/Users/jasonwilhelm/Desktop/untitled folder/Screenshot 2026-08-12 at 9.12.25 PM.png`
   - `/Users/jasonwilhelm/Desktop/untitled folder/Screenshot 2026-08-12 at 9.13.32 PM.png`
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 1.29.47 PM.png`
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 1.30.12 PM.png`
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 1.35.52 PM.png`
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 1.37.03 PM.png`
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.14.46 PM.png`
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.12.52 PM.png`
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-12 at 9.13.04 PM.png`
@@ -15,6 +19,9 @@
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-text-styling-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-color-swatches-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-exterior-anchors-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-fill-palette-v2-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-stroke-palette-v2-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-text-color-v2-local.png`
 - Route: authenticated local canvas workspace at `/app/canvases/[canvasId]`
 - State: two selected shapes for the contextual toolbar and selection-actions menu; one selected linked text primitive with Bookish, Large, bold, centered, numbered formatting and the Text style panel open.
 
@@ -23,6 +30,7 @@
 - Implementation viewport: `1280 × 720` CSS pixels at device scale factor `1`; captures are `1280 × 720` pixels.
 - Source toolbar crop: `1640 × 516` pixels. Source context-menu crop: `488 × 1036` pixels. The supplied references are focused high-density Figma captures rather than full browser viewports.
 - Additional text-formatting source crops are `618 × 272`, `400 × 644`, and `346 × 428` pixels. The text-style implementation capture is `1280 × 720` pixels at the same `1280 × 720` CSS viewport and density `1`.
+- The latest focused source crops are `394 × 190`, `268 × 154`, `778 × 792`, and `156 × 128` pixels. Their three implementation states are full `1280 × 720` captures at device scale factor `1`; the toolbar and open-menu regions were compared at visible rendered scale.
 - Density normalization: the comparison judged the shared focused UI surfaces at their visible rendered scale rather than treating the source crop dimensions as a required application viewport. Browser chrome, surrounding canvas area, and source-crop density were excluded from mismatch findings.
 
 ## Full-view comparison evidence
@@ -35,13 +43,15 @@ The source and implementation toolbar images were opened together in one compari
 
 The two supplied color-control references and the latest fill/outline implementation were also opened together in one comparison input. The implementation preserves the reference's compact circular palette, selected violet ring, near-black elevated surface, and current-color indicators while adding the requested paired fill/darker-outline behavior and independently editable custom values. A second implementation capture confirms that only the four exterior connector anchors remain.
 
+The four 2026-08-13 refinement references and the three latest implementation captures were opened together in one comparison input. The resulting toolbar follows Fill, Stroke, Text style order; Stroke uses the requested horizontal-bar icon instead of a current-color swatch; and the fill, stroke, and text surfaces use the same circular rainbow custom-color entry. The implementation intentionally keeps custom stroke out of the fill palette while preserving coordinated fill presets.
+
 ## Findings
 
 - No actionable P0, P1, or P2 visual differences remain.
 - Fonts and typography: the existing application sans-serif is retained for control copy; Simple, Bookish, Technical, Scribbled, Modern, and Rounded choices visibly differentiate canvas content while preserving readable menu labels.
 - Spacing and layout rhythm: `44px` action rows, compact contextual buttons, separators, rounded corners, and elevation are internally consistent and remain within the viewport.
 - Colors and visual tokens: near-black surfaces, white foregrounds, zinc dividers, violet active/focus treatment, and destructive red map cleanly to the supplied reference direction.
-- Image quality and asset fidelity: these controls contain no raster product imagery or decorative source assets; existing library icons remain crisp and stylistically consistent.
+- Image quality and asset fidelity: the new transparent `128 × 128` rainbow-wheel asset remains crisp at its `36px` rendered size and matches the supplied custom-color reference; the remaining controls use the established icon library and stay stylistically consistent.
 - Copy and content: Group/Ungroup, ordering, clipboard, duplicate, delete, typeface, size, alignment, list, and link labels are concise and applicable to the product's existing command model.
 - Accessibility and behavior: semantic menu roles, disabled/pressed states, initial focus, arrow/Home/End movement, Escape dismissal, Shift+F10/Context Menu access, right-click, Control-click, labeled text controls, safe-link actions, and custom-size keyboard commit are covered. Automated axe checks report no detectable violations in the tested states.
 
@@ -51,6 +61,7 @@ The two supplied color-control references and the latest fill/outline implementa
 - Text styling pass 1: P2 persistent-control overlap at `1280 × 720`; the initial full-height text panel extended into the floating primary dock.
 - Text styling pass 2: fixed by applying a viewport-derived maximum height and vertical overflow to the text panel. Post-fix browser measurement showed the menu bottom at `608.99px` and dock top at `646px`; the latest implementation screenshot was compared with all three text references and no P0/P1/P2 finding remains.
 - Color and anchor refinement pass 1: no P0/P1/P2 findings. The source and implementation palettes share the intended round-swatch hierarchy; the contextual toolbar now shows the current fill and outline as round swatches, and removing the center connector anchor clears the natural double-click editing target.
+- Color-control refinement pass 2: no P0/P1/P2 findings. The toolbar ordering, stroke icon, removal of the stroke swatch and fill-panel custom-stroke field, circular rainbow custom entries, and text-color entry match the supplied focused references at the implementation's normalized `1280 × 720` viewport.
 
 ## Primary interactions tested
 
@@ -58,7 +69,8 @@ The two supplied color-control references and the latest fill/outline implementa
 - Automated right-click, Control-click, Shift+F10, Escape dismissal, grouping, ungrouping, layer ordering, focus restoration, and axe coverage passed.
 - Browser console warnings/errors checked: none.
 - Authenticated in-app browser text styling covered automatic ordered-list entry, Bookish/Large/bold/centered controls, safe URL normalization, selected-state presentation, panel/dock bounds, and zero console warnings/errors.
-- Authenticated in-app browser color styling confirmed that Light blue applies fill `#dbeafe` with darker outline `#2563eb`, both custom inputs remain independently editable, the toolbar reflects both current colors, the `T` control opens Text style, and Connector controls expose top/right/bottom/left with no center anchor. Browser logs contained only normal local React DevTools and HMR messages.
+- Authenticated in-app browser color styling confirmed that Light blue applies fill `#dbeafe` with darker outline `#2563eb`, custom fill and stroke remain independently editable through their applicable palettes, the `T` control opens Text style, and Connector controls expose top/right/bottom/left with no center anchor. Browser logs contained only normal local React DevTools and HMR messages.
+- The second color pass confirmed the exact Fill → Stroke → Text style order, no visible current-stroke swatch, no custom-stroke input inside Fill, rainbow custom entries at the end of Fill and Stroke, a round custom text-color entry, and persisted text color. Automated axe coverage remains clean, and the in-app browser emitted no application errors.
 
 ## Follow-up polish
 

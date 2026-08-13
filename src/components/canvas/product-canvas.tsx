@@ -16,6 +16,7 @@ import {
   Minus,
   Plus,
   Share2,
+  AlignJustify,
   Trash2,
   Type,
   Users,
@@ -188,6 +189,7 @@ function baseStyle(type: CanvasObjectV2["type"]) {
     textAlign: type === "shape" ? ("center" as const) : ("left" as const),
     listStyle: "none" as const,
     linkUrl: null,
+    textColor: "#18181b",
   };
 }
 
@@ -1551,7 +1553,7 @@ export function ProductCanvas({
               width={columnWidth - 16}
               height={rowHeight - 16}
               text={cell}
-              fill="#18181b"
+              fill={object.style.textColor ?? "#18181b"}
               fontFamily={object.style.fontFamily}
               fontSize={object.style.fontSize}
               fontStyle={object.style.fontWeight === "bold" ? "bold" : "normal"}
@@ -1687,7 +1689,7 @@ export function ProductCanvas({
               width={object.geometry.width - 24}
               height={object.geometry.height - 24}
               text={formatListText(object.text, object.style.listStyle)}
-              fill="#18181b"
+              fill={object.style.textColor ?? "#18181b"}
               align={object.style.textAlign ?? "center"}
               verticalAlign="middle"
               fontFamily={object.style.fontFamily}
@@ -1703,7 +1705,7 @@ export function ProductCanvas({
             width={object.geometry.width}
             height={object.geometry.height}
             text={formatListText(object.text, object.style.listStyle)}
-            fill="#18181b"
+            fill={object.style.textColor ?? "#18181b"}
             fontFamily={object.style.fontFamily}
             fontSize={object.style.fontSize}
             fontStyle={object.style.fontWeight === "bold" ? "bold" : "normal"}
@@ -1836,6 +1838,7 @@ export function ProductCanvas({
           fontFamily: inlineEditorObject.style.fontFamily,
           fontSize: inlineEditorObject.style.fontSize * viewport.scale,
           fontWeight: inlineEditorObject.style.fontWeight ?? "normal",
+          color: inlineEditorObject.style.textColor ?? "#18181b",
           textAlign:
             inlineEditorObject.style.textAlign ??
             (inlineEditorObject.type === "shape" ? "center" : "left"),
@@ -2146,21 +2149,6 @@ export function ProductCanvas({
                 ? objectLabel(selectedObject)
                 : `${selectedIds.length} selected`}
             </output>
-            {textStyleObjects.length ? (
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="outline"
-                aria-label="Text style"
-                aria-expanded={contextPanel === "text"}
-                title="Text style"
-                onClick={(event) =>
-                  toggleContextPanel("text", event.currentTarget)
-                }
-              >
-                <Type aria-hidden="true" />
-              </Button>
-            ) : null}
             {fillObjects.length ? (
               <Button
                 type="button"
@@ -2191,22 +2179,29 @@ export function ProductCanvas({
                 type="button"
                 size="icon-sm"
                 variant="outline"
-                aria-label="Outline"
+                aria-label="Stroke color"
                 aria-expanded={contextPanel === "outline"}
-                title="Outline"
+                title="Stroke color"
                 onClick={(event) =>
                   toggleContextPanel("outline", event.currentTarget)
                 }
               >
-                <span
-                  aria-hidden="true"
-                  data-testid="current-outline-swatch"
-                  className="size-6 rounded-full border-2 border-white/70"
-                  style={{
-                    backgroundColor:
-                      commonStyleValue(outlineObjects, "outline") ?? "#71717a",
-                  }}
-                />
+                <AlignJustify aria-hidden="true" />
+              </Button>
+            ) : null}
+            {textStyleObjects.length ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Text style"
+                aria-expanded={contextPanel === "text"}
+                title="Text style"
+                onClick={(event) =>
+                  toggleContextPanel("text", event.currentTarget)
+                }
+              >
+                <Type aria-hidden="true" />
               </Button>
             ) : null}
             {selectedIds.length === 1 &&
@@ -2343,6 +2338,7 @@ export function ProductCanvas({
                     textAlign={commonStyleValue(textStyleObjects, "textAlign")}
                     listStyle={commonStyleValue(textStyleObjects, "listStyle")}
                     linkUrl={commonStyleValue(textStyleObjects, "linkUrl")}
+                    textColor={commonStyleValue(textStyleObjects, "textColor")}
                     allowLists={textStyleObjects.every(
                       (object) =>
                         object.type === "shape" || object.type === "text",

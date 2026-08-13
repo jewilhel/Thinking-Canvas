@@ -95,6 +95,7 @@ describe("product canvas command boundary", () => {
           textAlign: "right",
           listStyle: "numbered",
           linkUrl: "https://example.com/review",
+          textColor: "#7c3aed",
         },
       }),
     );
@@ -110,6 +111,7 @@ describe("product canvas command boundary", () => {
         textAlign: "right",
         listStyle: "numbered",
         linkUrl: "https://example.com/review",
+        textColor: "#7c3aed",
       },
     });
   });

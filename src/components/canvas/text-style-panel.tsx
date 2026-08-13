@@ -13,6 +13,7 @@ import {
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { CustomColorSwatch } from "@/components/canvas/color-style-panel";
 
 export type TextStylePatch = {
   fontFamily?: string;
@@ -21,6 +22,7 @@ export type TextStylePatch = {
   textAlign?: "left" | "center" | "right";
   listStyle?: "none" | "bullet" | "numbered";
   linkUrl?: string | null;
+  textColor?: string;
 };
 
 type Props = {
@@ -30,6 +32,7 @@ type Props = {
   textAlign?: "left" | "center" | "right";
   listStyle?: "none" | "bullet" | "numbered";
   linkUrl?: string | null;
+  textColor?: string;
   allowLists: boolean;
   allowLink: boolean;
   onApply: (style: TextStylePatch) => void;
@@ -75,6 +78,7 @@ export function TextStylePanel({
   textAlign,
   listStyle,
   linkUrl,
+  textColor,
   allowLists,
   allowLink,
   onApply,
@@ -189,6 +193,11 @@ export function TextStylePanel({
         role="group"
         aria-label="Text formatting"
       >
+        <CustomColorSwatch
+          label="Custom text color"
+          value={textColor ?? "#18181b"}
+          onChange={(color) => onApply({ textColor: color })}
+        />
         <Button
           type="button"
           size="icon-sm"

@@ -71,7 +71,7 @@ async function deleteSelection(page: Page) {
 
 async function setFill(page: Page, value: string) {
   await openContextPanel(page, "Fill");
-  await page.getByLabel("Fill color").fill(value);
+  await page.getByLabel("Custom fill color").fill(value);
 }
 
 async function createLabeledShape(
@@ -149,8 +149,8 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await createAt(page, "Rectangle", { x: 180, y: 140 });
   await editSelectedText(page, "Styled planning idea");
   await setFill(page, "#fef3c7");
-  await openContextPanel(page, "Outline");
-  await page.getByLabel("Outline color").fill("#d97706");
+  await openContextPanel(page, "Stroke color");
+  await page.getByLabel("Custom stroke color").fill("#d97706");
   await openContextPanel(page, "Text style");
   await page.getByLabel("Typeface").selectOption({ label: "Bookish" });
   await page.getByLabel("Custom text size").fill("22");
@@ -188,8 +188,8 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
     String(yBeforePointer + 24),
   );
   await createAt(page, "Text", { x: 420, y: 120 });
-  await expect(page.getByLabel("Fill color")).not.toBeVisible();
-  await expect(page.getByLabel("Outline color")).not.toBeVisible();
+  await expect(page.getByLabel("Custom fill color")).not.toBeVisible();
+  await expect(page.getByLabel("Custom stroke color")).not.toBeVisible();
   await editSelectedText(page, "A text primitive");
   await surface.click({ position: { x: 300, y: 500 } });
   await expect(
@@ -228,9 +228,9 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await expect(page.getByTestId("product-object-count")).toHaveText("5");
   await page.getByRole("button", { name: /Styled planning idea/ }).click();
   await openContextPanel(page, "Fill");
-  await expect(page.getByLabel("Fill color")).toHaveValue("#fef3c7");
-  await openContextPanel(page, "Outline");
-  await expect(page.getByLabel("Outline color")).toHaveValue("#d97706");
+  await expect(page.getByLabel("Custom fill color")).toHaveValue("#fef3c7");
+  await openContextPanel(page, "Stroke color");
+  await expect(page.getByLabel("Custom stroke color")).toHaveValue("#d97706");
   await openContextPanel(page, "Text style");
   await expect(page.getByLabel("Typeface")).toHaveValue(
     "Georgia, ui-serif, serif",
@@ -318,9 +318,21 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
   );
   expect(toolbarBox.y).toBeGreaterThanOrEqual(surfaceBox.y);
 
+  const [fillBox, strokeBox, textBox] = await Promise.all([
+    page.getByRole("button", { name: "Fill", exact: true }).boundingBox(),
+    page
+      .getByRole("button", { name: "Stroke color", exact: true })
+      .boundingBox(),
+    page.getByRole("button", { name: "Text style", exact: true }).boundingBox(),
+  ]);
+  if (!fillBox || !strokeBox || !textBox)
+    throw new Error("Contextual style controls are unavailable.");
+  expect(fillBox.x).toBeLessThan(strokeBox.x);
+  expect(strokeBox.x).toBeLessThan(textBox.x);
+
   const fillTrigger = page.getByRole("button", { name: "Fill", exact: true });
   await fillTrigger.click();
-  await expect(page.getByLabel("Fill color")).toHaveAttribute(
+  await expect(page.getByLabel("Custom fill color")).toHaveAttribute(
     "data-mixed",
     "true",
   );
@@ -332,21 +344,21 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
 
   await fillTrigger.click();
   await page.getByRole("button", { name: "Light blue fill" }).click();
-  await expect(page.getByLabel("Fill color")).toHaveValue("#dbeafe");
-  await expect(page.getByLabel("Outline color")).toHaveValue("#2563eb");
-  await page.getByLabel("Outline color").fill("#1d4ed8");
+  await expect(page.getByLabel("Custom fill color")).toHaveValue("#dbeafe");
+  await expect(page.getByLabel("Custom stroke color")).not.toBeVisible();
+  await openContextPanel(page, "Stroke color");
+  await expect(page.getByLabel("Custom stroke color")).toHaveValue("#2563eb");
+  await page.getByLabel("Custom stroke color").fill("#1d4ed8");
   await page.getByRole("button", { name: /Context alpha/ }).click();
   await openContextPanel(page, "Fill");
-  await expect(page.getByLabel("Fill color")).toHaveValue("#dbeafe");
-  await expect(page.getByLabel("Outline color")).toHaveValue("#1d4ed8");
+  await expect(page.getByLabel("Custom fill color")).toHaveValue("#dbeafe");
+  await openContextPanel(page, "Stroke color");
+  await expect(page.getByLabel("Custom stroke color")).toHaveValue("#1d4ed8");
   await expect(page.getByTestId("current-fill-swatch")).toHaveCSS(
     "background-color",
     "rgb(219, 234, 254)",
   );
-  await expect(page.getByTestId("current-outline-swatch")).toHaveCSS(
-    "background-color",
-    "rgb(29, 78, 216)",
-  );
+  await expect(page.getByTestId("current-outline-swatch")).toHaveCount(0);
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
@@ -448,6 +460,7 @@ test("styles canvas text with type, size, weight, alignment, lists, and a safe l
   await page.getByRole("button", { name: "Bold", exact: true }).click();
   await page.getByRole("button", { name: "Align right" }).click();
   await page.getByRole("button", { name: "Bulleted list" }).click();
+  await page.getByLabel("Custom text color").fill("#7c3aed");
   await page.getByLabel("Text link URL").fill("example.com/notes");
   await page.getByRole("button", { name: "Apply link" }).click();
 
@@ -467,6 +480,7 @@ test("styles canvas text with type, size, weight, alignment, lists, and a safe l
   await expect(page.getByLabel("Text link URL")).toHaveValue(
     "https://example.com/notes",
   );
+  await expect(page.getByLabel("Custom text color")).toHaveValue("#7c3aed");
   await expect(
     page.getByRole("button", { name: "Open text link" }),
   ).toBeVisible();
@@ -501,6 +515,7 @@ test("styles canvas text with type, size, weight, alignment, lists, and a safe l
   await expect(page.getByLabel("Text link URL")).toHaveValue(
     "https://example.com/notes",
   );
+  await expect(page.getByLabel("Custom text color")).toHaveValue("#7c3aed");
 });
 
 test("creates, reattaches, and detaches connectors with direct pointer gestures", async ({
