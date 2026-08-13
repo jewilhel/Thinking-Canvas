@@ -8,6 +8,7 @@ import {
   Cloud,
   Copy,
   Ellipsis,
+  ExternalLink,
   Link2,
   ListTree,
   LogOut,
@@ -67,6 +68,10 @@ import {
 import { useCanvasRecovery } from "@/collaboration/use-canvas-recovery";
 import { ObjectContextMenu } from "@/components/canvas/object-context-menu";
 import {
+  TextStylePanel,
+  type TextStylePatch,
+} from "@/components/canvas/text-style-panel";
+import {
   WorkspacePrimaryDock,
   type CanvasShapeTool,
   type CanvasTool,
@@ -92,6 +97,8 @@ type InlineTextEditor = {
   objectType: "shape" | "text";
   draft: string;
   initialValue: string;
+  listStyle: "none" | "bullet" | "numbered";
+  initialListStyle: "none" | "bullet" | "numbered";
 };
 type ReconnectingEndpoint = {
   connectorId: string;
@@ -104,6 +111,40 @@ type ObjectContextMenuPosition = { x: number; y: number; maxHeight: number };
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
 const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left", "center"];
+
+function formatListText(
+  text: string,
+  listStyle: "none" | "bullet" | "numbered" | undefined,
+) {
+  if (!text || !listStyle || listStyle === "none") return text;
+  return text
+    .split("\n")
+    .map((line, index) =>
+      listStyle === "bullet" ? `• ${line}` : `${index + 1}. ${line}`,
+    )
+    .join("\n");
+}
+
+function stripListMarkers(
+  text: string,
+  listStyle: "none" | "bullet" | "numbered",
+) {
+  if (listStyle === "none") return text;
+  return text
+    .split("\n")
+    .map((line) =>
+      listStyle === "bullet"
+        ? line.replace(/^\s*(?:•|[-*])\s+/, "")
+        : line.replace(/^\s*\d+[.)]\s+/, ""),
+    )
+    .join("\n");
+}
+
+function openSafeTextLink(url: string) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return;
+  window.open(parsed.href, "_blank", "noopener,noreferrer");
+}
 
 function clampViewport(viewport: Viewport): Viewport {
   return {
@@ -140,6 +181,10 @@ function baseStyle(type: CanvasObjectV2["type"]) {
     outlineWidth: type === "text" ? 0 : 2,
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
     fontSize: 16,
+    fontWeight: "normal" as const,
+    textAlign: type === "shape" ? ("center" as const) : ("left" as const),
+    listStyle: "none" as const,
+    linkUrl: null,
   };
 }
 
@@ -593,22 +638,50 @@ export function ProductCanvas({
   ) {
     setSelectedIds([object.id]);
     setTool("select");
+    const listStyle = object.style.listStyle ?? "none";
+    const editableText = formatListText(object.text, listStyle);
     setInlineTextEditor({
       objectId: object.id,
       objectType: object.type,
-      draft: object.text,
-      initialValue: object.text,
+      draft: editableText,
+      initialValue: editableText,
+      listStyle,
+      initialListStyle: listStyle,
     });
   }
 
   function finishInlineEditing(commit: boolean) {
     if (!inlineTextEditor) return;
-    if (commit && inlineTextEditor.draft !== inlineTextEditor.initialValue) {
-      runCommand("object.patch", {
-        objectId: inlineTextEditor.objectId,
-        objectType: inlineTextEditor.objectType,
-        text: inlineTextEditor.draft,
-      });
+    if (commit) {
+      const text = stripListMarkers(
+        inlineTextEditor.draft,
+        inlineTextEditor.listStyle,
+      );
+      const initialText = stripListMarkers(
+        inlineTextEditor.initialValue,
+        inlineTextEditor.initialListStyle,
+      );
+      const commands: CommandDefinition[] = [];
+      if (text !== initialText) {
+        commands.push({
+          type: "object.patch",
+          payload: {
+            objectId: inlineTextEditor.objectId,
+            objectType: inlineTextEditor.objectType,
+            text,
+          },
+        });
+      }
+      if (inlineTextEditor.listStyle !== inlineTextEditor.initialListStyle) {
+        commands.push({
+          type: "object.style",
+          payload: {
+            objectId: inlineTextEditor.objectId,
+            style: { listStyle: inlineTextEditor.listStyle },
+          },
+        });
+      }
+      if (commands.length) runCommandBatch(commands);
     }
     setInlineTextEditor(null);
     requestAnimationFrame(() => containerRef.current?.focus());
@@ -634,11 +707,9 @@ export function ProductCanvas({
 
   function applyStyleToObjects(
     targets: CanvasObjectV2[],
-    style: {
+    style: TextStylePatch & {
       fill?: string | null;
       outline?: string;
-      fontFamily?: string;
-      fontSize?: number;
     },
   ) {
     if (!targets.length) return;
@@ -650,9 +721,10 @@ export function ProductCanvas({
     );
   }
 
-  function commonStyleValue<
-    K extends "fill" | "outline" | "fontFamily" | "fontSize",
-  >(targets: CanvasObjectV2[], field: K) {
+  function commonStyleValue<K extends keyof CanvasObjectV2["style"]>(
+    targets: CanvasObjectV2[],
+    field: K,
+  ) {
     const values = targets.map((object) => object.style[field]);
     const first = values[0];
     return values.every((value) => value === first) ? first : undefined;
@@ -1460,6 +1532,8 @@ export function ProductCanvas({
               fill="#18181b"
               fontFamily={object.style.fontFamily}
               fontSize={object.style.fontSize}
+              fontStyle={object.style.fontWeight === "bold" ? "bold" : "normal"}
+              align={object.style.textAlign ?? "left"}
               verticalAlign="middle"
             />
           )),
@@ -1590,12 +1664,14 @@ export function ProductCanvas({
               y={12}
               width={object.geometry.width - 24}
               height={object.geometry.height - 24}
-              text={object.text}
+              text={formatListText(object.text, object.style.listStyle)}
               fill="#18181b"
-              align="center"
+              align={object.style.textAlign ?? "center"}
               verticalAlign="middle"
               fontFamily={object.style.fontFamily}
               fontSize={object.style.fontSize}
+              fontStyle={object.style.fontWeight === "bold" ? "bold" : "normal"}
+              textDecoration={object.style.linkUrl ? "underline" : ""}
               opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
               listening={false}
             />
@@ -1604,10 +1680,13 @@ export function ProductCanvas({
           <Text
             width={object.geometry.width}
             height={object.geometry.height}
-            text={object.text}
+            text={formatListText(object.text, object.style.listStyle)}
             fill="#18181b"
             fontFamily={object.style.fontFamily}
             fontSize={object.style.fontSize}
+            fontStyle={object.style.fontWeight === "bold" ? "bold" : "normal"}
+            align={object.style.textAlign ?? "left"}
+            textDecoration={object.style.linkUrl ? "underline" : ""}
             verticalAlign="middle"
             opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
           />
@@ -1734,10 +1813,10 @@ export function ProductCanvas({
           transformOrigin: "top left" as const,
           fontFamily: inlineEditorObject.style.fontFamily,
           fontSize: inlineEditorObject.style.fontSize * viewport.scale,
+          fontWeight: inlineEditorObject.style.fontWeight ?? "normal",
           textAlign:
-            inlineEditorObject.type === "shape"
-              ? ("center" as const)
-              : ("left" as const),
+            inlineEditorObject.style.textAlign ??
+            (inlineEditorObject.type === "shape" ? "center" : "left"),
         }
       : null;
 
@@ -2096,6 +2175,21 @@ export function ProductCanvas({
                 Text style
               </Button>
             ) : null}
+            {selectedIds.length === 1 &&
+            (selectedObject.type === "shape" ||
+              selectedObject.type === "text") &&
+            selectedObject.style.linkUrl ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Open text link"
+                title="Open text link"
+                onClick={() => openSafeTextLink(selectedObject.style.linkUrl!)}
+              >
+                <ExternalLink aria-hidden="true" />
+              </Button>
+            ) : null}
             {selectedObject.type === "table" && selectedIds.length === 1 ? (
               <Button
                 type="button"
@@ -2145,7 +2239,17 @@ export function ProductCanvas({
               <div
                 role="dialog"
                 aria-label={`${contextPanel} selection controls`}
-                className="absolute top-full left-1/2 mt-2 w-72 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-white/10 bg-zinc-900 p-3 text-white shadow-2xl [&_button]:border-white/10 [&_button]:bg-zinc-800 [&_button]:text-zinc-100 [&_button:hover]:bg-zinc-700"
+                className={`absolute top-full left-1/2 mt-2 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-white/10 bg-zinc-900 p-3 text-white shadow-2xl [&_button]:border-white/10 [&_button]:bg-zinc-800 [&_button]:text-zinc-100 [&_button:hover]:bg-zinc-700 ${contextPanel === "text" ? "w-96 overflow-y-auto" : "w-72"}`}
+                style={
+                  contextPanel === "text"
+                    ? {
+                        maxHeight: Math.max(
+                          220,
+                          size.height - contextualToolbarPosition.top - 160,
+                        ),
+                      }
+                    : undefined
+                }
                 onKeyDown={(event) => {
                   if (event.key === "Escape") {
                     event.preventDefault();
@@ -2200,59 +2304,34 @@ export function ProductCanvas({
                   </label>
                 ) : null}
                 {contextPanel === "text" ? (
-                  <div className="space-y-3">
-                    <label className="block text-xs text-zinc-300">
-                      Typeface
-                      <select
-                        aria-label="Typeface"
-                        value={
-                          commonStyleValue(textStyleObjects, "fontFamily") ?? ""
-                        }
-                        onChange={(event) =>
-                          completeContextAction(() =>
-                            applyStyleToObjects(textStyleObjects, {
-                              fontFamily: event.target.value,
-                            }),
-                          )
-                        }
-                        className="mt-1 w-full rounded-lg border border-white/15 bg-zinc-800 p-2 text-sm text-white"
-                      >
-                        <option value="" disabled>
-                          Mixed
-                        </option>
-                        <option value="Inter, ui-sans-serif, system-ui, sans-serif">
-                          Inter
-                        </option>
-                        <option value="Georgia, ui-serif, serif">
-                          Georgia
-                        </option>
-                        <option value="ui-monospace, SFMono-Regular, monospace">
-                          Monospace
-                        </option>
-                      </select>
-                    </label>
-                    <label className="block text-xs text-zinc-300">
-                      Text size
-                      <input
-                        aria-label="Text size"
-                        type="number"
-                        min={8}
-                        max={400}
-                        value={
-                          commonStyleValue(textStyleObjects, "fontSize") ?? ""
-                        }
-                        placeholder="Mixed"
-                        onChange={(event) =>
-                          completeContextAction(() =>
-                            applyStyleToObjects(textStyleObjects, {
-                              fontSize: Number(event.target.value),
-                            }),
-                          )
-                        }
-                        className="mt-1 w-full rounded-lg border border-white/15 bg-zinc-800 p-2 text-sm text-white"
-                      />
-                    </label>
-                  </div>
+                  <TextStylePanel
+                    key={`${selectedIds.join(":")}:${commonStyleValue(textStyleObjects, "fontSize") ?? "mixed"}:${commonStyleValue(textStyleObjects, "linkUrl") ?? "none"}`}
+                    fontFamily={commonStyleValue(
+                      textStyleObjects,
+                      "fontFamily",
+                    )}
+                    fontSize={commonStyleValue(textStyleObjects, "fontSize")}
+                    fontWeight={commonStyleValue(
+                      textStyleObjects,
+                      "fontWeight",
+                    )}
+                    textAlign={commonStyleValue(textStyleObjects, "textAlign")}
+                    listStyle={commonStyleValue(textStyleObjects, "listStyle")}
+                    linkUrl={commonStyleValue(textStyleObjects, "linkUrl")}
+                    allowLists={textStyleObjects.every(
+                      (object) =>
+                        object.type === "shape" || object.type === "text",
+                    )}
+                    allowLink={
+                      textStyleObjects.length === 1 &&
+                      (textStyleObjects[0]?.type === "shape" ||
+                        textStyleObjects[0]?.type === "text")
+                    }
+                    onApply={(style) =>
+                      applyStyleToObjects(textStyleObjects, style)
+                    }
+                    onOpenLink={openSafeTextLink}
+                  />
                 ) : null}
                 {contextPanel === "table" && selectedObject.type === "table" ? (
                   <label className="block text-xs text-zinc-300">
@@ -2558,11 +2637,18 @@ export function ProductCanvas({
               aria-label="Edit object text on canvas"
               data-testid="inline-object-text-editor"
               value={inlineTextEditor.draft}
-              onChange={(event) =>
-                setInlineTextEditor((current) =>
-                  current ? { ...current, draft: event.target.value } : null,
-                )
-              }
+              onChange={(event) => {
+                const draft = event.target.value;
+                setInlineTextEditor((current) => {
+                  if (!current) return null;
+                  const listStyle = /^\s*1[.)]\s/.test(draft)
+                    ? "numbered"
+                    : /^\s*[-*]\s/.test(draft)
+                      ? "bullet"
+                      : current.listStyle;
+                  return { ...current, draft, listStyle };
+                });
+              }}
               onBlur={() => finishInlineEditing(true)}
               onKeyDown={(event) => {
                 event.stopPropagation();
@@ -2575,6 +2661,33 @@ export function ProductCanvas({
                 ) {
                   event.preventDefault();
                   event.currentTarget.blur();
+                } else if (
+                  event.key === "Enter" &&
+                  inlineTextEditor.listStyle !== "none"
+                ) {
+                  event.preventDefault();
+                  const editor = event.currentTarget;
+                  const before = inlineTextEditor.draft.slice(
+                    0,
+                    editor.selectionStart,
+                  );
+                  const after = inlineTextEditor.draft.slice(
+                    editor.selectionEnd,
+                  );
+                  const marker =
+                    inlineTextEditor.listStyle === "bullet"
+                      ? "• "
+                      : `${before.split("\n").length + 1}. `;
+                  const insertion = `\n${marker}`;
+                  const cursor = before.length + insertion.length;
+                  setInlineTextEditor((current) =>
+                    current
+                      ? { ...current, draft: `${before}${insertion}${after}` }
+                      : null,
+                  );
+                  requestAnimationFrame(() => {
+                    editor.setSelectionRange(cursor, cursor);
+                  });
                 }
               }}
               style={inlineEditorLayout}

@@ -140,9 +140,10 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await openContextPanel(page, "Outline");
   await page.getByLabel("Outline color").fill("#d97706");
   await openContextPanel(page, "Text style");
-  await page.getByLabel("Typeface").selectOption({ label: "Georgia" });
-  await openContextPanel(page, "Text style");
-  await page.getByLabel("Text size").fill("22");
+  await page.getByLabel("Typeface").selectOption({ label: "Bookish" });
+  await page.getByLabel("Custom text size").fill("22");
+  await page.getByLabel("Custom text size").press("Enter");
+  await page.getByRole("button", { name: "Text style", exact: true }).click();
 
   const xBeforeKeyboard = await selectedNumber(page, "selected-position-x");
   const widthBeforeKeyboard = await selectedNumber(page, "selected-width");
@@ -223,7 +224,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await expect(page.getByLabel("Typeface")).toHaveValue(
     "Georgia, ui-serif, serif",
   );
-  await expect(page.getByLabel("Text size")).toHaveValue("22");
+  await expect(page.getByLabel("Custom text size")).toHaveValue("22");
 
   for (const label of [
     /Styled planning idea/,
@@ -403,6 +404,76 @@ test("uses dark contextual controls and opens selection actions from right-click
   expect(accessibility.violations).toEqual([]);
   await page.keyboard.press("Escape");
   await expect(surface).toBeFocused();
+});
+
+test("styles canvas text with type, size, weight, alignment, lists, and a safe link", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await createAt(page, "Text", { x: 300, y: 180 });
+  await editSelectedText(page, "First\nSecond");
+
+  await openContextPanel(page, "Text style");
+  const panel = page.getByTestId("text-style-panel");
+  await expect(panel).toBeVisible();
+  await page.getByLabel("Typeface").selectOption({ label: "Scribbled" });
+  await page.getByLabel("Text size preset").selectOption({ label: "Large" });
+  await page.getByRole("button", { name: "Bold", exact: true }).click();
+  await page.getByRole("button", { name: "Align right" }).click();
+  await page.getByRole("button", { name: "Bulleted list" }).click();
+  await page.getByLabel("Text link URL").fill("example.com/notes");
+  await page.getByRole("button", { name: "Apply link" }).click();
+
+  await expect(page.getByLabel("Typeface")).toHaveValue(
+    '"Bradley Hand", "Comic Sans MS", cursive',
+  );
+  await expect(page.getByLabel("Text size preset")).toHaveValue("40");
+  await expect(
+    page.getByRole("button", { name: "Bold", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Align right" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Bulleted list" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Text link URL")).toHaveValue(
+    "https://example.com/notes",
+  );
+  await expect(
+    page.getByRole("button", { name: "Open text link" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Text style", exact: true }).click();
+  await page.getByRole("button", { name: "Edit text on canvas" }).click();
+  const editor = page.getByLabel("Edit object text on canvas");
+  await editor.fill("1. First\nSecond");
+  await editor.press("Control+Enter");
+
+  await openContextPanel(page, "Text style");
+  await expect(
+    page.getByRole("button", { name: "Numbered list" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByLabel("Custom text size").fill("33");
+  await page.getByLabel("Custom text size").press("Enter");
+  await expect(page.getByLabel("Custom text size")).toHaveValue("33");
+
+  const violations = await new AxeBuilder({ page })
+    .include('[data-testid="text-style-panel"]')
+    .analyze();
+  expect(violations.violations).toEqual([]);
+
+  await page.reload();
+  await ensureObjectNavigator(page);
+  await page.getByRole("button", { name: /First/ }).click();
+  await openContextPanel(page, "Text style");
+  await expect(page.getByLabel("Custom text size")).toHaveValue("33");
+  await expect(
+    page.getByRole("button", { name: "Numbered list" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Text link URL")).toHaveValue(
+    "https://example.com/notes",
+  );
 });
 
 test("creates, reattaches, and detaches connectors with direct pointer gestures", async ({
