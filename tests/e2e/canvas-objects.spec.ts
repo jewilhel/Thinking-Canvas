@@ -58,7 +58,15 @@ async function createLabeledShape(
   position: { x: number; y: number },
 ) {
   await createAt(page, tool, position);
-  await page.getByLabel("Object content").fill(label);
+  await editSelectedText(page, label);
+}
+
+async function editSelectedText(page: Page, text: string) {
+  await page.getByRole("button", { name: "Edit text on canvas" }).click();
+  const editor = page.getByLabel("Edit object text on canvas");
+  await editor.fill(text);
+  await editor.press("Control+Enter");
+  await expect(editor).not.toBeVisible();
 }
 
 async function connectLabels(
@@ -102,7 +110,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   const surface = await openFreshCanvas(page);
 
   await createAt(page, "Rectangle", { x: 180, y: 140 });
-  await page.getByLabel("Object content").fill("Styled planning idea");
+  await editSelectedText(page, "Styled planning idea");
   await page.getByLabel("Fill color").fill("#fef3c7");
   await page.getByLabel("Outline color").fill("#d97706");
   await page.getByLabel("Typeface").selectOption({ label: "Georgia" });
@@ -125,7 +133,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   const box = await surface.boundingBox();
   if (!box) throw new Error("Canvas surface bounds are unavailable.");
   const pointerStart = {
-    x: box.x + 80 + xBeforePointer + (widthBeforeKeyboard + 1) / 2,
+    x: box.x + 80 + xBeforePointer + (widthBeforeKeyboard + 1) / 4,
     y: box.y + 80 + yBeforePointer + 55,
   };
   await page.mouse.move(pointerStart.x, pointerStart.y);
@@ -142,15 +150,15 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await createAt(page, "Text", { x: 420, y: 120 });
   await expect(page.getByLabel("Fill color")).not.toBeVisible();
   await expect(page.getByLabel("Outline color")).not.toBeVisible();
-  await page.getByLabel("Object content").fill("A text primitive");
+  await editSelectedText(page, "A text primitive");
   await surface.click({ position: { x: 300, y: 500 } });
   await expect(
     page.getByTestId("canvas-inspector-selection"),
   ).not.toBeVisible();
   await surface.click({ position: { x: 430, y: 156 } });
-  await expect(page.getByLabel("Object content")).toHaveValue(
-    "A text primitive",
-  );
+  await expect(
+    page.getByRole("button", { name: /A text primitive/ }),
+  ).toBeVisible();
   await surface.focus();
   await surface.press("ArrowDown");
   await surface.press("Alt+ArrowDown");
@@ -200,14 +208,93 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   expect(accessibility.violations).toEqual([]);
 });
 
+test("edits shape, sticky-note, and text content inline with commit and cancel behavior", async ({
+  page,
+}) => {
+  const surface = await openFreshCanvas(page);
+
+  await createAt(page, "Rectangle", { x: 180, y: 140 });
+  await surface.dblclick({ position: { x: 230, y: 180 } });
+  const editor = page.getByLabel("Edit object text on canvas");
+  await expect(editor).toBeFocused();
+  await editor.fill("Inline shape text");
+  await editor.press("Control+Enter");
+  await expect(
+    page.getByRole("button", { name: /Inline shape text/ }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Sticky note", exact: true }).click();
+  await surface.click({ position: { x: 430, y: 330 } });
+  await surface.dblclick({ position: { x: 480, y: 380 } });
+  await editor.fill("Inline sticky text");
+  await editor.press("Control+Enter");
+  await expect(
+    page.getByRole("button", { name: /Inline sticky text/ }),
+  ).toBeVisible();
+
+  await createAt(page, "Text", { x: 700, y: 180 });
+  await surface.dblclick({ position: { x: 740, y: 205 } });
+  await editor.fill("Inline free text");
+  await editor.press("Escape");
+  await expect(editor).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /text — New text/ }),
+  ).toBeVisible();
+});
+
+test("creates, reattaches, and detaches connectors with direct pointer gestures", async ({
+  page,
+}) => {
+  const surface = await openFreshCanvas(page);
+  await createAt(page, "Rectangle", { x: 180, y: 180 });
+  await editSelectedText(page, "Drag source");
+  await createAt(page, "Rectangle", { x: 520, y: 180 });
+  await editSelectedText(page, "Drag target");
+  await page.getByRole("button", { name: /Drag source/ }).click();
+
+  const box = await surface.boundingBox();
+  if (!box) throw new Error("Canvas surface bounds are unavailable.");
+  const sourceRightHandle = { x: box.x + 378, y: box.y + 235 };
+  const targetLeftHandle = { x: box.x + 502, y: box.y + 235 };
+  await page.mouse.move(sourceRightHandle.x, sourceRightHandle.y);
+  await page.mouse.down();
+  await page.mouse.move(targetLeftHandle.x, targetLeftHandle.y, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.getByTestId("product-object-count")).toHaveText("3");
+  await expect(page.getByTestId("selected-connector-points")).toHaveText(
+    "280,155,440,155",
+  );
+
+  const attachedEnd = { x: box.x + 520, y: box.y + 235 };
+  const targetTopHandle = { x: box.x + 610, y: box.y + 162 };
+  await page.mouse.move(attachedEnd.x, attachedEnd.y);
+  await page.mouse.down();
+  await page.mouse.move(targetTopHandle.x, targetTopHandle.y, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByTestId("selected-connector-points")).toHaveText(
+    "280,155,530,100",
+  );
+
+  const attachedTop = { x: box.x + 610, y: box.y + 180 };
+  const freeDrop = { x: box.x + 650, y: box.y + 400 };
+  await page.mouse.move(attachedTop.x, attachedTop.y);
+  await page.mouse.down();
+  await page.mouse.move(freeDrop.x, freeDrop.y, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByTestId("selected-connector-points")).toHaveText(
+    "280,155,570,320",
+  );
+});
+
 test("attaches connectors to anchors, follows geometry, detaches safely, and supports endpoint resizing", async ({
   page,
 }) => {
   const surface = await openFreshCanvas(page);
   await createAt(page, "Rectangle", { x: 180, y: 180 });
-  await page.getByLabel("Object content").fill("Source");
+  await editSelectedText(page, "Source");
   await createAt(page, "Ellipse", { x: 520, y: 180 });
-  await page.getByLabel("Object content").fill("Target");
+  await editSelectedText(page, "Target");
 
   await page.getByRole("button", { name: /Source/ }).click();
   await page.getByRole("button", { name: "Start right", exact: true }).click();
@@ -328,9 +415,7 @@ test("constructs mind-map, procedure, mood-board, and storyboard arrangements fr
   });
   await page.getByLabel("Fill color").fill("#bfdbfe");
   await createAt(page, "Text", { x: 600, y: 110 });
-  await page
-    .getByLabel("Object content")
-    .fill("Mood words\nClear · Human · Spacious");
+  await editSelectedText(page, "Mood words\nClear · Human · Spacious");
   await createAt(page, "Table", { x: 270, y: 310 });
   await page
     .getByLabel("Table cells")

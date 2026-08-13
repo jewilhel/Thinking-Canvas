@@ -46,7 +46,7 @@ import {
   type CanvasHistoryEntry,
 } from "@/canvas/canvas-history";
 import {
-  anchorPointV2,
+  connectionHandlePointV2,
   maxCanvasScale,
   minCanvasScale,
   resolveConnectorEndpointV2,
@@ -77,6 +77,16 @@ type ConnectorEndpoint = Extract<
 >["start"];
 type Marquee = { start: Point; current: Point; additive: boolean };
 type CommandDefinition = { type: string; payload: unknown };
+type InlineTextEditor = {
+  objectId: string;
+  objectType: "shape" | "text";
+  draft: string;
+  initialValue: string;
+};
+type ReconnectingEndpoint = {
+  connectorId: string;
+  endpoint: "start" | "end";
+};
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
 const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left", "center"];
@@ -144,6 +154,7 @@ export function ProductCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
+  const inlineEditorRef = useRef<HTMLTextAreaElement>(null);
   const objectNodeRefs = useRef(new Map<string, Konva.Node>());
   const frameStartedAt = useRef(0);
   const documentStorageKey = `thinking-canvas:document:${canvasId}`;
@@ -168,6 +179,11 @@ export function ProductCanvas({
   const [connectorStart, setConnectorStart] =
     useState<ConnectorEndpoint | null>(null);
   const [pointerPreview, setPointerPreview] = useState<Point | null>(null);
+  const [inlineTextEditor, setInlineTextEditor] =
+    useState<InlineTextEditor | null>(null);
+  const [reconnectingEndpoint, setReconnectingEndpoint] =
+    useState<ReconnectingEndpoint | null>(null);
+  const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [clipboardText, setClipboardText] = useState("");
   const [undoStack, setUndoStack] = useState<CanvasHistoryEntry[]>([]);
@@ -207,6 +223,7 @@ export function ProductCanvas({
     [objects],
   );
   const selectedId = selectedIds.at(-1) ?? null;
+  const inlineEditorObjectId = inlineTextEditor?.objectId ?? null;
   const selectedObjects = selectedIds.flatMap((id) => {
     const object = objectsById.get(id);
     return object ? [object] : [];
@@ -253,10 +270,22 @@ export function ProductCanvas({
       : undefined;
     if (!transformer) return;
     transformer.nodes(
-      node && selectedObject?.type !== "connector" ? [node] : [],
+      node &&
+        selectedObject?.type !== "connector" &&
+        inlineTextEditor?.objectId !== selectedId
+        ? [node]
+        : [],
     );
     transformer.getLayer()?.batchDraw();
-  }, [selectedId, selectedObject]);
+  }, [inlineTextEditor?.objectId, selectedId, selectedObject]);
+
+  useEffect(() => {
+    if (!inlineEditorObjectId) return;
+    const editor = inlineEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    editor.select();
+  }, [inlineEditorObjectId]);
 
   useEffect(() => {
     if (!instrumentationEnabled) return;
@@ -486,12 +515,114 @@ export function ProductCanvas({
     setTool("select");
   }
 
+  function startInlineEditing(
+    object: Extract<CanvasObjectV2, { type: "shape" | "text" }>,
+  ) {
+    setSelectedIds([object.id]);
+    setTool("select");
+    setInlineTextEditor({
+      objectId: object.id,
+      objectType: object.type,
+      draft: object.text,
+      initialValue: object.text,
+    });
+  }
+
+  function finishInlineEditing(commit: boolean) {
+    if (!inlineTextEditor) return;
+    if (commit && inlineTextEditor.draft !== inlineTextEditor.initialValue) {
+      runCommand("object.patch", {
+        objectId: inlineTextEditor.objectId,
+        objectType: inlineTextEditor.objectType,
+        text: inlineTextEditor.draft,
+      });
+    }
+    setInlineTextEditor(null);
+    requestAnimationFrame(() => containerRef.current?.focus());
+  }
+
+  function connectionHandlePoint(object: CanvasObjectV2, anchor: CanvasAnchor) {
+    return connectionHandlePointV2(object, anchor, 18 / viewport.scale);
+  }
+
+  function endpointAtDrop(point: Point, excludedObjectId?: string) {
+    const snapDistance = 24 / viewport.scale;
+    let nearest: { endpoint: ConnectorEndpoint; distance: number } | undefined;
+    for (const object of objects) {
+      if (object.type !== "shape" || object.id === excludedObjectId) continue;
+      for (const anchor of anchors) {
+        const handle = connectionHandlePoint(object, anchor);
+        const distance = Math.hypot(handle.x - point.x, handle.y - point.y);
+        if (
+          distance <= snapDistance &&
+          (!nearest || distance < nearest.distance)
+        ) {
+          nearest = {
+            endpoint: { kind: "attached", objectId: object.id, anchor },
+            distance,
+          };
+        }
+      }
+    }
+    return nearest?.endpoint ?? { kind: "free", ...point };
+  }
+
+  function beginConnectorDrag(
+    event: Konva.KonvaEventObject<DragEvent>,
+    object: Extract<CanvasObjectV2, { type: "shape" }>,
+    anchor: CanvasAnchor,
+  ) {
+    event.cancelBubble = true;
+    setSelectedIds([object.id]);
+    setTool("connector");
+    setConnectorStart({ kind: "attached", objectId: object.id, anchor });
+    const point = eventWorldPointer(event);
+    if (point) setPointerPreview(point);
+  }
+
+  function finishConnectorDrag(
+    event: Konva.KonvaEventObject<DragEvent>,
+    sourceObjectId: string,
+  ) {
+    event.cancelBubble = true;
+    const point = eventWorldPointer(event);
+    if (point) finishConnector(endpointAtDrop(point, sourceObjectId));
+  }
+
+  function finishEndpointDrag(
+    event: Konva.KonvaEventObject<DragEvent>,
+    connectorId: string,
+    endpoint: "start" | "end",
+  ) {
+    event.cancelBubble = true;
+    const point = eventWorldPointer(event);
+    setReconnectingEndpoint(null);
+    if (!point) return;
+    runCommand("connector.endpoint", {
+      objectId: connectorId,
+      endpoint,
+      value: endpointAtDrop(point),
+    });
+  }
+
   function worldPointer() {
     const pointer = stageRef.current?.getPointerPosition();
     if (!pointer) return null;
     return {
       x: (pointer.x - viewport.x) / viewport.scale,
       y: (pointer.y - viewport.y) / viewport.scale,
+    };
+  }
+
+  function eventWorldPointer(
+    event: Konva.KonvaEventObject<MouseEvent | TouchEvent | DragEvent>,
+  ) {
+    const stage = event.target.getStage();
+    const pointer = stage?.getPointerPosition();
+    if (!stage || !pointer) return null;
+    return {
+      x: (pointer.x - stage.x()) / stage.scaleX(),
+      y: (pointer.y - stage.y()) / stage.scaleY(),
     };
   }
 
@@ -1104,16 +1235,15 @@ export function ProductCanvas({
                   stroke="#ffffff"
                   strokeWidth={2}
                   draggable
-                  onDragEnd={(event) =>
-                    runCommand("connector.endpoint", {
-                      objectId: object.id,
+                  onDragStart={(event) => {
+                    event.cancelBubble = true;
+                    setReconnectingEndpoint({
+                      connectorId: object.id,
                       endpoint,
-                      value: {
-                        kind: "free",
-                        x: event.target.x(),
-                        y: event.target.y(),
-                      },
-                    })
+                    });
+                  }}
+                  onDragEnd={(event) =>
+                    finishEndpointDrag(event, object.id, endpoint)
                   }
                 />
               ))
@@ -1133,9 +1263,29 @@ export function ProductCanvas({
         x={object.geometry.x}
         y={object.geometry.y}
         rotation={object.geometry.rotation}
-        draggable={tool === "select"}
+        draggable={
+          tool === "select" && inlineTextEditor?.objectId !== object.id
+        }
         onClick={(event) => selectObject(event, object)}
         onTap={(event) => selectObject(event, object)}
+        onDblClick={(event) => {
+          event.cancelBubble = true;
+          if (object.type === "shape" || object.type === "text") {
+            startInlineEditing(object);
+          }
+        }}
+        onDblTap={(event) => {
+          event.cancelBubble = true;
+          if (object.type === "shape" || object.type === "text") {
+            startInlineEditing(object);
+          }
+        }}
+        onMouseEnter={() => {
+          if (object.type === "shape") setHoveredShapeId(object.id);
+        }}
+        onMouseLeave={() => {
+          if (hoveredShapeId === object.id) setHoveredShapeId(null);
+        }}
         onDragStart={() => {
           if (!selectedIds.includes(object.id)) {
             setSelectedIds(
@@ -1184,6 +1334,7 @@ export function ProductCanvas({
               verticalAlign="middle"
               fontFamily={object.style.fontFamily}
               fontSize={object.style.fontSize}
+              opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
               listening={false}
             />
           </>
@@ -1196,15 +1347,25 @@ export function ProductCanvas({
             fontFamily={object.style.fontFamily}
             fontSize={object.style.fontSize}
             verticalAlign="middle"
+            opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
           />
         ) : (
           renderTable(object)
         )}
-        {selectedIds.includes(object.id) && object.type === "shape"
+        {object.type === "shape" &&
+        (selectedIds.includes(object.id) ||
+          hoveredShapeId === object.id ||
+          connectorStart ||
+          reconnectingEndpoint)
           ? anchors.map((anchor) => {
-              const point = anchorPointV2(
-                { ...object, geometry: { ...object.geometry, x: 0, y: 0 } },
+              const localObject = {
+                ...object,
+                geometry: { ...object.geometry, x: 0, y: 0 },
+              };
+              const point = connectionHandlePointV2(
+                localObject,
                 anchor,
+                18 / viewport.scale,
               );
               return (
                 <Circle
@@ -1215,6 +1376,16 @@ export function ProductCanvas({
                   fill="#a78bfa"
                   stroke="#ffffff"
                   strokeWidth={2}
+                  draggable
+                  data-anchor={anchor}
+                  onDragStart={(event) =>
+                    beginConnectorDrag(event, object, anchor)
+                  }
+                  onDragMove={(event) => {
+                    const point = eventWorldPointer(event);
+                    if (point) setPointerPreview(point);
+                  }}
+                  onDragEnd={(event) => finishConnectorDrag(event, object.id)}
                   onClick={(event) => {
                     event.cancelBubble = true;
                     finishConnector({
@@ -1246,6 +1417,40 @@ export function ProductCanvas({
         height: Math.abs(marquee.current.y - marquee.start.y),
       }
     : null;
+  const inlineEditorObject = inlineTextEditor
+    ? objectsById.get(inlineTextEditor.objectId)
+    : undefined;
+  const inlineEditorLayout =
+    inlineEditorObject?.type === "shape" || inlineEditorObject?.type === "text"
+      ? {
+          left:
+            viewport.x +
+            (inlineEditorObject.geometry.x +
+              (inlineEditorObject.type === "shape" ? 12 : 0)) *
+              viewport.scale,
+          top:
+            viewport.y +
+            (inlineEditorObject.geometry.y +
+              (inlineEditorObject.type === "shape" ? 12 : 0)) *
+              viewport.scale,
+          width:
+            (inlineEditorObject.geometry.width -
+              (inlineEditorObject.type === "shape" ? 24 : 0)) *
+            viewport.scale,
+          height:
+            (inlineEditorObject.geometry.height -
+              (inlineEditorObject.type === "shape" ? 24 : 0)) *
+            viewport.scale,
+          transform: `rotate(${inlineEditorObject.geometry.rotation}deg)`,
+          transformOrigin: "top left" as const,
+          fontFamily: inlineEditorObject.style.fontFamily,
+          fontSize: inlineEditorObject.style.fontSize * viewport.scale,
+          textAlign:
+            inlineEditorObject.type === "shape"
+              ? ("center" as const)
+              : ("left" as const),
+        }
+      : null;
 
   return (
     <section
@@ -1614,6 +1819,35 @@ export function ProductCanvas({
               />
             </Layer>
           </Stage>
+          {inlineTextEditor && inlineEditorLayout ? (
+            <textarea
+              ref={inlineEditorRef}
+              aria-label="Edit object text on canvas"
+              data-testid="inline-object-text-editor"
+              value={inlineTextEditor.draft}
+              onChange={(event) =>
+                setInlineTextEditor((current) =>
+                  current ? { ...current, draft: event.target.value } : null,
+                )
+              }
+              onBlur={() => finishInlineEditing(true)}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  finishInlineEditing(false);
+                } else if (
+                  event.key === "Enter" &&
+                  (event.metaKey || event.ctrlKey)
+                ) {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
+              style={inlineEditorLayout}
+              className="absolute z-20 resize-none overflow-hidden border-0 bg-transparent p-0 leading-tight text-zinc-900 outline-2 outline-offset-4 outline-violet-500 focus:outline"
+            />
+          ) : null}
           {objects.length === 0 ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center">
               <div className="max-w-sm rounded-2xl border border-[var(--workspace-border)] bg-white/90 px-6 py-5 text-zinc-900 shadow-xl backdrop-blur">
@@ -1743,21 +1977,14 @@ export function ProductCanvas({
               </dl>
               {selectedObject.type === "shape" ||
               selectedObject.type === "text" ? (
-                <label className="block text-xs text-zinc-600">
-                  Content
-                  <textarea
-                    aria-label="Object content"
-                    value={selectedObject.text}
-                    onChange={(event) =>
-                      runCommand("object.patch", {
-                        objectId: selectedObject.id,
-                        objectType: selectedObject.type,
-                        text: event.target.value,
-                      })
-                    }
-                    className="mt-1 min-h-20 w-full rounded-md border border-zinc-200 bg-white p-2 text-sm text-zinc-900"
-                  />
-                </label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => startInlineEditing(selectedObject)}
+                >
+                  Edit text on canvas
+                </Button>
               ) : null}
               {selectedObject.type === "table" ? (
                 <label className="block text-xs text-zinc-600">

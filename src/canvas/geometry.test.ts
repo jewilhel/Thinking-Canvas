@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { createMixedCanvasFixture } from "@/canvas/fixture";
 import {
+  connectionHandlePointV2,
   normalizeTransformedGeometry,
   resolveConnectorPoints,
   zoomViewportAtPointer,
@@ -29,6 +30,41 @@ describe("canvas geometry", () => {
     expect(normalizeTransformedGeometry(object, 2, 0.5)).toMatchObject({
       width: object.geometry.width * 2,
       height: object.geometry.height * 0.5,
+    });
+  });
+
+  it("places edge connection handles outside transform bounds and keeps center centered", () => {
+    const object = {
+      schemaVersion: 2 as const,
+      id: "60000000-0000-4000-8000-000000000001",
+      canvasId: "20000000-0000-4000-8000-000000000001",
+      createdBy: "10000000-0000-4000-8000-000000000001",
+      createdAt: "2026-08-12T00:00:00.000Z",
+      updatedAt: "2026-08-12T00:00:00.000Z",
+      type: "shape" as const,
+      shape: "rectangle" as const,
+      text: "Connection target",
+      geometry: { x: 100, y: 200, width: 180, height: 110, rotation: 0 },
+      style: {
+        fill: "#ffffff",
+        outline: "#475569",
+        outlineWidth: 2,
+        fontFamily: "Inter",
+        fontSize: 16,
+      },
+    };
+
+    expect(connectionHandlePointV2(object, "top", 18)).toEqual({
+      x: 190,
+      y: 182,
+    });
+    expect(connectionHandlePointV2(object, "right", 18)).toEqual({
+      x: 298,
+      y: 255,
+    });
+    expect(connectionHandlePointV2(object, "center", 18)).toEqual({
+      x: 190,
+      y: 255,
     });
   });
 

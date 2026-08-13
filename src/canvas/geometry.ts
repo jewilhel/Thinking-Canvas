@@ -105,6 +105,19 @@ export function anchorPointV2(
   return { x: x + width / 2, y: y + height / 2 };
 }
 
+export function connectionHandlePointV2(
+  object: CanvasObjectV2,
+  anchor: CanvasAnchor,
+  offset: number,
+): Point {
+  const point = anchorPointV2(object, anchor);
+  if (anchor === "top") return { x: point.x, y: point.y - offset };
+  if (anchor === "right") return { x: point.x + offset, y: point.y };
+  if (anchor === "bottom") return { x: point.x, y: point.y + offset };
+  if (anchor === "left") return { x: point.x - offset, y: point.y };
+  return point;
+}
+
 export function resolveConnectorEndpointV2(
   endpoint: Extract<CanvasObjectV2, { type: "connector" }>["start"],
   objectsById: ReadonlyMap<string, CanvasObjectV2>,
