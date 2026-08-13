@@ -118,6 +118,21 @@ export function connectionHandlePointV2(
   return point;
 }
 
+export function pointWithinObjectHoverZone(
+  object: CanvasObjectV2,
+  point: Point,
+  distance: number,
+) {
+  if (object.type === "connector") return false;
+  const { x, y, width, height } = object.geometry;
+  return (
+    point.x >= x - distance &&
+    point.x <= x + width + distance &&
+    point.y >= y - distance &&
+    point.y <= y + height + distance
+  );
+}
+
 export function resolveConnectorEndpointV2(
   endpoint: Extract<CanvasObjectV2, { type: "connector" }>["start"],
   objectsById: ReadonlyMap<string, CanvasObjectV2>,

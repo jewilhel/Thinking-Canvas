@@ -579,20 +579,23 @@ test("creates, reattaches, and detaches connectors with direct pointer gestures"
 
   const box = await surface.boundingBox();
   if (!box) throw new Error("Canvas surface bounds are unavailable.");
-  const sourceRightHandle = { x: box.x + 378, y: box.y + 235 };
-  const targetLeftHandle = { x: box.x + 502, y: box.y + 235 };
-  await page.mouse.move(sourceRightHandle.x, sourceRightHandle.y);
+  const sourceRightHandle = { x: box.x + 388, y: box.y + 235 };
+  const targetLeftHandle = { x: box.x + 492, y: box.y + 235 };
+  await surface.click({ position: { x: 40, y: 400 } });
+  await page.mouse.move(box.x + 350, box.y + 235);
+  await page.mouse.move(sourceRightHandle.x, sourceRightHandle.y, { steps: 6 });
   await page.mouse.down();
   await page.mouse.move(targetLeftHandle.x, targetLeftHandle.y, { steps: 8 });
   await page.mouse.up();
 
+  await ensureObjectNavigator(page);
   await expect(page.getByTestId("product-object-count")).toHaveText("3");
   await expect(page.getByTestId("selected-connector-points")).toHaveText(
     "280,155,440,155",
   );
 
-  const attachedEnd = { x: box.x + 520, y: box.y + 235 };
-  const targetTopHandle = { x: box.x + 610, y: box.y + 162 };
+  const attachedEnd = { x: box.x + 492, y: box.y + 235 };
+  const targetTopHandle = { x: box.x + 610, y: box.y + 152 };
   await page.mouse.move(attachedEnd.x, attachedEnd.y);
   await page.mouse.down();
   await page.mouse.move(targetTopHandle.x, targetTopHandle.y, { steps: 8 });
@@ -601,7 +604,7 @@ test("creates, reattaches, and detaches connectors with direct pointer gestures"
     "280,155,530,100",
   );
 
-  const attachedTop = { x: box.x + 610, y: box.y + 180 };
+  const attachedTop = { x: box.x + 610, y: box.y + 152 };
   const freeDrop = { x: box.x + 650, y: box.y + 400 };
   await page.mouse.move(attachedTop.x, attachedTop.y);
   await page.mouse.down();
@@ -654,14 +657,19 @@ test("attaches connectors to anchors, follows geometry, detaches safely, and sup
   )
     .split(",")
     .map(Number);
+  const handlePoints = (
+    await page.getByTestId("selected-connector-handle-points").innerText()
+  )
+    .split(",")
+    .map(Number);
   await page.mouse.move(
-    surfaceBox.x + 80 + pointsBeforeEndpointDrag[0]!,
-    surfaceBox.y + 80 + pointsBeforeEndpointDrag[1]!,
+    surfaceBox.x + 80 + handlePoints[0]!,
+    surfaceBox.y + 80 + handlePoints[1]!,
   );
   await page.mouse.down();
   await page.mouse.move(
-    surfaceBox.x + 80 + pointsBeforeEndpointDrag[0]! + 42,
-    surfaceBox.y + 80 + pointsBeforeEndpointDrag[1]! + 18,
+    surfaceBox.x + 80 + pointsBeforeEndpointDrag[0]! + 70,
+    surfaceBox.y + 80 + pointsBeforeEndpointDrag[1]! + 40,
     { steps: 4 },
   );
   await page.mouse.up();

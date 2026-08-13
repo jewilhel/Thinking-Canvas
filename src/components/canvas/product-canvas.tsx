@@ -22,7 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Arrow,
   Circle,
@@ -58,6 +58,7 @@ import {
   connectionHandlePointV2,
   maxCanvasScale,
   minCanvasScale,
+  pointWithinObjectHoverZone,
   resolveConnectorEndpointV2,
   resolveConnectorPointsV2,
   zoomViewportAtPointer,
@@ -104,10 +105,6 @@ type InlineTextEditor = {
   listStyle: "none" | "bullet" | "numbered";
   initialListStyle: "none" | "bullet" | "numbered";
 };
-type ReconnectingEndpoint = {
-  connectorId: string;
-  endpoint: "start" | "end";
-};
 type ContextPanel =
   "fill" | "outline" | "text" | "table" | "connector" | "more";
 type SharedPanel = "objects" | "comments" | "help";
@@ -115,6 +112,12 @@ type ObjectContextMenuPosition = { x: number; y: number; maxHeight: number };
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
 const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left"];
+const connectionAnchorOffsetPx = 28;
+const connectionAnchorRadiusPx = 7;
+const connectionAnchorHitWidthPx = 28;
+const connectionAnchorHoverDistancePx = 44;
+const selectionHandleSizePx = 14;
+const selectionHandleStrokeWidthPx = 3;
 
 function formatListText(
   text: string,
@@ -246,8 +249,6 @@ export function ProductCanvas({
   const [pointerPreview, setPointerPreview] = useState<Point | null>(null);
   const [inlineTextEditor, setInlineTextEditor] =
     useState<InlineTextEditor | null>(null);
-  const [reconnectingEndpoint, setReconnectingEndpoint] =
-    useState<ReconnectingEndpoint | null>(null);
   const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
   const [contextPanel, setContextPanel] = useState<ContextPanel | null>(null);
   const [objectContextMenu, setObjectContextMenu] =
@@ -743,7 +744,23 @@ export function ProductCanvas({
   }
 
   function connectionHandlePoint(object: CanvasObjectV2, anchor: CanvasAnchor) {
-    return connectionHandlePointV2(object, anchor, 18 / viewport.scale);
+    return connectionHandlePointV2(
+      object,
+      anchor,
+      connectionAnchorOffsetPx / viewport.scale,
+    );
+  }
+
+  function connectorEndpointHandlePoint(
+    endpoint: ConnectorEndpoint,
+    fallback: Point,
+  ) {
+    if (endpoint.kind === "attached") {
+      const target = objectsById.get(endpoint.objectId);
+      if (target?.type === "shape")
+        return connectionHandlePoint(target, endpoint.anchor);
+    }
+    return fallback;
   }
 
   function nearestExteriorAnchor(object: CanvasObjectV2, point: Point) {
@@ -808,7 +825,6 @@ export function ProductCanvas({
   ) {
     event.cancelBubble = true;
     const point = eventWorldPointer(event);
-    setReconnectingEndpoint(null);
     if (!point) return;
     runCommand("connector.endpoint", {
       objectId: connectorId,
@@ -932,6 +948,7 @@ export function ProductCanvas({
   function updateSelectionForObject(object: CanvasObjectV2, modifier: boolean) {
     setContextPanel(null);
     setObjectContextMenu(null);
+    if (object.type === "connector") setHoveredShapeId(null);
     const groupIds = object.groupId
       ? objects
           .filter((candidate) => candidate.groupId === object.groupId)
@@ -1231,6 +1248,21 @@ export function ProductCanvas({
   function onStagePointerMove() {
     const point = worldPointer();
     if (connectorStart) setPointerPreview(point);
+    if (point) {
+      setHoveredShapeId((current) => {
+        if (!current) return null;
+        const hovered = objectsById.get(current);
+        return hovered &&
+          hovered.type === "shape" &&
+          pointWithinObjectHoverZone(
+            hovered,
+            point,
+            connectionAnchorHoverDistancePx / viewport.scale,
+          )
+          ? current
+          : null;
+      });
+    }
     if (!marquee) return;
     if (point)
       setMarquee((current) =>
@@ -1569,6 +1601,13 @@ export function ProductCanvas({
   function renderObject(object: CanvasObjectV2) {
     if (object.type === "connector") {
       const points = resolveConnectorPointsV2(object, objectsById);
+      const endpointHandles = ([object.start, object.end] as const).map(
+        (endpoint, index) =>
+          connectorEndpointHandlePoint(endpoint, {
+            x: points[index * 2]!,
+            y: points[index * 2 + 1]!,
+          }),
+      );
       return (
         <Group key={object.id} id={object.id}>
           <Arrow
@@ -1587,19 +1626,16 @@ export function ProductCanvas({
             ? (["start", "end"] as const).map((endpoint, index) => (
                 <Circle
                   key={endpoint}
-                  x={points[index * 2]}
-                  y={points[index * 2 + 1]}
+                  x={endpointHandles[index]!.x}
+                  y={endpointHandles[index]!.y}
                   radius={8}
                   fill="#8b5cf6"
                   stroke="#ffffff"
                   strokeWidth={2}
+                  hitStrokeWidth={24 / viewport.scale}
                   draggable
                   onDragStart={(event) => {
                     event.cancelBubble = true;
-                    setReconnectingEndpoint({
-                      connectorId: object.id,
-                      endpoint,
-                    });
                   }}
                   onDragEnd={(event) =>
                     finishEndpointDrag(event, object.id, endpoint)
@@ -1612,117 +1648,127 @@ export function ProductCanvas({
     }
     if (object.type === "document" || object.type === "annotation") return null;
     return (
-      <Group
-        key={object.id}
-        id={object.id}
-        ref={(node) => {
-          if (node) objectNodeRefs.current.set(object.id, node);
-          else objectNodeRefs.current.delete(object.id);
-        }}
-        x={object.geometry.x}
-        y={object.geometry.y}
-        rotation={object.geometry.rotation}
-        draggable={
-          tool === "select" && inlineTextEditor?.objectId !== object.id
-        }
-        onClick={(event) => selectObject(event, object)}
-        onTap={(event) => selectObject(event, object)}
-        onContextMenu={(event) => openObjectContextMenu(event, object)}
-        onDblClick={(event) => {
-          event.cancelBubble = true;
-          if (object.type === "shape" || object.type === "text") {
-            startInlineEditing(object);
+      <Fragment key={object.id}>
+        <Group
+          id={object.id}
+          ref={(node) => {
+            if (node) objectNodeRefs.current.set(object.id, node);
+            else objectNodeRefs.current.delete(object.id);
+          }}
+          x={object.geometry.x}
+          y={object.geometry.y}
+          rotation={object.geometry.rotation}
+          draggable={
+            tool === "select" && inlineTextEditor?.objectId !== object.id
           }
-        }}
-        onDblTap={(event) => {
-          event.cancelBubble = true;
-          if (object.type === "shape" || object.type === "text") {
-            startInlineEditing(object);
+          onClick={(event) => selectObject(event, object)}
+          onTap={(event) => selectObject(event, object)}
+          onContextMenu={(event) => openObjectContextMenu(event, object)}
+          onDblClick={(event) => {
+            event.cancelBubble = true;
+            if (object.type === "shape" || object.type === "text") {
+              startInlineEditing(object);
+            }
+          }}
+          onDblTap={(event) => {
+            event.cancelBubble = true;
+            if (object.type === "shape" || object.type === "text") {
+              startInlineEditing(object);
+            }
+          }}
+          onMouseEnter={() => {
+            if (object.type === "shape") setHoveredShapeId(object.id);
+          }}
+          onMouseLeave={() => {
+            // The stage-level proximity zone keeps anchors visible while the
+            // pointer crosses the intentional gap between the object and handle.
+          }}
+          onDragStart={() => {
+            if (!selectedIds.includes(object.id)) {
+              setSelectedIds(
+                object.groupId
+                  ? objects
+                      .filter(
+                        (candidate) => candidate.groupId === object.groupId,
+                      )
+                      .map((candidate) => candidate.id)
+                  : [object.id],
+              );
+            }
+          }}
+          onDragEnd={(event) =>
+            moveSelectionFromDrag(object, event.target.x(), event.target.y())
           }
-        }}
-        onMouseEnter={() => {
-          if (object.type === "shape") setHoveredShapeId(object.id);
-        }}
-        onMouseLeave={() => {
-          if (hoveredShapeId === object.id) setHoveredShapeId(null);
-        }}
-        onDragStart={() => {
-          if (!selectedIds.includes(object.id)) {
-            setSelectedIds(
-              object.groupId
-                ? objects
-                    .filter((candidate) => candidate.groupId === object.groupId)
-                    .map((candidate) => candidate.id)
-                : [object.id],
+          onTransformEnd={(event) => {
+            const node = event.target;
+            const width = Math.max(
+              24,
+              object.geometry.width * Math.abs(node.scaleX()),
             );
-          }
-        }}
-        onDragEnd={(event) =>
-          moveSelectionFromDrag(object, event.target.x(), event.target.y())
-        }
-        onTransformEnd={(event) => {
-          const node = event.target;
-          const width = Math.max(
-            24,
-            object.geometry.width * Math.abs(node.scaleX()),
-          );
-          const height = Math.max(
-            24,
-            object.geometry.height * Math.abs(node.scaleY()),
-          );
-          node.scaleX(1);
-          node.scaleY(1);
-          runCommand("object.move", {
-            objectId: object.id,
-            x: node.x(),
-            y: node.y(),
-          });
-          runCommand("object.resize", { objectId: object.id, width, height });
-        }}
-      >
-        {object.type === "shape" ? (
-          <>
-            {shapeNode(object)}
+            const height = Math.max(
+              24,
+              object.geometry.height * Math.abs(node.scaleY()),
+            );
+            node.scaleX(1);
+            node.scaleY(1);
+            runCommand("object.move", {
+              objectId: object.id,
+              x: node.x(),
+              y: node.y(),
+            });
+            runCommand("object.resize", { objectId: object.id, width, height });
+          }}
+        >
+          {object.type === "shape" ? (
+            <>
+              {shapeNode(object)}
+              <Text
+                x={12}
+                y={12}
+                width={object.geometry.width - 24}
+                height={object.geometry.height - 24}
+                text={formatListText(object.text, object.style.listStyle)}
+                fill={object.style.textColor ?? "#18181b"}
+                align={object.style.textAlign ?? "center"}
+                verticalAlign="middle"
+                fontFamily={object.style.fontFamily}
+                fontSize={object.style.fontSize}
+                fontStyle={
+                  object.style.fontWeight === "bold" ? "bold" : "normal"
+                }
+                textDecoration={object.style.linkUrl ? "underline" : ""}
+                opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
+                listening={false}
+              />
+            </>
+          ) : object.type === "text" ? (
             <Text
-              x={12}
-              y={12}
-              width={object.geometry.width - 24}
-              height={object.geometry.height - 24}
+              width={object.geometry.width}
+              height={object.geometry.height}
               text={formatListText(object.text, object.style.listStyle)}
               fill={object.style.textColor ?? "#18181b"}
-              align={object.style.textAlign ?? "center"}
-              verticalAlign="middle"
               fontFamily={object.style.fontFamily}
               fontSize={object.style.fontSize}
               fontStyle={object.style.fontWeight === "bold" ? "bold" : "normal"}
+              align={object.style.textAlign ?? "left"}
               textDecoration={object.style.linkUrl ? "underline" : ""}
+              verticalAlign="middle"
               opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
-              listening={false}
             />
-          </>
-        ) : object.type === "text" ? (
-          <Text
-            width={object.geometry.width}
-            height={object.geometry.height}
-            text={formatListText(object.text, object.style.listStyle)}
-            fill={object.style.textColor ?? "#18181b"}
-            fontFamily={object.style.fontFamily}
-            fontSize={object.style.fontSize}
-            fontStyle={object.style.fontWeight === "bold" ? "bold" : "normal"}
-            align={object.style.textAlign ?? "left"}
-            textDecoration={object.style.linkUrl ? "underline" : ""}
-            verticalAlign="middle"
-            opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
-          />
-        ) : (
-          renderTable(object)
-        )}
+          ) : (
+            renderTable(object)
+          )}
+        </Group>
         {object.type === "shape" &&
         (selectedIds.includes(object.id) ||
           hoveredShapeId === object.id ||
-          connectorStart ||
-          reconnectingEndpoint)
-          ? anchors.map((anchor) => {
+          connectorStart) ? (
+          <Group
+            x={object.geometry.x}
+            y={object.geometry.y}
+            rotation={object.geometry.rotation}
+          >
+            {anchors.map((anchor) => {
               const localObject = {
                 ...object,
                 geometry: { ...object.geometry, x: 0, y: 0 },
@@ -1730,17 +1776,18 @@ export function ProductCanvas({
               const point = connectionHandlePointV2(
                 localObject,
                 anchor,
-                18 / viewport.scale,
+                connectionAnchorOffsetPx / viewport.scale,
               );
               return (
                 <Circle
                   key={anchor}
                   x={point.x}
                   y={point.y}
-                  radius={6}
+                  radius={connectionAnchorRadiusPx / viewport.scale}
                   fill="#a78bfa"
                   stroke="#ffffff"
-                  strokeWidth={2}
+                  strokeWidth={3 / viewport.scale}
+                  hitStrokeWidth={connectionAnchorHitWidthPx / viewport.scale}
                   draggable
                   data-anchor={anchor}
                   onDragStart={(event) =>
@@ -1761,9 +1808,10 @@ export function ProductCanvas({
                   }}
                 />
               );
-            })
-          : null}
-      </Group>
+            })}
+          </Group>
+        ) : null}
+      </Fragment>
     );
   }
 
@@ -1860,6 +1908,28 @@ export function ProductCanvas({
         setObjectContextMenu(null);
       }}
     >
+      {selectedObject?.type === "connector" ? (
+        <output
+          data-testid="selected-connector-handle-points"
+          className="sr-only"
+        >
+          {(() => {
+            const points = resolveConnectorPointsV2(
+              selectedObject,
+              objectsById,
+            );
+            return ([selectedObject.start, selectedObject.end] as const)
+              .flatMap((endpoint, index) => {
+                const point = connectorEndpointHandlePoint(endpoint, {
+                  x: points[index * 2]!,
+                  y: points[index * 2 + 1]!,
+                });
+                return [Math.round(point.x), Math.round(point.y)];
+              })
+              .join(",");
+          })()}
+        </output>
+      ) : null}
       <div
         className="pointer-events-none absolute inset-x-4 top-4 z-30 flex items-start justify-between gap-4"
         data-testid="workspace-top-chrome"
@@ -2577,6 +2647,7 @@ export function ProductCanvas({
           aria-label={`Canvas: ${title}. Choose a tool, then use the canvas. Arrow keys move a selection or pan; Delete removes a selection.`}
           onKeyDown={onKeyDown}
           onPointerMove={onSurfacePointerMove}
+          onPointerLeave={() => setHoveredShapeId(null)}
           className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] bg-[radial-gradient(circle,var(--workspace-dot)_1px,transparent_1px)] bg-[length:24px_24px] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
           data-testid="product-canvas-surface"
         >
@@ -2646,6 +2717,18 @@ export function ProductCanvas({
               <Transformer
                 ref={transformerRef}
                 rotateEnabled={false}
+                anchorSize={selectionHandleSizePx / viewport.scale}
+                anchorStrokeWidth={
+                  selectionHandleStrokeWidthPx / viewport.scale
+                }
+                borderStrokeWidth={
+                  selectionHandleStrokeWidthPx / viewport.scale
+                }
+                anchorFill="#ffffff"
+                anchorStroke="#0ea5e9"
+                borderStroke="#0ea5e9"
+                anchorCornerRadius={3 / viewport.scale}
+                padding={2 / viewport.scale}
                 boundBoxFunc={(oldBox, newBox) =>
                   newBox.width < 24 || newBox.height < 24 ? oldBox : newBox
                 }

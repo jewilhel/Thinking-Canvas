@@ -2,10 +2,12 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 import { createMixedCanvasFixture } from "@/canvas/fixture";
 import {
   connectionHandlePointV2,
   normalizeTransformedGeometry,
+  pointWithinObjectHoverZone,
   resolveConnectorPoints,
   zoomViewportAtPointer,
 } from "@/canvas/geometry";
@@ -66,6 +68,44 @@ describe("canvas geometry", () => {
       x: 190,
       y: 255,
     });
+  });
+
+  it("keeps connection anchors available while the pointer crosses the exterior gap", () => {
+    const object = {
+      schemaVersion: 2,
+      id: "60000000-0000-4000-8000-000000000002",
+      canvasId: "20000000-0000-4000-8000-000000000001",
+      createdBy: "10000000-0000-4000-8000-000000000001",
+      createdAt: "2026-08-12T00:00:00.000Z",
+      updatedAt: "2026-08-12T00:00:00.000Z",
+      type: "shape",
+      shape: "rectangle",
+      text: "Hover target",
+      geometry: { x: 100, y: 200, width: 180, height: 110, rotation: 0 },
+      style: {
+        fill: "#ffffff",
+        outline: "#475569",
+        outlineWidth: 2,
+        fontFamily: "Inter",
+        fontSize: 16,
+      },
+    } satisfies CanvasObjectV2;
+    const { x, y, width, height } = object.geometry;
+
+    expect(
+      pointWithinObjectHoverZone(
+        object,
+        { x: x + width + 32, y: y + height / 2 },
+        44,
+      ),
+    ).toBe(true);
+    expect(
+      pointWithinObjectHoverZone(
+        object,
+        { x: x + width + 45, y: y + height / 2 },
+        44,
+      ),
+    ).toBe(false);
   });
 
   it("derives attached connector endpoints from current object geometry", () => {
