@@ -9,6 +9,7 @@ import {
   normalizeTransformedGeometry,
   pointWithinObjectHoverZone,
   resolveConnectorPoints,
+  selectionAffordanceScale,
   zoomViewportAtPointer,
 } from "@/canvas/geometry";
 
@@ -24,6 +25,14 @@ describe("canvas geometry", () => {
 
     expect((pointer.x - after.x) / after.scale).toBeCloseTo(worldBefore.x);
     expect((pointer.y - after.y) / after.scale).toBeCloseTo(worldBefore.y);
+  });
+
+  it("shrinks selection affordances below 100% and hides them at overview zoom", () => {
+    expect(selectionAffordanceScale(1.89)).toBe(1);
+    expect(selectionAffordanceScale(1.02)).toBe(1);
+    expect(selectionAffordanceScale(0.6)).toBe(0.6);
+    expect(selectionAffordanceScale(0.45)).toBe(0.45);
+    expect(selectionAffordanceScale(0.3)).toBe(0);
   });
 
   it("normalizes Konva transform scale back into domain geometry", () => {

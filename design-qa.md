@@ -16,6 +16,10 @@
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 2.04.42 PM.png`
   - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 2.28.09 PM.png`
   - `/Users/jasonwilhelm/Desktop/untitled folder/Screenshot 2026-08-13 at 3.02.47 PM.png`
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 8.15.16 PM.png`
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 8.15.41 PM.png`
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 8.16.00 PM.png`
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-13 at 8.16.37 PM.png`
 - Browser-rendered implementation:
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-dark-context-toolbar-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-object-context-menu-local.png`
@@ -29,6 +33,11 @@
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-compact-custom-color-picker-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-selection-handle-anchor-refinement-local.png`
   - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-selection-handle-anchor-refinement-zoomed-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-adaptive-selection-handles-186-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-adaptive-selection-handles-100-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-adaptive-selection-handles-59-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-adaptive-selection-handles-29-local.png`
+  - `/Users/jasonwilhelm/Desktop/Vibe Coding/Thinking Canvas/docs/implementation/evidence/milestone-02/slice-04-adaptive-selection-handles-comparison.png`
 - Route: authenticated local canvas workspace at `/app/canvases/[canvasId]`
 - State: two selected shapes for the contextual toolbar and selection-actions menu; one selected linked text primitive with Bookish, Large, bold, centered, numbered formatting and the Text style panel open.
 
@@ -42,6 +51,7 @@
 - The custom-picker source is `474 × 790` pixels. Its implementation evidence is a `1280 × 720` browser capture at a `1280 × 720` CSS viewport and device scale factor `1`, with a focused `405px`-wide picker surface. The focused picker regions were compared at their visible rendered scale; the source's surrounding palette fragment and the implementation's surrounding workspace were excluded from mismatch findings.
 - The compact-placement feedback source is `1090 × 1076` pixels. Its implementation evidence is a `1280 × 720` browser capture at a `1280 × 720` CSS viewport and device scale factor `1`, with a `320 × 440` picker. The different viewport heights intentionally exercise opposite placement branches: the screenshot-sized geometry fits below the swatch, while the shorter in-app browser viewport correctly falls back above it.
 - The selection-handle source is `902 × 474` pixels. Both implementation captures are `1280 × 720` browser screenshots at device scale factor `1`, covering the same selected shape at `126%` and `93%` canvas zoom. The focused shape regions were compared at visible CSS scale; the source crop's larger object, different text, and surrounding workspace were excluded from mismatch findings.
+- The four adaptive-zoom sources are `882 × 874`, `668 × 598`, `558 × 438`, and `682 × 560` pixels at `189%`, `102%`, `60%`, and `30%`. The corresponding implementation captures are `1280 × 720` at device scale factor `1` and `185%`, `100%`, `58%`, and `29%`; a single labeled comparison sheet normalizes the different source crops while preserving the visible handle-to-object proportions.
 
 ## Full-view comparison evidence
 
@@ -59,7 +69,9 @@ The supplied custom-picker reference and `slice-04-custom-color-picker-local.png
 
 The `2.28.09 PM` product-feedback capture and `slice-04-compact-custom-color-picker-local.png` were opened together in one comparison input. The implementation reduces the picker from `405px` to `320px` wide and the color field from `405px` to `270px` tall while preserving the reference controls, hierarchy, and selected hue. Its right edge remains aligned to the rainbow swatch; placement prefers an `8px` gap below when the measured panel fits and otherwise moves above without leaving the viewport.
 
-The `3.02.47 PM` source and the final `126%` implementation were opened together in one comparison input, followed by the `126%` and `93%` implementation captures together. The final shape has a thicker cyan selection frame with substantial white handles and four purple connection anchors clearly separated beyond the selection handles. The second comparison confirms that handle thickness, anchor size, anchor offset, and hit geometry remain screen-space stable as canvas zoom changes.
+The `3.02.47 PM` source and the final `126%` implementation were opened together in one comparison input, followed by the `126%` and `93%` implementation captures together. The final shape has a thicker cyan selection frame with substantial white handles and four purple connection anchors clearly separated beyond the selection handles.
+
+The four `8.15–8.16 PM` zoom references and four matching implementation states were then placed together in one labeled comparison input. At `185%` and `100%`, handles retain their normal screen size; at `58%`, the frame, handles, anchor size, and anchor offset shrink with the object; at `29%`, selection and connector chrome is absent while the selected object and contextual actions remain available.
 
 ## Findings
 
@@ -72,7 +84,7 @@ The `3.02.47 PM` source and the final `126%` implementation were opened together
 - Accessibility and behavior: semantic menu roles, disabled/pressed states, initial focus, arrow/Home/End movement, Escape dismissal, Shift+F10/Context Menu access, right-click, Control-click, labeled text controls, safe-link actions, and custom-size keyboard commit are covered. Automated axe checks report no detectable violations in the tested states.
 - Custom color picker: the native browser picker has been replaced with one consistent fill, stroke, and text-color dialog. Hex entry, optional browser eyedropper, hue, opacity, saturation, brightness, Escape/focus restoration, outside dismissal, and pointer/keyboard adjustment are all represented by labeled controls. The large color field and the hue/opacity composition match the supplied interaction reference without changing the persisted style command boundary.
 - Compact placement: the revised picker no longer dominates the canvas. A pure placement resolver and browser-visible `data-placement` state cover below, above, and viewport-clamped cases while retaining right-edge alignment to the invoking swatch.
-- Selection and connector handles: selection handles are `14px` with a `3px` cyan stroke; connection anchors are `7px` circles centered `28px` beyond the object edge with a `28px` hit stroke. A `44px` screen-space hover corridor extends beyond the object so the pointer can cross the visual gap without dismissing the anchors.
+- Selection and connector handles: at `100%` and above, selection handles are `14px` with a `3px` cyan stroke and connection anchors are `7px` circles centered `28px` beyond the edge. From `100%` down to `45%`, those visual sizes and offsets scale with zoom; below `45%`, selection and connector chrome is hidden. Visible anchors retain at least an `18px` invisible hit stroke, and the `44px` screen-space hover corridor still supports pointer travel at editing zooms.
 
 ## Comparison history
 
@@ -86,6 +98,7 @@ The `3.02.47 PM` source and the final `126%` implementation were opened together
 - Custom-picker pass 3: product review identified the `405 × 599` implementation as a P2 workspace-density issue and requested swatch-relative placement. The picker was reduced to `320 × 440`, its color field to `320 × 270`, and placement changed to prefer below with an `8px` gap before falling back above or clamping. The final combined comparison has no remaining actionable P0/P1/P2 difference.
 - Selection-handle pass 1: the first implementation capture exposed a P2 geometry issue: connection-anchor children expanded the Konva Transformer bounds, visually placing purple anchors alongside rather than beyond the selection handles.
 - Selection-handle pass 2: rendered the connection-anchor overlay as a sibling of the transformable object, applied screen-space sizing and offsets, and recaptured at `126%` and `93%`. The anchors now remain outside the true selection bounds with stable interaction sizing; no actionable P0/P1/P2 difference remains.
+- Adaptive-zoom pass 3: product review exposed a P1 low-zoom usability regression: constant screen-space handles overwhelmed shrinking objects at `60%` and became giant cyan blocks at `30%`. The selection frame, resize handles, anchors, and connector endpoints now scale proportionally between `100%` and `45%` and disappear below `45%`. Combined `185%`, `100%`, `58%`, and `29%` evidence shows no remaining actionable P0/P1/P2 difference.
 
 ## Primary interactions tested
 
@@ -98,6 +111,7 @@ The `3.02.47 PM` source and the final `126%` implementation were opened together
 - The custom-picker browser pass changed fill through the editable `#C2E5FF` hex field, confirmed the open dialog and labeled Hue, Opacity, and Saturation and brightness controls, verified persistence through the existing object-style path, and found no application console errors. Browser logs contained only normal React DevTools and local HMR messages. The complete 29-scenario Chromium suite passed after the native color inputs were replaced.
 - The compact-placement browser pass measured the final picker at `320 × 440`, right-aligned with its `36px` rainbow trigger. At the active `1280 × 720` viewport it selected the expected `above` fallback because the trigger bottom was `552px`; unit coverage verifies `below` placement for the supplied `1090 × 1076` geometry and the fully constrained fallback. No application console warnings or errors were emitted.
 - The handle/anchor browser pass inspected the same selected rectangle at `126%` and `93%` zoom and confirmed the visible screen-space sizes and exterior spacing remain stable. Focused Chromium coverage deselects the source, enters through the shape, crosses the object-to-anchor gap in six pointer steps, and successfully drags a connector from the exterior handle. Endpoint reconnection targets the instrumented exterior endpoint handle and releases beyond the same-anchor snap zone. The complete 29-scenario Chromium suite passes, and no application console warnings or errors were emitted.
+- The adaptive-zoom browser pass kept one shape selected while stepping through `185%`, `100%`, `58%`, and `29%`. The first two retain full-size handles, `58%` uses proportional chrome, and `29%` has no selection box, handles, anchors, or connector endpoints. The contextual selection actions remain present at overview zoom, and the complete 29-scenario Chromium suite still passes.
 
 ## Follow-up polish
 

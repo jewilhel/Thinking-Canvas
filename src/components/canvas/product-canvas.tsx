@@ -61,6 +61,7 @@ import {
   pointWithinObjectHoverZone,
   resolveConnectorEndpointV2,
   resolveConnectorPointsV2,
+  selectionAffordanceScale,
   zoomViewportAtPointer,
   type CanvasAnchor,
   type Point,
@@ -271,6 +272,10 @@ export function ProductCanvas({
       return defaultViewport;
     }
   });
+  const selectionAffordanceFactor = selectionAffordanceScale(viewport.scale);
+  const selectionAffordancesVisible = selectionAffordanceFactor > 0;
+  const selectionAffordanceWorldSize = (screenSize: number) =>
+    (screenSize * selectionAffordanceFactor) / viewport.scale;
   const [frameTime, setFrameTime] = useState<number | null>(null);
   const {
     status: saveStatus,
@@ -393,13 +398,19 @@ export function ProductCanvas({
     if (!transformer) return;
     transformer.nodes(
       node &&
+        selectionAffordancesVisible &&
         selectedObject?.type !== "connector" &&
         inlineTextEditor?.objectId !== selectedId
         ? [node]
         : [],
     );
     transformer.getLayer()?.batchDraw();
-  }, [inlineTextEditor?.objectId, selectedId, selectedObject]);
+  }, [
+    inlineTextEditor?.objectId,
+    selectedId,
+    selectedObject,
+    selectionAffordancesVisible,
+  ]);
 
   useEffect(() => {
     if (!inlineEditorObjectId) return;
@@ -747,7 +758,7 @@ export function ProductCanvas({
     return connectionHandlePointV2(
       object,
       anchor,
-      connectionAnchorOffsetPx / viewport.scale,
+      selectionAffordanceWorldSize(connectionAnchorOffsetPx),
     );
   }
 
@@ -1622,17 +1633,20 @@ export function ProductCanvas({
             onTap={(event) => selectObject(event, object)}
             onContextMenu={(event) => openObjectContextMenu(event, object)}
           />
-          {selectedIds.includes(object.id)
+          {selectionAffordancesVisible && selectedIds.includes(object.id)
             ? (["start", "end"] as const).map((endpoint, index) => (
                 <Circle
                   key={endpoint}
                   x={endpointHandles[index]!.x}
                   y={endpointHandles[index]!.y}
-                  radius={8}
+                  radius={selectionAffordanceWorldSize(8)}
                   fill="#8b5cf6"
                   stroke="#ffffff"
-                  strokeWidth={2}
-                  hitStrokeWidth={24 / viewport.scale}
+                  strokeWidth={selectionAffordanceWorldSize(2)}
+                  hitStrokeWidth={
+                    Math.max(18, 24 * selectionAffordanceFactor) /
+                    viewport.scale
+                  }
                   draggable
                   onDragStart={(event) => {
                     event.cancelBubble = true;
@@ -1759,7 +1773,8 @@ export function ProductCanvas({
             renderTable(object)
           )}
         </Group>
-        {object.type === "shape" &&
+        {selectionAffordancesVisible &&
+        object.type === "shape" &&
         (selectedIds.includes(object.id) ||
           hoveredShapeId === object.id ||
           connectorStart) ? (
@@ -1776,18 +1791,25 @@ export function ProductCanvas({
               const point = connectionHandlePointV2(
                 localObject,
                 anchor,
-                connectionAnchorOffsetPx / viewport.scale,
+                selectionAffordanceWorldSize(connectionAnchorOffsetPx),
               );
               return (
                 <Circle
                   key={anchor}
                   x={point.x}
                   y={point.y}
-                  radius={connectionAnchorRadiusPx / viewport.scale}
+                  radius={selectionAffordanceWorldSize(
+                    connectionAnchorRadiusPx,
+                  )}
                   fill="#a78bfa"
                   stroke="#ffffff"
-                  strokeWidth={3 / viewport.scale}
-                  hitStrokeWidth={connectionAnchorHitWidthPx / viewport.scale}
+                  strokeWidth={selectionAffordanceWorldSize(3)}
+                  hitStrokeWidth={
+                    Math.max(
+                      18,
+                      connectionAnchorHitWidthPx * selectionAffordanceFactor,
+                    ) / viewport.scale
+                  }
                   draggable
                   data-anchor={anchor}
                   onDragStart={(event) =>
@@ -2717,18 +2739,18 @@ export function ProductCanvas({
               <Transformer
                 ref={transformerRef}
                 rotateEnabled={false}
-                anchorSize={selectionHandleSizePx / viewport.scale}
-                anchorStrokeWidth={
-                  selectionHandleStrokeWidthPx / viewport.scale
-                }
-                borderStrokeWidth={
-                  selectionHandleStrokeWidthPx / viewport.scale
-                }
+                anchorSize={selectionAffordanceWorldSize(selectionHandleSizePx)}
+                anchorStrokeWidth={selectionAffordanceWorldSize(
+                  selectionHandleStrokeWidthPx,
+                )}
+                borderStrokeWidth={selectionAffordanceWorldSize(
+                  selectionHandleStrokeWidthPx,
+                )}
                 anchorFill="#ffffff"
                 anchorStroke="#0ea5e9"
                 borderStroke="#0ea5e9"
-                anchorCornerRadius={3 / viewport.scale}
-                padding={2 / viewport.scale}
+                anchorCornerRadius={selectionAffordanceWorldSize(3)}
+                padding={selectionAffordanceWorldSize(2)}
                 boundBoxFunc={(oldBox, newBox) =>
                   newBox.width < 24 || newBox.height < 24 ? oldBox : newBox
                 }

@@ -6,6 +6,13 @@ export type Viewport = { x: number; y: number; scale: number };
 
 export const minCanvasScale = 0.25;
 export const maxCanvasScale = 3;
+export const selectionAffordanceVisibilityThreshold = 0.45;
+
+export function selectionAffordanceScale(scale: number) {
+  if (!Number.isFinite(scale) || scale < selectionAffordanceVisibilityThreshold)
+    return 0;
+  return Math.min(1, scale);
+}
 
 export function zoomViewportAtPointer(
   viewport: Viewport,
