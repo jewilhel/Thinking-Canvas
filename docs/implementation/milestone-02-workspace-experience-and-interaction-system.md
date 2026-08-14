@@ -1,6 +1,6 @@
 # Milestone 2 — Workspace experience and interaction system
 
-Status: Verification complete — awaiting closure approval
+Status: Closed
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 Plan owner: Product owner
 Last updated: 2026-08-13
@@ -414,7 +414,7 @@ Planning inspection on 2026-08-12 had established that:
 - the supplied seven FigJam screenshots establish full-bleed layout, compact corner chrome, a floating dock, tool-family palettes, contextual formatting, a dismissible comments panel, and contextual color controls;
 - no Milestone 2 database change was needed for Slice 1.
 
-The recorded results complete Slices 1 through 5. The milestone is verification-complete and awaits separate product-owner closure approval. The master-ledger Milestone 2 boxes, PR merge, and any production deployment remain open and unchanged.
+The recorded results complete Slices 1 through 5. The product owner approved closure on 2026-08-13, and the proven Milestone 2 master-ledger requirements and exit gate are checked. PR merge and any production deployment remain separate and unchanged.
 
 ## Change record
 
@@ -440,10 +440,11 @@ The recorded results complete Slices 1 through 5. The milestone is verification-
 | 2026-08-13 | Kept connector attachment live during object drags and added two-finger trackpad panning.                                                                                                           | Product review found that connectors visually lagged until drop and that laptop trackpad scrolling could only zoom instead of navigating the canvas.                                                               | A transient geometry layer redraws attached endpoints without intermediate durable commands; Select and Pan modes now pan from trackpad pixel gestures while pinch and conventional wheel gestures retain zoom.                                            | Product owner and engineering |
 | 2026-08-13 | Synchronized the dotted grid with viewport motion and tuned pinch zoom.                                                                                                                             | Product review found the stationary, fixed-density background disconnected from canvas movement, then requested a slightly faster response after trying the initial controlled pinch curve.                        | One CSS radial tile follows world-space pan and zoom with constant-time metric updates; pinch uses a bounded `0.003` continuous curve while conventional controls retain their existing increments.                                                        | Product owner and engineering |
 | 2026-08-13 | Completed Slice 5 regression and authenticated preview verification.                                                                                                                                | Finish the approved Milestone 2 exit-gate work after the product owner confirmed that the current refinement cycle was complete.                                                                                   | All milestone criteria are verified; the status now awaits separate product-owner closure approval, while the master ledger, draft PR merge, and production deployment remain unchanged.                                                                   | Engineering                   |
+| 2026-08-13 | Approved and recorded Milestone 2 closure.                                                                                                                                                          | The product owner explicitly approved closure after reviewing the complete request record and verification evidence.                                                                                               | Marks the milestone record Closed and checks only the proven Milestone 2 master-ledger requirements and exit gate; PR merge, production deployment, and Milestone 3 remain separate.                                                                       | Product owner                 |
 | 2026-08-12 | Implemented and locally verified Slice 1, including the full-bleed light workspace shell, compact route chrome, bounded Share-link behavior, semantic tokens, and focused regression coverage.      | Establish the approved visual and route foundations before replacing the Milestone 1 tool, selection, and panel presentations in later slices.                                                                     | Slice 1 checklist is complete; temporary floating Milestone 1 controls remain intentionally visible until Slices 2 through 4, with no schema or authorization-boundary change.                                                                             | Product owner plan approval   |
 
 ## Closure
 
-Closure status: Verification complete — awaiting closure approval
-Closure approval: Pending
-Closed on: —
+Closure status: Closed
+Closure approval: Approved by the product owner on 2026-08-13
+Closed on: 2026-08-13

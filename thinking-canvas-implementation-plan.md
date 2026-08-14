@@ -1,10 +1,10 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–1 closed; later milestones remain draft
+Status: Milestones 0–2 closed; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-08-12
+Last updated: 2026-08-13
 
 ## Purpose
 
@@ -163,23 +163,25 @@ Visual direction: [FigJam workspace interaction references](docs/design-referenc
 
 ### Experience requirements
 
-- [ ] **Full-bleed canvas workspace.** The authenticated canvas uses the available viewport as the primary work surface, with application chrome layered around it instead of permanently reducing the editable canvas to a dashboard-like content region.
-- [ ] **Compact workspace identity and collaboration controls.** Canvas navigation and identity remain compact at the upper left, while participant presence, sharing, save or connection state, and other collaboration controls remain compact at the upper right.
-- [ ] **Floating primary tool dock.** Select, pan, drawing, sticky-note, shape, connector, text, table, comment, and extensibility entry points use a coherent floating dock with icon labels, active states, tooltips, keyboard shortcuts, and touch-sized targets.
-- [ ] **Progressive tool disclosure.** Tool families expose relevant variants and recent choices through flyouts or secondary palettes without showing every possible action at all times.
-- [ ] **Contextual selection controls.** Selecting an object or mixed selection exposes only applicable formatting and editing actions in a nearby contextual toolbar or popover; destructive and infrequent commands remain available without dominating the workspace.
-- [ ] **Contextual styling controls.** Fill, outline, text, connector, drawing, and sticky-note controls use consistent palettes, menus, and state indicators and persist changes through the existing command and collaboration boundaries.
-- [ ] **Collapsible workspace panels.** Comments, object navigation, AI interaction, and later review experiences use a shared docked or floating panel system that opens on demand, preserves canvas context, and can be dismissed without losing work.
-- [ ] **Canvas navigation controls.** Zoom, zoom-to-fit, help, and any approved overview or minimap control remain discoverable while occupying minimal canvas space.
-- [ ] **Coherent visual system.** The workspace defines and uses shared tokens and reusable components for color, typography, spacing, sizing, radius, elevation, iconography, motion, focus, hover, selected, disabled, loading, error, and synchronization states.
-- [ ] **Responsive workspace behavior.** The interface remains usable at supported desktop and tablet viewport sizes, including overflow, panel placement, tool access, touch targets, and virtual-keyboard behavior.
-- [ ] **Accessible interaction parity.** Every visible workspace action has an operable keyboard path, meaningful accessible name, visible focus treatment, non-color-only state communication, and appropriate reduced-motion behavior.
-- [ ] **Preserved canvas capabilities.** The Milestone 1 create, manipulate, style, organize, history, zoom, persistence, reconnect, and multiplayer behaviors remain available through the refined interface with no loss of durable data or command-boundary enforcement.
-- [ ] **Distinct Thinking Canvas identity.** The experience applies the spatial clarity, progressive disclosure, and contextual interaction principles demonstrated by the approved FigJam references while retaining original Thinking Canvas branding and avoiding a pixel-for-pixel reproduction.
+- [x] **Full-bleed canvas workspace.** The authenticated canvas uses the available viewport as the primary work surface, with application chrome layered around it instead of permanently reducing the editable canvas to a dashboard-like content region.
+- [x] **Compact workspace identity and collaboration controls.** Canvas navigation and identity remain compact at the upper left, while participant presence, sharing, save or connection state, and other collaboration controls remain compact at the upper right.
+- [x] **Floating primary tool dock.** Select, pan, drawing, sticky-note, shape, connector, text, table, comment, and extensibility entry points use a coherent floating dock with icon labels, active states, tooltips, keyboard shortcuts, and touch-sized targets.
+- [x] **Progressive tool disclosure.** Tool families expose relevant variants and recent choices through flyouts or secondary palettes without showing every possible action at all times.
+- [x] **Contextual selection controls.** Selecting an object or mixed selection exposes only applicable formatting and editing actions in a nearby contextual toolbar or popover; destructive and infrequent commands remain available without dominating the workspace.
+- [x] **Contextual styling controls.** Fill, outline, text, connector, drawing, and sticky-note controls use consistent palettes, menus, and state indicators and persist changes through the existing command and collaboration boundaries.
+- [x] **Collapsible workspace panels.** Comments, object navigation, AI interaction, and later review experiences use a shared docked or floating panel system that opens on demand, preserves canvas context, and can be dismissed without losing work.
+- [x] **Canvas navigation controls.** Zoom, zoom-to-fit, help, and any approved overview or minimap control remain discoverable while occupying minimal canvas space.
+- [x] **Coherent visual system.** The workspace defines and uses shared tokens and reusable components for color, typography, spacing, sizing, radius, elevation, iconography, motion, focus, hover, selected, disabled, loading, error, and synchronization states.
+- [x] **Responsive workspace behavior.** The interface remains usable at supported desktop and tablet viewport sizes, including overflow, panel placement, tool access, touch targets, and virtual-keyboard behavior.
+- [x] **Accessible interaction parity.** Every visible workspace action has an operable keyboard path, meaningful accessible name, visible focus treatment, non-color-only state communication, and appropriate reduced-motion behavior.
+- [x] **Preserved canvas capabilities.** The Milestone 1 create, manipulate, style, organize, history, zoom, persistence, reconnect, and multiplayer behaviors remain available through the refined interface with no loss of durable data or command-boundary enforcement.
+- [x] **Distinct Thinking Canvas identity.** The experience applies the spatial clarity, progressive disclosure, and contextual interaction principles demonstrated by the approved FigJam references while retaining original Thinking Canvas branding and avoiding a pixel-for-pixel reproduction.
 
 ### Exit gate
 
-- [ ] On an authenticated Netlify preview, a participant completes the approved create-and-format, connect-and-organize, comment-panel placeholder, zoom-and-navigate, keyboard-only, tablet-viewport, reconnect, and two-collaborator scenarios through the refined workspace; retained screenshots and interaction evidence show no permanent wall of action buttons, no permanently required inspector, and no regression of verified Milestone 1 behavior.
+- [x] On an authenticated Netlify preview, a participant completes the approved create-and-format, connect-and-organize, comment-panel placeholder, zoom-and-navigate, keyboard-only, tablet-viewport, reconnect, and two-collaborator scenarios through the refined workspace; retained screenshots and interaction evidence show no permanent wall of action buttons, no permanently required inspector, and no regression of verified Milestone 1 behavior.
+
+Evidence: [Milestone 2 implementation and verification record](docs/implementation/milestone-02-workspace-experience-and-interaction-system.md), protected CI [run `31772703709`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/31772703709), Git-backed Netlify deploy preview `6a7ea5ac23271200084f44d3`, and product-owner closure approval on 2026-08-13.
 
 ## Milestone 3 — Comments and structured feedback
 
