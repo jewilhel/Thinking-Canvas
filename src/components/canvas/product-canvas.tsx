@@ -55,6 +55,7 @@ import {
   type CanvasHistoryEntry,
 } from "@/canvas/canvas-history";
 import {
+  canvasGridMetrics,
   canvasWheelIntent,
   connectionHandlePointV2,
   maxCanvasScale,
@@ -64,6 +65,7 @@ import {
   resolveConnectorPointsV2,
   selectionAffordanceScale,
   zoomViewportAtPointer,
+  zoomViewportAtPointerContinuously,
   type CanvasAnchor,
   type Point,
   type Viewport,
@@ -284,6 +286,7 @@ export function ProductCanvas({
   const selectionAffordancesVisible = selectionAffordanceFactor > 0;
   const selectionAffordanceWorldSize = (screenSize: number) =>
     (screenSize * selectionAffordanceFactor) / viewport.scale;
+  const canvasGrid = canvasGridMetrics(viewport);
   const [frameTime, setFrameTime] = useState<number | null>(null);
   const {
     status: saveStatus,
@@ -1310,7 +1313,9 @@ export function ProductCanvas({
     const pointer = stageRef.current?.getPointerPosition();
     if (!pointer) return;
     setViewport((current) =>
-      zoomViewportAtPointer(current, pointer, event.evt.deltaY),
+      event.evt.ctrlKey
+        ? zoomViewportAtPointerContinuously(current, pointer, event.evt.deltaY)
+        : zoomViewportAtPointer(current, pointer, event.evt.deltaY),
     );
   }
 
@@ -2785,7 +2790,12 @@ export function ProductCanvas({
           onKeyDown={onKeyDown}
           onPointerMove={onSurfacePointerMove}
           onPointerLeave={() => setHoveredShapeId(null)}
-          className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] bg-[radial-gradient(circle,var(--workspace-dot)_1px,transparent_1px)] bg-[length:24px_24px] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
+          className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
+          style={{
+            backgroundImage: `radial-gradient(circle, var(--workspace-dot) ${canvasGrid.dotRadius}px, transparent ${canvasGrid.dotRadius}px)`,
+            backgroundPosition: `${canvasGrid.x}px ${canvasGrid.y}px`,
+            backgroundSize: `${canvasGrid.spacing}px ${canvasGrid.spacing}px`,
+          }}
           data-testid="product-canvas-surface"
           data-viewport-x={Math.round(viewport.x)}
           data-viewport-y={Math.round(viewport.y)}

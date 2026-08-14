@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 import { createMixedCanvasFixture } from "@/canvas/fixture";
 import {
+  canvasGridMetrics,
   canvasWheelIntent,
   connectionHandlePointV2,
   normalizeTransformedGeometry,
@@ -12,6 +13,7 @@ import {
   resolveConnectorPoints,
   selectionAffordanceScale,
   zoomViewportAtPointer,
+  zoomViewportAtPointerContinuously,
 } from "@/canvas/geometry";
 
 describe("canvas geometry", () => {
@@ -26,6 +28,36 @@ describe("canvas geometry", () => {
 
     expect((pointer.x - after.x) / after.scale).toBeCloseTo(worldBefore.x);
     expect((pointer.y - after.y) / after.scale).toBeCloseTo(worldBefore.y);
+  });
+
+  it("uses a slower bounded curve for pointer-centered pinch zoom", () => {
+    const pointer = { x: 320, y: 180 };
+    const before = { x: 40, y: 20, scale: 1 };
+    const worldBefore = {
+      x: (pointer.x - before.x) / before.scale,
+      y: (pointer.y - before.y) / before.scale,
+    };
+    const after = zoomViewportAtPointerContinuously(before, pointer, -20);
+
+    expect(after.scale).toBeGreaterThan(before.scale);
+    expect(after.scale).toBeLessThan(1.08);
+    expect((pointer.x - after.x) / after.scale).toBeCloseTo(worldBefore.x);
+    expect((pointer.y - after.y) / after.scale).toBeCloseTo(worldBefore.y);
+  });
+
+  it("anchors and scales the canvas grid with the viewport", () => {
+    expect(canvasGridMetrics({ x: 50, y: -10, scale: 2 })).toEqual({
+      spacing: 48,
+      dotRadius: 2,
+      x: 2,
+      y: 38,
+    });
+    expect(canvasGridMetrics({ x: 80, y: 80, scale: 0.25 })).toEqual({
+      spacing: 6,
+      dotRadius: 0.5,
+      x: 2,
+      y: 2,
+    });
   });
 
   it("shrinks selection affordances below 100% and hides them at overview zoom", () => {

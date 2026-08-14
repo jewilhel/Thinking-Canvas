@@ -6,6 +6,7 @@ export type Viewport = { x: number; y: number; scale: number };
 
 export const minCanvasScale = 0.25;
 export const maxCanvasScale = 3;
+export const baseCanvasGridSpacing = 24;
 export const selectionAffordanceVisibilityThreshold = 0.45;
 
 export function selectionAffordanceScale(scale: number) {
@@ -37,6 +38,27 @@ export function zoomViewportAtPointer(
     maxCanvasScale,
     Math.max(minCanvasScale, viewport.scale * 1.08 ** direction),
   );
+  return zoomViewportToScale(viewport, pointer, scale);
+}
+
+export function zoomViewportAtPointerContinuously(
+  viewport: Viewport,
+  pointer: Point,
+  wheelDelta: number,
+): Viewport {
+  const boundedDelta = Math.max(-60, Math.min(60, wheelDelta));
+  const scale = Math.min(
+    maxCanvasScale,
+    Math.max(minCanvasScale, viewport.scale * Math.exp(-boundedDelta * 0.002)),
+  );
+  return zoomViewportToScale(viewport, pointer, scale);
+}
+
+function zoomViewportToScale(
+  viewport: Viewport,
+  pointer: Point,
+  scale: number,
+): Viewport {
   const worldPoint = {
     x: (pointer.x - viewport.x) / viewport.scale,
     y: (pointer.y - viewport.y) / viewport.scale,
@@ -46,6 +68,17 @@ export function zoomViewportAtPointer(
     x: pointer.x - worldPoint.x * scale,
     y: pointer.y - worldPoint.y * scale,
     scale,
+  };
+}
+
+export function canvasGridMetrics(viewport: Viewport) {
+  const spacing = baseCanvasGridSpacing * viewport.scale;
+  const wrap = (value: number) => ((value % spacing) + spacing) % spacing;
+  return {
+    spacing,
+    dotRadius: Math.max(0.5, Math.min(2, viewport.scale)),
+    x: wrap(viewport.x),
+    y: wrap(viewport.y),
   };
 }
 

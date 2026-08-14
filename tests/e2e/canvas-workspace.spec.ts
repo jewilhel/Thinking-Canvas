@@ -107,7 +107,7 @@ test("copies a member-safe canvas link without granting access", async ({
   await nonmemberContext.close();
 });
 
-test("pans with two-finger trackpad gestures in Select and Pan modes while preserving wheel zoom", async ({
+test("pans the scaled grid with trackpad gestures and keeps pinch zoom controlled", async ({
   page,
 }) => {
   await signIn(page);
@@ -118,10 +118,19 @@ test("pans with two-finger trackpad gestures in Select and Pan modes while prese
 
   const viewportNumber = async (name: "x" | "y" | "scale") =>
     Number(await surface.getAttribute(`data-viewport-${name}`));
+  const gridStyle = () =>
+    surface.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        position: style.backgroundPosition,
+        size: style.backgroundSize,
+      };
+    });
 
   const selectX = await viewportNumber("x");
   const selectY = await viewportNumber("y");
   const selectScale = await viewportNumber("scale");
+  const selectGridBefore = await gridStyle();
   await canvas.dispatchEvent("wheel", {
     deltaMode: 0,
     deltaX: 32,
@@ -136,10 +145,14 @@ test("pans with two-finger trackpad gestures in Select and Pan modes while prese
     String(selectY - 18),
   );
   expect(await viewportNumber("scale")).toBe(selectScale);
+  const selectGridAfter = await gridStyle();
+  expect(selectGridAfter.position).not.toBe(selectGridBefore.position);
+  expect(selectGridAfter.size).toBe(selectGridBefore.size);
 
   await page.getByRole("button", { name: "Pan", exact: true }).click();
   const panX = await viewportNumber("x");
   const panY = await viewportNumber("y");
+  const panGridBefore = await gridStyle();
   await canvas.dispatchEvent("wheel", {
     deltaMode: 0,
     deltaX: -21,
@@ -147,9 +160,11 @@ test("pans with two-finger trackpad gestures in Select and Pan modes while prese
   });
   await expect(surface).toHaveAttribute("data-viewport-x", String(panX + 21));
   await expect(surface).toHaveAttribute("data-viewport-y", String(panY - 14));
+  expect((await gridStyle()).position).not.toBe(panGridBefore.position);
 
   await page.waitForTimeout(180);
   const scaleBeforeWheel = await viewportNumber("scale");
+  const gridBeforeWheel = await gridStyle();
   await canvas.dispatchEvent("wheel", {
     deltaMode: 0,
     deltaX: 0,
@@ -159,6 +174,24 @@ test("pans with two-finger trackpad gestures in Select and Pan modes while prese
     "data-viewport-scale",
     String(scaleBeforeWheel),
   );
+  expect((await gridStyle()).size).not.toBe(gridBeforeWheel.size);
+
+  const scaleBeforePinch = await viewportNumber("scale");
+  const gridBeforePinch = await gridStyle();
+  await canvas.dispatchEvent("wheel", {
+    ctrlKey: true,
+    deltaMode: 0,
+    deltaX: 0,
+    deltaY: -20,
+  });
+  await expect(surface).not.toHaveAttribute(
+    "data-viewport-scale",
+    String(scaleBeforePinch),
+  );
+  const scaleAfterPinch = await viewportNumber("scale");
+  expect(scaleAfterPinch / scaleBeforePinch).toBeGreaterThan(1);
+  expect(scaleAfterPinch / scaleBeforePinch).toBeLessThan(1.08);
+  expect((await gridStyle()).size).not.toBe(gridBeforePinch.size);
 });
 
 test("offers a keyboard-operable progressive dock without mutating from deferred entries", async ({
