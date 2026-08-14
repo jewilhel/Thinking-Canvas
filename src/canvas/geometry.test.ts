@@ -39,7 +39,7 @@ describe("canvas geometry", () => {
     };
     const after = zoomViewportAtPointerContinuously(before, pointer, -20);
 
-    expect(after.scale).toBeGreaterThan(before.scale);
+    expect(after.scale).toBeCloseTo(Math.exp(0.06));
     expect(after.scale).toBeLessThan(1.08);
     expect((pointer.x - after.x) / after.scale).toBeCloseTo(worldBefore.x);
     expect((pointer.y - after.y) / after.scale).toBeCloseTo(worldBefore.y);

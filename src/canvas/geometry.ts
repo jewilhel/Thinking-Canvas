@@ -49,7 +49,7 @@ export function zoomViewportAtPointerContinuously(
   const boundedDelta = Math.max(-60, Math.min(60, wheelDelta));
   const scale = Math.min(
     maxCanvasScale,
-    Math.max(minCanvasScale, viewport.scale * Math.exp(-boundedDelta * 0.002)),
+    Math.max(minCanvasScale, viewport.scale * Math.exp(-boundedDelta * 0.003)),
   );
   return zoomViewportToScale(viewport, pointer, scale);
 }
