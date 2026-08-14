@@ -6,6 +6,27 @@ export type Viewport = { x: number; y: number; scale: number };
 
 export const minCanvasScale = 0.25;
 export const maxCanvasScale = 3;
+export const baseCanvasGridSpacing = 24;
+export const selectionAffordanceVisibilityThreshold = 0.45;
+
+export function selectionAffordanceScale(scale: number) {
+  if (!Number.isFinite(scale) || scale < selectionAffordanceVisibilityThreshold)
+    return 0;
+  return Math.min(1, scale);
+}
+
+export function canvasWheelIntent(event: {
+  ctrlKey: boolean;
+  deltaMode: number;
+  deltaX: number;
+  deltaY: number;
+}): "pan" | "zoom" {
+  if (event.ctrlKey || event.deltaMode !== 0) return "zoom";
+  if (event.deltaX !== 0) return "pan";
+  if (!Number.isInteger(event.deltaY) || Math.abs(event.deltaY) < 80)
+    return "pan";
+  return "zoom";
+}
 
 export function zoomViewportAtPointer(
   viewport: Viewport,
@@ -17,6 +38,27 @@ export function zoomViewportAtPointer(
     maxCanvasScale,
     Math.max(minCanvasScale, viewport.scale * 1.08 ** direction),
   );
+  return zoomViewportToScale(viewport, pointer, scale);
+}
+
+export function zoomViewportAtPointerContinuously(
+  viewport: Viewport,
+  pointer: Point,
+  wheelDelta: number,
+): Viewport {
+  const boundedDelta = Math.max(-60, Math.min(60, wheelDelta));
+  const scale = Math.min(
+    maxCanvasScale,
+    Math.max(minCanvasScale, viewport.scale * Math.exp(-boundedDelta * 0.003)),
+  );
+  return zoomViewportToScale(viewport, pointer, scale);
+}
+
+function zoomViewportToScale(
+  viewport: Viewport,
+  pointer: Point,
+  scale: number,
+): Viewport {
   const worldPoint = {
     x: (pointer.x - viewport.x) / viewport.scale,
     y: (pointer.y - viewport.y) / viewport.scale,
@@ -26,6 +68,17 @@ export function zoomViewportAtPointer(
     x: pointer.x - worldPoint.x * scale,
     y: pointer.y - worldPoint.y * scale,
     scale,
+  };
+}
+
+export function canvasGridMetrics(viewport: Viewport) {
+  const spacing = baseCanvasGridSpacing * viewport.scale;
+  const wrap = (value: number) => ((value % spacing) + spacing) % spacing;
+  return {
+    spacing,
+    dotRadius: Math.max(0.5, Math.min(2, viewport.scale)),
+    x: wrap(viewport.x),
+    y: wrap(viewport.y),
   };
 }
 
@@ -103,6 +156,34 @@ export function anchorPointV2(
   if (anchor === "bottom") return { x: x + width / 2, y: y + height };
   if (anchor === "left") return { x, y: y + height / 2 };
   return { x: x + width / 2, y: y + height / 2 };
+}
+
+export function connectionHandlePointV2(
+  object: CanvasObjectV2,
+  anchor: CanvasAnchor,
+  offset: number,
+): Point {
+  const point = anchorPointV2(object, anchor);
+  if (anchor === "top") return { x: point.x, y: point.y - offset };
+  if (anchor === "right") return { x: point.x + offset, y: point.y };
+  if (anchor === "bottom") return { x: point.x, y: point.y + offset };
+  if (anchor === "left") return { x: point.x - offset, y: point.y };
+  return point;
+}
+
+export function pointWithinObjectHoverZone(
+  object: CanvasObjectV2,
+  point: Point,
+  distance: number,
+) {
+  if (object.type === "connector") return false;
+  const { x, y, width, height } = object.geometry;
+  return (
+    point.x >= x - distance &&
+    point.x <= x + width + distance &&
+    point.y >= y - distance &&
+    point.y <= y + height + distance
+  );
 }
 
 export function resolveConnectorEndpointV2(

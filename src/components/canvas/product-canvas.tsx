@@ -3,20 +3,26 @@
 import type Konva from "konva";
 import {
   ArrowLeft,
-  Circle as CircleIcon,
-  Diamond,
-  Hand,
+  Check,
+  CircleHelp,
+  Cloud,
+  Copy,
+  Ellipsis,
+  ExternalLink,
   Link2,
+  ListTree,
+  LogOut,
   Maximize2,
   Minus,
-  MousePointer2,
   Plus,
-  RectangleHorizontal,
-  Table2,
+  Share2,
+  AlignJustify,
+  Trash2,
   Type,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Arrow,
   Circle,
@@ -31,6 +37,7 @@ import {
 } from "react-konva";
 import * as Y from "yjs";
 
+import { signOut } from "@/app/auth/actions";
 import {
   createCanvasClipboardPayload,
   parseCanvasClipboard,
@@ -48,43 +55,107 @@ import {
   type CanvasHistoryEntry,
 } from "@/canvas/canvas-history";
 import {
-  anchorPointV2,
+  canvasGridMetrics,
+  canvasWheelIntent,
+  connectionHandlePointV2,
   maxCanvasScale,
   minCanvasScale,
+  pointWithinObjectHoverZone,
   resolveConnectorEndpointV2,
   resolveConnectorPointsV2,
+  selectionAffordanceScale,
   zoomViewportAtPointer,
+  zoomViewportAtPointerContinuously,
   type CanvasAnchor,
   type Point,
   type Viewport,
 } from "@/canvas/geometry";
 import { useCanvasRecovery } from "@/collaboration/use-canvas-recovery";
+import {
+  ColorStylePanel,
+  type ColorPair,
+} from "@/components/canvas/color-style-panel";
+import { ObjectContextMenu } from "@/components/canvas/object-context-menu";
+import {
+  TextStylePanel,
+  type TextStylePatch,
+} from "@/components/canvas/text-style-panel";
+import {
+  WorkspacePrimaryDock,
+  type CanvasShapeTool,
+  type CanvasTool,
+} from "@/components/canvas/workspace-primary-dock";
+import { WorkspacePanel } from "@/components/canvas/workspace-panel";
 import { Button, buttonVariants } from "@/components/ui/button";
 
 type Props = {
   canvasId: string;
   title: string;
   userId: string;
+  userIdentity: string;
   simulatedAiEnabled: boolean;
 };
-type Tool =
-  | "select"
-  | "pan"
-  | "rectangle"
-  | "ellipse"
-  | "diamond"
-  | "text"
-  | "connector"
-  | "table";
 type ConnectorEndpoint = Extract<
   CanvasObjectV2,
   { type: "connector" }
 >["start"];
 type Marquee = { start: Point; current: Point; additive: boolean };
 type CommandDefinition = { type: string; payload: unknown };
+type InlineTextEditor = {
+  objectId: string;
+  objectType: "shape" | "text";
+  draft: string;
+  initialValue: string;
+  listStyle: "none" | "bullet" | "numbered";
+  initialListStyle: "none" | "bullet" | "numbered";
+};
+type ContextPanel =
+  "fill" | "outline" | "text" | "table" | "connector" | "more";
+type SharedPanel = "objects" | "comments" | "help";
+type ObjectContextMenuPosition = { x: number; y: number; maxHeight: number };
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
-const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left", "center"];
+const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left"];
+const connectionAnchorOffsetPx = 28;
+const connectionAnchorRadiusPx = 7;
+const connectionAnchorHitWidthPx = 28;
+const connectionAnchorHoverDistancePx = 44;
+const selectionHandleSizePx = 14;
+const selectionHandleStrokeWidthPx = 3;
+
+function formatListText(
+  text: string,
+  listStyle: "none" | "bullet" | "numbered" | undefined,
+) {
+  if (!text || !listStyle || listStyle === "none") return text;
+  return text
+    .split("\n")
+    .map((line, index) =>
+      listStyle === "bullet" ? `• ${line}` : `${index + 1}. ${line}`,
+    )
+    .join("\n");
+}
+
+function stripListMarkers(
+  text: string,
+  listStyle: "none" | "bullet" | "numbered",
+) {
+  if (listStyle === "none") return text;
+  return text
+    .split("\n")
+    .map((line) =>
+      listStyle === "bullet"
+        ? line.replace(/^\s*(?:•|[-*])\s+/, "")
+        : line.replace(/^\s*\d+[.)]\s+/, ""),
+    )
+    .join("\n");
+}
+
+function openSafeTextLink(url: string) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return;
+  window.open(parsed.href, "_blank", "noopener,noreferrer");
+}
 
 function clampViewport(viewport: Viewport): Viewport {
   return {
@@ -116,11 +187,16 @@ function decodeUpdate(value: string) {
 
 function baseStyle(type: CanvasObjectV2["type"]) {
   return {
-    fill: type === "connector" ? null : "#ffffff",
+    fill: type === "connector" || type === "text" ? null : "#ffffff",
     outline: "#475569",
-    outlineWidth: 2,
+    outlineWidth: type === "text" ? 0 : 2,
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
     fontSize: 16,
+    fontWeight: "normal" as const,
+    textAlign: type === "shape" ? ("center" as const) : ("left" as const),
+    listStyle: "none" as const,
+    linkUrl: null,
+    textColor: "#18181b",
   };
 }
 
@@ -143,11 +219,18 @@ export function ProductCanvas({
   canvasId,
   title,
   userId,
+  userIdentity,
   simulatedAiEnabled,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
+  const wheelGestureRef = useRef<{
+    intent: "pan" | "zoom";
+    lastEventAt: number;
+  } | null>(null);
+  const inlineEditorRef = useRef<HTMLTextAreaElement>(null);
+  const contextPanelTriggerRef = useRef<HTMLButtonElement | null>(null);
   const objectNodeRefs = useRef(new Map<string, Konva.Node>());
   const frameStartedAt = useRef(0);
   const documentStorageKey = `thinking-canvas:document:${canvasId}`;
@@ -166,16 +249,30 @@ export function ProductCanvas({
   }, [canvasId, documentStorageKey]);
   const [objects, setObjects] = useState(() => listCanvasObjectsV2(document));
   const [size, setSize] = useState({ width: 960, height: 640 });
-  const [tool, setTool] = useState<Tool>("select");
+  const [tool, setTool] = useState<CanvasTool>("select");
+  const [recentShape, setRecentShape] = useState<CanvasShapeTool>("rectangle");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [connectorStart, setConnectorStart] =
     useState<ConnectorEndpoint | null>(null);
   const [pointerPreview, setPointerPreview] = useState<Point | null>(null);
+  const [inlineTextEditor, setInlineTextEditor] =
+    useState<InlineTextEditor | null>(null);
+  const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
+  const [contextPanel, setContextPanel] = useState<ContextPanel | null>(null);
+  const [objectContextMenu, setObjectContextMenu] =
+    useState<ObjectContextMenuPosition | null>(null);
+  const [sharedPanel, setSharedPanel] = useState<SharedPanel | null>(null);
+  const [sharedPanelInvoker, setSharedPanelInvoker] =
+    useState<HTMLButtonElement | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
+  const [dragPreviewPositions, setDragPreviewPositions] = useState<
+    Record<string, Point>
+  >({});
   const [clipboardText, setClipboardText] = useState("");
   const [undoStack, setUndoStack] = useState<CanvasHistoryEntry[]>([]);
   const [redoStack, setRedoStack] = useState<CanvasHistoryEntry[]>([]);
   const [historyNotice, setHistoryNotice] = useState("");
+  const [shareNotice, setShareNotice] = useState("");
   const [viewport, setViewport] = useState<Viewport>(() => {
     const stored = window.localStorage.getItem(viewportStorageKey);
     if (!stored) return defaultViewport;
@@ -185,6 +282,11 @@ export function ProductCanvas({
       return defaultViewport;
     }
   });
+  const selectionAffordanceFactor = selectionAffordanceScale(viewport.scale);
+  const selectionAffordancesVisible = selectionAffordanceFactor > 0;
+  const selectionAffordanceWorldSize = (screenSize: number) =>
+    (screenSize * selectionAffordanceFactor) / viewport.scale;
+  const canvasGrid = canvasGridMetrics(viewport);
   const [frameTime, setFrameTime] = useState<number | null>(null);
   const {
     status: saveStatus,
@@ -208,12 +310,84 @@ export function ProductCanvas({
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
   );
+  const displayObjects = useMemo(
+    () =>
+      objects.map((object) => {
+        const preview = dragPreviewPositions[object.id];
+        return preview && object.type !== "connector"
+          ? {
+              ...object,
+              geometry: {
+                ...object.geometry,
+                x: preview.x,
+                y: preview.y,
+              },
+            }
+          : object;
+      }),
+    [dragPreviewPositions, objects],
+  );
+  const displayObjectsById = useMemo(
+    () => new Map(displayObjects.map((object) => [object.id, object])),
+    [displayObjects],
+  );
   const selectedId = selectedIds.at(-1) ?? null;
+  const inlineEditorObjectId = inlineTextEditor?.objectId ?? null;
   const selectedObjects = selectedIds.flatMap((id) => {
     const object = objectsById.get(id);
     return object ? [object] : [];
   });
   const selectedObject = selectedId ? objectsById.get(selectedId) : undefined;
+  const selectedBounds = selectedObjects.length
+    ? selectedObjects.reduce(
+        (bounds, object) => {
+          const next = objectBounds(object);
+          return {
+            x: Math.min(bounds.x, next.x),
+            y: Math.min(bounds.y, next.y),
+            right: Math.max(bounds.right, next.x + next.width),
+            bottom: Math.max(bounds.bottom, next.y + next.height),
+          };
+        },
+        (() => {
+          const first = objectBounds(selectedObjects[0]!);
+          return {
+            x: first.x,
+            y: first.y,
+            right: first.x + first.width,
+            bottom: first.y + first.height,
+          };
+        })(),
+      )
+    : null;
+  const contextualToolbarPosition = selectedBounds
+    ? {
+        left: Math.min(
+          Math.max(
+            viewport.x +
+              ((selectedBounds.x + selectedBounds.right) / 2) * viewport.scale,
+            190,
+          ),
+          Math.max(190, size.width - 190),
+        ),
+        top: Math.max(112, viewport.y + selectedBounds.y * viewport.scale - 66),
+      }
+    : null;
+  const fillObjects = selectedObjects.filter(
+    (object) => object.type === "shape" || object.type === "table",
+  );
+  const outlineObjects = selectedObjects.filter(
+    (object) =>
+      object.type !== "text" &&
+      object.type !== "document" &&
+      object.type !== "annotation",
+  );
+  const textStyleObjects = selectedObjects.filter(
+    (object) =>
+      object.type === "shape" ||
+      object.type === "text" ||
+      object.type === "table",
+  );
 
   useEffect(() => {
     function synchronize() {
@@ -241,7 +415,7 @@ export function ProductCanvas({
       if (!entry) return;
       setSize({
         width: Math.max(320, entry.contentRect.width),
-        height: Math.max(480, window.innerHeight - 250),
+        height: Math.max(480, entry.contentRect.height),
       });
     });
     observer.observe(container);
@@ -255,10 +429,28 @@ export function ProductCanvas({
       : undefined;
     if (!transformer) return;
     transformer.nodes(
-      node && selectedObject?.type !== "connector" ? [node] : [],
+      node &&
+        selectionAffordancesVisible &&
+        selectedObject?.type !== "connector" &&
+        inlineTextEditor?.objectId !== selectedId
+        ? [node]
+        : [],
     );
     transformer.getLayer()?.batchDraw();
-  }, [selectedId, selectedObject]);
+  }, [
+    inlineTextEditor?.objectId,
+    selectedId,
+    selectedObject,
+    selectionAffordancesVisible,
+  ]);
+
+  useEffect(() => {
+    if (!inlineEditorObjectId) return;
+    const editor = inlineEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    editor.select();
+  }, [inlineEditorObjectId]);
 
   useEffect(() => {
     if (!instrumentationEnabled) return;
@@ -328,8 +520,19 @@ export function ProductCanvas({
     return results;
   }
 
+  async function copyShareLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setShareNotice("Canvas link copied. Access is still limited to members.");
+    } catch {
+      setShareNotice(
+        "Copy is unavailable. Use the address bar; access is still limited to members.",
+      );
+    }
+  }
+
   function createObject(
-    activeTool: Exclude<Tool, "select" | "pan" | "connector">,
+    activeTool: Exclude<CanvasTool, "select" | "pan" | "connector">,
     point: Point,
   ) {
     const id = crypto.randomUUID();
@@ -344,17 +547,38 @@ export function ProductCanvas({
       geometry: {
         x: Math.round(point.x),
         y: Math.round(point.y),
-        width: activeTool === "text" ? 220 : activeTool === "table" ? 300 : 180,
-        height: activeTool === "text" ? 72 : activeTool === "table" ? 140 : 110,
+        width:
+          activeTool === "text"
+            ? 220
+            : activeTool === "table"
+              ? 300
+              : activeTool === "sticky"
+                ? 200
+                : 180,
+        height:
+          activeTool === "text"
+            ? 72
+            : activeTool === "table"
+              ? 140
+              : activeTool === "sticky"
+                ? 160
+                : 110,
         rotation: 0,
       },
-      style: baseStyle(
-        activeTool === "text"
-          ? "text"
-          : activeTool === "table"
-            ? "table"
-            : "shape",
-      ),
+      style:
+        activeTool === "sticky"
+          ? {
+              ...baseStyle("shape"),
+              fill: "#fef3c7",
+              outline: "#f59e0b",
+            }
+          : baseStyle(
+              activeTool === "text"
+                ? "text"
+                : activeTool === "table"
+                  ? "table"
+                  : "shape",
+            ),
     };
     const object: CanvasObjectV2 =
       activeTool === "text"
@@ -371,12 +595,27 @@ export function ProductCanvas({
           : {
               ...shared,
               type: "shape",
-              shape: activeTool,
-              text: "New idea",
+              shape: activeTool === "sticky" ? "rectangle" : activeTool,
+              text: activeTool === "sticky" ? "Sticky note" : "New idea",
             };
     runCommand("object.create", { object });
     setSelectedIds([id]);
     setTool("select");
+  }
+
+  function chooseTool(nextTool: CanvasTool) {
+    setContextPanel(null);
+    setObjectContextMenu(null);
+    setTool(nextTool);
+    if (nextTool !== "connector") {
+      setConnectorStart(null);
+      setPointerPreview(null);
+    }
+  }
+
+  function chooseShape(shape: CanvasShapeTool) {
+    setRecentShape(shape);
+    chooseTool(shape);
   }
 
   function addSimulatedAiIdea() {
@@ -443,6 +682,200 @@ export function ProductCanvas({
     setTool("select");
   }
 
+  function startInlineEditing(
+    object: Extract<CanvasObjectV2, { type: "shape" | "text" }>,
+  ) {
+    setSelectedIds([object.id]);
+    setTool("select");
+    const listStyle = object.style.listStyle ?? "none";
+    const editableText = formatListText(object.text, listStyle);
+    setInlineTextEditor({
+      objectId: object.id,
+      objectType: object.type,
+      draft: editableText,
+      initialValue: editableText,
+      listStyle,
+      initialListStyle: listStyle,
+    });
+  }
+
+  function finishInlineEditing(commit: boolean) {
+    if (!inlineTextEditor) return;
+    if (commit) {
+      const text = stripListMarkers(
+        inlineTextEditor.draft,
+        inlineTextEditor.listStyle,
+      );
+      const initialText = stripListMarkers(
+        inlineTextEditor.initialValue,
+        inlineTextEditor.initialListStyle,
+      );
+      const commands: CommandDefinition[] = [];
+      if (text !== initialText) {
+        commands.push({
+          type: "object.patch",
+          payload: {
+            objectId: inlineTextEditor.objectId,
+            objectType: inlineTextEditor.objectType,
+            text,
+          },
+        });
+      }
+      if (inlineTextEditor.listStyle !== inlineTextEditor.initialListStyle) {
+        commands.push({
+          type: "object.style",
+          payload: {
+            objectId: inlineTextEditor.objectId,
+            style: { listStyle: inlineTextEditor.listStyle },
+          },
+        });
+      }
+      if (commands.length) runCommandBatch(commands);
+    }
+    setInlineTextEditor(null);
+    requestAnimationFrame(() => containerRef.current?.focus());
+  }
+
+  function toggleContextPanel(panel: ContextPanel, trigger: HTMLButtonElement) {
+    contextPanelTriggerRef.current = trigger;
+    setObjectContextMenu(null);
+    setContextPanel((current) => (current === panel ? null : panel));
+  }
+
+  function closeContextPanel(restoreFocus = true) {
+    setContextPanel(null);
+    if (restoreFocus) {
+      requestAnimationFrame(() => contextPanelTriggerRef.current?.focus());
+    }
+  }
+
+  function completeContextAction(action: () => void) {
+    action();
+    closeContextPanel(false);
+  }
+
+  function applyStyleToObjects(
+    targets: CanvasObjectV2[],
+    style: TextStylePatch & {
+      fill?: string | null;
+      outline?: string;
+    },
+  ) {
+    if (!targets.length) return;
+    runCommandBatch(
+      targets.map((object) => ({
+        type: "object.style",
+        payload: { objectId: object.id, style },
+      })),
+    );
+  }
+
+  function applyColorPair(targets: CanvasObjectV2[], pair: ColorPair) {
+    applyStyleToObjects(targets, {
+      fill: pair.fill,
+      outline: pair.outline,
+    });
+  }
+
+  function commonStyleValue<K extends keyof CanvasObjectV2["style"]>(
+    targets: CanvasObjectV2[],
+    field: K,
+  ) {
+    const values = targets.map((object) => object.style[field]);
+    const first = values[0];
+    return values.every((value) => value === first) ? first : undefined;
+  }
+
+  function connectionHandlePoint(object: CanvasObjectV2, anchor: CanvasAnchor) {
+    return connectionHandlePointV2(
+      object,
+      anchor,
+      selectionAffordanceWorldSize(connectionAnchorOffsetPx),
+    );
+  }
+
+  function connectorEndpointHandlePoint(
+    endpoint: ConnectorEndpoint,
+    fallback: Point,
+  ) {
+    if (endpoint.kind === "attached") {
+      const target = displayObjectsById.get(endpoint.objectId);
+      if (target?.type === "shape")
+        return connectionHandlePoint(target, endpoint.anchor);
+    }
+    return fallback;
+  }
+
+  function nearestExteriorAnchor(object: CanvasObjectV2, point: Point) {
+    return anchors.reduce((nearest, anchor) => {
+      const candidate = connectionHandlePoint(object, anchor);
+      const nearestPoint = connectionHandlePoint(object, nearest);
+      return Math.hypot(candidate.x - point.x, candidate.y - point.y) <
+        Math.hypot(nearestPoint.x - point.x, nearestPoint.y - point.y)
+        ? anchor
+        : nearest;
+    }, anchors[0]!);
+  }
+
+  function endpointAtDrop(point: Point, excludedObjectId?: string) {
+    const snapDistance = 24 / viewport.scale;
+    let nearest: { endpoint: ConnectorEndpoint; distance: number } | undefined;
+    for (const object of objects) {
+      if (object.type !== "shape" || object.id === excludedObjectId) continue;
+      for (const anchor of anchors) {
+        const handle = connectionHandlePoint(object, anchor);
+        const distance = Math.hypot(handle.x - point.x, handle.y - point.y);
+        if (
+          distance <= snapDistance &&
+          (!nearest || distance < nearest.distance)
+        ) {
+          nearest = {
+            endpoint: { kind: "attached", objectId: object.id, anchor },
+            distance,
+          };
+        }
+      }
+    }
+    return nearest?.endpoint ?? { kind: "free", ...point };
+  }
+
+  function beginConnectorDrag(
+    event: Konva.KonvaEventObject<DragEvent>,
+    object: Extract<CanvasObjectV2, { type: "shape" }>,
+    anchor: CanvasAnchor,
+  ) {
+    event.cancelBubble = true;
+    setSelectedIds([object.id]);
+    setTool("connector");
+    setConnectorStart({ kind: "attached", objectId: object.id, anchor });
+    const point = eventWorldPointer(event);
+    if (point) setPointerPreview(point);
+  }
+
+  function finishConnectorDrag(
+    event: Konva.KonvaEventObject<DragEvent>,
+    sourceObjectId: string,
+  ) {
+    event.cancelBubble = true;
+    const point = eventWorldPointer(event);
+    if (point) finishConnector(endpointAtDrop(point, sourceObjectId));
+  }
+
+  function finishEndpointDrag(
+    event: Konva.KonvaEventObject<DragEvent>,
+    connectorId: string,
+    endpoint: "start" | "end",
+  ) {
+    event.cancelBubble = true;
+    const point = eventWorldPointer(event);
+    if (!point) return;
+    runCommand("connector.endpoint", {
+      objectId: connectorId,
+      endpoint,
+      value: endpointAtDrop(point),
+    });
+  }
+
   function worldPointer() {
     const pointer = stageRef.current?.getPointerPosition();
     if (!pointer) return null;
@@ -452,27 +885,113 @@ export function ProductCanvas({
     };
   }
 
+  function eventWorldPointer(
+    event: Konva.KonvaEventObject<MouseEvent | TouchEvent | DragEvent>,
+  ) {
+    const stage = event.target.getStage();
+    const pointer = stage?.getPointerPosition();
+    if (!stage || !pointer) return null;
+    return {
+      x: (pointer.x - stage.x()) / stage.scaleX(),
+      y: (pointer.y - stage.y()) / stage.scaleY(),
+    };
+  }
+
   function selectObject(
     event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
     object: CanvasObjectV2,
   ) {
     event.cancelBubble = true;
+    if (event.evt instanceof MouseEvent && event.evt.ctrlKey) {
+      openObjectContextMenu(event, object);
+      return;
+    }
     if (tool === "connector" && object.type !== "connector") {
+      const point = eventWorldPointer(event);
       finishConnector({
         kind: "attached",
         objectId: object.id,
-        anchor: "center",
+        anchor: point ? nearestExteriorAnchor(object, point) : "right",
       });
       return;
     }
     if (tool === "select") {
-      const modifier =
-        event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey;
+      const modifier = event.evt.shiftKey || event.evt.metaKey;
       updateSelectionForObject(object, modifier);
     }
   }
 
+  function showObjectContextMenu(x: number, y: number) {
+    const menuWidth = 288;
+    const preferredHeight = 520;
+    const safeX = Number.isFinite(x) ? x : size.width / 2;
+    const safeY = Number.isFinite(y) ? y : size.height / 2;
+    const left = Math.min(
+      Math.max(8, safeX),
+      Math.max(8, size.width - menuWidth - 8),
+    );
+    const top = Math.min(
+      Math.max(8, safeY),
+      Math.max(8, size.height - preferredHeight - 16),
+    );
+    setContextPanel(null);
+    setObjectContextMenu({
+      x: left,
+      y: top,
+      maxHeight: Math.max(220, size.height - top - 16),
+    });
+  }
+
+  function openObjectContextMenu(
+    event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
+    object: CanvasObjectV2,
+  ) {
+    event.cancelBubble = true;
+    event.evt.preventDefault();
+    if (!(event.evt instanceof MouseEvent)) return;
+    openObjectContextMenuFromPointer(
+      object,
+      event.evt.clientX,
+      event.evt.clientY,
+    );
+  }
+
+  function openObjectContextMenuFromPointer(
+    object: CanvasObjectV2,
+    clientX: number,
+    clientY: number,
+  ) {
+    if (!selectedIds.includes(object.id))
+      updateSelectionForObject(object, false);
+    setTool("select");
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    showObjectContextMenu(clientX - bounds.left, clientY - bounds.top);
+  }
+
+  function objectAtClientPoint(clientX: number, clientY: number) {
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!bounds) return undefined;
+    const point = {
+      x: (clientX - bounds.left - viewport.x) / viewport.scale,
+      y: (clientY - bounds.top - viewport.y) / viewport.scale,
+    };
+    return [...objects].reverse().find((candidate) => {
+      const objectBox = objectBounds(candidate);
+      const padding = candidate.type === "connector" ? 12 : 0;
+      return (
+        point.x >= objectBox.x - padding &&
+        point.x <= objectBox.x + objectBox.width + padding &&
+        point.y >= objectBox.y - padding &&
+        point.y <= objectBox.y + objectBox.height + padding
+      );
+    });
+  }
+
   function updateSelectionForObject(object: CanvasObjectV2, modifier: boolean) {
+    setContextPanel(null);
+    setObjectContextMenu(null);
+    if (object.type === "connector") setHoveredShapeId(null);
     const groupIds = object.groupId
       ? objects
           .filter((candidate) => candidate.groupId === object.groupId)
@@ -505,6 +1024,38 @@ export function ProductCanvas({
         });
     }
     runCommandBatch(commands);
+  }
+
+  function previewSelectionFromDrag(
+    object: CanvasObjectV2,
+    x: number,
+    y: number,
+  ) {
+    const durableObject = objectsById.get(object.id) ?? object;
+    const dx = x - durableObject.geometry.x;
+    const dy = y - durableObject.geometry.y;
+    const targets = selectedIds.includes(object.id)
+      ? selectedObjects
+      : object.groupId
+        ? objects.filter((candidate) => candidate.groupId === object.groupId)
+        : [durableObject];
+    setDragPreviewPositions(
+      Object.fromEntries(
+        targets.flatMap((target) =>
+          target.type === "connector"
+            ? []
+            : [
+                [
+                  target.id,
+                  {
+                    x: target.geometry.x + dx,
+                    y: target.geometry.y + dy,
+                  },
+                ],
+              ],
+        ),
+      ),
+    );
   }
 
   function moveConnectorCommands(
@@ -541,6 +1092,8 @@ export function ProductCanvas({
       })),
     );
     setSelectedIds([]);
+    setContextPanel(null);
+    setObjectContextMenu(null);
   }
 
   function groupSelected() {
@@ -682,12 +1235,87 @@ export function ProductCanvas({
     );
   }
 
+  function zoomToFit() {
+    if (!objects.length) {
+      setViewport(defaultViewport);
+      return;
+    }
+    const bounds = objects.reduce(
+      (current, object) => {
+        const next = objectBounds(object);
+        return {
+          x: Math.min(current.x, next.x),
+          y: Math.min(current.y, next.y),
+          right: Math.max(current.right, next.x + next.width),
+          bottom: Math.max(current.bottom, next.y + next.height),
+        };
+      },
+      (() => {
+        const first = objectBounds(objects[0]!);
+        return {
+          x: first.x,
+          y: first.y,
+          right: first.x + first.width,
+          bottom: first.y + first.height,
+        };
+      })(),
+    );
+    const contentWidth = Math.max(1, bounds.right - bounds.x);
+    const contentHeight = Math.max(1, bounds.bottom - bounds.y);
+    const availableWidth = Math.max(160, size.width - 160);
+    const availableHeight = Math.max(160, size.height - 240);
+    const scale = Math.min(
+      maxCanvasScale,
+      Math.max(
+        minCanvasScale,
+        Math.min(
+          availableWidth / contentWidth,
+          availableHeight / contentHeight,
+        ),
+      ),
+    );
+    setViewport({
+      scale,
+      x: (size.width - contentWidth * scale) / 2 - bounds.x * scale,
+      y: (size.height - contentHeight * scale) / 2 - bounds.y * scale,
+    });
+  }
+
+  function toggleSharedPanel(panel: SharedPanel, invoker: HTMLButtonElement) {
+    if (sharedPanel === panel) {
+      setSharedPanel(null);
+      return;
+    }
+    setSharedPanelInvoker(invoker);
+    setContextPanel(null);
+    setSharedPanel(panel);
+  }
+
   function onWheel(event: Konva.KonvaEventObject<WheelEvent>) {
     event.evt.preventDefault();
+    const now = performance.now();
+    const previousGesture = wheelGestureRef.current;
+    const inferredIntent = canvasWheelIntent(event.evt);
+    const intent = event.evt.ctrlKey
+      ? "zoom"
+      : previousGesture && now - previousGesture.lastEventAt < 160
+        ? previousGesture.intent
+        : inferredIntent;
+    wheelGestureRef.current = { intent, lastEventAt: now };
+    if ((tool === "select" || tool === "pan") && intent === "pan") {
+      setViewport((current) => ({
+        ...current,
+        x: current.x - event.evt.deltaX,
+        y: current.y - event.evt.deltaY,
+      }));
+      return;
+    }
     const pointer = stageRef.current?.getPointerPosition();
     if (!pointer) return;
     setViewport((current) =>
-      zoomViewportAtPointer(current, pointer, event.evt.deltaY),
+      event.evt.ctrlKey
+        ? zoomViewportAtPointerContinuously(current, pointer, event.evt.deltaY)
+        : zoomViewportAtPointer(current, pointer, event.evt.deltaY),
     );
   }
 
@@ -695,6 +1323,7 @@ export function ProductCanvas({
     event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
   ) {
     if (event.target !== stageRef.current) return;
+    setContextPanel(null);
     const point = worldPointer();
     if (!point) return;
     if (tool === "select") {
@@ -713,6 +1342,21 @@ export function ProductCanvas({
   function onStagePointerMove() {
     const point = worldPointer();
     if (connectorStart) setPointerPreview(point);
+    if (point) {
+      setHoveredShapeId((current) => {
+        if (!current) return null;
+        const hovered = objectsById.get(current);
+        return hovered &&
+          hovered.type === "shape" &&
+          pointWithinObjectHoverZone(
+            hovered,
+            point,
+            connectionAnchorHoverDistancePx / viewport.scale,
+          )
+          ? current
+          : null;
+      });
+    }
     if (!marquee) return;
     if (point)
       setMarquee((current) =>
@@ -791,6 +1435,18 @@ export function ProductCanvas({
     )
       return;
     const accelerator = event.metaKey || event.ctrlKey;
+    if (
+      selectedObjects.length &&
+      ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu")
+    ) {
+      event.preventDefault();
+      const keyboardX = contextualToolbarPosition?.left ?? size.width / 2;
+      const keyboardY = contextualToolbarPosition
+        ? contextualToolbarPosition.top + 48
+        : size.height / 2;
+      showObjectContextMenu(keyboardX, keyboardY);
+      return;
+    }
     if (accelerator && event.key.toLowerCase() === "z") {
       event.preventDefault();
       if (event.shiftKey) redo();
@@ -896,26 +1552,40 @@ export function ProductCanvas({
     } else if (event.key === " ") {
       event.preventDefault();
       setTool((current) => (current === "pan" ? "select" : "pan"));
-    } else if (event.key.startsWith("Arrow")) {
-      event.preventDefault();
-      const step = 32;
-      setViewport((current) => ({
-        ...current,
-        x:
-          current.x +
-          (event.key === "ArrowLeft"
-            ? step
-            : event.key === "ArrowRight"
-              ? -step
-              : 0),
-        y:
-          current.y +
-          (event.key === "ArrowUp"
-            ? step
-            : event.key === "ArrowDown"
-              ? -step
-              : 0),
-      }));
+    } else if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+      const shortcutTool = {
+        v: "select",
+        h: "pan",
+        s: "sticky",
+        r: recentShape,
+        c: "connector",
+        t: "text",
+        b: "table",
+      }[event.key.toLowerCase()] as CanvasTool | undefined;
+      if (shortcutTool) {
+        event.preventDefault();
+        chooseTool(shortcutTool);
+      } else if (event.key.startsWith("Arrow")) {
+        event.preventDefault();
+        const step = 32;
+        setViewport((current) => ({
+          ...current,
+          x:
+            current.x +
+            (event.key === "ArrowLeft"
+              ? step
+              : event.key === "ArrowRight"
+                ? -step
+                : 0),
+          y:
+            current.y +
+            (event.key === "ArrowUp"
+              ? step
+              : event.key === "ArrowDown"
+                ? -step
+                : 0),
+        }));
+      }
     }
   }
 
@@ -1009,9 +1679,11 @@ export function ProductCanvas({
               width={columnWidth - 16}
               height={rowHeight - 16}
               text={cell}
-              fill="#18181b"
+              fill={object.style.textColor ?? "#18181b"}
               fontFamily={object.style.fontFamily}
               fontSize={object.style.fontSize}
+              fontStyle={object.style.fontWeight === "bold" ? "bold" : "normal"}
+              align={object.style.textAlign ?? "left"}
               verticalAlign="middle"
             />
           )),
@@ -1022,9 +1694,16 @@ export function ProductCanvas({
 
   function renderObject(object: CanvasObjectV2) {
     if (object.type === "connector") {
-      const points = resolveConnectorPointsV2(object, objectsById);
+      const points = resolveConnectorPointsV2(object, displayObjectsById);
+      const endpointHandles = ([object.start, object.end] as const).map(
+        (endpoint, index) =>
+          connectorEndpointHandlePoint(endpoint, {
+            x: points[index * 2]!,
+            y: points[index * 2 + 1]!,
+          }),
+      );
       return (
-        <Group key={object.id}>
+        <Group key={object.id} id={object.id}>
           <Arrow
             points={points}
             stroke={object.style.outline}
@@ -1035,28 +1714,28 @@ export function ProductCanvas({
             hitStrokeWidth={18}
             onClick={(event) => selectObject(event, object)}
             onTap={(event) => selectObject(event, object)}
+            onContextMenu={(event) => openObjectContextMenu(event, object)}
           />
-          {selectedIds.includes(object.id)
+          {selectionAffordancesVisible && selectedIds.includes(object.id)
             ? (["start", "end"] as const).map((endpoint, index) => (
                 <Circle
                   key={endpoint}
-                  x={points[index * 2]}
-                  y={points[index * 2 + 1]}
-                  radius={8}
+                  x={endpointHandles[index]!.x}
+                  y={endpointHandles[index]!.y}
+                  radius={selectionAffordanceWorldSize(8)}
                   fill="#8b5cf6"
                   stroke="#ffffff"
-                  strokeWidth={2}
+                  strokeWidth={selectionAffordanceWorldSize(2)}
+                  hitStrokeWidth={
+                    Math.max(18, 24 * selectionAffordanceFactor) /
+                    viewport.scale
+                  }
                   draggable
+                  onDragStart={(event) => {
+                    event.cancelBubble = true;
+                  }}
                   onDragEnd={(event) =>
-                    runCommand("connector.endpoint", {
-                      objectId: object.id,
-                      endpoint,
-                      value: {
-                        kind: "free",
-                        x: event.target.x(),
-                        y: event.target.y(),
-                      },
-                    })
+                    finishEndpointDrag(event, object.id, endpoint)
                   }
                 />
               ))
@@ -1066,111 +1745,177 @@ export function ProductCanvas({
     }
     if (object.type === "document" || object.type === "annotation") return null;
     return (
-      <Group
-        key={object.id}
-        id={object.id}
-        ref={(node) => {
-          if (node) objectNodeRefs.current.set(object.id, node);
-          else objectNodeRefs.current.delete(object.id);
-        }}
-        x={object.geometry.x}
-        y={object.geometry.y}
-        rotation={object.geometry.rotation}
-        draggable={tool === "select"}
-        onClick={(event) => selectObject(event, object)}
-        onTap={(event) => selectObject(event, object)}
-        onDragStart={() => {
-          if (!selectedIds.includes(object.id)) {
-            setSelectedIds(
-              object.groupId
-                ? objects
-                    .filter((candidate) => candidate.groupId === object.groupId)
-                    .map((candidate) => candidate.id)
-                : [object.id],
-            );
+      <Fragment key={object.id}>
+        <Group
+          id={object.id}
+          ref={(node) => {
+            if (node) objectNodeRefs.current.set(object.id, node);
+            else objectNodeRefs.current.delete(object.id);
+          }}
+          x={object.geometry.x}
+          y={object.geometry.y}
+          rotation={object.geometry.rotation}
+          draggable={
+            tool === "select" && inlineTextEditor?.objectId !== object.id
           }
-        }}
-        onDragEnd={(event) =>
-          moveSelectionFromDrag(object, event.target.x(), event.target.y())
-        }
-        onTransformEnd={(event) => {
-          const node = event.target;
-          const width = Math.max(
-            24,
-            object.geometry.width * Math.abs(node.scaleX()),
-          );
-          const height = Math.max(
-            24,
-            object.geometry.height * Math.abs(node.scaleY()),
-          );
-          node.scaleX(1);
-          node.scaleY(1);
-          runCommand("object.move", {
-            objectId: object.id,
-            x: node.x(),
-            y: node.y(),
-          });
-          runCommand("object.resize", { objectId: object.id, width, height });
-        }}
-      >
-        {object.type === "shape" ? (
-          <>
-            {shapeNode(object)}
+          onClick={(event) => selectObject(event, object)}
+          onTap={(event) => selectObject(event, object)}
+          onContextMenu={(event) => openObjectContextMenu(event, object)}
+          onDblClick={(event) => {
+            event.cancelBubble = true;
+            if (object.type === "shape" || object.type === "text") {
+              startInlineEditing(object);
+            }
+          }}
+          onDblTap={(event) => {
+            event.cancelBubble = true;
+            if (object.type === "shape" || object.type === "text") {
+              startInlineEditing(object);
+            }
+          }}
+          onMouseEnter={() => {
+            if (object.type === "shape") setHoveredShapeId(object.id);
+          }}
+          onMouseLeave={() => {
+            // The stage-level proximity zone keeps anchors visible while the
+            // pointer crosses the intentional gap between the object and handle.
+          }}
+          onDragStart={() => {
+            if (!selectedIds.includes(object.id)) {
+              setSelectedIds(
+                object.groupId
+                  ? objects
+                      .filter(
+                        (candidate) => candidate.groupId === object.groupId,
+                      )
+                      .map((candidate) => candidate.id)
+                  : [object.id],
+              );
+            }
+          }}
+          onDragMove={(event) =>
+            previewSelectionFromDrag(
+              objectsById.get(object.id) ?? object,
+              event.target.x(),
+              event.target.y(),
+            )
+          }
+          onDragEnd={(event) => {
+            const durableObject = objectsById.get(object.id) ?? object;
+            setDragPreviewPositions({});
+            moveSelectionFromDrag(
+              durableObject,
+              event.target.x(),
+              event.target.y(),
+            );
+          }}
+          onTransformEnd={(event) => {
+            const node = event.target;
+            const width = Math.max(
+              24,
+              object.geometry.width * Math.abs(node.scaleX()),
+            );
+            const height = Math.max(
+              24,
+              object.geometry.height * Math.abs(node.scaleY()),
+            );
+            node.scaleX(1);
+            node.scaleY(1);
+            runCommand("object.move", {
+              objectId: object.id,
+              x: node.x(),
+              y: node.y(),
+            });
+            runCommand("object.resize", { objectId: object.id, width, height });
+          }}
+        >
+          {object.type === "shape" ? (
+            <>
+              {shapeNode(object)}
+              <Text
+                x={12}
+                y={12}
+                width={object.geometry.width - 24}
+                height={object.geometry.height - 24}
+                text={formatListText(object.text, object.style.listStyle)}
+                fill={object.style.textColor ?? "#18181b"}
+                align={object.style.textAlign ?? "center"}
+                verticalAlign="middle"
+                fontFamily={object.style.fontFamily}
+                fontSize={object.style.fontSize}
+                fontStyle={
+                  object.style.fontWeight === "bold" ? "bold" : "normal"
+                }
+                textDecoration={object.style.linkUrl ? "underline" : ""}
+                opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
+                listening={false}
+              />
+            </>
+          ) : object.type === "text" ? (
             <Text
-              x={12}
-              y={12}
-              width={object.geometry.width - 24}
-              height={object.geometry.height - 24}
-              text={object.text}
-              fill="#18181b"
-              align="center"
-              verticalAlign="middle"
-              fontFamily={object.style.fontFamily}
-              fontSize={object.style.fontSize}
-              listening={false}
-            />
-          </>
-        ) : object.type === "text" ? (
-          <>
-            <Rect
               width={object.geometry.width}
               height={object.geometry.height}
-              fill={object.style.fill ?? "transparent"}
-              stroke={object.style.outline}
-              strokeWidth={object.style.outlineWidth}
-              cornerRadius={6}
-            />
-            <Text
-              x={10}
-              y={10}
-              width={object.geometry.width - 20}
-              height={object.geometry.height - 20}
-              text={object.text}
-              fill="#18181b"
+              text={formatListText(object.text, object.style.listStyle)}
+              fill={object.style.textColor ?? "#18181b"}
               fontFamily={object.style.fontFamily}
               fontSize={object.style.fontSize}
+              fontStyle={object.style.fontWeight === "bold" ? "bold" : "normal"}
+              align={object.style.textAlign ?? "left"}
+              textDecoration={object.style.linkUrl ? "underline" : ""}
               verticalAlign="middle"
-              listening={false}
+              opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
             />
-          </>
-        ) : (
-          renderTable(object)
-        )}
-        {selectedIds.includes(object.id) && object.type === "shape"
-          ? anchors.map((anchor) => {
-              const point = anchorPointV2(
-                { ...object, geometry: { ...object.geometry, x: 0, y: 0 } },
+          ) : (
+            renderTable(object)
+          )}
+        </Group>
+        {selectionAffordancesVisible &&
+        object.type === "shape" &&
+        (selectedIds.includes(object.id) ||
+          hoveredShapeId === object.id ||
+          connectorStart) ? (
+          <Group
+            x={object.geometry.x}
+            y={object.geometry.y}
+            rotation={object.geometry.rotation}
+          >
+            {anchors.map((anchor) => {
+              const localObject = {
+                ...object,
+                geometry: { ...object.geometry, x: 0, y: 0 },
+              };
+              const point = connectionHandlePointV2(
+                localObject,
                 anchor,
+                selectionAffordanceWorldSize(connectionAnchorOffsetPx),
               );
               return (
                 <Circle
                   key={anchor}
                   x={point.x}
                   y={point.y}
-                  radius={6}
+                  radius={selectionAffordanceWorldSize(
+                    connectionAnchorRadiusPx,
+                  )}
                   fill="#a78bfa"
                   stroke="#ffffff"
-                  strokeWidth={2}
+                  strokeWidth={selectionAffordanceWorldSize(3)}
+                  hitStrokeWidth={
+                    Math.max(
+                      18,
+                      connectionAnchorHitWidthPx * selectionAffordanceFactor,
+                    ) / viewport.scale
+                  }
+                  draggable
+                  data-anchor={anchor}
+                  onDragStart={(event) =>
+                    beginConnectorDrag(event, object, anchor)
+                  }
+                  onDragMove={(event) => {
+                    const point = eventWorldPointer(event);
+                    if (point) setPointerPreview(point);
+                  }}
+                  onDragEnd={(event) => finishConnectorDrag(event, object.id)}
                   onClick={(event) => {
                     event.cancelBubble = true;
                     finishConnector({
@@ -1181,11 +1926,39 @@ export function ProductCanvas({
                   }}
                 />
               );
-            })
-          : null}
-      </Group>
+            })}
+          </Group>
+        ) : null}
+      </Fragment>
     );
   }
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const canvasContainer = container;
+    function openFromMouse(event: MouseEvent) {
+      if (
+        !(event.target instanceof Node) ||
+        !canvasContainer.contains(event.target)
+      )
+        return;
+      const object =
+        objectAtClientPoint(event.clientX, event.clientY) ?? selectedObject;
+      if (!object) return;
+      event.preventDefault();
+      openObjectContextMenuFromPointer(object, event.clientX, event.clientY);
+    }
+    function onMouseDown(event: MouseEvent) {
+      if (event.button === 2 || event.ctrlKey) openFromMouse(event);
+    }
+    window.addEventListener("mousedown", onMouseDown, true);
+    window.addEventListener("contextmenu", openFromMouse, true);
+    return () => {
+      window.removeEventListener("mousedown", onMouseDown, true);
+      window.removeEventListener("contextmenu", openFromMouse, true);
+    };
+  });
 
   const connectorPreviewPoints =
     connectorStart && pointerPreview
@@ -1202,263 +1975,813 @@ export function ProductCanvas({
         height: Math.abs(marquee.current.y - marquee.start.y),
       }
     : null;
+  const inlineEditorObject = inlineTextEditor
+    ? objectsById.get(inlineTextEditor.objectId)
+    : undefined;
+  const inlineEditorLayout =
+    inlineEditorObject?.type === "shape" || inlineEditorObject?.type === "text"
+      ? {
+          left:
+            viewport.x +
+            (inlineEditorObject.geometry.x +
+              (inlineEditorObject.type === "shape" ? 12 : 0)) *
+              viewport.scale,
+          top:
+            viewport.y +
+            (inlineEditorObject.geometry.y +
+              (inlineEditorObject.type === "shape" ? 12 : 0)) *
+              viewport.scale,
+          width:
+            (inlineEditorObject.geometry.width -
+              (inlineEditorObject.type === "shape" ? 24 : 0)) *
+            viewport.scale,
+          height:
+            (inlineEditorObject.geometry.height -
+              (inlineEditorObject.type === "shape" ? 24 : 0)) *
+            viewport.scale,
+          transform: `rotate(${inlineEditorObject.geometry.rotation}deg)`,
+          transformOrigin: "top left" as const,
+          fontFamily: inlineEditorObject.style.fontFamily,
+          fontSize: inlineEditorObject.style.fontSize * viewport.scale,
+          fontWeight: inlineEditorObject.style.fontWeight ?? "normal",
+          color: inlineEditorObject.style.textColor ?? "#18181b",
+          textAlign:
+            inlineEditorObject.style.textAlign ??
+            (inlineEditorObject.type === "shape" ? "center" : "left"),
+        }
+      : null;
 
   return (
     <section
       aria-labelledby="canvas-title"
-      className="flex min-h-full flex-col"
+      className="thinking-workspace relative h-full min-h-[480px] overflow-hidden text-[var(--workspace-foreground)]"
+      data-testid="thinking-workspace"
+      onPointerDownCapture={(event) => {
+        const target = event.target;
+        if (
+          target instanceof Element &&
+          target.closest("[data-object-context-menu]")
+        )
+          return;
+        setObjectContextMenu(null);
+      }}
     >
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-900/70 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
+      {selectedObject?.type === "connector" ? (
+        <output
+          data-testid="selected-connector-handle-points"
+          className="sr-only"
+        >
+          {(() => {
+            const points = resolveConnectorPointsV2(
+              selectedObject,
+              objectsById,
+            );
+            return ([selectedObject.start, selectedObject.end] as const)
+              .flatMap((endpoint, index) => {
+                const point = connectorEndpointHandlePoint(endpoint, {
+                  x: points[index * 2]!,
+                  y: points[index * 2 + 1]!,
+                });
+                return [Math.round(point.x), Math.round(point.y)];
+              })
+              .join(",");
+          })()}
+        </output>
+      ) : null}
+      {instrumentationEnabled ? (
+        <output
+          aria-hidden="true"
+          data-testid="live-connector-points"
+          className="hidden"
+        >
+          {displayObjects
+            .filter(
+              (
+                object,
+              ): object is Extract<CanvasObjectV2, { type: "connector" }> =>
+                object.type === "connector",
+            )
+            .map((connector) =>
+              [
+                connector.id,
+                ...resolveConnectorPointsV2(connector, displayObjectsById).map(
+                  Math.round,
+                ),
+              ].join(":"),
+            )
+            .join(";")}
+        </output>
+      ) : null}
+      <div
+        className="pointer-events-none absolute inset-x-4 top-4 z-30 flex items-start justify-between gap-4"
+        data-testid="workspace-top-chrome"
+      >
+        <div className="pointer-events-auto flex min-w-0 items-center gap-3 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-2 shadow-[var(--workspace-shadow)] backdrop-blur-xl">
           <Link
             href="/app"
             aria-label="Back to canvases"
-            className={buttonVariants({ variant: "outline", size: "icon-sm" })}
+            className={buttonVariants({
+              variant: "outline",
+              size: "icon",
+              className:
+                "border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50",
+            })}
           >
             <ArrowLeft aria-hidden="true" />
           </Link>
           <div className="min-w-0">
-            <h1 id="canvas-title" className="truncate font-medium">
+            <h1
+              id="canvas-title"
+              className="max-w-[min(42vw,28rem)] truncate font-semibold text-zinc-900"
+            >
               {title}
             </h1>
-            <p className="text-xs text-zinc-400">Canvas foundation</p>
+            <p className="text-xs text-zinc-500">Thinking Canvas workspace</p>
           </div>
-        </div>
-        <p
-          role="status"
-          aria-live="polite"
-          title={
-            pendingCount
-              ? `${pendingCount} local update${pendingCount === 1 ? "" : "s"} waiting for a durable acknowledgment`
-              : `Durably synchronized through sequence ${lastSequence}`
-          }
-          data-testid="canvas-save-status"
-          data-pending-count={pendingCount}
-          className={`rounded-full border px-3 py-1 text-xs ${
-            saveStatus === "Saved"
-              ? "border-emerald-900 bg-emerald-950/40 text-emerald-300"
-              : saveStatus === "Failed"
-                ? "border-red-900 bg-red-950/40 text-red-300"
-                : "border-amber-900 bg-amber-950/40 text-amber-300"
-          }`}
-        >
-          {saveStatus}
-        </p>
-        {saveStatus === "Failed" || saveStatus === "Unsynced" ? (
           <Button
             type="button"
-            size="sm"
+            size="icon"
             variant="outline"
-            onClick={() => void retry()}
+            aria-label="Open Object navigator"
+            aria-expanded={sharedPanel === "objects"}
+            aria-controls="workspace-shared-panel"
+            title="Object navigator"
+            className="size-11 border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700"
+            onClick={(event) =>
+              toggleSharedPanel("objects", event.currentTarget)
+            }
           >
-            Retry sync
+            <ListTree aria-hidden="true" />
           </Button>
-        ) : null}
-      </div>
+        </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3">
-        <div
-          className="flex flex-wrap items-center gap-2"
-          role="toolbar"
-          aria-label="Canvas tools"
-        >
-          {(
-            [
-              ["select", "Select", MousePointer2],
-              ["pan", "Pan", Hand],
-              ["rectangle", "Rectangle", RectangleHorizontal],
-              ["ellipse", "Ellipse", CircleIcon],
-              ["diamond", "Diamond", Diamond],
-              ["text", "Text", Type],
-              ["connector", "Connector", Link2],
-              ["table", "Table", Table2],
-            ] as const
-          ).map(([value, label, Icon]) => (
-            <Button
-              key={value}
-              type="button"
-              size="sm"
-              variant={tool === value ? "default" : "outline"}
-              aria-pressed={tool === value}
-              onClick={() => {
-                setTool(value);
-                if (value !== "connector") setConnectorStart(null);
-              }}
-            >
-              <Icon aria-hidden="true" />
-              {label}
-            </Button>
-          ))}
-          {simulatedAiEnabled ? (
+        <div className="pointer-events-auto flex max-w-[min(58vw,48rem)] flex-wrap items-center justify-end gap-2 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-2 shadow-[var(--workspace-shadow)] backdrop-blur-xl">
+          <span
+            className="inline-flex h-9 items-center gap-2 rounded-xl px-2.5 text-sm text-zinc-600"
+            aria-label={`${participants.length} participants present`}
+            title={`${participants.length} participants present`}
+          >
+            <Users aria-hidden="true" className="size-4 text-violet-600" />
+            <span data-testid="workspace-participant-count">
+              {participants.length}
+            </span>
+          </span>
+          <p
+            role="status"
+            aria-live="polite"
+            title={
+              pendingCount
+                ? `${pendingCount} local update${pendingCount === 1 ? "" : "s"} waiting for a durable acknowledgment`
+                : `Durably synchronized through sequence ${lastSequence}`
+            }
+            data-testid="canvas-save-status"
+            data-pending-count={pendingCount}
+            className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-medium ${
+              saveStatus === "Saved"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : saveStatus === "Failed"
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
+            }`}
+          >
+            {saveStatus === "Saved" ? (
+              <Check aria-hidden="true" className="size-3.5" />
+            ) : (
+              <Cloud aria-hidden="true" className="size-3.5" />
+            )}
+            {saveStatus}
+          </p>
+          {saveStatus === "Failed" || saveStatus === "Unsynced" ? (
             <Button
               type="button"
               size="sm"
               variant="outline"
-              onClick={addSimulatedAiIdea}
+              className="h-9 border-amber-200 bg-white text-amber-800 dark:border-amber-200 dark:bg-white dark:text-amber-800"
+              onClick={() => void retry()}
             >
-              Add simulated AI idea
+              Retry sync
             </Button>
           ) : null}
-        </div>
-        <div
-          className="flex items-center gap-2"
-          role="group"
-          aria-label="Canvas zoom"
-        >
           <Button
             type="button"
-            size="icon-sm"
+            size="icon"
             variant="outline"
-            aria-label="Zoom out"
-            onClick={() => zoomAtCenter(-1)}
+            aria-label="Copy canvas link"
+            title="Copy canvas link"
+            className="border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50"
+            onClick={() => void copyShareLink()}
           >
-            <Minus aria-hidden="true" />
+            <Share2 aria-hidden="true" />
           </Button>
-          <output
-            aria-label="Canvas zoom level"
-            data-testid="product-canvas-scale"
-            className="min-w-14 text-center text-xs text-zinc-400"
+          <span
+            className="hidden max-w-48 truncate px-1 text-xs text-zinc-500 xl:block"
+            title={userIdentity}
           >
-            {Math.round(viewport.scale * 100)}%
-          </output>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="outline"
-            aria-label="Zoom in"
-            onClick={() => zoomAtCenter(1)}
-          >
-            <Plus aria-hidden="true" />
-          </Button>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="outline"
-            aria-label="Zoom to fit"
-            onClick={() => setViewport(defaultViewport)}
-          >
-            <Maximize2 aria-hidden="true" />
-          </Button>
+            {userIdentity}
+          </span>
+          <form action={signOut}>
+            <Button
+              type="submit"
+              size="icon"
+              variant="outline"
+              aria-label={`Sign out ${userIdentity}`}
+              title="Sign out"
+              className="border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50"
+            >
+              <LogOut aria-hidden="true" />
+            </Button>
+          </form>
         </div>
       </div>
 
-      <div
-        className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-4 py-2"
-        role="toolbar"
-        aria-label="Selection and history actions"
+      <p
+        role="status"
+        aria-live="polite"
+        data-testid="share-link-status"
+        className="pointer-events-none absolute top-24 right-4 z-30 max-w-sm rounded-xl bg-zinc-900 px-3 py-2 text-xs text-white shadow-lg empty:hidden"
       >
+        {shareNotice}
+      </p>
+
+      <WorkspacePrimaryDock
+        activeTool={tool}
+        recentShape={recentShape}
+        simulatedAiEnabled={simulatedAiEnabled}
+        onChooseTool={chooseTool}
+        onChooseShape={chooseShape}
+        onAddSimulatedAiIdea={addSimulatedAiIdea}
+        commentsPanelOpen={sharedPanel === "comments"}
+        onToggleComments={(invoker) => toggleSharedPanel("comments", invoker)}
+      />
+
+      <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
         <Button
           type="button"
-          size="sm"
+          size="icon-sm"
           variant="outline"
-          disabled={
-            selectedIds.length < 2 ||
-            selectedObjects.some((object) => object.groupId != null)
-          }
-          aria-keyshortcuts="Control+G Meta+G"
-          onClick={groupSelected}
+          aria-label="Zoom out"
+          onClick={() => zoomAtCenter(-1)}
         >
-          Group
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedObjects.some((object) => object.groupId != null)}
-          aria-keyshortcuts="Control+Shift+G Meta+Shift+G"
-          onClick={ungroupSelected}
-        >
-          Ungroup
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedIds.length}
-          onClick={() => reorderSelected("front")}
-        >
-          Bring to front
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedIds.length}
-          onClick={() => reorderSelected("back")}
-        >
-          Send to back
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedIds.length}
-          aria-keyshortcuts="Control+D Meta+D"
-          onClick={duplicateSelected}
-        >
-          Duplicate
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedIds.length}
-          aria-keyshortcuts="Control+C Meta+C"
-          onClick={() => void copySelected()}
-        >
-          Copy
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!selectedIds.length}
-          aria-keyshortcuts="Control+X Meta+X"
-          onClick={() => void cutSelected()}
-        >
-          Cut
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          aria-keyshortcuts="Control+V Meta+V"
-          onClick={() => void pasteSelected()}
-        >
-          Paste
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!undoStack.length}
-          aria-keyshortcuts="Control+Z Meta+Z"
-          onClick={undo}
-        >
-          Undo
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!redoStack.length}
-          aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
-          onClick={redo}
-        >
-          Redo
+          <Minus aria-hidden="true" />
         </Button>
         <output
-          className="ml-auto text-xs text-zinc-400"
+          aria-label="Canvas zoom level"
+          data-testid="product-canvas-scale"
+          className="min-w-14 text-center text-xs text-zinc-500"
+        >
+          {Math.round(viewport.scale * 100)}%
+        </output>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label="Zoom in"
+          onClick={() => zoomAtCenter(1)}
+        >
+          <Plus aria-hidden="true" />
+        </Button>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label="Zoom to fit"
+          onClick={zoomToFit}
+        >
+          <Maximize2 aria-hidden="true" />
+        </Button>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label="Open canvas help"
+          aria-expanded={sharedPanel === "help"}
+          aria-controls="workspace-shared-panel"
+          onClick={(event) => toggleSharedPanel("help", event.currentTarget)}
+        >
+          <CircleHelp aria-hidden="true" />
+        </Button>
+      </div>
+
+      {sharedPanel ? (
+        <WorkspacePanel
+          title={
+            sharedPanel === "objects"
+              ? "Object navigator"
+              : sharedPanel === "comments"
+                ? "Comments"
+                : "Canvas help"
+          }
+          description={
+            sharedPanel === "objects"
+              ? "Browse objects and inspect detailed selection geometry."
+              : sharedPanel === "comments"
+                ? "A preview of the collaboration surface planned for Milestone 3."
+                : "Keyboard shortcuts for moving around and editing this canvas."
+          }
+          invoker={sharedPanelInvoker}
+          onDismiss={() => setSharedPanel(null)}
+        >
+          {sharedPanel === "objects" ? (
+            <ObjectNavigatorContent
+              objects={objects}
+              objectsById={objectsById}
+              selectedIds={selectedIds}
+              selectedObject={selectedObject}
+              onSelect={(object, modifier) => {
+                updateSelectionForObject(object, modifier);
+                setTool("select");
+              }}
+            />
+          ) : sharedPanel === "comments" ? (
+            <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+              <p className="font-medium text-violet-950">
+                Contextual feedback arrives in Milestone 3
+              </p>
+              <p className="mt-2 text-sm leading-6 text-violet-800">
+                No comments can be entered, loaded, or saved here yet. This
+                placeholder does not change canvas content.
+              </p>
+            </div>
+          ) : (
+            <ShortcutHelp />
+          )}
+        </WorkspacePanel>
+      ) : null}
+
+      {objectContextMenu && selectedObjects.length ? (
+        <ObjectContextMenu
+          {...objectContextMenu}
+          canGroup={
+            selectedIds.length >= 2 &&
+            !selectedObjects.some((object) => object.groupId != null)
+          }
+          canUngroup={selectedObjects.some((object) => object.groupId != null)}
+          onGroup={groupSelected}
+          onUngroup={ungroupSelected}
+          onReorder={reorderSelected}
+          onDuplicate={duplicateSelected}
+          onCopy={() => void copySelected()}
+          onCut={() => void cutSelected()}
+          onDelete={deleteSelected}
+          onDismiss={() => {
+            setObjectContextMenu(null);
+            requestAnimationFrame(() => containerRef.current?.focus());
+          }}
+        />
+      ) : null}
+
+      {tool === "select" && selectedObject && contextualToolbarPosition ? (
+        <div
+          className="absolute z-40 -translate-x-1/2"
+          style={contextualToolbarPosition}
+          data-testid="contextual-selection-controls"
+        >
+          <div
+            className="relative flex max-w-[calc(100vw-2rem)] items-center gap-1 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-white shadow-2xl [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-zinc-100 [&_button:hover]:bg-white/10 [&_button[aria-expanded=true]]:bg-violet-600 [&_button[aria-expanded=true]]:text-white"
+            role="toolbar"
+            aria-label="Selection controls"
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && contextPanel) {
+                event.preventDefault();
+                event.stopPropagation();
+                closeContextPanel();
+              }
+            }}
+          >
+            <output
+              className={
+                selectedIds.length === 1
+                  ? "sr-only"
+                  : "px-2 text-xs whitespace-nowrap text-zinc-300"
+              }
+              aria-live="polite"
+              data-testid="selection-status"
+            >
+              {selectedIds.length === 1
+                ? objectLabel(selectedObject)
+                : `${selectedIds.length} selected`}
+            </output>
+            {fillObjects.length ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Fill"
+                aria-expanded={contextPanel === "fill"}
+                title="Fill"
+                onClick={(event) =>
+                  toggleContextPanel("fill", event.currentTarget)
+                }
+              >
+                <span
+                  aria-hidden="true"
+                  data-testid="current-fill-swatch"
+                  className="size-6 rounded-full border-2 border-white/70"
+                  style={{
+                    backgroundColor:
+                      commonStyleValue(fillObjects, "fill") === null
+                        ? "transparent"
+                        : (commonStyleValue(fillObjects, "fill") ?? "#71717a"),
+                  }}
+                />
+              </Button>
+            ) : null}
+            {outlineObjects.length ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Stroke color"
+                aria-expanded={contextPanel === "outline"}
+                title="Stroke color"
+                onClick={(event) =>
+                  toggleContextPanel("outline", event.currentTarget)
+                }
+              >
+                <AlignJustify aria-hidden="true" />
+              </Button>
+            ) : null}
+            {textStyleObjects.length ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Text style"
+                aria-expanded={contextPanel === "text"}
+                title="Text style"
+                onClick={(event) =>
+                  toggleContextPanel("text", event.currentTarget)
+                }
+              >
+                <Type aria-hidden="true" />
+              </Button>
+            ) : null}
+            {selectedIds.length === 1 &&
+            (selectedObject.type === "shape" ||
+              selectedObject.type === "text") &&
+            selectedObject.style.linkUrl ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Open text link"
+                title="Open text link"
+                onClick={() => openSafeTextLink(selectedObject.style.linkUrl!)}
+              >
+                <ExternalLink aria-hidden="true" />
+              </Button>
+            ) : null}
+            {selectedObject.type === "table" && selectedIds.length === 1 ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-expanded={contextPanel === "table"}
+                onClick={(event) =>
+                  toggleContextPanel("table", event.currentTarget)
+                }
+              >
+                Edit table
+              </Button>
+            ) : null}
+            {selectedObjects.some(
+              (object) =>
+                object.type === "shape" || object.type === "connector",
+            ) ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Connector controls"
+                aria-expanded={contextPanel === "connector"}
+                title="Connector controls"
+                onClick={(event) =>
+                  toggleContextPanel("connector", event.currentTarget)
+                }
+              >
+                <Link2 aria-hidden="true" />
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="outline"
+              aria-label="More selection actions"
+              aria-expanded={contextPanel === "more"}
+              title="More actions"
+              onClick={(event) =>
+                toggleContextPanel("more", event.currentTarget)
+              }
+            >
+              <Ellipsis aria-hidden="true" />
+            </Button>
+
+            {contextPanel ? (
+              <div
+                role="dialog"
+                aria-label={`${contextPanel} selection controls`}
+                className={`absolute top-full left-1/2 mt-2 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-white/10 bg-zinc-900 p-3 text-white shadow-2xl [&_button]:border-white/10 [&_button]:bg-zinc-800 [&_button]:text-zinc-100 [&_button:hover]:bg-zinc-700 ${contextPanel === "text" ? "w-96 overflow-y-auto" : contextPanel === "fill" || contextPanel === "outline" ? "w-96" : "w-72"}`}
+                style={
+                  contextPanel === "text"
+                    ? {
+                        maxHeight: Math.max(
+                          220,
+                          size.height - contextualToolbarPosition.top - 160,
+                        ),
+                      }
+                    : undefined
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeContextPanel();
+                  }
+                }}
+              >
+                {contextPanel === "fill" ? (
+                  <ColorStylePanel
+                    mode="fill"
+                    fill={commonStyleValue(fillObjects, "fill")}
+                    outline={commonStyleValue(fillObjects, "outline")}
+                    mixedFill={
+                      commonStyleValue(fillObjects, "fill") === undefined
+                    }
+                    mixedOutline={
+                      commonStyleValue(fillObjects, "outline") === undefined
+                    }
+                    onApplyPair={(pair) => applyColorPair(fillObjects, pair)}
+                    onApplyFill={(fill) =>
+                      applyStyleToObjects(fillObjects, { fill })
+                    }
+                    onApplyOutline={(outline) =>
+                      applyStyleToObjects(fillObjects, { outline })
+                    }
+                  />
+                ) : null}
+                {contextPanel === "outline" ? (
+                  <ColorStylePanel
+                    mode="outline"
+                    fill={null}
+                    outline={commonStyleValue(outlineObjects, "outline")}
+                    mixedFill={false}
+                    mixedOutline={
+                      commonStyleValue(outlineObjects, "outline") === undefined
+                    }
+                    onApplyPair={() => undefined}
+                    onApplyFill={() => undefined}
+                    onApplyOutline={(outline) =>
+                      applyStyleToObjects(outlineObjects, { outline })
+                    }
+                  />
+                ) : null}
+                {contextPanel === "text" ? (
+                  <TextStylePanel
+                    key={`${selectedIds.join(":")}:${commonStyleValue(textStyleObjects, "fontSize") ?? "mixed"}:${commonStyleValue(textStyleObjects, "linkUrl") ?? "none"}`}
+                    fontFamily={commonStyleValue(
+                      textStyleObjects,
+                      "fontFamily",
+                    )}
+                    fontSize={commonStyleValue(textStyleObjects, "fontSize")}
+                    fontWeight={commonStyleValue(
+                      textStyleObjects,
+                      "fontWeight",
+                    )}
+                    textAlign={commonStyleValue(textStyleObjects, "textAlign")}
+                    listStyle={commonStyleValue(textStyleObjects, "listStyle")}
+                    linkUrl={commonStyleValue(textStyleObjects, "linkUrl")}
+                    textColor={commonStyleValue(textStyleObjects, "textColor")}
+                    allowLists={textStyleObjects.every(
+                      (object) =>
+                        object.type === "shape" || object.type === "text",
+                    )}
+                    allowLink={
+                      textStyleObjects.length === 1 &&
+                      (textStyleObjects[0]?.type === "shape" ||
+                        textStyleObjects[0]?.type === "text")
+                    }
+                    onApply={(style) =>
+                      applyStyleToObjects(textStyleObjects, style)
+                    }
+                    onOpenLink={openSafeTextLink}
+                  />
+                ) : null}
+                {contextPanel === "table" && selectedObject.type === "table" ? (
+                  <label className="block text-xs text-zinc-300">
+                    Table cells
+                    <textarea
+                      aria-label="Table cells"
+                      value={tableText(selectedObject)}
+                      onChange={(event) =>
+                        runCommand("object.patch", {
+                          objectId: selectedObject.id,
+                          objectType: "table",
+                          cells: event.target.value
+                            .split("\n")
+                            .map((row) => row.split("\t")),
+                        })
+                      }
+                      className="mt-1 min-h-24 w-full rounded-lg border border-white/15 bg-zinc-800 p-2 font-mono text-sm text-white"
+                    />
+                  </label>
+                ) : null}
+                {contextPanel === "connector" ? (
+                  <div className="space-y-3">
+                    {selectedObject.type === "shape" &&
+                    selectedIds.length === 1 ? (
+                      <fieldset>
+                        <legend className="text-xs text-zinc-300">
+                          Connector anchors
+                        </legend>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {anchors.map((anchor) => (
+                            <Button
+                              key={anchor}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                finishConnector({
+                                  kind: "attached",
+                                  objectId: selectedObject.id,
+                                  anchor,
+                                })
+                              }
+                            >
+                              {connectorStart
+                                ? `Attach ${anchor}`
+                                : `Start ${anchor}`}
+                            </Button>
+                          ))}
+                        </div>
+                      </fieldset>
+                    ) : null}
+                    {selectedObject.type === "connector" ? (
+                      <>
+                        {(["start", "end"] as const).map((endpoint) =>
+                          selectedObject[endpoint].kind === "attached" ? (
+                            <Button
+                              key={endpoint}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const point = resolveConnectorEndpointV2(
+                                  selectedObject[endpoint],
+                                  objectsById,
+                                );
+                                runCommand("connector.endpoint", {
+                                  objectId: selectedObject.id,
+                                  endpoint,
+                                  value: { kind: "free", ...point },
+                                });
+                              }}
+                            >
+                              Detach {endpoint}
+                            </Button>
+                          ) : null,
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+                {contextPanel === "more" ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        selectedIds.length < 2 ||
+                        selectedObjects.some((object) => object.groupId != null)
+                      }
+                      aria-keyshortcuts="Control+G Meta+G"
+                      onClick={() => completeContextAction(groupSelected)}
+                    >
+                      Group
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        !selectedObjects.some(
+                          (object) => object.groupId != null,
+                        )
+                      }
+                      aria-keyshortcuts="Control+Shift+G Meta+Shift+G"
+                      onClick={() => completeContextAction(ungroupSelected)}
+                    >
+                      Ungroup
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        completeContextAction(() => reorderSelected("front"))
+                      }
+                    >
+                      Bring to front
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        completeContextAction(() => reorderSelected("back"))
+                      }
+                    >
+                      Send to back
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-keyshortcuts="Control+D Meta+D"
+                      onClick={() => completeContextAction(duplicateSelected)}
+                    >
+                      Duplicate
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-keyshortcuts="Control+C Meta+C"
+                      onClick={() =>
+                        completeContextAction(() => void copySelected())
+                      }
+                    >
+                      <Copy aria-hidden="true" /> Copy
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-keyshortcuts="Control+X Meta+X"
+                      onClick={() =>
+                        completeContextAction(() => void cutSelected())
+                      }
+                    >
+                      Cut
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-keyshortcuts="Control+V Meta+V"
+                      onClick={() =>
+                        completeContextAction(() => void pasteSelected())
+                      }
+                    >
+                      Paste
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!undoStack.length}
+                      aria-keyshortcuts="Control+Z Meta+Z"
+                      onClick={() => completeContextAction(undo)}
+                    >
+                      Undo
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!redoStack.length}
+                      aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
+                      onClick={() => completeContextAction(redo)}
+                    >
+                      Redo
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="col-span-2 text-red-600!"
+                      onClick={() => completeContextAction(deleteSelected)}
+                    >
+                      <Trash2 aria-hidden="true" /> Delete
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <output
+          className="sr-only"
           aria-live="polite"
           data-testid="selection-status"
         >
-          {selectedIds.length
-            ? `${selectedIds.length} selected`
-            : historyNotice || "No selection"}
+          {historyNotice || "No selection"}
         </output>
-      </div>
+      )}
 
-      <div className="grid flex-1 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="absolute inset-0">
         <div
           ref={containerRef}
           tabIndex={0}
@@ -1466,8 +2789,17 @@ export function ProductCanvas({
           aria-label={`Canvas: ${title}. Choose a tool, then use the canvas. Arrow keys move a selection or pan; Delete removes a selection.`}
           onKeyDown={onKeyDown}
           onPointerMove={onSurfacePointerMove}
-          className="relative min-h-[480px] overflow-hidden bg-[#10131a] bg-[radial-gradient(circle,#303746_1px,transparent_1px)] bg-[length:24px_24px] focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none focus-visible:ring-inset"
+          onPointerLeave={() => setHoveredShapeId(null)}
+          className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
+          style={{
+            backgroundImage: `radial-gradient(circle, var(--workspace-dot) ${canvasGrid.dotRadius}px, transparent ${canvasGrid.dotRadius}px)`,
+            backgroundPosition: `${canvasGrid.x}px ${canvasGrid.y}px`,
+            backgroundSize: `${canvasGrid.spacing}px ${canvasGrid.spacing}px`,
+          }}
           data-testid="product-canvas-surface"
+          data-viewport-x={Math.round(viewport.x)}
+          data-viewport-y={Math.round(viewport.y)}
+          data-viewport-scale={viewport.scale}
         >
           <Stage
             ref={stageRef}
@@ -1495,7 +2827,7 @@ export function ProductCanvas({
             }}
           >
             <Layer>
-              {objects.map(renderObject)}
+              {displayObjects.map(renderObject)}
               {remoteCursors.map((cursor) => (
                 <Group
                   key={cursor.userId}
@@ -1535,17 +2867,92 @@ export function ProductCanvas({
               <Transformer
                 ref={transformerRef}
                 rotateEnabled={false}
+                anchorSize={selectionAffordanceWorldSize(selectionHandleSizePx)}
+                anchorStrokeWidth={selectionAffordanceWorldSize(
+                  selectionHandleStrokeWidthPx,
+                )}
+                borderStrokeWidth={selectionAffordanceWorldSize(
+                  selectionHandleStrokeWidthPx,
+                )}
+                anchorFill="#ffffff"
+                anchorStroke="#0ea5e9"
+                borderStroke="#0ea5e9"
+                anchorCornerRadius={selectionAffordanceWorldSize(3)}
+                padding={selectionAffordanceWorldSize(2)}
                 boundBoxFunc={(oldBox, newBox) =>
                   newBox.width < 24 || newBox.height < 24 ? oldBox : newBox
                 }
               />
             </Layer>
           </Stage>
+          {inlineTextEditor && inlineEditorLayout ? (
+            <textarea
+              ref={inlineEditorRef}
+              aria-label="Edit object text on canvas"
+              data-testid="inline-object-text-editor"
+              value={inlineTextEditor.draft}
+              onChange={(event) => {
+                const draft = event.target.value;
+                setInlineTextEditor((current) => {
+                  if (!current) return null;
+                  const listStyle = /^\s*1[.)]\s/.test(draft)
+                    ? "numbered"
+                    : /^\s*[-*]\s/.test(draft)
+                      ? "bullet"
+                      : current.listStyle;
+                  return { ...current, draft, listStyle };
+                });
+              }}
+              onBlur={() => finishInlineEditing(true)}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  finishInlineEditing(false);
+                } else if (
+                  event.key === "Enter" &&
+                  (event.metaKey || event.ctrlKey)
+                ) {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                } else if (
+                  event.key === "Enter" &&
+                  inlineTextEditor.listStyle !== "none"
+                ) {
+                  event.preventDefault();
+                  const editor = event.currentTarget;
+                  const before = inlineTextEditor.draft.slice(
+                    0,
+                    editor.selectionStart,
+                  );
+                  const after = inlineTextEditor.draft.slice(
+                    editor.selectionEnd,
+                  );
+                  const marker =
+                    inlineTextEditor.listStyle === "bullet"
+                      ? "• "
+                      : `${before.split("\n").length + 1}. `;
+                  const insertion = `\n${marker}`;
+                  const cursor = before.length + insertion.length;
+                  setInlineTextEditor((current) =>
+                    current
+                      ? { ...current, draft: `${before}${insertion}${after}` }
+                      : null,
+                  );
+                  requestAnimationFrame(() => {
+                    editor.setSelectionRange(cursor, cursor);
+                  });
+                }
+              }}
+              style={inlineEditorLayout}
+              className="absolute z-20 resize-none overflow-hidden border-0 bg-transparent p-0 leading-tight text-zinc-900 outline-2 outline-offset-4 outline-violet-500 focus:outline"
+            />
+          ) : null}
           {objects.length === 0 ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center">
-              <div className="max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/85 px-6 py-5 shadow-xl backdrop-blur">
-                <p className="font-medium text-zinc-200">An empty canvas</p>
-                <p className="mt-2 text-sm leading-6 text-zinc-400">
+              <div className="max-w-sm rounded-2xl border border-[var(--workspace-border)] bg-white/90 px-6 py-5 text-zinc-900 shadow-xl backdrop-blur">
+                <p className="font-medium">An empty canvas</p>
+                <p className="mt-2 text-sm leading-6 text-zinc-500">
                   Choose shape, text, connector, or table, then click the
                   canvas.
                 </p>
@@ -1553,7 +2960,7 @@ export function ProductCanvas({
             </div>
           ) : null}
           {instrumentationEnabled ? (
-            <dl className="pointer-events-none absolute right-3 bottom-3 grid grid-cols-2 gap-x-4 rounded-lg border border-zinc-800 bg-zinc-950/90 px-3 py-2 text-xs">
+            <dl className="pointer-events-none absolute top-24 left-4 grid grid-cols-2 gap-x-4 rounded-lg border border-zinc-200 bg-white/90 px-3 py-2 text-xs text-zinc-700 shadow-lg backdrop-blur">
               <div>
                 <dt className="text-zinc-400">Objects</dt>
                 <dd data-testid="product-object-count">{objects.length}</dd>
@@ -1590,261 +2997,138 @@ export function ProductCanvas({
             </dl>
           ) : null}
         </div>
-
-        <aside
-          aria-label="Canvas inspector"
-          className="border-t border-zinc-800 bg-zinc-950 p-4 lg:border-t-0 lg:border-l"
-        >
-          <h2 className="font-medium">Objects</h2>
-          {objects.length ? (
-            <ul className="mt-3 space-y-2">
-              {objects.map((object) => (
-                <li key={object.id}>
-                  <button
-                    type="button"
-                    data-testid={`object-list-item-${object.id}`}
-                    aria-pressed={selectedIds.includes(object.id)}
-                    onClick={(event) => {
-                      updateSelectionForObject(
-                        object,
-                        event.shiftKey || event.metaKey || event.ctrlKey,
-                      );
-                      setTool("select");
-                    }}
-                    className="w-full rounded-md border border-zinc-800 px-3 py-2 text-left text-sm hover:border-violet-500 aria-pressed:border-violet-400 aria-pressed:bg-violet-950/30"
-                  >
-                    {objectLabel(object)}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-sm text-zinc-400">No objects yet.</p>
-          )}
-
-          {selectedObject ? (
-            <div
-              className="mt-5 space-y-4 border-t border-zinc-800 pt-4"
-              data-testid="canvas-inspector-selection"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-medium capitalize">
-                  {selectedIds.length > 1
-                    ? `Mixed selection · ${selectedObject.type} focused`
-                    : selectedObject.type}
-                </h3>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={deleteSelected}
-                >
-                  Delete
-                </Button>
-              </div>
-              <dl className="grid grid-cols-2 gap-2 text-xs text-zinc-300">
-                <div>
-                  <dt>X</dt>
-                  <dd data-testid="selected-position-x">
-                    {Math.round(selectedObject.geometry.x)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Y</dt>
-                  <dd data-testid="selected-position-y">
-                    {Math.round(selectedObject.geometry.y)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Width</dt>
-                  <dd data-testid="selected-width">
-                    {Math.round(selectedObject.geometry.width)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Height</dt>
-                  <dd data-testid="selected-height">
-                    {Math.round(selectedObject.geometry.height)}
-                  </dd>
-                </div>
-              </dl>
-              {selectedObject.type === "shape" ||
-              selectedObject.type === "text" ? (
-                <label className="block text-xs text-zinc-300">
-                  Content
-                  <textarea
-                    aria-label="Object content"
-                    value={selectedObject.text}
-                    onChange={(event) =>
-                      runCommand("object.patch", {
-                        objectId: selectedObject.id,
-                        objectType: selectedObject.type,
-                        text: event.target.value,
-                      })
-                    }
-                    className="mt-1 min-h-20 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 text-sm text-zinc-100"
-                  />
-                </label>
-              ) : null}
-              {selectedObject.type === "table" ? (
-                <label className="block text-xs text-zinc-300">
-                  Cells
-                  <textarea
-                    aria-label="Table cells"
-                    value={tableText(selectedObject)}
-                    onChange={(event) =>
-                      runCommand("object.patch", {
-                        objectId: selectedObject.id,
-                        objectType: "table",
-                        cells: event.target.value
-                          .split("\n")
-                          .map((row) => row.split("\t")),
-                      })
-                    }
-                    className="mt-1 min-h-24 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 font-mono text-sm text-zinc-100"
-                  />
-                </label>
-              ) : null}
-              {selectedObject.type !== "connector" ? (
-                <label className="flex items-center justify-between gap-3 text-xs text-zinc-300">
-                  Fill
-                  <input
-                    aria-label="Fill color"
-                    type="color"
-                    value={selectedObject.style.fill ?? "#ffffff"}
-                    onChange={(event) =>
-                      runCommand("object.style", {
-                        objectId: selectedObject.id,
-                        style: { fill: event.target.value },
-                      })
-                    }
-                  />
-                </label>
-              ) : null}
-              <label className="flex items-center justify-between gap-3 text-xs text-zinc-300">
-                Outline
-                <input
-                  aria-label="Outline color"
-                  type="color"
-                  value={selectedObject.style.outline}
-                  onChange={(event) =>
-                    runCommand("object.style", {
-                      objectId: selectedObject.id,
-                      style: { outline: event.target.value },
-                    })
-                  }
-                />
-              </label>
-              {selectedObject.type !== "connector" ? (
-                <>
-                  <label className="block text-xs text-zinc-300">
-                    Typeface
-                    <select
-                      aria-label="Typeface"
-                      value={selectedObject.style.fontFamily}
-                      onChange={(event) =>
-                        runCommand("object.style", {
-                          objectId: selectedObject.id,
-                          style: { fontFamily: event.target.value },
-                        })
-                      }
-                      className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 text-sm"
-                    >
-                      <option value="Inter, ui-sans-serif, system-ui, sans-serif">
-                        Inter
-                      </option>
-                      <option value="Georgia, ui-serif, serif">Georgia</option>
-                      <option value="ui-monospace, SFMono-Regular, monospace">
-                        Monospace
-                      </option>
-                    </select>
-                  </label>
-                  <label className="block text-xs text-zinc-300">
-                    Text size
-                    <input
-                      aria-label="Text size"
-                      type="number"
-                      min={8}
-                      max={400}
-                      value={selectedObject.style.fontSize}
-                      onChange={(event) =>
-                        runCommand("object.style", {
-                          objectId: selectedObject.id,
-                          style: { fontSize: Number(event.target.value) },
-                        })
-                      }
-                      className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900 p-2 text-sm"
-                    />
-                  </label>
-                </>
-              ) : null}
-              {selectedObject.type === "shape" ? (
-                <fieldset>
-                  <legend className="text-xs text-zinc-300">
-                    Connector anchors
-                  </legend>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {anchors.map((anchor) => (
-                      <Button
-                        key={anchor}
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          finishConnector({
-                            kind: "attached",
-                            objectId: selectedObject.id,
-                            anchor,
-                          })
-                        }
-                      >
-                        {connectorStart
-                          ? `Attach ${anchor}`
-                          : `Start ${anchor}`}
-                      </Button>
-                    ))}
-                  </div>
-                </fieldset>
-              ) : null}
-              {selectedObject.type === "connector" ? (
-                <div className="space-y-2">
-                  <output
-                    data-testid="selected-connector-points"
-                    className="block text-xs text-zinc-300"
-                  >
-                    {resolveConnectorPointsV2(selectedObject, objectsById)
-                      .map((value) => Math.round(value))
-                      .join(",")}
-                  </output>
-                  {(["start", "end"] as const).map((endpoint) =>
-                    selectedObject[endpoint].kind === "attached" ? (
-                      <Button
-                        key={endpoint}
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          const point = resolveConnectorEndpointV2(
-                            selectedObject[endpoint],
-                            objectsById,
-                          );
-                          runCommand("connector.endpoint", {
-                            objectId: selectedObject.id,
-                            endpoint,
-                            value: { kind: "free", ...point },
-                          });
-                        }}
-                      >
-                        Detach {endpoint}
-                      </Button>
-                    ) : null,
-                  )}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </aside>
       </div>
     </section>
+  );
+}
+
+function ObjectNavigatorContent({
+  objects,
+  objectsById,
+  selectedIds,
+  selectedObject,
+  onSelect,
+}: {
+  objects: CanvasObjectV2[];
+  objectsById: Map<string, CanvasObjectV2>;
+  selectedIds: string[];
+  selectedObject: CanvasObjectV2 | undefined;
+  onSelect: (object: CanvasObjectV2, modifier: boolean) => void;
+}) {
+  return (
+    <div className="text-zinc-900">
+      <h3 className="text-sm font-medium">Objects</h3>
+      {objects.length ? (
+        <ul className="mt-3 space-y-2">
+          {objects.map((object) => (
+            <li key={object.id}>
+              <button
+                type="button"
+                data-testid={`object-list-item-${object.id}`}
+                aria-pressed={selectedIds.includes(object.id)}
+                onClick={(event) =>
+                  onSelect(
+                    object,
+                    event.shiftKey || event.metaKey || event.ctrlKey,
+                  )
+                }
+                className="min-h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50"
+              >
+                {objectLabel(object)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-zinc-500">No objects yet.</p>
+      )}
+
+      {selectedObject ? (
+        <div
+          className="mt-5 space-y-4 border-t border-zinc-200 pt-4"
+          data-testid="canvas-inspector-selection"
+        >
+          <h3 className="text-sm font-medium capitalize">
+            {selectedIds.length > 1
+              ? `Mixed selection · ${selectedObject.type} focused`
+              : selectedObject.type}
+          </h3>
+          <dl className="grid grid-cols-2 gap-3 text-xs text-zinc-600">
+            <div>
+              <dt>X</dt>
+              <dd data-testid="selected-position-x">
+                {Math.round(selectedObject.geometry.x)}
+              </dd>
+            </div>
+            <div>
+              <dt>Y</dt>
+              <dd data-testid="selected-position-y">
+                {Math.round(selectedObject.geometry.y)}
+              </dd>
+            </div>
+            <div>
+              <dt>Width</dt>
+              <dd data-testid="selected-width">
+                {Math.round(selectedObject.geometry.width)}
+              </dd>
+            </div>
+            <div>
+              <dt>Height</dt>
+              <dd data-testid="selected-height">
+                {Math.round(selectedObject.geometry.height)}
+              </dd>
+            </div>
+          </dl>
+          {selectedObject.type === "connector" ? (
+            <div>
+              <p className="text-xs font-medium text-zinc-500">
+                Resolved connector points
+              </p>
+              <output
+                data-testid="selected-connector-points"
+                className="mt-1 block text-xs text-zinc-600"
+              >
+                {resolveConnectorPointsV2(selectedObject, objectsById)
+                  .map((value) => Math.round(value))
+                  .join(",")}
+              </output>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const shortcutGroups = [
+  ["V / H / Space", "Select or pan"],
+  ["S / R / C / T / B", "Sticky, recent shape, connector, text, or table"],
+  ["Arrow / Shift+Arrow", "Move by 1 or 10 pixels"],
+  ["Alt+Arrow", "Resize the selected object"],
+  ["Mod+A / C / X / V / D", "Select all, copy, cut, paste, or duplicate"],
+  ["Mod+G / Mod+Shift+G", "Group or ungroup"],
+  ["Mod+Z / Mod+Shift+Z", "Undo or redo"],
+  ["+ / - / 0", "Zoom in, zoom out, or reset view"],
+  ["Delete", "Delete the selection"],
+  ["Escape", "Close the active panel or cancel inline editing"],
+] as const;
+
+function ShortcutHelp() {
+  return (
+    <dl className="space-y-3">
+      {shortcutGroups.map(([shortcut, description]) => (
+        <div
+          key={shortcut}
+          className="grid grid-cols-[minmax(8rem,auto)_1fr] gap-4 border-b border-zinc-100 pb-3 text-sm last:border-0"
+        >
+          <dt>
+            <kbd className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-xs text-zinc-800">
+              {shortcut}
+            </kbd>
+          </dt>
+          <dd className="text-zinc-600">{description}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

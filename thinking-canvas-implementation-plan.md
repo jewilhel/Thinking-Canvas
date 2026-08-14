@@ -1,10 +1,10 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–1 closed; later milestones remain draft
+Status: Milestones 0–2 closed; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-08-12
+Last updated: 2026-08-13
 
 ## Purpose
 
@@ -157,7 +157,33 @@ Evidence: [Milestone 0 architecture record](docs/implementation/milestone-00-arc
 
 Evidence: [Milestone 1 implementation and verification record](docs/implementation/milestone-01-canvas-foundation-and-multiplayer-core.md), protected CI [run `31620288083`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/31620288083), Git-backed Netlify deploy preview `6a7bf41b02a9bf0008ad1ed6`, and product-owner closure approval on 2026-08-12.
 
-## Milestone 2 — Comments and structured feedback
+## Milestone 2 — Workspace experience and interaction system
+
+Visual direction: [FigJam workspace interaction references](docs/design-references/figjam-workspace-2026-08-12/README.md), supplied by the product owner on 2026-08-12. These references establish interaction principles rather than a pixel-for-pixel reproduction or use of Figma branding.
+
+### Experience requirements
+
+- [x] **Full-bleed canvas workspace.** The authenticated canvas uses the available viewport as the primary work surface, with application chrome layered around it instead of permanently reducing the editable canvas to a dashboard-like content region.
+- [x] **Compact workspace identity and collaboration controls.** Canvas navigation and identity remain compact at the upper left, while participant presence, sharing, save or connection state, and other collaboration controls remain compact at the upper right.
+- [x] **Floating primary tool dock.** Select, pan, drawing, sticky-note, shape, connector, text, table, comment, and extensibility entry points use a coherent floating dock with icon labels, active states, tooltips, keyboard shortcuts, and touch-sized targets.
+- [x] **Progressive tool disclosure.** Tool families expose relevant variants and recent choices through flyouts or secondary palettes without showing every possible action at all times.
+- [x] **Contextual selection controls.** Selecting an object or mixed selection exposes only applicable formatting and editing actions in a nearby contextual toolbar or popover; destructive and infrequent commands remain available without dominating the workspace.
+- [x] **Contextual styling controls.** Fill, outline, text, connector, drawing, and sticky-note controls use consistent palettes, menus, and state indicators and persist changes through the existing command and collaboration boundaries.
+- [x] **Collapsible workspace panels.** Comments, object navigation, AI interaction, and later review experiences use a shared docked or floating panel system that opens on demand, preserves canvas context, and can be dismissed without losing work.
+- [x] **Canvas navigation controls.** Zoom, zoom-to-fit, help, and any approved overview or minimap control remain discoverable while occupying minimal canvas space.
+- [x] **Coherent visual system.** The workspace defines and uses shared tokens and reusable components for color, typography, spacing, sizing, radius, elevation, iconography, motion, focus, hover, selected, disabled, loading, error, and synchronization states.
+- [x] **Responsive workspace behavior.** The interface remains usable at supported desktop and tablet viewport sizes, including overflow, panel placement, tool access, touch targets, and virtual-keyboard behavior.
+- [x] **Accessible interaction parity.** Every visible workspace action has an operable keyboard path, meaningful accessible name, visible focus treatment, non-color-only state communication, and appropriate reduced-motion behavior.
+- [x] **Preserved canvas capabilities.** The Milestone 1 create, manipulate, style, organize, history, zoom, persistence, reconnect, and multiplayer behaviors remain available through the refined interface with no loss of durable data or command-boundary enforcement.
+- [x] **Distinct Thinking Canvas identity.** The experience applies the spatial clarity, progressive disclosure, and contextual interaction principles demonstrated by the approved FigJam references while retaining original Thinking Canvas branding and avoiding a pixel-for-pixel reproduction.
+
+### Exit gate
+
+- [x] On an authenticated Netlify preview, a participant completes the approved create-and-format, connect-and-organize, comment-panel placeholder, zoom-and-navigate, keyboard-only, tablet-viewport, reconnect, and two-collaborator scenarios through the refined workspace; retained screenshots and interaction evidence show no permanent wall of action buttons, no permanently required inspector, and no regression of verified Milestone 1 behavior.
+
+Evidence: [Milestone 2 implementation and verification record](docs/implementation/milestone-02-workspace-experience-and-interaction-system.md), protected CI [run `31772703709`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/31772703709), Git-backed Netlify deploy preview `6a7ea5ac23271200084f44d3`, and product-owner closure approval on 2026-08-13.
+
+## Milestone 3 — Comments and structured feedback
 
 ### Product requirements
 
@@ -174,7 +200,7 @@ Evidence: [Milestone 1 implementation and verification record](docs/implementati
 
 - [ ] Complete the sourced **Comment prompt** acceptance scenario with two authenticated browser sessions and persisted thread history.
 
-## Milestone 3 — AI collaborator, permissions, and typed interaction
+## Milestone 4 — AI collaborator, permissions, and typed interaction
 
 ### Product requirements
 
@@ -201,7 +227,7 @@ Evidence: [Milestone 1 implementation and verification record](docs/implementati
 
 - [ ] Evaluation suite passes groundedness, permission, malformed-tool-call, prompt-injection, and cancellation cases at the approved threshold.
 
-## Milestone 4 — Reviewable AI changes
+## Milestone 5 — Reviewable AI changes
 
 ### Product requirements
 
@@ -215,7 +241,7 @@ Evidence: [Milestone 1 implementation and verification record](docs/implementati
 
 - [ ] Complete the sourced **Reviewable AI edit** and **Guided review** acceptance scenarios, including a mixed keep/discard change set and a concurrent unrelated human edit.
 
-## Milestone 5 — Vector annotations
+## Milestone 6 — Vector annotations
 
 ### Product requirements
 
@@ -232,7 +258,7 @@ Evidence: [Milestone 1 implementation and verification record](docs/implementati
 
 - [ ] Manual pen QA passes at minimum, default, and maximum zoom using mouse and touch/stylus emulation; automated geometry tests cover overlap, movement, disconnect, and promotion.
 
-## Milestone 6 — First-class documents
+## Milestone 7 — First-class documents
 
 ### Product requirements
 
@@ -251,7 +277,7 @@ Evidence: [Milestone 1 implementation and verification record](docs/implementati
 
 - [ ] Complete the sourced **Document collaboration** acceptance scenario in both scrolling and paginated layouts, then verify reload and concurrent editing.
 
-## Milestone 7 — Guided canvas stories
+## Milestone 8 — Guided canvas stories
 
 ### Product requirements
 
@@ -269,7 +295,7 @@ Evidence: [Milestone 1 implementation and verification record](docs/implementati
 
 - [ ] A saved story plays from beginning to end after underlying objects are edited, moved, and reloaded; reduced-motion mode substitutes an accessible non-sweeping transition.
 
-## Milestone 8 — Live conversation
+## Milestone 9 — Live conversation
 
 ### Product requirements
 
@@ -293,7 +319,7 @@ Evidence: [Milestone 1 implementation and verification record](docs/implementati
 
 - [ ] Complete the sourced **Live co-thinking** acceptance scenario on the Netlify preview deployment with typed messaging, an AI canvas action, pause behavior, and recovery from a dropped connection.
 
-## Milestone 9 — Conversational creation and templates
+## Milestone 10 — Conversational creation and templates
 
 ### Product requirements
 
@@ -306,7 +332,7 @@ Evidence: [Milestone 1 implementation and verification record](docs/implementati
 
 - [ ] Fixtures for a mind map, procedure, mood board, and storyboard create editable standard objects and never switch the product into a format-specific mode.
 
-## Milestone 10 — Production readiness and launch
+## Milestone 11 — Production readiness and launch
 
 ### Security and privacy
 

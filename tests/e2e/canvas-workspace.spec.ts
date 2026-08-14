@@ -12,6 +12,14 @@ async function signIn(page: Page, email = "owner@thinking-canvas.local") {
   await expect(page).toHaveURL(/\/app$/);
 }
 
+async function chooseShape(
+  page: Page,
+  shape: "Rectangle" | "Ellipse" | "Diamond",
+) {
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: shape, exact: true }).click();
+}
+
 test("creates, reopens, restores the viewport, and survives sign-out", async ({
   page,
 }) => {
@@ -23,8 +31,19 @@ test("creates, reopens, restores the viewport, and survives sign-out", async ({
   await expect(page).toHaveURL(/\/app\/canvases\/[0-9a-f-]+$/);
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
   await expect(page.getByTestId("product-canvas-surface")).toBeVisible();
+  await expect(page.getByTestId("thinking-workspace")).toBeVisible();
+  await expect(page.getByTestId("workspace-top-chrome")).toBeVisible();
   await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
   await expect(page.getByTestId("product-object-count")).toHaveText("0");
+
+  const workspaceBounds = await page
+    .getByTestId("thinking-workspace")
+    .boundingBox();
+  const viewport = page.viewportSize();
+  if (!workspaceBounds || !viewport)
+    throw new Error("Workspace or viewport dimensions are unavailable.");
+  expect(Math.round(workspaceBounds.width)).toBe(viewport.width);
+  expect(Math.round(workspaceBounds.height)).toBe(viewport.height);
 
   const initialScale = await page
     .getByTestId("product-canvas-scale")
@@ -57,6 +76,318 @@ test("creates, reopens, restores the viewport, and survives sign-out", async ({
   expect(accessibility.violations).toEqual([]);
 });
 
+test("copies a member-safe canvas link without granting access", async ({
+  browser,
+}) => {
+  const ownerContext = await browser.newContext({
+    permissions: ["clipboard-read", "clipboard-write"],
+  });
+  const nonmemberContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const nonmember = await nonmemberContext.newPage();
+  await signIn(owner);
+  await owner.goto(`/app/canvases/${seedCanvasId}`);
+  await owner.getByRole("button", { name: "Copy canvas link" }).click();
+  await expect(owner.getByTestId("share-link-status")).toHaveText(
+    "Canvas link copied. Access is still limited to members.",
+  );
+  const copiedLink = await owner.evaluate(() => navigator.clipboard.readText());
+  expect(copiedLink).toBe(owner.url());
+
+  await signIn(nonmember, "nonmember@thinking-canvas.local");
+  await nonmember.goto(copiedLink);
+  await expect(
+    nonmember.getByRole("heading", { name: "This canvas cannot be opened." }),
+  ).toBeVisible();
+  await expect(
+    nonmember.getByText("Synthetic architecture spike canvas"),
+  ).not.toBeVisible();
+
+  await ownerContext.close();
+  await nonmemberContext.close();
+});
+
+test("pans the scaled grid with trackpad gestures and keeps pinch zoom controlled", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.goto(`/app/canvases/${seedCanvasId}`);
+  const surface = page.getByTestId("product-canvas-surface");
+  const canvas = surface.locator("canvas");
+  await canvas.hover({ position: { x: 420, y: 300 } });
+
+  const viewportNumber = async (name: "x" | "y" | "scale") =>
+    Number(await surface.getAttribute(`data-viewport-${name}`));
+  const gridStyle = () =>
+    surface.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        position: style.backgroundPosition,
+        size: style.backgroundSize,
+      };
+    });
+
+  const selectX = await viewportNumber("x");
+  const selectY = await viewportNumber("y");
+  const selectScale = await viewportNumber("scale");
+  const selectGridBefore = await gridStyle();
+  await canvas.dispatchEvent("wheel", {
+    deltaMode: 0,
+    deltaX: 32,
+    deltaY: 18,
+  });
+  await expect(surface).toHaveAttribute(
+    "data-viewport-x",
+    String(selectX - 32),
+  );
+  await expect(surface).toHaveAttribute(
+    "data-viewport-y",
+    String(selectY - 18),
+  );
+  expect(await viewportNumber("scale")).toBe(selectScale);
+  const selectGridAfter = await gridStyle();
+  expect(selectGridAfter.position).not.toBe(selectGridBefore.position);
+  expect(selectGridAfter.size).toBe(selectGridBefore.size);
+
+  await page.getByRole("button", { name: "Pan", exact: true }).click();
+  const panX = await viewportNumber("x");
+  const panY = await viewportNumber("y");
+  const panGridBefore = await gridStyle();
+  await canvas.dispatchEvent("wheel", {
+    deltaMode: 0,
+    deltaX: -21,
+    deltaY: 14,
+  });
+  await expect(surface).toHaveAttribute("data-viewport-x", String(panX + 21));
+  await expect(surface).toHaveAttribute("data-viewport-y", String(panY - 14));
+  expect((await gridStyle()).position).not.toBe(panGridBefore.position);
+
+  await page.waitForTimeout(180);
+  const scaleBeforeWheel = await viewportNumber("scale");
+  const gridBeforeWheel = await gridStyle();
+  await canvas.dispatchEvent("wheel", {
+    deltaMode: 0,
+    deltaX: 0,
+    deltaY: -120,
+  });
+  await expect(surface).not.toHaveAttribute(
+    "data-viewport-scale",
+    String(scaleBeforeWheel),
+  );
+  expect((await gridStyle()).size).not.toBe(gridBeforeWheel.size);
+
+  const scaleBeforePinch = await viewportNumber("scale");
+  const gridBeforePinch = await gridStyle();
+  await canvas.dispatchEvent("wheel", {
+    ctrlKey: true,
+    deltaMode: 0,
+    deltaX: 0,
+    deltaY: -20,
+  });
+  await expect(surface).not.toHaveAttribute(
+    "data-viewport-scale",
+    String(scaleBeforePinch),
+  );
+  const scaleAfterPinch = await viewportNumber("scale");
+  expect(scaleAfterPinch / scaleBeforePinch).toBeGreaterThan(1);
+  expect(scaleAfterPinch / scaleBeforePinch).toBeLessThan(1.08);
+  expect((await gridStyle()).size).not.toBe(gridBeforePinch.size);
+});
+
+test("offers a keyboard-operable progressive dock without mutating from deferred entries", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await signIn(page);
+  await page.goto(`/app/canvases/${seedCanvasId}`);
+
+  const dock = page.getByTestId("workspace-primary-dock");
+  await expect(dock).toBeVisible();
+  const dockButtons = dock.getByRole("button");
+  for (const button of await dockButtons.all()) {
+    const bounds = await button.boundingBox();
+    if (!bounds) throw new Error("A primary dock button is not rendered.");
+    expect(bounds.width).toBeGreaterThanOrEqual(44);
+    expect(bounds.height).toBeGreaterThanOrEqual(44);
+  }
+
+  const select = page.getByRole("button", { name: "Select", exact: true });
+  const pressedTools = dock.locator('button[aria-pressed="true"]');
+  await expect(select).toHaveAttribute("aria-pressed", "true");
+  await expect(pressedTools).toHaveCount(1);
+  await select.focus();
+  await select.press("ArrowRight");
+  await expect(
+    page.getByRole("button", { name: "Pan", exact: true }),
+  ).toBeFocused();
+
+  await chooseShape(page, "Ellipse");
+  await expect(
+    page.getByRole("button", { name: "Shapes", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  const shapes = page.getByRole("button", { name: "Shapes", exact: true });
+  await shapes.click();
+  await expect(page.getByText("Choose a shape")).toBeVisible();
+  await expect(shapes).toHaveAttribute("aria-pressed", "true");
+  await expect(select).toHaveAttribute("aria-pressed", "false");
+  await expect(pressedTools).toHaveCount(1);
+  await shapes.click();
+  await expect(page.getByText("Choose a shape")).not.toBeVisible();
+  await expect(select).toHaveAttribute("aria-pressed", "true");
+
+  for (const label of ["Pan", "Sticky note", "Connector", "Text", "Table"]) {
+    const tool = page.getByRole("button", { name: label, exact: true });
+    await tool.click();
+    await expect(tool).toHaveAttribute("aria-pressed", "true");
+    await expect(select).toHaveAttribute("aria-pressed", "false");
+    await expect(pressedTools).toHaveCount(1);
+    await tool.click();
+    await expect(select).toHaveAttribute("aria-pressed", "true");
+  }
+
+  const baseline = await page.getByTestId("product-object-count").innerText();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await expect(
+    page.getByText("Vector pen arrives in Milestone 6"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Drawing", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(select).toHaveAttribute("aria-pressed", "false");
+  await expect(pressedTools).toHaveCount(1);
+  await expect(page.getByTestId("product-object-count")).toHaveText(baseline);
+  await page
+    .getByRole("button", { name: "Drawing", exact: true })
+    .press("Escape");
+  await expect(
+    page.getByRole("button", { name: "Drawing", exact: true }),
+  ).toBeFocused();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await expect(select).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await expect(
+    page.getByText("Contextual feedback arrives in Milestone 3"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Comments", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(select).toHaveAttribute("aria-pressed", "false");
+  await expect(pressedTools).toHaveCount(1);
+  await expect(page.getByTestId("product-object-count")).toHaveText(baseline);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await expect(select).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "More tools", exact: true }).click();
+  await expect(page.getByText("The dock is ready to grow")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "More tools", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(select).toHaveAttribute("aria-pressed", "false");
+  await expect(pressedTools).toHaveCount(1);
+  await expect(page.getByTestId("product-object-count")).toHaveText(baseline);
+  await page.getByRole("button", { name: "More tools", exact: true }).click();
+  await expect(select).toHaveAttribute("aria-pressed", "true");
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("uses dismissible responsive panels with focus containment, help, and true zoom-to-fit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await signIn(page);
+  await page.goto(`/app/canvases/${seedCanvasId}`);
+
+  const objectInvoker = page.getByRole("button", {
+    name: "Open Object navigator",
+  });
+  await objectInvoker.click();
+  const objectPanel = page.getByRole("dialog", { name: "Object navigator" });
+  await expect(objectPanel).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Close Object navigator" }),
+  ).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(objectPanel.locator(":focus")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(objectPanel).not.toBeVisible();
+  await expect(objectInvoker).toBeFocused();
+
+  const commentsInvoker = page.getByRole("button", {
+    name: "Comments",
+    exact: true,
+  });
+  const pendingCountBeforeComments = await page
+    .getByTestId("product-pending-count")
+    .innerText();
+  await commentsInvoker.click();
+  const commentsPanel = page.getByRole("dialog", { name: "Comments" });
+  await expect(commentsPanel).toContainText(
+    "No comments can be entered, loaded, or saved here yet.",
+  );
+  await expect(page.getByTestId("product-pending-count")).toHaveText(
+    pendingCountBeforeComments,
+  );
+  const commentsAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(commentsAccessibility.violations).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(commentsInvoker).toBeFocused();
+
+  const helpInvoker = page.getByRole("button", { name: "Open canvas help" });
+  await helpInvoker.click();
+  const helpPanel = page.getByRole("dialog", { name: "Canvas help" });
+  await expect(helpPanel).toContainText("Mod+Z / Mod+Shift+Z");
+  const helpAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(helpAccessibility.violations).toEqual([]);
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 768, height: 1024 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const chrome of [
+      helpPanel,
+      page.getByTestId("workspace-primary-dock"),
+      page.getByRole("button", { name: "Zoom to fit" }),
+    ]) {
+      const bounds = await chrome.boundingBox();
+      if (!bounds) throw new Error("Responsive workspace chrome is missing.");
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.y).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+    }
+  }
+
+  await page.setViewportSize({ width: 768, height: 520 });
+  const panelBounds = await helpPanel.boundingBox();
+  if (!panelBounds) throw new Error("The responsive panel is not rendered.");
+  expect(panelBounds.x).toBeGreaterThanOrEqual(0);
+  expect(panelBounds.y).toBeGreaterThanOrEqual(0);
+  expect(panelBounds.x + panelBounds.width).toBeLessThanOrEqual(768);
+  expect(panelBounds.y + panelBounds.height).toBeLessThanOrEqual(520);
+  const closeBounds = await page
+    .getByRole("button", { name: "Close Canvas help" })
+    .boundingBox();
+  if (!closeBounds) throw new Error("The panel close action is not rendered.");
+  expect(closeBounds.width).toBeGreaterThanOrEqual(44);
+  expect(closeBounds.height).toBeGreaterThanOrEqual(44);
+  await page.keyboard.press("Escape");
+
+  const beforeFit = await page.getByTestId("product-canvas-scale").innerText();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await expect(page.getByTestId("product-canvas-scale")).not.toHaveText(
+    beforeFit,
+  );
+  const zoomed = await page.getByTestId("product-canvas-scale").innerText();
+  await page.getByRole("button", { name: "Zoom to fit" }).click();
+  await expect(page.getByTestId("product-canvas-scale")).not.toHaveText(zoomed);
+});
+
 test("queues edits through a temporary disconnect, protects navigation, and converges after reconnect", async ({
   browser,
 }) => {
@@ -69,7 +400,7 @@ test("queues edits through a temporary disconnect, protects navigation, and conv
   await expect(owner.getByTestId("canvas-save-status")).toHaveText("Saved");
 
   await ownerContext.setOffline(true);
-  await owner.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await chooseShape(owner, "Rectangle");
   await owner.getByTestId("product-canvas-surface").click({
     position: { x: 240, y: 180 },
   });
@@ -142,16 +473,16 @@ test("two product canvases converge after concurrent work and a disconnected edi
     await owner.getByTestId("product-object-count").textContent(),
   );
   await Promise.all([
-    owner.getByRole("button", { name: "Rectangle", exact: true }).click(),
-    editor.getByRole("button", { name: "Ellipse", exact: true }).click(),
+    chooseShape(owner, "Rectangle"),
+    chooseShape(editor, "Ellipse"),
   ]);
   await Promise.all([
     owner
       .getByTestId("product-canvas-surface")
-      .click({ position: { x: 220, y: 180 } }),
+      .click({ position: { x: 80, y: 500 } }),
     editor
       .getByTestId("product-canvas-surface")
-      .click({ position: { x: 480, y: 280 } }),
+      .click({ position: { x: 850, y: 500 } }),
   ]);
   await expect(owner.getByTestId("canvas-save-status")).toHaveText("Saved", {
     timeout: 15_000,
@@ -167,12 +498,12 @@ test("two product canvases converge after concurrent work and a disconnected edi
   );
 
   await editorContext.setOffline(true);
-  await editor.getByRole("button", { name: "Diamond", exact: true }).click();
+  await chooseShape(editor, "Diamond");
   await editor
     .getByTestId("product-canvas-surface")
     .click({ position: { x: 700, y: 360 } });
   await expect(editor.getByTestId("canvas-save-status")).toHaveText("Unsynced");
-  await owner.getByRole("button", { name: "Text", exact: true }).click();
+  await owner.getByRole("button", { name: "Sticky note", exact: true }).click();
   await owner
     .getByTestId("product-canvas-surface")
     .click({ position: { x: 360, y: 420 } });
@@ -190,6 +521,7 @@ test("two product canvases converge after concurrent work and a disconnected edi
   await expect(editor.getByTestId("product-object-count")).toHaveText(
     String(baseline + 4),
   );
+  await owner.getByRole("button", { name: "More tools", exact: true }).click();
   await owner.getByRole("button", { name: "Add simulated AI idea" }).click();
   await expect(owner.getByTestId("product-object-count")).toHaveText(
     String(baseline + 5),
@@ -197,6 +529,16 @@ test("two product canvases converge after concurrent work and a disconnected edi
   await expect(editor.getByTestId("product-object-count")).toHaveText(
     String(baseline + 5),
   );
+  await Promise.all([
+    owner.getByRole("button", { name: "Open Object navigator" }).click(),
+    editor.getByRole("button", { name: "Open Object navigator" }).click(),
+  ]);
+  await expect(
+    owner.getByRole("button", { name: /rectangle — Sticky note/ }).last(),
+  ).toBeVisible();
+  await expect(
+    editor.getByRole("button", { name: /rectangle — Sticky note/ }).last(),
+  ).toBeVisible();
   await Promise.all([owner.reload(), editor.reload()]);
   await expect(owner.getByTestId("product-object-count")).toHaveText(
     String(baseline + 5),

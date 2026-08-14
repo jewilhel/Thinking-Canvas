@@ -10,6 +10,15 @@ const orderArrayName = "canvas-order-v2";
 const uuid = z.uuid();
 const finiteNumber = z.number().finite();
 const color = z.string().min(1).max(100);
+const textLink = z
+  .url()
+  .max(2_048)
+  .refine(
+    (value) => value.startsWith("https://") || value.startsWith("http://"),
+    {
+      message: "Canvas text links must use HTTP or HTTPS.",
+    },
+  );
 
 const geometrySchema = z.strictObject({
   x: finiteNumber,
@@ -25,6 +34,11 @@ const styleSchema = z.strictObject({
   outlineWidth: finiteNumber.nonnegative().max(20),
   fontFamily: z.string().min(1).max(200),
   fontSize: finiteNumber.min(8).max(400),
+  fontWeight: z.enum(["normal", "bold"]).optional(),
+  textAlign: z.enum(["left", "center", "right"]).optional(),
+  listStyle: z.enum(["none", "bullet", "numbered"]).optional(),
+  linkUrl: textLink.nullable().optional(),
+  textColor: color.optional(),
 });
 
 const canvasObjectBaseSchema = z.strictObject({
@@ -173,6 +187,11 @@ function defaultStyle(type: CanvasObject["type"]) {
     outlineWidth: type === "annotation" ? 3 : 2,
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
     fontSize: 16,
+    fontWeight: "normal" as const,
+    textAlign: type === "shape" ? ("center" as const) : ("left" as const),
+    listStyle: "none" as const,
+    linkUrl: null,
+    textColor: "#18181b",
   };
 }
 

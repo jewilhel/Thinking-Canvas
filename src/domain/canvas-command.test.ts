@@ -87,15 +87,48 @@ describe("product canvas command boundary", () => {
       document,
       baseCommand("object.style", {
         objectId: shapeId,
-        style: { fill: "#fef3c7", outline: "#d97706", fontSize: 22 },
+        style: {
+          fill: "#fef3c7",
+          outline: "#d97706",
+          fontSize: 22,
+          fontWeight: "bold",
+          textAlign: "right",
+          listStyle: "numbered",
+          linkUrl: "https://example.com/review",
+          textColor: "#7c3aed",
+        },
       }),
     );
 
     expect(readCanvasObjectV2(document, shapeId)).toMatchObject({
       text: "Reframed idea",
       geometry: { x: 80, y: 120, width: 240, height: 140 },
-      style: { fill: "#fef3c7", outline: "#d97706", fontSize: 22 },
+      style: {
+        fill: "#fef3c7",
+        outline: "#d97706",
+        fontSize: 22,
+        fontWeight: "bold",
+        textAlign: "right",
+        listStyle: "numbered",
+        linkUrl: "https://example.com/review",
+        textColor: "#7c3aed",
+      },
     });
+  });
+
+  it("rejects executable and unsupported text link protocols", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, shape());
+
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("object.style", {
+          objectId: shapeId,
+          style: { linkUrl: "javascript:alert(1)" },
+        }),
+      ),
+    ).toThrow();
   });
 
   it("recomputes attached geometry and safely detaches on target deletion", () => {

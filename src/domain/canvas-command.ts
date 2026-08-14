@@ -88,6 +88,20 @@ const styleCommand = commandBase.extend({
         outlineWidth: finiteNumber.min(0).max(20).optional(),
         fontFamily: z.string().min(1).max(200).optional(),
         fontSize: finiteNumber.min(8).max(400).optional(),
+        fontWeight: z.enum(["normal", "bold"]).optional(),
+        textAlign: z.enum(["left", "center", "right"]).optional(),
+        listStyle: z.enum(["none", "bullet", "numbered"]).optional(),
+        linkUrl: z
+          .url()
+          .max(2_048)
+          .refine(
+            (value) =>
+              value.startsWith("https://") || value.startsWith("http://"),
+            "Canvas text links must use HTTP or HTTPS.",
+          )
+          .nullable()
+          .optional(),
+        textColor: z.string().min(1).max(100).optional(),
       })
       .refine(
         (style) => Object.keys(style).length > 0,

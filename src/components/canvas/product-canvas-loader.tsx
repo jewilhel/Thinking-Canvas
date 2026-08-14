@@ -10,7 +10,7 @@ const ProductCanvas = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex min-h-[calc(100vh-73px)] items-center justify-center p-6">
+      <div className="thinking-workspace flex h-dvh min-h-[480px] items-center justify-center p-6">
         <p className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-400">
           Loading canvas…
         </p>
@@ -23,6 +23,7 @@ type Props = {
   canvasId: string;
   title: string;
   userId: string;
+  userIdentity: string;
   simulatedAiEnabled: boolean;
 };
 

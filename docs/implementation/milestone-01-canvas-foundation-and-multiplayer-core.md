@@ -69,7 +69,7 @@ No other unresolved master-plan product decision blocks Milestone 1. `PD-007 —
 ### Commands, history, and clipboard
 
 - Extend the shared command schema with field-aware commands for create, patch, delete, move, resize, style, attach/detach connector endpoint, group/ungroup, reorder, duplicate, and batch paste.
-- Separate the authenticated authorization principal from the logical command actor. Human commands use the same identity for both. The simulated AI uses a stable test-only logical actor while an authorized preview/test principal supplies the server-checked permission; this proves the shared boundary without enabling the Milestone 3 AI product.
+- Separate the authenticated authorization principal from the logical command actor. Human commands use the same identity for both. The simulated AI uses a stable test-only logical actor while an authorized preview/test principal supplies the server-checked permission; this proves the shared boundary without enabling the Milestone 4 AI product.
 - Apply every durable human or simulated-AI mutation through the command executor, then encode the resulting Yjs update for persistence and collaboration. UI event handlers may preview drag or transform state locally, but commit only validated commands.
 - Maintain an actor-local undo/redo stack of command effects. Undo and redo emit new compensating commands through the same permission and persistence path. Before applying an inverse, compare the affected fields with the expected after-image; report a non-destructive conflict rather than overwriting a collaborator's later edit.
 - Put a versioned, schema-validated payload on the system clipboard under an application MIME type, with an in-memory fallback when clipboard access is unavailable. Paste generates new IDs, offsets geometry, preserves valid internal connections and groups, and never retains references to unpasted objects.
@@ -82,8 +82,8 @@ No other unresolved master-plan product decision blocks Milestone 1. `PD-007 —
 - Provide pan by pan tool and space-drag, pointer-centered wheel/trackpad zoom, keyboard zoom, zoom-to-fit, and a visible reset/fit control. Persist the last viewport per user, canvas, and browser locally; viewport restoration is not collaborative state.
 - Render applicable styling controls from the selected object types: shape/table fill and outline; connector outline; shape, text, and table typography and text size. A mixed selection exposes only common applicable properties.
 - Treat connector manipulation as endpoint movement. Hovering or selecting an eligible shape reveals keyboard- and pointer-usable anchors; dropping an endpoint on an anchor attaches it, and moving or resizing the target immediately recomputes the path.
-- Render a compact table with editable cells and resize handles. Rich document behavior remains Milestone 6.
-- Preserve keyboard focus intentionally between application chrome and the spatial surface. Add accessible names, status announcements, and toolbar focus behavior now; the complete non-visual structured object list remains the Milestone 10 accessibility gate.
+- Render a compact table with editable cells and resize handles. Rich document behavior remains Milestone 7.
+- Preserve keyboard focus intentionally between application chrome and the spatial surface. Add accessible names, status announcements, and toolbar focus behavior now; the complete non-visual structured object list remains the Milestone 11 accessibility gate.
 
 ### Collaboration, durability, and transient presence
 
@@ -241,9 +241,9 @@ Retain the preview URL/deploy ID, commit SHA, CI run, browser versions, identiti
 | A save may reach PostgreSQL while the response is lost, causing an ambiguous retry.                   | Medium / high       | Add client update IDs and idempotent append semantics before exposing unsynced retry.                                                                                       | Engineering                   | Planned for Slice 4.                                            |
 | Actor-local undo could overwrite a collaborator's later work.                                         | Medium / high       | Use field-aware before/after checks and compensating commands; return a visible conflict for same-field divergence.                                                         | Engineering and product owner | Proposed behavior; included in plan approval.                   |
 | Grouping, paste, and deletion can leave dangling connector or child references.                       | Medium / high       | Centralize reference remapping/invariant validation and fuzz representative command sequences.                                                                              | Engineering                   | Planned for Slices 2–3.                                         |
-| Cursor traffic can exceed early Supabase Realtime quotas as collaborator count grows.                 | Medium / medium     | Broadcast at about 8 Hz, interpolate locally, drop stale messages, measure message rates, and keep cursors out of Presence churn and durable updates.                       | Engineering                   | Planned for Slice 4; production thresholds remain Milestone 10. |
+| Cursor traffic can exceed early Supabase Realtime quotas as collaborator count grows.                 | Medium / medium     | Broadcast at about 8 Hz, interpolate locally, drop stale messages, measure message rates, and keep cursors out of Presence churn and durable updates.                       | Engineering                   | Planned for Slice 4; production thresholds remain Milestone 11. |
 | Netlify team protection previously prevented an unrelated browser profile from entering a preview.    | Confirmed / medium  | Authorize both browser contexts through the same Netlify protection session, then sign into distinct Supabase application identities; verify identity readback in evidence. | Product owner and engineering | Known preview setup constraint.                                 |
-| The simulated AI could be mistaken for the Milestone 3 AI product.                                    | Medium / medium     | Label it preview/test-only, use no OpenAI call or AI UI, and exclude it from production contexts.                                                                           | Engineering                   | Planned.                                                        |
+| The simulated AI could be mistaken for the Milestone 4 AI product.                                    | Medium / medium     | Label it preview/test-only, use no OpenAI call or AI UI, and exclude it from production contexts.                                                                           | Engineering                   | Planned.                                                        |
 | 1,000 production objects with selection overlays and live peers may regress the spike benchmark.      | Medium / high       | Retain imperative camera transforms, isolate interaction layers, use `rbush` for spatial queries, and measure each slice with instrumentation.                              | Engineering                   | Development baseline approved; `PD-007` remains open.           |
 | Local Supabase's pgTAP wrapper may repeat the documented macOS mount failure.                         | Confirmed / medium  | Keep Linux CI as the clean-start canonical gate and use the approved direct local PostgreSQL pgTAP path when necessary.                                                     | Engineering                   | Known and mitigated.                                            |
 
@@ -270,16 +270,17 @@ Retain the preview URL/deploy ID, commit SHA, CI run, browser versions, identiti
 
 ## Explicitly excluded work
 
-- Real OpenAI reasoning, typed AI chat, AI permissions, grounded feedback, or product AI mutation UI (`FR-015` through `FR-022`, Milestone 3). The deterministic simulated AI exists only to verify `FR-007` convergence.
-- Comments, replies, structured prompts, or comment overlays (`FR-023` through `FR-030`, Milestone 2).
-- Reviewable AI change sets and guided review (`FR-031` through `FR-035`, Milestone 4).
-- Freeform vector annotation tools (`FR-036` through `FR-043`, Milestone 5).
-- First-class document creation or rich-document product behavior (`FR-044` through `FR-053`, Milestone 6). Tables in this milestone are canvas primitives, not documents.
-- Guided stories, story modes, playback, narration, or branching (`FR-054` through `FR-062`, Milestone 7 and deferred scope).
-- AI or human live-conversation product UI (`FR-008` through `FR-014`, Milestone 8). The Milestone 0 voice spike remains evidence only.
-- Conversational starter structures, saved reusable templates, or format-specific creation modes (`FR-063` through `FR-066`, Milestone 9).
+- The polished workspace experience and interaction system now owned by Milestone 2.
+- Real OpenAI reasoning, typed AI chat, AI permissions, grounded feedback, or product AI mutation UI (`FR-015` through `FR-022`, Milestone 4). The deterministic simulated AI exists only to verify `FR-007` convergence.
+- Comments, replies, structured prompts, or comment overlays (`FR-023` through `FR-030`, Milestone 3).
+- Reviewable AI change sets and guided review (`FR-031` through `FR-035`, Milestone 5).
+- Freeform vector annotation tools (`FR-036` through `FR-043`, Milestone 6).
+- First-class document creation or rich-document product behavior (`FR-044` through `FR-053`, Milestone 7). Tables in this milestone are canvas primitives, not documents.
+- Guided stories, story modes, playback, narration, or branching (`FR-054` through `FR-062`, Milestone 8 and deferred scope).
+- AI or human live-conversation product UI (`FR-008` through `FR-014`, Milestone 9). The Milestone 0 voice spike remains evidence only.
+- Conversational starter structures, saved reusable templates, or format-specific creation modes (`FR-063` through `FR-066`, Milestone 10).
 - Deliberate offline-first editing unless the product owner changes `PD-009` and approves the resulting scope revision.
-- Production launch, custom domain, production data migration, export/portability, complete cross-browser matrix, final accessibility object-list experience, production observability, or approved release performance budgets (Milestone 10 and `PD-007`/`PD-010`).
+- Production launch, custom domain, production data migration, export/portability, complete cross-browser matrix, final accessibility object-list experience, production observability, or approved release performance budgets (Milestone 11 and `PD-007`/`PD-010`).
 - Specialist AI agents, branching stories, story snapshots, cross-boundary document connectors, specialized document types, canvas icon libraries, and AI image generation (explicitly deferred in the master ledger).
 
 ## Implementation record
