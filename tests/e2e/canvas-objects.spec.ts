@@ -594,6 +594,25 @@ test("creates, reattaches, and detaches connectors with direct pointer gestures"
     "280,155,440,155",
   );
 
+  await page.getByRole("button", { name: /Drag source/ }).click();
+  const livePointsBeforeDrag = await page
+    .getByTestId("live-connector-points")
+    .innerText();
+  await page.mouse.move(box.x + 270, box.y + 235);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 320, box.y + 275, { steps: 6 });
+  await expect(page.getByTestId("live-connector-points")).not.toHaveText(
+    livePointsBeforeDrag,
+  );
+  await expect(page.getByTestId("live-connector-points")).toContainText(
+    ":330:195:440:155",
+  );
+  await page.mouse.up();
+  await page.getByRole("button", { name: "connector", exact: true }).click();
+  await expect(page.getByTestId("selected-connector-points")).toHaveText(
+    "330,195,440,155",
+  );
+
   const attachedEnd = { x: box.x + 492, y: box.y + 235 };
   const targetTopHandle = { x: box.x + 610, y: box.y + 152 };
   await page.mouse.move(attachedEnd.x, attachedEnd.y);
@@ -601,7 +620,7 @@ test("creates, reattaches, and detaches connectors with direct pointer gestures"
   await page.mouse.move(targetTopHandle.x, targetTopHandle.y, { steps: 8 });
   await page.mouse.up();
   await expect(page.getByTestId("selected-connector-points")).toHaveText(
-    "280,155,530,100",
+    "330,195,530,100",
   );
 
   const attachedTop = { x: box.x + 610, y: box.y + 152 };
@@ -611,7 +630,7 @@ test("creates, reattaches, and detaches connectors with direct pointer gestures"
   await page.mouse.move(freeDrop.x, freeDrop.y, { steps: 8 });
   await page.mouse.up();
   await expect(page.getByTestId("selected-connector-points")).toHaveText(
-    "280,155,570,320",
+    "330,195,570,320",
   );
 });
 

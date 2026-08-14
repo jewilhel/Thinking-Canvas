@@ -14,6 +14,19 @@ export function selectionAffordanceScale(scale: number) {
   return Math.min(1, scale);
 }
 
+export function canvasWheelIntent(event: {
+  ctrlKey: boolean;
+  deltaMode: number;
+  deltaX: number;
+  deltaY: number;
+}): "pan" | "zoom" {
+  if (event.ctrlKey || event.deltaMode !== 0) return "zoom";
+  if (event.deltaX !== 0) return "pan";
+  if (!Number.isInteger(event.deltaY) || Math.abs(event.deltaY) < 80)
+    return "pan";
+  return "zoom";
+}
+
 export function zoomViewportAtPointer(
   viewport: Viewport,
   pointer: Point,

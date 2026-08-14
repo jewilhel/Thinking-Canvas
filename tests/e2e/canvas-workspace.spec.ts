@@ -107,6 +107,60 @@ test("copies a member-safe canvas link without granting access", async ({
   await nonmemberContext.close();
 });
 
+test("pans with two-finger trackpad gestures in Select and Pan modes while preserving wheel zoom", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.goto(`/app/canvases/${seedCanvasId}`);
+  const surface = page.getByTestId("product-canvas-surface");
+  const canvas = surface.locator("canvas");
+  await canvas.hover({ position: { x: 420, y: 300 } });
+
+  const viewportNumber = async (name: "x" | "y" | "scale") =>
+    Number(await surface.getAttribute(`data-viewport-${name}`));
+
+  const selectX = await viewportNumber("x");
+  const selectY = await viewportNumber("y");
+  const selectScale = await viewportNumber("scale");
+  await canvas.dispatchEvent("wheel", {
+    deltaMode: 0,
+    deltaX: 32,
+    deltaY: 18,
+  });
+  await expect(surface).toHaveAttribute(
+    "data-viewport-x",
+    String(selectX - 32),
+  );
+  await expect(surface).toHaveAttribute(
+    "data-viewport-y",
+    String(selectY - 18),
+  );
+  expect(await viewportNumber("scale")).toBe(selectScale);
+
+  await page.getByRole("button", { name: "Pan", exact: true }).click();
+  const panX = await viewportNumber("x");
+  const panY = await viewportNumber("y");
+  await canvas.dispatchEvent("wheel", {
+    deltaMode: 0,
+    deltaX: -21,
+    deltaY: 14,
+  });
+  await expect(surface).toHaveAttribute("data-viewport-x", String(panX + 21));
+  await expect(surface).toHaveAttribute("data-viewport-y", String(panY - 14));
+
+  await page.waitForTimeout(180);
+  const scaleBeforeWheel = await viewportNumber("scale");
+  await canvas.dispatchEvent("wheel", {
+    deltaMode: 0,
+    deltaX: 0,
+    deltaY: -120,
+  });
+  await expect(surface).not.toHaveAttribute(
+    "data-viewport-scale",
+    String(scaleBeforeWheel),
+  );
+});
+
 test("offers a keyboard-operable progressive dock without mutating from deferred entries", async ({
   page,
 }) => {

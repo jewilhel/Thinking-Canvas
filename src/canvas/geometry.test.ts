@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 import { createMixedCanvasFixture } from "@/canvas/fixture";
 import {
+  canvasWheelIntent,
   connectionHandlePointV2,
   normalizeTransformedGeometry,
   pointWithinObjectHoverZone,
@@ -33,6 +34,41 @@ describe("canvas geometry", () => {
     expect(selectionAffordanceScale(0.6)).toBe(0.6);
     expect(selectionAffordanceScale(0.45)).toBe(0.45);
     expect(selectionAffordanceScale(0.3)).toBe(0);
+  });
+
+  it("distinguishes trackpad panning from pinch and mouse-wheel zoom", () => {
+    expect(
+      canvasWheelIntent({
+        ctrlKey: false,
+        deltaMode: 0,
+        deltaX: 24,
+        deltaY: 16,
+      }),
+    ).toBe("pan");
+    expect(
+      canvasWheelIntent({
+        ctrlKey: false,
+        deltaMode: 0,
+        deltaX: 0,
+        deltaY: 72,
+      }),
+    ).toBe("pan");
+    expect(
+      canvasWheelIntent({
+        ctrlKey: true,
+        deltaMode: 0,
+        deltaX: 0,
+        deltaY: -20,
+      }),
+    ).toBe("zoom");
+    expect(
+      canvasWheelIntent({
+        ctrlKey: false,
+        deltaMode: 0,
+        deltaX: 0,
+        deltaY: -120,
+      }),
+    ).toBe("zoom");
   });
 
   it("normalizes Konva transform scale back into domain geometry", () => {

@@ -55,6 +55,7 @@ import {
   type CanvasHistoryEntry,
 } from "@/canvas/canvas-history";
 import {
+  canvasWheelIntent,
   connectionHandlePointV2,
   maxCanvasScale,
   minCanvasScale,
@@ -222,6 +223,10 @@ export function ProductCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
+  const wheelGestureRef = useRef<{
+    intent: "pan" | "zoom";
+    lastEventAt: number;
+  } | null>(null);
   const inlineEditorRef = useRef<HTMLTextAreaElement>(null);
   const contextPanelTriggerRef = useRef<HTMLButtonElement | null>(null);
   const objectNodeRefs = useRef(new Map<string, Konva.Node>());
@@ -258,6 +263,9 @@ export function ProductCanvas({
   const [sharedPanelInvoker, setSharedPanelInvoker] =
     useState<HTMLButtonElement | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
+  const [dragPreviewPositions, setDragPreviewPositions] = useState<
+    Record<string, Point>
+  >({});
   const [clipboardText, setClipboardText] = useState("");
   const [undoStack, setUndoStack] = useState<CanvasHistoryEntry[]>([]);
   const [redoStack, setRedoStack] = useState<CanvasHistoryEntry[]>([]);
@@ -298,6 +306,27 @@ export function ProductCanvas({
   const objectsById = useMemo(
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
+  );
+  const displayObjects = useMemo(
+    () =>
+      objects.map((object) => {
+        const preview = dragPreviewPositions[object.id];
+        return preview && object.type !== "connector"
+          ? {
+              ...object,
+              geometry: {
+                ...object.geometry,
+                x: preview.x,
+                y: preview.y,
+              },
+            }
+          : object;
+      }),
+    [dragPreviewPositions, objects],
+  );
+  const displayObjectsById = useMemo(
+    () => new Map(displayObjects.map((object) => [object.id, object])),
+    [displayObjects],
   );
   const selectedId = selectedIds.at(-1) ?? null;
   const inlineEditorObjectId = inlineTextEditor?.objectId ?? null;
@@ -767,7 +796,7 @@ export function ProductCanvas({
     fallback: Point,
   ) {
     if (endpoint.kind === "attached") {
-      const target = objectsById.get(endpoint.objectId);
+      const target = displayObjectsById.get(endpoint.objectId);
       if (target?.type === "shape")
         return connectionHandlePoint(target, endpoint.anchor);
     }
@@ -992,6 +1021,38 @@ export function ProductCanvas({
         });
     }
     runCommandBatch(commands);
+  }
+
+  function previewSelectionFromDrag(
+    object: CanvasObjectV2,
+    x: number,
+    y: number,
+  ) {
+    const durableObject = objectsById.get(object.id) ?? object;
+    const dx = x - durableObject.geometry.x;
+    const dy = y - durableObject.geometry.y;
+    const targets = selectedIds.includes(object.id)
+      ? selectedObjects
+      : object.groupId
+        ? objects.filter((candidate) => candidate.groupId === object.groupId)
+        : [durableObject];
+    setDragPreviewPositions(
+      Object.fromEntries(
+        targets.flatMap((target) =>
+          target.type === "connector"
+            ? []
+            : [
+                [
+                  target.id,
+                  {
+                    x: target.geometry.x + dx,
+                    y: target.geometry.y + dy,
+                  },
+                ],
+              ],
+        ),
+      ),
+    );
   }
 
   function moveConnectorCommands(
@@ -1229,6 +1290,23 @@ export function ProductCanvas({
 
   function onWheel(event: Konva.KonvaEventObject<WheelEvent>) {
     event.evt.preventDefault();
+    const now = performance.now();
+    const previousGesture = wheelGestureRef.current;
+    const inferredIntent = canvasWheelIntent(event.evt);
+    const intent = event.evt.ctrlKey
+      ? "zoom"
+      : previousGesture && now - previousGesture.lastEventAt < 160
+        ? previousGesture.intent
+        : inferredIntent;
+    wheelGestureRef.current = { intent, lastEventAt: now };
+    if ((tool === "select" || tool === "pan") && intent === "pan") {
+      setViewport((current) => ({
+        ...current,
+        x: current.x - event.evt.deltaX,
+        y: current.y - event.evt.deltaY,
+      }));
+      return;
+    }
     const pointer = stageRef.current?.getPointerPosition();
     if (!pointer) return;
     setViewport((current) =>
@@ -1611,7 +1689,7 @@ export function ProductCanvas({
 
   function renderObject(object: CanvasObjectV2) {
     if (object.type === "connector") {
-      const points = resolveConnectorPointsV2(object, objectsById);
+      const points = resolveConnectorPointsV2(object, displayObjectsById);
       const endpointHandles = ([object.start, object.end] as const).map(
         (endpoint, index) =>
           connectorEndpointHandlePoint(endpoint, {
@@ -1710,9 +1788,22 @@ export function ProductCanvas({
               );
             }
           }}
-          onDragEnd={(event) =>
-            moveSelectionFromDrag(object, event.target.x(), event.target.y())
+          onDragMove={(event) =>
+            previewSelectionFromDrag(
+              objectsById.get(object.id) ?? object,
+              event.target.x(),
+              event.target.y(),
+            )
           }
+          onDragEnd={(event) => {
+            const durableObject = objectsById.get(object.id) ?? object;
+            setDragPreviewPositions({});
+            moveSelectionFromDrag(
+              durableObject,
+              event.target.x(),
+              event.target.y(),
+            );
+          }}
           onTransformEnd={(event) => {
             const node = event.target;
             const width = Math.max(
@@ -1950,6 +2041,30 @@ export function ProductCanvas({
               })
               .join(",");
           })()}
+        </output>
+      ) : null}
+      {instrumentationEnabled ? (
+        <output
+          aria-hidden="true"
+          data-testid="live-connector-points"
+          className="hidden"
+        >
+          {displayObjects
+            .filter(
+              (
+                object,
+              ): object is Extract<CanvasObjectV2, { type: "connector" }> =>
+                object.type === "connector",
+            )
+            .map((connector) =>
+              [
+                connector.id,
+                ...resolveConnectorPointsV2(connector, displayObjectsById).map(
+                  Math.round,
+                ),
+              ].join(":"),
+            )
+            .join(";")}
         </output>
       ) : null}
       <div
@@ -2672,6 +2787,9 @@ export function ProductCanvas({
           onPointerLeave={() => setHoveredShapeId(null)}
           className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] bg-[radial-gradient(circle,var(--workspace-dot)_1px,transparent_1px)] bg-[length:24px_24px] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
           data-testid="product-canvas-surface"
+          data-viewport-x={Math.round(viewport.x)}
+          data-viewport-y={Math.round(viewport.y)}
+          data-viewport-scale={viewport.scale}
         >
           <Stage
             ref={stageRef}
@@ -2699,7 +2817,7 @@ export function ProductCanvas({
             }}
           >
             <Layer>
-              {objects.map(renderObject)}
+              {displayObjects.map(renderObject)}
               {remoteCursors.map((cursor) => (
                 <Group
                   key={cursor.userId}
