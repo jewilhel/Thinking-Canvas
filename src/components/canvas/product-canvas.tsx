@@ -311,6 +311,8 @@ export function ProductCanvas({
     canvasId,
     document,
     selectedObjectIds: selectedIds,
+    supabasePublishableKey,
+    supabaseUrl,
     userId,
   });
   const instrumentationEnabled = process.env.NODE_ENV !== "production";
