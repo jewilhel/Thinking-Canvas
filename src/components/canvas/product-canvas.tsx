@@ -96,6 +96,8 @@ type Props = {
   userId: string;
   userIdentity: string;
   canvasRole: CanvasRole;
+  supabaseUrl: string;
+  supabasePublishableKey: string;
   simulatedAiEnabled: boolean;
 };
 type ConnectorEndpoint = Extract<
@@ -224,6 +226,8 @@ export function ProductCanvas({
   userId,
   userIdentity,
   canvasRole,
+  supabaseUrl,
+  supabasePublishableKey,
   simulatedAiEnabled,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2298,6 +2302,8 @@ export function ProductCanvas({
         canvasId={canvasId}
         userId={userId}
         canvasRole={canvasRole}
+        supabaseUrl={supabaseUrl}
+        supabasePublishableKey={supabasePublishableKey}
         objects={objects}
         selectedIds={selectedIds}
         viewport={viewport}

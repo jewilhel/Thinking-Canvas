@@ -27,6 +27,8 @@ type Props = {
   userId: string;
   userIdentity: string;
   canvasRole: CanvasRole;
+  supabaseUrl: string;
+  supabasePublishableKey: string;
   simulatedAiEnabled: boolean;
 };
 

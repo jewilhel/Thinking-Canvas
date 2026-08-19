@@ -32,6 +32,8 @@ type Props = {
   canvasId: string;
   userId: string;
   canvasRole: CanvasRole;
+  supabaseUrl: string;
+  supabasePublishableKey: string;
   objects: CanvasObjectV2[];
   selectedIds: string[];
   viewport: Viewport;
@@ -318,6 +320,8 @@ export function CanvasComments({
   canvasId,
   userId,
   canvasRole,
+  supabaseUrl,
+  supabasePublishableKey,
   objects,
   selectedIds,
   viewport,
@@ -329,7 +333,7 @@ export function CanvasComments({
   onSelectTargets,
 }: Props) {
   const { threads, loading, pending, error, refresh, execute } =
-    useCanvasComments(canvasId);
+    useCanvasComments(canvasId, supabaseUrl, supabasePublishableKey);
   const visibilityKey = `thinking-canvas:comments-visible:${userId}:${canvasId}`;
   const [visible, setVisible] = useState(
     () => window.localStorage.getItem(visibilityKey) !== "false",

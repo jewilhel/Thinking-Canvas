@@ -6,10 +6,20 @@ import type { CommentCommand, CommentThread } from "@/comments/comment-model";
 import { SupabaseCommentRepository } from "@/comments/supabase-comment-repository";
 import { createClient } from "@/lib/supabase/client";
 
-export function useCanvasComments(canvasId: string) {
+export function useCanvasComments(
+  canvasId: string,
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+) {
   const repository = useMemo(
-    () => new SupabaseCommentRepository(createClient()),
-    [],
+    () =>
+      new SupabaseCommentRepository(
+        createClient({
+          NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey,
+        }),
+      ),
+    [supabasePublishableKey, supabaseUrl],
   );
   const [threads, setThreads] = useState<CommentThread[]>([]);
   const [loading, setLoading] = useState(true);
