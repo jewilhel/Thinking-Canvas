@@ -1,6 +1,6 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–2 closed; later milestones remain draft
+Status: Milestones 0–2 closed; Milestone 3 approved for implementation; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
@@ -401,7 +401,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [ ] **PD-001 — Human voice transport:** choose the free/open-source WebRTC approach or explicitly phase remote-human voice after AI voice; `FR-010` cannot be checked until it works.
 - [ ] **PD-002 — Document preview:** define how a long document appears at board zoom while keeping `FR-045` understandable and performant.
 - [ ] **PD-003 — Page sizes:** select the initial standard sizes and orientation behavior for `FR-050`.
-- [ ] **PD-004 — Rating scale:** define allowed numeric ranges and whether the author chooses among them for `FR-027`.
+- [x] **PD-004 — Rating scale:** use one fixed inclusive `1–5` numeric rating scale in the first version; the comment author does not choose among multiple ranges. Approved by the product owner on 2026-08-19.
 - [ ] **PD-005 — Important interruption:** define testable examples and non-examples for `FR-013` and `FR-014`.
 - [ ] **PD-006 — Permission ownership:** define which human roles may change the AI permission level in `FR-022`.
 - [ ] **PD-007 — Performance budgets:** approve target hardware, representative canvas size, latency thresholds, and maximum acceptable degradation.

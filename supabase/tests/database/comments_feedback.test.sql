@@ -1,0 +1,296 @@
+begin;
+
+create extension if not exists pgtap with schema extensions;
+select no_plan();
+
+set local role authenticated;
+
+select ok(
+  not has_table_privilege('authenticated', 'public.comments', 'INSERT'),
+  'authenticated clients cannot bypass the comment command functions'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+
+select results_eq(
+  $$select created from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000001',
+    'Rate this direction',
+    array[
+      '61000000-0000-4000-8000-000000000001',
+      '61000000-0000-4000-8000-000000000002'
+    ]::uuid[],
+    'rating',
+    'human',
+    null
+  )$$,
+  array[true],
+  'owner creates one atomic human rating thread'
+);
+
+select is(
+  (select author_key from public.comments where client_command_id = '71000000-0000-4000-8000-000000000001'),
+  '10000000-0000-4000-8000-000000000001',
+  'human provenance is normalized to the authenticated principal'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.comment_targets
+    where comment_id = (
+      select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000001'
+    )
+  ),
+  2,
+  'all grouped target IDs are persisted atomically'
+);
+
+select results_eq(
+  $$select minimum, maximum from public.comment_prompts where comment_id = (
+    select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000001'
+  )$$,
+  $$values (1, 5)$$,
+  'rating prompts enforce the approved fixed inclusive 1-5 range'
+);
+
+select results_eq(
+  $$select created from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000001',
+    'Rate this direction',
+    array[
+      '61000000-0000-4000-8000-000000000001',
+      '61000000-0000-4000-8000-000000000002'
+    ]::uuid[],
+    'rating',
+    'human',
+    null
+  )$$,
+  array[false],
+  'an exact comment-command retry returns the original thread'
+);
+
+select throws_ok(
+  $$select * from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000001',
+    'Changed collision body',
+    array['61000000-0000-4000-8000-000000000001']::uuid[]
+  )$$,
+  '23505',
+  'The comment command ID was reused with different content.',
+  'a reused comment command ID with different content is rejected'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
+select lives_ok(
+  $$select * from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000002',
+    'AI-authored review prompt',
+    array['61000000-0000-4000-8000-000000000003']::uuid[],
+    'review',
+    'ai',
+    'primary-ai'
+  )$$,
+  'an editor can request a preview AI prompt'
+);
+
+select results_eq(
+  $$select author_id, author_kind::text, author_key from public.comments where client_command_id = '71000000-0000-4000-8000-000000000002'$$,
+  $$values (
+    '10000000-0000-4000-8000-000000000002'::uuid,
+    'ai'::text,
+    'primary-ai'::text
+  )$$,
+  'AI provenance remains distinct from the accountable requester'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
+select throws_ok(
+  $$select * from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000003',
+    'Spoofed AI prompt',
+    array['61000000-0000-4000-8000-000000000004']::uuid[],
+    'yes_no',
+    'ai',
+    'primary-ai'
+  )$$,
+  '42501',
+  'AI comment creation is not permitted.',
+  'a commenter cannot claim AI provenance'
+);
+
+select lives_ok(
+  $$select * from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000004',
+    'Commenter yes or no',
+    array['61000000-0000-4000-8000-000000000004']::uuid[],
+    'yes_no'
+  )$$,
+  'a commenter can create a human prompt'
+);
+
+select lives_ok(
+  $$select * from public.create_comment_reply(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    '72000000-0000-4000-8000-000000000001',
+    'First reply'
+  )$$,
+  'a commenter can reply to an open thread'
+);
+
+select results_eq(
+  $$select created from public.create_comment_reply(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    '72000000-0000-4000-8000-000000000001',
+    'First reply'
+  )$$,
+  array[false],
+  'an exact reply retry returns the original reply'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
+select lives_ok(
+  $$select * from public.respond_to_comment_prompt(
+    (select id from public.comment_prompts where comment_id = (
+      select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'
+    )),
+    '73000000-0000-4000-8000-000000000001',
+    '{"answer":"yes"}'::jsonb
+  )$$,
+  'an editor can answer yes without typing'
+);
+
+select throws_ok(
+  $$select * from public.respond_to_comment_prompt(
+    (select id from public.comment_prompts where comment_id = (
+      select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'
+    )),
+    '73000000-0000-4000-8000-000000000002',
+    '{"answer":"yes","extra":true}'::jsonb
+  )$$,
+  '22023',
+  'Prompt response is invalid.',
+  'extra response keys are rejected'
+);
+
+select lives_ok(
+  $$select * from public.respond_to_comment_prompt(
+    (select id from public.comment_prompts where comment_id = (
+      select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000001'
+    )),
+    '73000000-0000-4000-8000-000000000003',
+    '{"rating":5}'::jsonb
+  )$$,
+  'the upper approved rating bound is accepted'
+);
+
+select throws_ok(
+  $$select * from public.respond_to_comment_prompt(
+    (select id from public.comment_prompts where comment_id = (
+      select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000001'
+    )),
+    '73000000-0000-4000-8000-000000000004',
+    '{"rating":6}'::jsonb
+  )$$,
+  '22023',
+  'Prompt response is invalid.',
+  'ratings above the approved bound are rejected'
+);
+
+select lives_ok(
+  $$select * from public.respond_to_comment_prompt(
+    (select id from public.comment_prompts where comment_id = (
+      select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'
+    )),
+    '73000000-0000-4000-8000-000000000005',
+    '{"answer":"no"}'::jsonb
+  )$$,
+  'an open response can be changed by the same responder'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.comment_responses
+    where prompt_id = (
+      select id from public.comment_prompts where comment_id = (
+        select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'
+      )
+    ) and responder_id = '10000000-0000-4000-8000-000000000002'
+  ),
+  1,
+  'response changes keep one row per prompt and responder'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
+select lives_ok(
+  $$select public.transition_comment_status(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    'resolved'
+  )$$,
+  'a commenter can resolve their own comment'
+);
+
+select throws_ok(
+  $$select * from public.create_comment_reply(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    '72000000-0000-4000-8000-000000000002',
+    'Reply after resolve'
+  )$$,
+  '22023',
+  'Closed comments are read-only.',
+  'resolved comments reject new replies'
+);
+
+select throws_ok(
+  $$select public.transition_comment_status(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000002'),
+    'dismissed'
+  )$$,
+  '42501',
+  'Dismissing this comment is not permitted.',
+  'a commenter cannot dismiss another author comment'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+select lives_ok(
+  $$select public.transition_comment_status(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000002'),
+    'dismissed'
+  )$$,
+  'an owner can dismiss any comment'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.comment_targets
+    where comment_id = (
+      select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000002'
+    )
+  ),
+  1,
+  'dismissal preserves target history'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000004', true);
+select throws_ok(
+  $$select * from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000005',
+    'Viewer write',
+    array['61000000-0000-4000-8000-000000000005']::uuid[]
+  )$$,
+  '42501',
+  'Comment creation is not permitted.',
+  'viewers remain read-only'
+);
+
+select * from finish();
+rollback;

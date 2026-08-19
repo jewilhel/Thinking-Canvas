@@ -86,13 +86,16 @@ import {
   type CanvasTool,
 } from "@/components/canvas/workspace-primary-dock";
 import { WorkspacePanel } from "@/components/canvas/workspace-panel";
+import { CanvasComments } from "@/components/comments/canvas-comments";
 import { Button, buttonVariants } from "@/components/ui/button";
+import type { CanvasRole } from "@/domain/command";
 
 type Props = {
   canvasId: string;
   title: string;
   userId: string;
   userIdentity: string;
+  canvasRole: CanvasRole;
   simulatedAiEnabled: boolean;
 };
 type ConnectorEndpoint = Extract<
@@ -220,6 +223,7 @@ export function ProductCanvas({
   title,
   userId,
   userIdentity,
+  canvasRole,
   simulatedAiEnabled,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2262,21 +2266,13 @@ export function ProductCanvas({
         </Button>
       </div>
 
-      {sharedPanel ? (
+      {sharedPanel && sharedPanel !== "comments" ? (
         <WorkspacePanel
-          title={
-            sharedPanel === "objects"
-              ? "Object navigator"
-              : sharedPanel === "comments"
-                ? "Comments"
-                : "Canvas help"
-          }
+          title={sharedPanel === "objects" ? "Object navigator" : "Canvas help"}
           description={
             sharedPanel === "objects"
               ? "Browse objects and inspect detailed selection geometry."
-              : sharedPanel === "comments"
-                ? "A preview of the collaboration surface planned for Milestone 3."
-                : "Keyboard shortcuts for moving around and editing this canvas."
+              : "Keyboard shortcuts for moving around and editing this canvas."
           }
           invoker={sharedPanelInvoker}
           onDismiss={() => setSharedPanel(null)}
@@ -2292,21 +2288,29 @@ export function ProductCanvas({
                 setTool("select");
               }}
             />
-          ) : sharedPanel === "comments" ? (
-            <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
-              <p className="font-medium text-violet-950">
-                Contextual feedback arrives in Milestone 3
-              </p>
-              <p className="mt-2 text-sm leading-6 text-violet-800">
-                No comments can be entered, loaded, or saved here yet. This
-                placeholder does not change canvas content.
-              </p>
-            </div>
           ) : (
             <ShortcutHelp />
           )}
         </WorkspacePanel>
       ) : null}
+
+      <CanvasComments
+        canvasId={canvasId}
+        userId={userId}
+        canvasRole={canvasRole}
+        objects={objects}
+        selectedIds={selectedIds}
+        viewport={viewport}
+        size={size}
+        panelOpen={sharedPanel === "comments"}
+        panelInvoker={sharedPanelInvoker}
+        simulatedAiEnabled={simulatedAiEnabled}
+        onDismissPanel={() => setSharedPanel(null)}
+        onSelectTargets={(targetIds) => {
+          setSelectedIds(targetIds);
+          setTool("select");
+        }}
+      />
 
       {objectContextMenu && selectedObjects.length ? (
         <ObjectContextMenu

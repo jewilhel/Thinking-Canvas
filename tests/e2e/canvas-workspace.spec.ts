@@ -269,7 +269,9 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
 
   await page.getByRole("button", { name: "Comments", exact: true }).click();
   await expect(
-    page.getByText("Contextual feedback arrives in Milestone 3"),
+    page.getByText(
+      "Feedback stays anchored to one object or a complete group.",
+    ),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Comments", exact: true }),
@@ -327,7 +329,10 @@ test("uses dismissible responsive panels with focus containment, help, and true 
   await commentsInvoker.click();
   const commentsPanel = page.getByRole("dialog", { name: "Comments" });
   await expect(commentsPanel).toContainText(
-    "No comments can be entered, loaded, or saved here yet.",
+    "Feedback stays anchored to one object or a complete group.",
+  );
+  await expect(commentsPanel).toContainText(
+    "Select one object or every object in a group to start a comment.",
   );
   await expect(page.getByTestId("product-pending-count")).toHaveText(
     pendingCountBeforeComments,

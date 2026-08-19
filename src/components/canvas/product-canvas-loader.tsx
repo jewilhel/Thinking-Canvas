@@ -2,6 +2,8 @@
 
 import dynamic from "next/dynamic";
 
+import type { CanvasRole } from "@/domain/command";
+
 const ProductCanvas = dynamic(
   () =>
     import("@/components/canvas/product-canvas").then(
@@ -24,6 +26,7 @@ type Props = {
   title: string;
   userId: string;
   userIdentity: string;
+  canvasRole: CanvasRole;
   simulatedAiEnabled: boolean;
 };
 
