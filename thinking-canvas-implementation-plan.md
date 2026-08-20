@@ -194,6 +194,7 @@ Evidence: [Milestone 2 implementation and verification record](docs/implementati
 - [ ] **FR-027 — Initial controls.** Yes/no, approve/revise/discard, and bounded numeric rating prompts render, validate, and persist responses.
 - [ ] **FR-028 — Human and AI prompt authors.** Both participant types can create structured prompts through the same permission-aware domain command.
 - [ ] **FR-029 — Dismiss and resolve.** An authorized participant can dismiss or resolve a temporary comment without deleting its history.
+- [ ] **FR-029a — Permanent comment deletion.** A comment author or canvas owner can permanently delete an entire comment thread after an explicit irreversible-action confirmation; other participants cannot delete it.
 - [ ] **FR-030 — Hide comments.** Comment bubbles and the annotation overlay can be hidden without altering underlying canvas objects or deleting comments.
 
 ### Exit gate

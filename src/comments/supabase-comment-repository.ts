@@ -200,9 +200,15 @@ export class SupabaseCommentRepository {
       });
       return requireData(result.data, result.error).at(0);
     }
-    const result = await this.supabase.rpc("transition_comment_status", {
+    if (command.type === "comment.status") {
+      const result = await this.supabase.rpc("transition_comment_status", {
+        target_comment_id: command.commentId,
+        target_status: command.status,
+      });
+      return requireData(result.data, result.error);
+    }
+    const result = await this.supabase.rpc("delete_comment_thread", {
       target_comment_id: command.commentId,
-      target_status: command.status,
     });
     return requireData(result.data, result.error);
   }

@@ -279,6 +279,65 @@ select is(
   'dismissal preserves target history'
 );
 
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
+select throws_ok(
+  $$select public.delete_comment_thread(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000001')
+  )$$,
+  '42501',
+  'Deleting this comment is not permitted.',
+  'an editor cannot delete another author comment'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
+select lives_ok(
+  $$select public.delete_comment_thread(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004')
+  )$$,
+  'an author can permanently delete their own closed thread'
+);
+
+select is(
+  (select count(*)::integer from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+  0,
+  'deletion removes the root comment'
+);
+
+select is(
+  (select count(*)::integer from public.comment_replies where client_command_id = '72000000-0000-4000-8000-000000000001'),
+  0,
+  'deletion cascades to replies'
+);
+
+select is(
+  (select count(*)::integer from public.comment_targets where target_object_id = '61000000-0000-4000-8000-000000000004'),
+  0,
+  'deletion cascades to targets'
+);
+
+select is(
+  (select count(*)::integer from public.comment_responses where client_command_id in (
+    '73000000-0000-4000-8000-000000000001',
+    '73000000-0000-4000-8000-000000000005'
+  )),
+  0,
+  'deletion cascades through the prompt to responses'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+select lives_ok(
+  $$select public.delete_comment_thread(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000002')
+  )$$,
+  'a canvas owner can delete another author thread'
+);
+
+select is(
+  (select count(*)::integer from public.comments where client_command_id = '71000000-0000-4000-8000-000000000002'),
+  0,
+  'owner deletion removes the selected thread'
+);
+
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000004', true);
 select throws_ok(
   $$select * from public.create_comment_thread(

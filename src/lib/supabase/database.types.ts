@@ -784,6 +784,10 @@ export type Database = {
           created: boolean
         }[]
       }
+      delete_comment_thread: {
+        Args: { target_comment_id: string }
+        Returns: string
+      }
       publish_canvas_compaction: {
         Args: {
           covered_last_sequence: number
@@ -976,4 +980,3 @@ export const Constants = {
     },
   },
 } as const
-

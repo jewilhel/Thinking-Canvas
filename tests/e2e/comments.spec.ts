@@ -84,6 +84,36 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   expect(accessibility.violations).toEqual([]);
 });
 
+test("permanently deletes an authored comment after confirmation", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await addRectangle(page);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page.getByRole("button", { name: "New comment" }).click();
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  await composer
+    .getByRole("textbox", { name: "Comment", exact: true })
+    .fill("Temporary feedback to remove.");
+  await composer.getByRole("button", { name: "Add comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("cannot be undone");
+    await dialog.accept();
+  });
+  await thread.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(thread).not.toBeVisible();
+  await expect(
+    page.getByText("Temporary feedback to remove."),
+  ).not.toBeVisible();
+  await expect(page.getByText("No comments yet.")).toBeVisible();
+
+  await page.reload();
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await expect(page.getByText("No comments yet.")).toBeVisible();
+});
+
 test("creates preview AI feedback with explicit provenance", async ({
   page,
 }) => {

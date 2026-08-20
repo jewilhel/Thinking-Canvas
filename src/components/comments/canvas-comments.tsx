@@ -8,6 +8,7 @@ import {
   EyeOff,
   MessageCircle,
   Send,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -194,6 +195,7 @@ function ThreadBody({
   onReply,
   onRespond,
   onStatus,
+  onDelete,
 }: {
   thread: CommentThread;
   userId: string;
@@ -205,12 +207,14 @@ function ThreadBody({
     value: PromptResponseValue,
   ) => Promise<void>;
   onStatus: (status: "resolved" | "dismissed") => Promise<void>;
+  onDelete: () => Promise<void>;
 }) {
   const [reply, setReply] = useState("");
   const canComment = role !== "viewer";
   const canResolve =
     role === "owner" || role === "editor" || thread.authorId === userId;
   const canDismiss = role === "owner" || thread.authorId === userId;
+  const canDelete = role === "owner" || thread.authorId === userId;
   return (
     <>
       <div className="flex items-start gap-3">
@@ -309,6 +313,26 @@ function ThreadBody({
             onClick={() => void onStatus("dismissed")}
           >
             Dismiss
+          </Button>
+        ) : null}
+        {canDelete ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="text-red-700 hover:bg-red-50 hover:text-red-800"
+            disabled={pending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Permanently delete this comment and its entire thread? This cannot be undone.",
+                )
+              ) {
+                void onDelete();
+              }
+            }}
+          >
+            <Trash2 aria-hidden="true" /> Delete
           </Button>
         ) : null}
       </div>
@@ -411,6 +435,14 @@ export function CanvasComments({
       commentId: thread.id,
       status: next,
     });
+  }
+
+  async function deleteThread(thread: CommentThread) {
+    await execute({
+      type: "comment.delete",
+      commentId: thread.id,
+    });
+    setSelectedThreadId(null);
   }
 
   const composerPosition = targetIds
@@ -558,6 +590,7 @@ export function CanvasComments({
             onReply={(body) => reply(selectedThread, body)}
             onRespond={respond}
             onStatus={(next) => status(selectedThread, next)}
+            onDelete={() => deleteThread(selectedThread)}
           />
         </div>
       ) : null}

@@ -51,11 +51,17 @@ export const commentStatusCommandSchema = z.strictObject({
   status: z.enum(["resolved", "dismissed"]),
 });
 
+export const commentDeleteCommandSchema = z.strictObject({
+  type: z.literal("comment.delete"),
+  commentId: uuid,
+});
+
 export const commentCommandSchema = z.discriminatedUnion("type", [
   commentCreateCommandSchema,
   commentReplyCommandSchema,
   commentResponseCommandSchema,
   commentStatusCommandSchema,
+  commentDeleteCommandSchema,
 ]);
 
 export type CommentPromptKind = z.infer<typeof commentPromptKindSchema>;
