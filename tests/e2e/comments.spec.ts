@@ -44,7 +44,7 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
     .getByRole("textbox", { name: "Comment", exact: true })
     .fill("Does this direction feel clear?");
   await composer.getByLabel("Prompt").selectOption("yes_no");
-  await composer.getByRole("button", { name: "Add comment" }).click();
+  await composer.getByRole("button", { name: "Submit comment" }).click();
 
   const thread = page.getByRole("dialog", { name: "Comment thread" });
   await expect(
@@ -95,7 +95,7 @@ test("permanently deletes an authored comment after confirmation", async ({
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
     .fill("Temporary feedback to remove.");
-  await composer.getByRole("button", { name: "Add comment" }).click();
+  await composer.getByRole("button", { name: "Submit comment" }).click();
 
   const thread = page.getByRole("dialog", { name: "Comment thread" });
   page.once("dialog", async (dialog) => {
@@ -112,6 +112,59 @@ test("permanently deletes an authored comment after confirmation", async ({
   await page.reload();
   await page.getByRole("button", { name: "Comments", exact: true }).click();
   await expect(page.getByText("No comments yet.")).toBeVisible();
+});
+
+test("places comments over an unselected object and on empty canvas", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await addRectangle(page);
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await page
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 760, y: 560 } });
+  await expect(page.getByTestId("selection-status")).toHaveText(
+    "None selected",
+  );
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page.getByRole("button", { name: "New comment" }).click();
+  await page
+    .getByRole("button", { name: "Place comment on canvas" })
+    .click({ position: { x: 420, y: 280 } });
+  let composer = page.getByRole("dialog", { name: "New comment" });
+  await composer
+    .getByRole("textbox", { name: "Comment", exact: true })
+    .fill("Attached without selecting first.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+  await page
+    .getByRole("dialog", { name: "Comment thread" })
+    .getByRole("button", { name: "Close comment thread" })
+    .click();
+
+  await page.getByRole("button", { name: "New comment" }).click();
+  await page
+    .getByRole("button", { name: "Place comment on canvas" })
+    .click({ position: { x: 700, y: 480 } });
+  composer = page.getByRole("dialog", { name: "New comment" });
+  await composer
+    .getByRole("textbox", { name: "Comment", exact: true })
+    .fill("Free canvas feedback.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+  await page
+    .getByRole("dialog", { name: "Comment thread" })
+    .getByRole("button", { name: "Close comment thread" })
+    .click();
+
+  await expect(
+    page.getByRole("button", { name: /Open comment by/ }),
+  ).toHaveCount(2);
+  await page.reload();
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await expect(
+    page.getByText("Attached without selecting first."),
+  ).toBeVisible();
+  await expect(page.getByText("Free canvas feedback.")).toBeVisible();
 });
 
 test("creates preview AI feedback with explicit provenance", async ({
@@ -166,7 +219,7 @@ test("anchors one thread to a complete group and preserves it after target delet
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
     .fill("This feedback belongs to the whole group.");
-  await composer.getByRole("button", { name: "Add comment" }).click();
+  await composer.getByRole("button", { name: "Submit comment" }).click();
   await page
     .getByRole("dialog", { name: "Comment thread" })
     .getByRole("button", { name: "Close comment thread" })
@@ -208,7 +261,7 @@ test("renders review and fixed rating controls and preserves closed history", as
       .getByRole("textbox", { name: "Comment", exact: true })
       .fill(body);
     await composer.getByLabel("Prompt").selectOption(kind);
-    await composer.getByRole("button", { name: "Add comment" }).click();
+    await composer.getByRole("button", { name: "Submit comment" }).click();
     return page.getByRole("dialog", { name: "Comment thread" });
   }
 
@@ -287,7 +340,7 @@ test("broadcasts comment changes between canvas members", async ({
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
     .fill(threadBody);
-  await composer.getByRole("button", { name: "Add comment" }).click();
+  await composer.getByRole("button", { name: "Submit comment" }).click();
 
   await expect(editor.getByText(threadBody)).toBeVisible();
   await editor.getByText(threadBody).click();

@@ -494,6 +494,8 @@ export type Database = {
       }
       comments: {
         Row: {
+          anchor_x: number | null
+          anchor_y: number | null
           author_id: string
           author_key: string
           author_kind: Database["public"]["Enums"]["comment_author_kind"]
@@ -507,6 +509,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          anchor_x?: number | null
+          anchor_y?: number | null
           author_id: string
           author_key: string
           author_kind?: Database["public"]["Enums"]["comment_author_kind"]
@@ -520,6 +524,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          anchor_x?: number | null
+          anchor_y?: number | null
           author_id?: string
           author_key?: string
           author_kind?: Database["public"]["Enums"]["comment_author_kind"]
@@ -771,12 +777,14 @@ export type Database = {
       }
       create_comment_thread: {
         Args: {
+          target_anchor_x?: number
+          target_anchor_y?: number
           target_author_key?: string
           target_author_kind?: Database["public"]["Enums"]["comment_author_kind"]
           target_body: string
           target_canvas_id: string
           target_client_command_id: string
-          target_object_ids: string[]
+          target_object_ids?: string[]
           target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
         }
         Returns: {

@@ -33,7 +33,7 @@ export class SupabaseCommentRepository {
     const commentsResult = await this.supabase
       .from("comments")
       .select(
-        "id,canvas_id,author_id,author_kind,author_key,body,status,created_at,updated_at",
+        "id,canvas_id,author_id,author_kind,author_key,body,status,anchor_x,anchor_y,created_at,updated_at",
       )
       .eq("canvas_id", canvasId)
       .order("created_at", { ascending: true })
@@ -151,6 +151,10 @@ export class SupabaseCommentRepository {
         targetObjectIds: targets
           .filter((target) => target.comment_id === comment.id)
           .map((target) => target.target_object_id),
+        canvasAnchor:
+          comment.anchor_x === null || comment.anchor_y === null
+            ? null
+            : { x: comment.anchor_x, y: comment.anchor_y },
         replies: replies
           .filter((reply) => reply.comment_id === comment.id)
           .map((reply) => ({
@@ -178,6 +182,8 @@ export class SupabaseCommentRepository {
           target_object_ids: command.targetObjectIds,
           target_author_kind: command.authorKind,
           target_author_key: command.authorKey ?? undefined,
+          target_anchor_x: command.canvasAnchor?.x ?? undefined,
+          target_anchor_y: command.canvasAnchor?.y ?? undefined,
           target_prompt_kind: command.promptKind ?? undefined,
         };
       const result = await this.supabase.rpc("create_comment_thread", args);

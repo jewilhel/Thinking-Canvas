@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  commentCreateCommandSchema,
   commentTargetObjectIds,
   parsePromptResponse,
 } from "@/comments/comment-model";
@@ -55,5 +56,52 @@ describe("comment model", () => {
     expect(commentTargetObjectIds(objects, ["b", "c"])).toEqual(["b", "c"]);
     expect(commentTargetObjectIds(objects, ["b"])).toEqual(["b"]);
     expect(commentTargetObjectIds(objects, ["a", "b"])).toBeNull();
+  });
+
+  it("requires exactly one object target set or finite canvas position", () => {
+    const base = {
+      type: "comment.create" as const,
+      commandId: "71000000-0000-4000-8000-000000000001",
+      canvasId: "20000000-0000-4000-8000-000000000001",
+      body: "Placed feedback",
+      promptKind: null,
+      authorKind: "human" as const,
+      authorKey: null,
+    };
+    expect(
+      commentCreateCommandSchema.safeParse({
+        ...base,
+        targetObjectIds: ["61000000-0000-4000-8000-000000000001"],
+        canvasAnchor: null,
+      }).success,
+    ).toBe(true);
+    expect(
+      commentCreateCommandSchema.safeParse({
+        ...base,
+        targetObjectIds: [],
+        canvasAnchor: { x: 120, y: -40 },
+      }).success,
+    ).toBe(true);
+    expect(
+      commentCreateCommandSchema.safeParse({
+        ...base,
+        targetObjectIds: ["61000000-0000-4000-8000-000000000001"],
+        canvasAnchor: { x: 120, y: -40 },
+      }).success,
+    ).toBe(false);
+    expect(
+      commentCreateCommandSchema.safeParse({
+        ...base,
+        targetObjectIds: [],
+        canvasAnchor: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      commentCreateCommandSchema.safeParse({
+        ...base,
+        targetObjectIds: [],
+        canvasAnchor: { x: Number.POSITIVE_INFINITY, y: 0 },
+      }).success,
+    ).toBe(false);
   });
 });

@@ -1,17 +1,22 @@
 "use client";
 
 import {
+  ArrowUp,
   Bot,
   Check,
-  ChevronUp,
   Eye,
   EyeOff,
   MessageCircle,
-  Send,
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 
 import {
   commentTargetObjectIds,
@@ -28,6 +33,11 @@ import { Button } from "@/components/ui/button";
 import type { CanvasRole } from "@/domain/command";
 
 type Viewport = { x: number; y: number; scale: number };
+type CanvasPoint = { x: number; y: number };
+type CommentTarget = {
+  targetObjectIds: string[];
+  canvasAnchor: CanvasPoint | null;
+};
 
 type Props = {
   canvasId: string;
@@ -65,11 +75,23 @@ function Avatar({ name, ai = false }: { name: string; ai?: boolean }) {
 }
 
 function threadAnchor(
-  thread: Pick<CommentThread, "targetObjectIds">,
+  thread: Pick<CommentThread, "targetObjectIds" | "canvasAnchor">,
   objectsById: Map<string, CanvasObjectV2>,
   viewport: Viewport,
   size: { width: number; height: number },
 ) {
+  if (thread.canvasAnchor) {
+    return {
+      left: Math.min(
+        Math.max(56, viewport.x + thread.canvasAnchor.x * viewport.scale),
+        size.width - 56,
+      ),
+      top: Math.min(
+        Math.max(72, viewport.y + thread.canvasAnchor.y * viewport.scale),
+        size.height - 72,
+      ),
+    };
+  }
   const targets = thread.targetObjectIds.flatMap((id) => {
     const object = objectsById.get(id);
     return object ? [object] : [];
@@ -101,18 +123,54 @@ function threadAnchor(
   };
 }
 
-function selectedAnchor(
-  objects: CanvasObjectV2[],
-  selectedIds: string[],
-  viewport: Viewport,
-  size: { width: number; height: number },
+function objectBoundsForComments(
+  object: CanvasObjectV2,
+  objectsById: Map<string, CanvasObjectV2>,
 ) {
-  return threadAnchor(
-    { targetObjectIds: selectedIds },
-    new Map(objects.map((object) => [object.id, object])),
-    viewport,
-    size,
-  );
+  if (object.type !== "connector") return object.geometry;
+  const points = resolveConnectorPointsV2(object, objectsById);
+  const x = Math.min(points[0]!, points[2]!);
+  const y = Math.min(points[1]!, points[3]!);
+  return {
+    x,
+    y,
+    width: Math.max(1, Math.max(points[0]!, points[2]!) - x),
+    height: Math.max(1, Math.max(points[1]!, points[3]!) - y),
+  };
+}
+
+function topmostObjectAtPoint(
+  objects: CanvasObjectV2[],
+  objectsById: Map<string, CanvasObjectV2>,
+  point: CanvasPoint,
+) {
+  return [...objects].reverse().find((object) => {
+    const bounds = objectBoundsForComments(object, objectsById);
+    const padding = object.type === "connector" ? 12 : 0;
+    return (
+      point.x >= bounds.x - padding &&
+      point.x <= bounds.x + bounds.width + padding &&
+      point.y >= bounds.y - padding &&
+      point.y <= bounds.y + bounds.height + padding
+    );
+  });
+}
+
+function contextualCardPosition(
+  anchor: { left: number; top: number },
+  size: { width: number; height: number },
+  width: number,
+  height: number,
+) {
+  const gap = 22;
+  const left =
+    anchor.left + gap + width <= size.width - 16
+      ? anchor.left + gap
+      : Math.max(16, anchor.left - width - gap);
+  return {
+    left,
+    top: Math.min(Math.max(16, anchor.top - 36), size.height - height - 16),
+  };
 }
 
 function promptLabel(kind: CommentPromptKind | null) {
@@ -282,10 +340,12 @@ function ThreadBody({
           <Button
             type="submit"
             size="icon"
+            variant="ghost"
+            className="size-11 shrink-0 rounded-full bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-300"
             disabled={pending || !reply.trim()}
             aria-label="Send reply"
           >
-            <ChevronUp aria-hidden="true" />
+            <ArrowUp aria-hidden="true" className="size-5" />
           </Button>
         </form>
       ) : null}
@@ -364,9 +424,14 @@ export function CanvasComments({
   );
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [placementMode, setPlacementMode] = useState(false);
+  const [composerTarget, setComposerTarget] = useState<CommentTarget | null>(
+    null,
+  );
   const [draft, setDraft] = useState("");
   const [promptKind, setPromptKind] = useState<CommentPromptKind | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const placementRef = useRef<HTMLButtonElement>(null);
   const objectsById = useMemo(
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
@@ -386,15 +451,54 @@ export function CanvasComments({
   useEffect(() => {
     if (composerOpen) requestAnimationFrame(() => composerRef.current?.focus());
   }, [composerOpen]);
+  useEffect(() => {
+    if (placementMode)
+      requestAnimationFrame(() => placementRef.current?.focus());
+  }, [placementMode]);
+
+  function closeComposer() {
+    setComposerOpen(false);
+    setComposerTarget(null);
+  }
+
+  function beginComment() {
+    setSelectedThreadId(null);
+    if (targetIds) {
+      setComposerTarget({ targetObjectIds: targetIds, canvasAnchor: null });
+      setComposerOpen(true);
+      return;
+    }
+    setPlacementMode(true);
+  }
+
+  function placeComment(event: ReactMouseEvent<HTMLButtonElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const screenPoint = {
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+    };
+    const canvasPoint = {
+      x: (screenPoint.x - viewport.x) / viewport.scale,
+      y: (screenPoint.y - viewport.y) / viewport.scale,
+    };
+    const object = topmostObjectAtPoint(objects, objectsById, canvasPoint);
+    setComposerTarget({
+      targetObjectIds: object ? [object.id] : [],
+      canvasAnchor: object ? null : canvasPoint,
+    });
+    setPlacementMode(false);
+    setComposerOpen(true);
+  }
 
   async function createThread(authorKind: "human" | "ai") {
-    if (!targetIds || !draft.trim()) return;
+    if (!composerTarget || !draft.trim()) return;
     const result = await execute({
       type: "comment.create",
       commandId: crypto.randomUUID(),
       canvasId,
       body: draft.trim(),
-      targetObjectIds: targetIds,
+      targetObjectIds: composerTarget.targetObjectIds,
+      canvasAnchor: composerTarget.canvasAnchor,
       promptKind,
       authorKind,
       authorKey: authorKind === "ai" ? "primary-ai" : null,
@@ -405,7 +509,7 @@ export function CanvasComments({
         : null;
     setDraft("");
     setPromptKind(null);
-    setComposerOpen(false);
+    closeComposer();
     setVisible(true);
     if (id) setSelectedThreadId(id);
   }
@@ -445,8 +549,8 @@ export function CanvasComments({
     setSelectedThreadId(null);
   }
 
-  const composerPosition = targetIds
-    ? selectedAnchor(objects, targetIds, viewport, size)
+  const composerPosition = composerTarget
+    ? threadAnchor(composerTarget, objectsById, viewport, size)
     : null;
   const threadPosition = selectedThread
     ? (threadAnchor(selectedThread, objectsById, viewport, size) ?? {
@@ -454,9 +558,35 @@ export function CanvasComments({
         top: 112,
       })
     : null;
+  const composerCardPosition = composerPosition
+    ? contextualCardPosition(composerPosition, size, 480, 150)
+    : null;
+  const threadCardPosition = threadPosition
+    ? contextualCardPosition(threadPosition, size, 384, 448)
+    : null;
 
   return (
     <>
+      {placementMode ? (
+        <button
+          ref={placementRef}
+          type="button"
+          aria-label="Place comment on canvas"
+          className="absolute inset-0 z-20 cursor-crosshair bg-transparent outline-none focus-visible:ring-3 focus-visible:ring-violet-500 focus-visible:ring-inset"
+          onClick={placeComment}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setPlacementMode(false);
+            }
+          }}
+        >
+          <span className="pointer-events-none absolute top-20 left-1/2 -translate-x-1/2 rounded-full bg-zinc-900/90 px-4 py-2 text-sm font-medium text-white shadow-lg">
+            Click an object or anywhere on the canvas · Esc to cancel
+          </span>
+        </button>
+      ) : null}
+
       {visible
         ? threads.map((thread) => {
             const position = threadAnchor(thread, objectsById, viewport, size);
@@ -469,6 +599,8 @@ export function CanvasComments({
                 className={`absolute z-30 grid size-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-[3px] bg-white shadow-lg transition hover:scale-105 focus-visible:ring-3 focus-visible:ring-violet-500 focus-visible:outline-none ${thread.status === "open" ? "border-violet-500" : "border-zinc-300 opacity-75"}`}
                 style={position}
                 onClick={() => {
+                  setPlacementMode(false);
+                  closeComposer();
                   onSelectTargets(
                     thread.targetObjectIds.filter((id) => objectsById.has(id)),
                   );
@@ -484,39 +616,37 @@ export function CanvasComments({
           })
         : null}
 
-      {composerOpen && composerPosition ? (
+      {composerOpen && composerPosition && composerCardPosition ? (
         <div
           role="dialog"
           aria-label="New comment"
-          className="absolute z-50 w-[min(27rem,calc(100%-2rem))] -translate-x-full rounded-3xl border border-zinc-200 bg-white p-4 text-zinc-900 shadow-2xl"
-          style={{
-            left: Math.max(456, composerPosition.left),
-            top: composerPosition.top,
-          }}
+          className="absolute z-50 w-[min(30rem,calc(100%-2rem))] rounded-3xl border border-zinc-200 bg-white p-2 text-zinc-900 shadow-2xl"
+          style={composerCardPosition}
         >
-          <div className="flex items-start justify-between gap-3">
-            <p className="font-semibold">Comment on selection</p>
+          <div className="flex items-center gap-2">
+            <textarea
+              ref={composerRef}
+              aria-label="Comment"
+              rows={1}
+              maxLength={100_000}
+              value={draft}
+              placeholder="Add a comment"
+              className="h-12 min-h-12 flex-1 resize-none rounded-2xl border-0 bg-transparent px-3 py-3 text-base leading-6 outline-none placeholder:text-zinc-400 focus:h-24"
+              onChange={(event) => setDraft(event.target.value)}
+            />
             <Button
               type="button"
-              size="icon-sm"
+              size="icon"
               variant="ghost"
-              aria-label="Close comment composer"
-              onClick={() => setComposerOpen(false)}
+              className="size-12 shrink-0 rounded-full bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-300"
+              disabled={pending || !draft.trim()}
+              aria-label="Submit comment"
+              onClick={() => void createThread("human")}
             >
-              <X aria-hidden="true" />
+              <ArrowUp aria-hidden="true" className="size-6" />
             </Button>
           </div>
-          <textarea
-            ref={composerRef}
-            aria-label="Comment"
-            rows={4}
-            maxLength={100_000}
-            value={draft}
-            placeholder="Add focused feedback…"
-            className="mt-3 w-full resize-none rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-3 focus:ring-violet-100"
-            onChange={(event) => setDraft(event.target.value)}
-          />
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 px-2 pt-2 pb-1">
             <label
               className="text-xs font-medium text-zinc-600"
               htmlFor="comment-prompt-kind"
@@ -541,6 +671,7 @@ export function CanvasComments({
             {canAuthorAi ? (
               <Button
                 type="button"
+                size="sm"
                 variant="outline"
                 disabled={pending || !draft.trim()}
                 onClick={() => void createThread("ai")}
@@ -551,26 +682,25 @@ export function CanvasComments({
             <Button
               className="ml-auto"
               type="button"
-              disabled={pending || !draft.trim()}
-              onClick={() => void createThread("human")}
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Close comment composer"
+              onClick={closeComposer}
             >
-              <Send aria-hidden="true" /> Add comment
+              <X aria-hidden="true" />
             </Button>
           </div>
         </div>
       ) : null}
 
-      {selectedThread && threadPosition ? (
+      {selectedThread && threadPosition && threadCardPosition ? (
         <div
           role="dialog"
           aria-label="Comment thread"
-          className="absolute z-50 max-h-[min(36rem,calc(100%-8rem))] w-[min(31rem,calc(100%-2rem))] -translate-x-full overflow-y-auto rounded-3xl border border-zinc-200 bg-white p-5 text-zinc-900 shadow-2xl"
-          style={{
-            left: Math.max(520, threadPosition.left),
-            top: threadPosition.top,
-          }}
+          className="absolute z-50 max-h-[min(28rem,calc(100%-2rem))] w-[min(24rem,calc(100%-2rem))] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 text-zinc-900 shadow-2xl"
+          style={threadCardPosition}
         >
-          <div className="mb-4 flex items-center justify-between border-b border-zinc-100 pb-3">
+          <div className="mb-3 flex items-center justify-between border-b border-zinc-100 pb-2">
             <p className="font-semibold">Comment</p>
             <Button
               type="button"
@@ -598,17 +728,14 @@ export function CanvasComments({
       {panelOpen ? (
         <WorkspacePanel
           title="Comments"
-          description="Feedback stays anchored to one object or a complete group."
+          description="Attach feedback to a selection, an object, or anywhere on the canvas."
           invoker={panelInvoker}
           onDismiss={onDismissPanel}
         >
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              disabled={!canComment || !targetIds}
-              onClick={() => setComposerOpen(true)}
-            >
-              <MessageCircle aria-hidden="true" /> New comment
+            <Button type="button" disabled={!canComment} onClick={beginComment}>
+              <MessageCircle aria-hidden="true" />
+              {placementMode ? "Click canvas…" : "New comment"}
             </Button>
             <Button
               type="button"
@@ -625,7 +752,8 @@ export function CanvasComments({
           </div>
           {!targetIds ? (
             <p className="mt-3 rounded-xl bg-zinc-100 p-3 text-sm text-zinc-600">
-              Select one object or every object in a group to start a comment.
+              Choose New comment, then click an object or anywhere on the
+              canvas.
             </p>
           ) : null}
           {error ? (
@@ -650,9 +778,9 @@ export function CanvasComments({
               <p className="text-sm text-zinc-500">No comments yet.</p>
             ) : null}
             {threads.map((thread) => {
-              const targetAvailable = thread.targetObjectIds.some((id) =>
-                objectsById.has(id),
-              );
+              const targetAvailable =
+                thread.canvasAnchor !== null ||
+                thread.targetObjectIds.some((id) => objectsById.has(id));
               return (
                 <button
                   key={thread.id}
@@ -660,6 +788,8 @@ export function CanvasComments({
                   className="flex w-full items-start gap-3 rounded-xl border border-zinc-200 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50"
                   onClick={() => {
                     setVisible(true);
+                    setPlacementMode(false);
+                    closeComposer();
                     onSelectTargets(
                       thread.targetObjectIds.filter((id) =>
                         objectsById.has(id),

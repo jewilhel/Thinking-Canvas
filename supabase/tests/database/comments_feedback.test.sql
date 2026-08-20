@@ -58,6 +58,57 @@ select results_eq(
 select results_eq(
   $$select created from public.create_comment_thread(
     '20000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000006',
+    'Free canvas comment',
+    array[]::uuid[],
+    null,
+    'human',
+    null,
+    320.5,
+    180.25
+  )$$,
+  array[true],
+  'owner creates a comment at a finite canvas position'
+);
+
+select results_eq(
+  $$select anchor_x, anchor_y from public.comments where client_command_id = '71000000-0000-4000-8000-000000000006'$$,
+  $$values (320.5::double precision, 180.25::double precision)$$,
+  'free canvas coordinates persist on the comment'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.comment_targets
+    where comment_id = (
+      select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000006'
+    )
+  ),
+  0,
+  'free canvas comments do not create object targets'
+);
+
+select throws_ok(
+  $$select * from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000007',
+    'Ambiguous target',
+    array['61000000-0000-4000-8000-000000000001']::uuid[],
+    null,
+    'human',
+    null,
+    10,
+    20
+  )$$,
+  '22023',
+  'A comment requires exactly one object target set or canvas position.',
+  'object IDs and a free canvas position cannot be combined'
+);
+
+select results_eq(
+  $$select created from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
     '71000000-0000-4000-8000-000000000001',
     'Rate this direction',
     array[

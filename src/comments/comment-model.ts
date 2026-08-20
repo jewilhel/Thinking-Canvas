@@ -9,16 +9,35 @@ export const commentAuthorKindSchema = z.enum(["human", "ai"]);
 const strictText = z.string().trim().min(1).max(100_000);
 const uuid = z.uuid();
 
-export const commentCreateCommandSchema = z.strictObject({
-  type: z.literal("comment.create"),
-  commandId: uuid,
-  canvasId: uuid,
-  body: strictText,
-  targetObjectIds: z.array(uuid).min(1).max(100),
-  promptKind: commentPromptKindSchema.nullable(),
-  authorKind: commentAuthorKindSchema,
-  authorKey: z.string().min(1).max(255).nullable(),
-});
+export const commentCreateCommandSchema = z
+  .strictObject({
+    type: z.literal("comment.create"),
+    commandId: uuid,
+    canvasId: uuid,
+    body: strictText,
+    targetObjectIds: z.array(uuid).max(100),
+    canvasAnchor: z
+      .strictObject({
+        x: z.number().finite().min(-1_000_000_000).max(1_000_000_000),
+        y: z.number().finite().min(-1_000_000_000).max(1_000_000_000),
+      })
+      .nullable(),
+    promptKind: commentPromptKindSchema.nullable(),
+    authorKind: commentAuthorKindSchema,
+    authorKey: z.string().min(1).max(255).nullable(),
+  })
+  .superRefine((command, context) => {
+    if (
+      command.targetObjectIds.length > 0 ===
+      (command.canvasAnchor !== null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Choose exactly one object target set or canvas position.",
+        path: ["targetObjectIds"],
+      });
+    }
+  });
 
 export const commentReplyCommandSchema = z.strictObject({
   type: z.literal("comment.reply"),
@@ -110,6 +129,7 @@ export type CommentThread = {
   createdAt: string;
   updatedAt: string;
   targetObjectIds: string[];
+  canvasAnchor: { x: number; y: number } | null;
   replies: CommentReply[];
   prompt: CommentPrompt | null;
 };
