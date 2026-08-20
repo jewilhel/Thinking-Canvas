@@ -9,7 +9,7 @@ Last updated: 2026-08-19
 
 Turn the Milestone 2 Comments placeholder into durable, contextual feedback without changing the proven canvas-object, Yjs, or collaboration boundaries.
 
-When this milestone is complete, an authenticated participant with feedback permission can attach a comment to one canvas object or one selected group, follow the target as objects move, read the complete thread in context or in the existing shared panel, reply in deterministic order, and optionally add one supported structured response control. A recipient can answer a yes/no, approve/revise/discard, or bounded numeric-rating prompt without typing. Authorized participants can resolve or dismiss a thread without deleting its history, while the comment author or canvas owner can separately choose permanent thread deletion after explicit confirmation. Each user can hide comment bubbles and the temporary annotation overlay without changing canvas content or stored feedback.
+When this milestone is complete, an authenticated participant with feedback permission can attach a comment to one canvas object or one selected group, or place it directly on empty canvas. Placement over an unselected object attaches to that object; empty-canvas placement persists in world space. The participant can follow object targets as they move, open a compact conversation beside any marker, read the complete thread in context or in the existing shared panel, reply in deterministic order, and optionally add one supported structured response control. A recipient can answer a yes/no, approve/revise/discard, or bounded numeric-rating prompt without typing. Authorized participants can resolve or dismiss a thread without deleting its history, while the comment author or canvas owner can separately choose permanent thread deletion after explicit confirmation. Each user can hide comment bubbles and the temporary annotation overlay without changing canvas content or stored feedback.
 
 Two authenticated browser sessions see the same persisted thread and response after reload. A deterministic preview/test AI actor can create a structured prompt through the same validated command boundary used by a human, while real OpenAI reasoning and the Milestone 4 AI product remain excluded.
 
@@ -26,8 +26,10 @@ These references guide interaction principles rather than pixel-for-pixel reprod
 This plan covers these exact Milestone 3 requirements from the master ledger:
 
 - **FR-023 — Anchored comments.** A participant can attach a comment to one object or a selected group, and the target survives movement and reload.
+- **FR-023a — Direct canvas comment placement.** A participant can place a comment at any canvas position; placement over an unselected object attaches to that object, while placement over empty canvas persists at its world-space position through pan, zoom, and reload.
 - **FR-024 — Threaded replies.** Participants can reply to a comment and see replies in deterministic chronological order.
 - **FR-025 — Complete history.** Selecting a comment exposes its entire exchange in-context and through an optional side panel.
+- **FR-025a — Compact contextual conversation.** Opening a canvas comment marker shows the complete exchange in a smaller card beside that marker or its object, and comment/reply submission uses an obvious upward arrow inside a light-grey circular control.
 - **FR-026 — Structured prompt creation.** A comment author can add exactly one supported structured response control.
 - **FR-027 — Initial controls.** Yes/no, approve/revise/discard, and bounded numeric rating prompts render, validate, and persist responses.
 - **FR-028 — Human and AI prompt authors.** Both participant types can create structured prompts through the same permission-aware domain command.
@@ -56,7 +58,7 @@ The product owner approved the plan and all three recommended decisions on 2026-
 
 - Keep `/app/canvases/[canvasId]` as the authenticated Server Component and preserve its non-disclosing authorization behavior. Read the installed Next.js 16.3 data-security, mutation, Server/Client Component, and Route Handler guidance immediately before implementation.
 - Keep comments, targets, replies, prompts, responses, and status in Supabase PostgreSQL as relational records. Do not place durable feedback in Yjs, canvas updates, snapshots, Zustand, or browser-only storage.
-- Keep comment-bubble placement as a derived view of relational target IDs plus the current Yjs object geometry. Object movement changes only canvas state; it does not rewrite comment targets.
+- Keep object-attached comment-bubble placement as a derived view of relational target IDs plus the current Yjs object geometry. Store empty-canvas comment anchors as relational world-space coordinates so pan and zoom change only presentation. Object movement changes only canvas state; it does not rewrite comment targets.
 - Keep “comments visible” as per-user, per-canvas ephemeral UI state. Hiding comments affects bubbles and the temporary overlay presentation only and emits no domain command or relational mutation.
 - Load a typed comment projection for the authorized canvas, then refresh it after durable mutations, reconnect, window focus, and low-frequency comment invalidation events. PostgreSQL remains authoritative when a realtime event is missed or repeated.
 
@@ -65,19 +67,20 @@ The product owner approved the plan and all three recommended decisions on 2026-
 - Add strict Zod schemas and one comment command executor for `comment.create`, `comment.reply`, `comment.respond`, `comment.status`, and `comment.delete`. Human and AI prompt creation use the same `comment.create` shape, target validation, permission result, persistence path, and audit metadata; only logical actor provenance differs.
 - Separate the authenticated authorization principal from the logical author, following the boundary already proven for simulated AI canvas commands. Human commands use the same identity for both. Preview/test AI commands use the authenticated owner or editor as requester and the stable logical actor `primary-ai`.
 - Re-authenticate and re-check current canvas membership at execution time. Owner, editor, and commenter roles may create human comments, replies, prompts, and responses; viewers and non-members cannot mutate feedback. The AI path requires an authenticated owner or editor and is unavailable in normal production presentation until Milestone 4 authorizes it.
-- Validate the current Yjs document projection before creating a target: one target object must exist, or every member of one selected group must exist and still share the same group ID. Arbitrary ungrouped multiselection is not silently treated as a group.
+- Validate the current Yjs document projection before creating a target: one target object must exist, every member of one selected group must exist and still share the same group ID, or a finite world-space point must be supplied for empty-canvas placement. Hit-test direct placement against the topmost object before choosing the free-position path. Arbitrary ungrouped multiselection is not silently treated as a group.
 - Execute comment creation, target creation, optional prompt creation, and actor provenance as one transaction so a partial thread cannot be stored. Reply, response, status, and permanent thread deletion commands are individually atomic.
 - Assign client-generated command IDs and make mutation RPCs idempotent so a retry after an ambiguous response cannot duplicate a thread, reply, or response.
 
 ### Anchors, bubbles, panel, and thread history
 
 - Replace the Milestone 2 placeholder with two coordinated surfaces: a contextual target-adjacent composer/thread card for in-canvas work and the existing shared panel host for the optional complete-history view. Both use the same selected-thread state and durable projection.
-- Enter comment placement from the existing Comments dock control or an applicable object action. Require exactly one selected object or one selected group before enabling submission; keep the selection visible while composing. Open the composer near the target when viewport space permits, clamp it safely, and fall back to the shared panel at constrained desktop/tablet sizes.
-- Store one `comment_targets` row for a single object and the complete stable object-ID set for a group. Compute a single bubble anchor from the current visible bounding box of those IDs, so movement and resize are reflected without target writes.
+- Enter comment placement from the existing Comments dock control or an applicable object action. A valid object/group selection opens composition for that target; otherwise arm direct placement and let the next canvas point choose the topmost object underneath or an empty-canvas world-space anchor. Open the compact composer near the target or point, clamp it safely, and fall back to the shared panel at constrained desktop/tablet sizes.
+- Store one `comment_targets` row for a single object and the complete stable object-ID set for a group. Store a mutually exclusive finite world-space anchor for empty-canvas comments. Compute a single bubble anchor from current target bounds or the stored point so object movement, canvas pan, and zoom are reflected without target rewrites.
 - After submission or dismissal of the open card, collapse the thread to a compact participant marker at the target edge. Use a profile image when available and an accessible initials fallback otherwise; identity and state must not rely on the image or color alone.
 - If a target object is later deleted, preserve the thread and show an explicit “target no longer available” state in the panel. Do not cascade comment history from Yjs object deletion and do not recreate the object.
 - Order root comments and replies by server `created_at`, then stable UUID as a deterministic tie-breaker. Never rely on client arrival order.
-- Selecting a marker opens the full thread in context; the optional shared panel exposes the same complete history and can focus or frame its available target without changing durable canvas content.
+- Selecting a marker opens the full thread in a smaller viewport-safe card directly beside the marker or object; the optional shared panel exposes the same complete history and can focus or frame its available target without changing durable canvas content.
+- Match the approved reference direction with one-row composition and compact reply fields whose submission control is an upward arrow centered inside a light-grey circle. Preserve prompt and preview-AI authoring through progressive disclosure below the primary input.
 - Keep lifecycle overflow, resolve/dismiss, permanent delete, close, and submit actions visually and semantically distinct. Permanent delete requires confirmation that the complete thread will be removed and cannot be undone. Show author identity, relative time, body, replies, and status in a scan-friendly hierarchy while preserving exact timestamps in accessible detail.
 - Keep the reply input compact until focused, expand it without replacing the existing exchange, and return it to a compact ready state after successful submission while leaving the new reply visible.
 
@@ -103,9 +106,9 @@ Create one forward-safe additive migration after the decisions above are approve
 
 - Add logical author provenance to `comments` while retaining the authenticated human principal for accountability and membership checks. Backfill existing comments as human-authored without changing their visible author.
 - Add client command IDs and unique canvas-scoped constraints needed for idempotent root-comment, reply, and response writes.
-- Add or revise indexes for canvas/status ordering, deterministic thread reads, target lookup, prompt lookup, and responder lookup.
+- Add or revise indexes and constraints for canvas/status ordering, deterministic thread reads, target lookup, finite world-space anchors, prompt lookup, and responder lookup.
 - Add transactional functions for root comment plus targets plus optional prompt, reply creation, response upsert, allowed status transitions, and authorized permanent thread deletion. Give each function a fixed search path, strict argument validation, explicit membership checks, and least-privilege grants.
-- Enforce exactly one valid target object or one valid grouped target set at the application command boundary; the database stores stable IDs because canvas objects live in Yjs and cannot be protected by a relational foreign key.
+- Enforce exactly one target mode at the application and database command boundaries: one object, one complete group, or one finite world-space point. The database stores stable IDs because canvas objects live in Yjs and cannot be protected by a relational foreign key.
 - Add database-side response validation against the referenced prompt kind and approved rating bounds. Reject responses to resolved or dismissed comments.
 - Replace broad comment-table mutation grants where necessary so clients cannot bypass the transactional functions, author provenance rules, idempotency, or status-transition matrix.
 - Update private Realtime Broadcast policy only as needed for feedback invalidation. Content remains available solely through RLS-protected relational reads.
@@ -131,8 +134,10 @@ Rollback or compensation: disable comment mutation entry points while retaining 
 
 - [x] Replace the Comments placeholder with coordinated target-adjacent composer/thread-card and shared-panel loading, empty, list, selected-thread, failure, and retry states.
 - [x] Add single-object and selected-group comment placement from the dock.
+- [ ] Add direct placement anywhere on the canvas with topmost-object attachment and persisted empty-canvas anchors.
 - [x] Persist the root comment and stable target IDs atomically, then render a bubble from current object/group geometry.
 - [x] Implement the reference-informed compact participant marker, viewport-safe contextual card, clear author/time/action hierarchy, and initials fallback.
+- [ ] Reduce the contextual conversation footprint and use circular light-grey upward-arrow submit controls for comments and replies.
 - [x] Keep bubbles attached through object movement, resize, collaborator sync, and reload without rewriting target rows.
 - [x] Preserve history and show a target-unavailable state after object deletion.
 - [x] Add unit, database, Chromium, accessibility, and two-context coverage for authorization, target validation, placement, movement, reload, and deletion behavior.
@@ -199,31 +204,32 @@ Run and record the exact commit, environment, result, and artifact for:
 
 ### Required verification matrix
 
-| Area                            | Fixtures and identities                                                                            | Expected result and retained evidence                                                                                                                |
-| ------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Schema and commands             | Every command kind; valid and malformed actor, target, prompt, response, and status payloads       | Strict parsing rejects unknown keys; all durable mutations use the comment executor and idempotent transaction path.                                 |
-| Roles and RLS                   | Owner, editor, commenter, viewer, non-member, unauthenticated, removed member                      | Reads and mutations match the approved matrix immediately; cross-canvas and removed-member access fail without leaking content.                      |
-| Anchoring                       | Rectangle, text, connector, table, one grouped selection, deleted target                           | Stable IDs survive move/resize/reload; group bubble follows the current aggregate bounds; deleted targets retain history with an unavailable state.  |
-| Thread history                  | Concurrent root/reply creation, identical server timestamps, retry after ambiguous response        | `(created_at, id)` order is deterministic; exact retries do not duplicate records; the complete exchange is visible in context and panel.            |
-| Structured controls             | Yes/no, approve/revise/discard, approved rating bounds, malformed JSON                             | Controls are operable without typing; only the exact valid shape persists; one responder row updates safely while open.                              |
-| Human and AI authors            | Human commenter; preview/test AI requested by owner/editor                                         | Both use the same command contract and permission result; AI provenance is distinct and accountable; production shows no simulated control.          |
-| Lifecycle and hiding            | Approved status actors, unauthorized actor, two conflicting transitions, local hide/show           | Resolve/dismiss preserves rows and makes history read-only; hiding changes no Yjs, relational, snapshot, or canvas-history data.                     |
-| Realtime and recovery           | Two browser contexts, missed/repeated invalidation, reconnect, reload                              | Durable relational state wins; both sessions converge after refetch; no comment body is placed in Broadcast payloads.                                |
-| Reference-informed interaction  | Composer, compact marker, open thread, focused reply editor, submitted reply at desktop and tablet | The sequence preserves target context and progressive disclosure, remains original to Thinking Canvas, and does not expose excluded FigJam controls. |
-| Accessibility and responsive UI | Keyboard-only, screen reader semantics, desktop `1440 × 900`, tablet `1024 × 768` and `768 × 1024` | Every action is named and operable, focus is restored, status is announced, touch targets remain usable, and axe finds no detectable violations.     |
-| Canvas regression               | Existing object/action, styling, connector, grouping/history, reconnect, multiplayer suites        | Comment overlays and panel behavior do not intercept gestures, mutate Yjs, lose canvas data, or regress closed Milestones 1–2.                       |
+| Area                            | Fixtures and identities                                                                               | Expected result and retained evidence                                                                                                                |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Schema and commands             | Every command kind; valid and malformed actor, target, prompt, response, and status payloads          | Strict parsing rejects unknown keys; all durable mutations use the comment executor and idempotent transaction path.                                 |
+| Roles and RLS                   | Owner, editor, commenter, viewer, non-member, unauthenticated, removed member                         | Reads and mutations match the approved matrix immediately; cross-canvas and removed-member access fail without leaking content.                      |
+| Anchoring                       | Empty-canvas points, unselected rectangle/text/connector/table, one grouped selection, deleted target | Direct placement chooses the topmost object or a finite world-space point; stable IDs/coordinates survive move, pan, zoom, reload, and reconnect.    |
+| Thread history                  | Concurrent root/reply creation, identical server timestamps, retry after ambiguous response           | `(created_at, id)` order is deterministic; exact retries do not duplicate records; the complete exchange is visible in context and panel.            |
+| Structured controls             | Yes/no, approve/revise/discard, approved rating bounds, malformed JSON                                | Controls are operable without typing; only the exact valid shape persists; one responder row updates safely while open.                              |
+| Human and AI authors            | Human commenter; preview/test AI requested by owner/editor                                            | Both use the same command contract and permission result; AI provenance is distinct and accountable; production shows no simulated control.          |
+| Lifecycle and hiding            | Approved status actors, unauthorized actor, two conflicting transitions, local hide/show              | Resolve/dismiss preserves rows and makes history read-only; hiding changes no Yjs, relational, snapshot, or canvas-history data.                     |
+| Realtime and recovery           | Two browser contexts, missed/repeated invalidation, reconnect, reload                                 | Durable relational state wins; both sessions converge after refetch; no comment body is placed in Broadcast payloads.                                |
+| Reference-informed interaction  | Composer, compact marker, open thread, focused reply editor, submitted reply at desktop and tablet    | The sequence preserves target context and progressive disclosure, remains original to Thinking Canvas, and does not expose excluded FigJam controls. |
+| Accessibility and responsive UI | Keyboard-only, screen reader semantics, desktop `1440 × 900`, tablet `1024 × 768` and `768 × 1024`    | Every action is named and operable, focus is restored, status is announced, touch targets remain usable, and axe finds no detectable violations.     |
+| Canvas regression               | Existing object/action, styling, connector, grouping/history, reconnect, multiplayer suites           | Comment overlays and panel behavior do not intercept gestures, mutate Yjs, lose canvas data, or regress closed Milestones 1–2.                       |
 
 ### Authenticated Netlify preview scenarios
 
 Use Codex's in-app browser by default for the first hosted pass. Use two distinct authenticated Supabase identities in separate browser contexts for `AS-003` and multiplayer verification; add another browser only if session separation or browser-specific behavior requires it.
 
 1. **Anchored object and group:** create a comment on one object and one grouped selection; verify the target-adjacent composer collapses to a compact participant marker; move and resize the targets from the peer session; reload both and confirm markers, contextual cards, and panel targets remain correct.
-2. **Complete history:** create replies from both participants in close succession; focus the compact reply field and verify its progressive expansion; submit and verify its compact reset; open from a marker and from the panel; verify the complete deterministic exchange after reload.
-3. **AS-003 comment prompt:** the author attaches a yes/no prompt, the recipient selects an answer without typing, the answer appears in both sessions, and the complete thread persists after reload.
-4. **All controls:** create approve/revise/discard and approved rating prompts, answer and revise each while open, then verify malformed and out-of-range requests are rejected without partial records.
-5. **Lifecycle and hiding:** exercise each approved resolve/dismiss authority, verify an unauthorized transition fails, inspect retained closed history, hide/show bubbles and overlay, and confirm underlying canvas and relational rows are unchanged.
-6. **Recovery and membership:** miss or repeat one invalidation, reconnect and refetch, then remove a participant's membership and prove the next read/mutation is denied without clearing the owner's canvas.
-7. **AI parity:** invoke the deterministic preview/test AI prompt command as an authorized owner/editor, verify distinct provenance and the same response behavior, and confirm the normal production presentation contains no simulated AI control.
+2. **Direct canvas placement:** with no selection, place one comment over an unselected object and one on empty canvas; verify the first follows its object, the second stays at the same world-space point through pan/zoom, and both persist after reload.
+3. **Complete history:** create replies from both participants in close succession; focus the compact reply field and verify its progressive expansion; submit and verify its compact reset; open the smaller card beside object-attached and free markers and from the panel; verify the complete deterministic exchange after reload.
+4. **AS-003 comment prompt:** the author attaches a yes/no prompt, the recipient selects an answer without typing, the answer appears in both sessions, and the complete thread persists after reload.
+5. **All controls:** create approve/revise/discard and approved rating prompts, answer and revise each while open, then verify malformed and out-of-range requests are rejected without partial records.
+6. **Lifecycle and hiding:** exercise each approved resolve/dismiss authority, verify an unauthorized transition fails, inspect retained closed history, hide/show bubbles and overlay, and confirm underlying canvas and relational rows are unchanged.
+7. **Recovery and membership:** miss or repeat one invalidation, reconnect and refetch, then remove a participant's membership and prove the next read/mutation is denied without clearing the owner's canvas.
+8. **AI parity:** invoke the deterministic preview/test AI prompt command as an authorized owner/editor, verify distinct provenance and the same response behavior, and confirm the normal production presentation contains no simulated AI control.
 
 Retain the immutable deploy ID and URL, exact commit, CI run, browser and viewport, user identities/roles, timestamps, target IDs, thread order, status and response readback, screenshots, privacy-safe logs, and every defect/fix/rerun.
 
@@ -246,8 +252,10 @@ Retain the immutable deploy ID and URL, exact commit, CI run, browser and viewpo
 - [x] The product owner approves this plan and all three recorded decisions; the document status becomes `Approved for implementation` before product or database changes begin.
 - [x] The approved `PD-004` decision is recorded in the master plan before rating implementation.
 - [ ] **FR-023:** an authorized participant attaches a comment to one object and one selected group; each target follows current geometry and survives peer movement, reload, and reconnect.
+- [ ] **FR-023a:** direct placement over an unselected object attaches to that object; placement over empty canvas persists at the same world-space point through pan, zoom, reload, and reconnect.
 - [ ] **FR-024:** two participants create replies that render in deterministic `(created_at, id)` order in both sessions and after reload.
 - [ ] **FR-025:** selecting a comment exposes the entire exchange in context and through the optional shared panel, including retained closed and missing-target history.
+- [ ] **FR-025a:** object-attached and free markers open the full exchange in a smaller adjacent card, and comment/reply submit controls use the approved light-grey circular upward-arrow treatment.
 - [ ] **FR-026:** an author can add no prompt or exactly one supported structured control; a second prompt is rejected without partial data.
 - [ ] **FR-027:** yes/no, approve/revise/discard, and the approved bounded rating controls render accessibly, reject invalid values, and persist valid responses.
 - [ ] **FR-028:** human and deterministic preview/test AI authors create prompts through the same permission-aware command contract and durable transaction path with distinct, accountable provenance.
@@ -274,7 +282,7 @@ Retain the immutable deploy ID and URL, exact commit, CI run, browser and viewpo
 - Conversational starter structures and reusable templates (`FR-063` through `FR-066`, Milestone 10).
 - Invitations or membership-management UI, comment mentions/notifications, attachments, reactions, freeform polls, anonymous responses, per-response discussion, comment export, configurable retention policy, production launch, cross-browser release matrix, and production observability unless separately promoted in the master ledger.
 - Deleting comment history as the implementation of dismiss or resolve.
-- Arbitrary ungrouped multiselection as one group target, document targets, connector-segment targets, or viewport-region comments.
+- Arbitrary ungrouped multiselection as one group target, document targets, connector-segment-specific targets, or viewport-region targets larger than one world-space point.
 
 ## Implementation record
 

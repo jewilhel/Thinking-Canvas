@@ -188,8 +188,10 @@ Evidence: [Milestone 2 implementation and verification record](docs/implementati
 ### Product requirements
 
 - [ ] **FR-023 — Anchored comments.** A participant can attach a comment to one object or a selected group, and the target survives movement and reload.
+- [ ] **FR-023a — Direct canvas comment placement.** A participant can place a comment at any canvas position; placement over an unselected object attaches to that object, while placement over empty canvas persists at its world-space position through pan, zoom, and reload.
 - [ ] **FR-024 — Threaded replies.** Participants can reply to a comment and see replies in deterministic chronological order.
 - [ ] **FR-025 — Complete history.** Selecting a comment exposes its entire exchange in-context and through an optional side panel.
+- [ ] **FR-025a — Compact contextual conversation.** Opening a canvas comment marker shows the complete exchange in a smaller card beside that marker or its object, and comment/reply submission uses an obvious upward arrow inside a light-grey circular control.
 - [ ] **FR-026 — Structured prompt creation.** A comment author can add exactly one supported structured response control.
 - [ ] **FR-027 — Initial controls.** Yes/no, approve/revise/discard, and bounded numeric rating prompts render, validate, and persist responses.
 - [ ] **FR-028 — Human and AI prompt authors.** Both participant types can create structured prompts through the same permission-aware domain command.
