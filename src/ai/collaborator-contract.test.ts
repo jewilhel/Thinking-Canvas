@@ -11,6 +11,7 @@ import {
   PRIMARY_AI_KEY,
 } from "@/ai/collaborator-contract";
 import { FakePrimaryAiGateway } from "@/ai/fake-collaborator-gateway";
+import { allowedAiToolNames } from "@/ai/tool-registry";
 
 const ids = {
   run: "80000000-0000-4000-8000-000000000001",
@@ -162,7 +163,13 @@ describe("AI collaborator contracts", () => {
 describe("FakePrimaryAiGateway", () => {
   it("returns deterministic grounded output without provider access", async () => {
     const gateway = new FakePrimaryAiGateway();
-    await expect(gateway.request({ invocation, projection })).resolves.toEqual({
+    await expect(
+      gateway.request({
+        invocation,
+        projection,
+        allowedToolNames: allowedAiToolNames(invocation.authority),
+      }),
+    ).resolves.toEqual({
       status: "completed",
       requestId: `fake-${ids.run}`,
       reply: {
@@ -176,16 +183,40 @@ describe("FakePrimaryAiGateway", () => {
   it("returns deterministic cancellation and failure results", async () => {
     const gateway = new FakePrimaryAiGateway();
     await expect(
-      gateway.request({ invocation, projection, scenario: "cancelled" }),
+      gateway.request({
+        invocation,
+        projection,
+        allowedToolNames: allowedAiToolNames(invocation.authority),
+        scenario: "cancelled",
+      }),
     ).resolves.toMatchObject({
       status: "cancelled",
       errorCode: "cancelled_by_user",
     });
     await expect(
-      gateway.request({ invocation, projection, scenario: "failed" }),
+      gateway.request({
+        invocation,
+        projection,
+        allowedToolNames: allowedAiToolNames(invocation.authority),
+        scenario: "failed",
+      }),
     ).resolves.toMatchObject({
       status: "failed",
       errorCode: "fake_provider_failure",
     });
+  });
+
+  it("fails closed when the provider allowlist exceeds current authority", async () => {
+    const gateway = new FakePrimaryAiGateway();
+    await expect(
+      gateway.request({
+        invocation,
+        projection,
+        allowedToolNames: [
+          ...allowedAiToolNames(invocation.authority),
+          "execute_canvas_commands",
+        ],
+      }),
+    ).rejects.toThrow("does not match current authority");
   });
 });

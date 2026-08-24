@@ -6,6 +6,7 @@ import {
   type AiProjectionEnvelope,
   type AiReply,
 } from "@/ai/collaborator-contract";
+import { allowedAiToolNames, type AiToolName } from "@/ai/tool-registry";
 
 export type FakeAiScenario = "complete" | "cancelled" | "failed";
 
@@ -25,12 +26,24 @@ export class FakePrimaryAiGateway {
   async request(input: {
     invocation: AiInvocation;
     projection: AiProjectionEnvelope;
+    allowedToolNames: AiToolName[];
     scenario?: FakeAiScenario;
   }): Promise<FakeAiGatewayResult> {
     const invocation = aiInvocationSchema.parse(input.invocation);
     const projection = aiProjectionEnvelopeSchema.parse(input.projection);
     if (invocation.canvasId !== projection.canvasId) {
       throw new Error("The invocation and projection canvas must match.");
+    }
+    const expectedTools = allowedAiToolNames(invocation.authority);
+    if (
+      input.allowedToolNames.length !== expectedTools.length ||
+      input.allowedToolNames.some(
+        (name, index) => name !== expectedTools[index],
+      )
+    ) {
+      throw new Error(
+        "The AI tool allowlist does not match current authority.",
+      );
     }
 
     const requestId = `fake-${invocation.runId}`;

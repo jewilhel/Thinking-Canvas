@@ -17,6 +17,7 @@ import {
   inspectCommentThreads,
   validateConnectedPath,
 } from "@/ai/grounding";
+import { allowedAiToolNames } from "@/ai/tool-registry";
 import { postgresByteaToBytes } from "@/collaboration/canvas-document";
 import { buildCompactedSnapshot } from "@/collaboration/persistence";
 import { getAuthenticatedUser } from "@/lib/auth/session";
@@ -53,6 +54,14 @@ export async function completeDeterministicAiRun(
   if (run.requested_by !== user.id || run.canvas_id !== canvasId) {
     throw new AiRunAccessError("AI run is not accessible.");
   }
+  const accessResult = await supabase.rpc("get_canvas_ai_access", {
+    target_canvas_id: run.canvas_id,
+  });
+  const currentAuthority = accessResult.data?.[0]?.effective_authority;
+  if (accessResult.error || !currentAuthority) {
+    throw new AiRunAccessError("The primary AI is no longer available.");
+  }
+  const allowedToolNames = allowedAiToolNames(currentAuthority);
   if (run.status === "completed" && run.output_reply_id) {
     return { runId: run.id, replyId: run.output_reply_id, status: run.status };
   }
@@ -259,11 +268,12 @@ export async function completeDeterministicAiRun(
       replyId: run.invoking_reply_id,
       requestedBy: run.requested_by,
       idempotencyKey: run.idempotency_key,
-      authority: run.authority_snapshot,
+      authority: currentAuthority,
       instruction,
       selectedPathIds: run.ordered_context_ids,
     },
     projection,
+    allowedToolNames,
     scenario: options.scenario,
   });
   if (gatewayResult.status !== "completed") {
@@ -291,6 +301,7 @@ export async function completeDeterministicAiRun(
       lastSequence: compacted.lastSequence,
       evidence: gatewayResult.reply.evidence,
       inspectionTools: ["inspect_canvas_objects", "inspect_comment_threads"],
+      allowedTools: allowedToolNames,
       objectDetailPageSize: objectInspection.items.length,
       objectDetailNextCursor: objectInspection.nextCursor,
       threadDetailPageSize: threadInspection.items.length,
