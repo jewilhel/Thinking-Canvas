@@ -194,6 +194,7 @@ export type AiAuthorityLevel = z.infer<typeof aiAuthorityLevelSchema>;
 export type AiInvocation = z.infer<typeof aiInvocationSchema>;
 export type AiProjectionEnvelope = z.infer<typeof aiProjectionEnvelopeSchema>;
 export type AiReply = z.infer<typeof aiReplySchema>;
+export type AiToolCall = z.infer<typeof aiToolCallSchema>;
 export type CollaboratorRecipient = z.infer<typeof collaboratorRecipientSchema>;
 
 export function effectiveAiAuthority(input: {

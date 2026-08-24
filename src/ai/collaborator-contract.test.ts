@@ -177,6 +177,38 @@ describe("FakePrimaryAiGateway", () => {
         evidence: [{ objectId: ids.object, label: "Main idea" }],
         contextualTargetObjectIds: [ids.object],
       },
+      toolCalls: [],
+    });
+  });
+
+  it("requests an anchored contextual comment only from an explicit world-space instruction", async () => {
+    const gateway = new FakePrimaryAiGateway();
+    const result = await gateway.request({
+      invocation: {
+        ...invocation,
+        instruction: "Please leave a contextual comment on the evidence.",
+      },
+      projection: {
+        ...projection,
+        commentThreads: [
+          {
+            ...projection.commentThreads[0],
+            status: "open",
+            targetObjectIds: [],
+          },
+        ],
+      },
+      allowedToolNames: allowedAiToolNames(invocation.authority),
+    });
+    expect(result).toMatchObject({
+      status: "completed",
+      toolCalls: [
+        {
+          callKey: "contextual-comment-1",
+          toolName: "create_contextual_comment",
+          arguments: { targetObjectIds: [ids.object] },
+        },
+      ],
     });
   });
 

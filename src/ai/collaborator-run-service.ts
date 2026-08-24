@@ -17,11 +17,15 @@ import {
   inspectCommentThreads,
   validateConnectedPath,
 } from "@/ai/grounding";
-import { allowedAiToolNames } from "@/ai/tool-registry";
+import {
+  allowedAiToolNames,
+  contextualCommentArgumentsSchema,
+  validateAiToolRequest,
+} from "@/ai/tool-registry";
 import { postgresByteaToBytes } from "@/collaboration/canvas-document";
 import { buildCompactedSnapshot } from "@/collaboration/persistence";
 import { getAuthenticatedUser } from "@/lib/auth/session";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 const runRequestSchema = z.strictObject({
   runId: z.uuid(),
@@ -66,7 +70,7 @@ export async function completeDeterministicAiRun(
     return { runId: run.id, replyId: run.output_reply_id, status: run.status };
   }
   if (
-    !(["queued", "projecting", "thinking"] as const).includes(
+    !(["queued", "projecting", "thinking", "tool_pending"] as const).includes(
       run.status as never,
     ) ||
     !run.invoking_comment_id
@@ -289,6 +293,55 @@ export async function completeDeterministicAiRun(
       "The AI response referenced an unavailable object.",
     );
   }
+  const contextualToolResults: Array<{
+    callKey: string;
+    commentId: string;
+    created: boolean;
+    targetObjectIds: string[];
+  }> = [];
+  for (const toolCall of gatewayResult.toolCalls) {
+    const validatedTool = validateAiToolRequest({
+      authority: currentAuthority,
+      toolName: toolCall.toolName,
+      arguments: toolCall.arguments,
+    });
+    if (validatedTool.toolName !== "create_contextual_comment") {
+      throw new AiRunConflictError(
+        "This AI tool is not executable in the current slice.",
+      );
+    }
+    const toolArguments = contextualCommentArgumentsSchema.parse(
+      validatedTool.arguments,
+    );
+    if (toolArguments.targetObjectIds.some((id) => !objectIds.has(id))) {
+      throw new AiRunConflictError(
+        "The AI contextual comment referenced an unavailable object.",
+      );
+    }
+    const toolResult = await createServiceClient().rpc(
+      "execute_ai_contextual_comment",
+      {
+        target_run_id: run.id,
+        target_requester_id: run.requested_by,
+        target_call_key: toolCall.callKey,
+        target_body: toolArguments.body,
+        target_object_ids: toolArguments.targetObjectIds,
+        target_expected_sequence: compacted.lastSequence,
+      },
+    );
+    if (toolResult.error || !toolResult.data?.[0]) {
+      throw new AiRunConflictError(
+        toolResult.error?.message ??
+          "The contextual comment could not be saved.",
+      );
+    }
+    contextualToolResults.push({
+      callKey: toolCall.callKey,
+      commentId: toolResult.data[0].comment_id,
+      created: toolResult.data[0].created,
+      targetObjectIds: toolArguments.targetObjectIds,
+    });
+  }
   const completionResult = await supabase.rpc("complete_fake_ai_run", {
     target_run_id: run.id,
     target_body: gatewayResult.reply.body,
@@ -302,6 +355,7 @@ export async function completeDeterministicAiRun(
       evidence: gatewayResult.reply.evidence,
       inspectionTools: ["inspect_canvas_objects", "inspect_comment_threads"],
       allowedTools: allowedToolNames,
+      contextualTools: contextualToolResults,
       objectDetailPageSize: objectInspection.items.length,
       objectDetailNextCursor: objectInspection.nextCursor,
       threadDetailPageSize: threadInspection.items.length,

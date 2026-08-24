@@ -93,6 +93,16 @@ describe("AI authority tool registry", () => {
         arguments: { cursor: 0, limit: 25, extra: true },
       }),
     ).toThrow();
+    expect(() =>
+      validateAiToolRequest({
+        authority: "comment_only",
+        toolName: "create_contextual_comment",
+        arguments: {
+          body: "Duplicate target",
+          targetObjectIds: [objectId, objectId],
+        },
+      }),
+    ).toThrow("Contextual comment targets must be unique");
   });
 
   it("rejects unknown or prompt-injected tool names", () => {

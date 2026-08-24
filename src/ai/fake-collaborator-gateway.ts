@@ -5,6 +5,7 @@ import {
   type AiInvocation,
   type AiProjectionEnvelope,
   type AiReply,
+  type AiToolCall,
 } from "@/ai/collaborator-contract";
 import { allowedAiToolNames, type AiToolName } from "@/ai/tool-registry";
 
@@ -15,6 +16,7 @@ export type FakeAiGatewayResult =
       status: "completed";
       requestId: string;
       reply: AiReply;
+      toolCalls: AiToolCall[];
     }
   | {
       status: "cancelled" | "failed";
@@ -66,6 +68,13 @@ export class FakePrimaryAiGateway {
       return object ? [object] : [];
     });
     const firstObject = selectedPath[0] ?? projection.objects[0];
+    const sourceThread = projection.commentThreads.find(
+      (thread) => thread.id === invocation.commentId,
+    );
+    const shouldCreateContextualComment =
+      invocation.instruction.toLowerCase().includes("contextual comment") &&
+      firstObject !== undefined &&
+      sourceThread?.targetObjectIds.length === 0;
     const reply = aiReplySchema.parse({
       body:
         selectedPath.length > 1
@@ -81,6 +90,18 @@ export class FakePrimaryAiGateway {
         : [],
       contextualTargetObjectIds: firstObject ? [firstObject.id] : [],
     });
-    return { status: "completed", requestId, reply };
+    const toolCalls = shouldCreateContextualComment
+      ? [
+          {
+            callKey: "contextual-comment-1",
+            toolName: "create_contextual_comment",
+            arguments: {
+              body: `Grounded observation: ${firstObject.summary || firstObject.type} is a concrete evidence point for this canvas.`,
+              targetObjectIds: [firstObject.id],
+            },
+          },
+        ]
+      : [];
+    return { status: "completed", requestId, reply, toolCalls };
   }
 }

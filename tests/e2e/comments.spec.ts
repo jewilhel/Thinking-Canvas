@@ -301,6 +301,61 @@ test("addresses the primary AI once and inherits it on the next reply", async ({
   ).toHaveCount(2);
 });
 
+test("creates a linked AI contextual comment through the existing comment workflow", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await addRectangle(page);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  const enabled = page.getByRole("checkbox", { name: "Enabled" });
+  await enabled.click();
+  await expect(enabled).toBeChecked();
+  await placeArmedComment(page, { x: 850, y: 600 });
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Please leave a contextual comment on the evidence.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const sourceThread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    sourceThread.getByText(
+      "I inspected 1 canvas objects and 1 comment conversations.",
+    ),
+  ).toBeVisible();
+  await sourceThread
+    .getByRole("button", { name: "Close comment thread" })
+    .click();
+
+  const contextualSummary = /Grounded observation: rectangle: New idea/;
+  const commentsPanel = page.getByRole("dialog", { name: "Comments" });
+  await expect(
+    commentsPanel.getByRole("button", { name: contextualSummary }),
+  ).toBeVisible();
+  await commentsPanel.getByRole("button", { name: contextualSummary }).click();
+  const contextualThread = page.getByRole("dialog", {
+    name: "Comment thread",
+  });
+  await expect(
+    contextualThread.getByText("Thinking Canvas AI", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(contextualThread.getByText("To Owner Example")).toBeVisible();
+
+  await page.reload();
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await expect(
+    page
+      .getByRole("dialog", { name: "Comments" })
+      .getByRole("button", { name: contextualSummary }),
+  ).toBeVisible();
+});
+
 test("cancels and retries an AI response inline in its comment thread", async ({
   page,
 }) => {

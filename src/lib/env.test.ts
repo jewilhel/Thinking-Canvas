@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseServerEnvironment } from "@/lib/env";
+import { parseServerEnvironment, parseServiceEnvironment } from "@/lib/env";
 
 const validEnvironment = {
   APP_ENV: "local",
@@ -32,5 +32,12 @@ describe("parseServerEnvironment", () => {
         APP_ENV: "staging",
       }),
     ).toThrow();
+  });
+
+  it("loads only the server credential needed by the tool executor", () => {
+    expect(parseServiceEnvironment(validEnvironment)).toEqual({
+      NEXT_PUBLIC_SUPABASE_URL: validEnvironment.NEXT_PUBLIC_SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY: validEnvironment.SUPABASE_SERVICE_ROLE_KEY,
+    });
   });
 });

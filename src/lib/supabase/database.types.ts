@@ -1226,6 +1226,21 @@ export type Database = {
         Args: { target_comment_id: string }
         Returns: string
       }
+      execute_ai_contextual_comment: {
+        Args: {
+          target_body: string
+          target_call_key: string
+          target_expected_sequence: number
+          target_object_ids: string[]
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: {
+          comment_id: string
+          created: boolean
+          tool_execution_id: string
+        }[]
+      }
       fail_ai_run: {
         Args: { target_error_code: string; target_run_id: string }
         Returns: {

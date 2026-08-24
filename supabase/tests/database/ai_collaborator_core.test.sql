@@ -20,6 +20,15 @@ select ok(
   'authenticated clients cannot forge comment recipients directly'
 );
 
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.execute_ai_contextual_comment(uuid,uuid,text,text,uuid[],bigint)',
+    'EXECUTE'
+  ),
+  'authenticated clients cannot call the server-only contextual comment executor directly'
+);
+
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
 
 select results_eq(
@@ -278,6 +287,160 @@ select results_eq(
   $$select output_reply_id, 'completed'::text from public.ai_runs
     where idempotency_key = '83000000-0000-4000-8000-000000000001'$$,
   'an exact completion retry returns the existing AI reply without duplication'
+);
+
+select results_eq(
+  $$select created, ai_run_id is not null
+    from public.create_comment_thread(
+      target_canvas_id => '20000000-0000-4000-8000-000000000001',
+      target_client_command_id => '83000000-0000-4000-8000-000000000040',
+      target_body => 'Please leave a contextual comment on the evidence.',
+      target_anchor_x => 160,
+      target_anchor_y => 180,
+      target_include_primary_ai => true
+    )$$,
+  $$values (true, true)$$,
+  'a world-space request queues the run that may create a contextual comment'
+);
+
+select results_eq(
+  $$select status::text
+    from public.start_ai_run(
+      (select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000040')
+    )$$,
+  $$values ('projecting'::text)$$,
+  'the contextual-comment run enters the server execution boundary'
+);
+
+select set_config(
+  'test.contextual_run_id',
+  (select id::text from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000040'),
+  true
+);
+select set_config(
+  'test.contextual_sequence',
+  greatest(
+    coalesce((select max(last_sequence) from public.canvas_snapshots where canvas_id = '20000000-0000-4000-8000-000000000001'), 0),
+    coalesce((select max(sequence) from public.canvas_updates where canvas_id = '20000000-0000-4000-8000-000000000001'), 0)
+  )::text,
+  true
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select results_eq(
+  $$select created
+    from public.execute_ai_contextual_comment(
+      current_setting('test.contextual_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000003',
+      'contextual-comment-1',
+      'Grounded observation on the evidence object.',
+      array['61000000-0000-4000-8000-000000000001']::uuid[],
+      current_setting('test.contextual_sequence')::bigint
+    )$$,
+  $$values (true)$$,
+  'a commenter may execute one server-validated comment-only contextual tool'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+
+select results_eq(
+  $$select comment.author_kind::text, comment.author_key, target.target_object_id
+    from public.ai_tool_executions execution
+    join public.comments comment on comment.id = execution.comment_id
+    join public.comment_targets target on target.comment_id = comment.id
+    where execution.run_id = (
+      select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000040'
+    ) and execution.call_key = 'contextual-comment-1'$$,
+  $$values (
+    'ai'::text,
+    'primary-ai'::text,
+    '61000000-0000-4000-8000-000000000001'::uuid
+  )$$,
+  'the tool creates an ordinary AI-authored comment anchored to its validated evidence'
+);
+
+select results_eq(
+  $$select outcome::text, tool_name, affected_object_ids, comment_id is not null
+    from public.ai_tool_executions
+    where run_id = (
+      select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000040'
+    ) and call_key = 'contextual-comment-1'$$,
+  $$values (
+    'succeeded'::text,
+    'create_contextual_comment'::text,
+    array['61000000-0000-4000-8000-000000000001']::uuid[],
+    true
+  )$$,
+  'the contextual comment retains a privacy-safe tool audit link to its originating run'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select throws_ok(
+  $$select * from public.execute_ai_contextual_comment(
+      current_setting('test.contextual_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000003',
+      'contextual-comment-stale',
+      'This stale projection must not create a comment.',
+      array['61000000-0000-4000-8000-000000000001']::uuid[],
+      999999
+    )$$,
+  '40001',
+  'The canvas changed after the AI projection was built.',
+  'contextual comment execution fails closed on a stale durable projection'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+
+select results_eq(
+  $$select status::text
+    from public.complete_fake_ai_run(
+      (select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000040'),
+      'I left one linked contextual comment on the supporting object.',
+      'fake-request-contextual-1',
+      '{"version":1,"contextualToolCount":1}'::jsonb
+    )$$,
+  $$values ('completed'::text)$$,
+  'a run may complete in its originating thread after contextual tool execution'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select results_eq(
+  $$select created
+    from public.execute_ai_contextual_comment(
+      current_setting('test.contextual_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000003',
+      'contextual-comment-1',
+      'Grounded observation on the evidence object.',
+      array['61000000-0000-4000-8000-000000000001']::uuid[],
+      current_setting('test.contextual_sequence')::bigint
+    )$$,
+  $$values (false)$$,
+  'an exact contextual tool retry returns the existing comment without duplication'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+
+select is(
+  (
+    select count(*)::integer
+    from public.ai_runs child_run
+    where child_run.invoking_comment_id in (
+      select execution.comment_id
+      from public.ai_tool_executions execution
+      where execution.tool_name = 'create_contextual_comment'
+    )
+  ),
+  0,
+  'an AI-authored contextual root comment does not recursively invoke the AI'
 );
 
 select is(
@@ -594,7 +757,7 @@ select is(
 
 select is(
   (select count(*)::integer from public.ai_tool_executions),
-  1,
+  2,
   'a canvas viewer may read privacy-safe AI tool outcomes'
 );
 

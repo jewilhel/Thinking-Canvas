@@ -1,9 +1,11 @@
 import "server-only";
 
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
-import { parsePublicEnvironment } from "@/lib/env";
+import { parsePublicEnvironment, parseServiceEnvironment } from "@/lib/env";
+import type { Database } from "@/lib/supabase/database.types";
 
 export async function createClient() {
   const environment = parsePublicEnvironment(process.env);
@@ -25,6 +27,21 @@ export async function createClient() {
             // performs refresh writes before protected routes render.
           }
         },
+      },
+    },
+  );
+}
+
+export function createServiceClient() {
+  const environment = parseServiceEnvironment(process.env);
+  return createSupabaseClient<Database>(
+    environment.NEXT_PUBLIC_SUPABASE_URL,
+    environment.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
       },
     },
   );

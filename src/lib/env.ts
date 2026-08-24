@@ -14,6 +14,14 @@ export const serverEnvironmentSchema = publicEnvironmentSchema.extend({
   OPENAI_API_KEY: z.string().min(1),
 });
 
+export const serviceEnvironmentSchema = publicEnvironmentSchema
+  .pick({
+    NEXT_PUBLIC_SUPABASE_URL: true,
+  })
+  .extend({
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  });
+
 export type PublicEnvironment = z.infer<typeof publicEnvironmentSchema>;
 export type ServerEnvironment = z.infer<typeof serverEnvironmentSchema>;
 
@@ -27,4 +35,10 @@ export function parseServerEnvironment(
   environment: Record<string, string | undefined>,
 ): ServerEnvironment {
   return serverEnvironmentSchema.parse(environment);
+}
+
+export function parseServiceEnvironment(
+  environment: Record<string, string | undefined>,
+) {
+  return serviceEnvironmentSchema.parse(environment);
 }

@@ -10,6 +10,21 @@ const pagingFields = {
 };
 const mutationListSchema = z.array(productCanvasMutationSchema).min(1).max(50);
 
+export const contextualCommentArgumentsSchema = z
+  .strictObject({
+    body: z.string().trim().min(1).max(100_000),
+    targetObjectIds: z.array(uuid).min(1).max(100),
+  })
+  .superRefine((value, context) => {
+    if (new Set(value.targetObjectIds).size !== value.targetObjectIds.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["targetObjectIds"],
+        message: "Contextual comment targets must be unique.",
+      });
+    }
+  });
+
 export const AI_TOOL_REGISTRY = {
   inspect_canvas_objects: {
     effect: "read" as const,
@@ -36,10 +51,7 @@ export const AI_TOOL_REGISTRY = {
     minimumAuthority: "comment_only" as const,
     description:
       "Create one AI-authored contextual comment through the existing comment permission and persistence boundary.",
-    argumentsSchema: z.strictObject({
-      body: z.string().trim().min(1).max(100_000),
-      targetObjectIds: z.array(uuid).min(1).max(100),
-    }),
+    argumentsSchema: contextualCommentArgumentsSchema,
   },
   propose_canvas_commands: {
     effect: "proposal" as const,
