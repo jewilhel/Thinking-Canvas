@@ -64,6 +64,18 @@ export const commentResponseCommandSchema = z.strictObject({
   value: z.unknown(),
 });
 
+export const commentPromptSetCommandSchema = z.strictObject({
+  type: z.literal("comment.prompt.set"),
+  commentId: uuid,
+  promptKind: commentPromptKindSchema.nullable(),
+});
+
+export const commentBodyUpdateCommandSchema = z.strictObject({
+  type: z.literal("comment.body.update"),
+  commentId: uuid,
+  body: strictText,
+});
+
 export const commentStatusCommandSchema = z.strictObject({
   type: z.literal("comment.status"),
   commentId: uuid,
@@ -79,6 +91,8 @@ export const commentCommandSchema = z.discriminatedUnion("type", [
   commentCreateCommandSchema,
   commentReplyCommandSchema,
   commentResponseCommandSchema,
+  commentPromptSetCommandSchema,
+  commentBodyUpdateCommandSchema,
   commentStatusCommandSchema,
   commentDeleteCommandSchema,
 ]);

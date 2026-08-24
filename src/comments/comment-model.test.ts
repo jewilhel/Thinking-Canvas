@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  commentCommandSchema,
   commentCreateCommandSchema,
   commentTargetObjectIds,
   parsePromptResponse,
@@ -36,6 +37,39 @@ function object(id: string, groupId?: string): CanvasObjectV2 {
 }
 
 describe("comment model", () => {
+  it("accepts a trimmed root-question edit and rejects an empty edit", () => {
+    const command = {
+      type: "comment.body.update" as const,
+      commentId: "30000000-0000-4000-8000-000000000001",
+      body: "  Does this rating question match?  ",
+    };
+    expect(commentCommandSchema.parse(command)).toEqual({
+      ...command,
+      body: "Does this rating question match?",
+    });
+    expect(
+      commentCommandSchema.safeParse({ ...command, body: "   " }).success,
+    ).toBe(false);
+  });
+
+  it("accepts durable prompt changes including returning to no prompt", () => {
+    const base = {
+      type: "comment.prompt.set" as const,
+      commentId: "30000000-0000-4000-8000-000000000001",
+    };
+    expect(
+      commentCommandSchema.parse({ ...base, promptKind: "rating" }),
+    ).toEqual({ ...base, promptKind: "rating" });
+    expect(commentCommandSchema.parse({ ...base, promptKind: null })).toEqual({
+      ...base,
+      promptKind: null,
+    });
+    expect(
+      commentCommandSchema.safeParse({ ...base, promptKind: "free_text" })
+        .success,
+    ).toBe(false);
+  });
+
   it("accepts only the approved strict prompt response shapes", () => {
     expect(parsePromptResponse("yes_no", { answer: "yes" })).toEqual({
       answer: "yes",

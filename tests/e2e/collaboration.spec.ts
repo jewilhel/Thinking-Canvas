@@ -63,8 +63,16 @@ test("two browsers converge, reconnect, reload, and survive compaction", async (
       Number(await owner.getByTestId("participant-count").textContent()),
     )
     .toBeGreaterThanOrEqual(2);
+  await expect
+    .poll(async () => {
+      const ownerHash = await owner.getByTestId("state-hash").textContent();
+      const editorHash = await editor.getByTestId("state-hash").textContent();
+      return ownerHash !== "loading" && ownerHash === editorHash;
+    })
+    .toBe(true);
 
   const baseline = await objectCount(owner);
+  await expect(editor.getByTestId("object-count")).toHaveText(String(baseline));
   await Promise.all([
     owner.getByRole("button", { name: "Add durable card" }).click(),
     editor.getByRole("button", { name: "Add durable card" }).click(),

@@ -30,6 +30,12 @@ async function addRectangle(page: Page) {
   await expect(page.getByTestId("product-object-count")).toHaveText("1");
 }
 
+async function placeArmedComment(page: Page, position = { x: 420, y: 280 }) {
+  await page
+    .getByRole("button", { name: "Place comment on canvas" })
+    .click({ position });
+}
+
 test("creates an anchored structured thread, replies, responds, hides, and reloads", async ({
   page,
 }) => {
@@ -38,7 +44,7 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
 
   await page.getByRole("button", { name: "Comments", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Comments" })).toBeVisible();
-  await page.getByRole("button", { name: "New comment" }).click();
+  await placeArmedComment(page);
   const composer = page.getByRole("dialog", { name: "New comment" });
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
@@ -47,11 +53,36 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   await composer.getByRole("button", { name: "Submit comment" }).click();
 
   const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(page.getByTestId("selection-status")).toHaveText("No selection");
+  await expect(
+    page.getByRole("toolbar", { name: "Selection controls" }),
+  ).not.toBeVisible();
+  const focusShield = page.getByTestId("comment-focus-shield");
+  await expect(focusShield).toBeVisible();
+  await focusShield.click({ position: { x: 420, y: 280 } });
+  await expect(page.getByTestId("selection-status")).toHaveText("No selection");
+  await expect(
+    page.getByRole("toolbar", { name: "Selection controls" }),
+  ).not.toBeVisible();
   await expect(
     thread.getByText("Does this direction feel clear?"),
   ).toBeVisible();
   await thread.getByRole("button", { name: "Yes", exact: true }).click();
-  await expect(thread.getByText(/Yes$/)).toBeVisible();
+  await expect(
+    thread.getByRole("button", { name: "Yes", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    thread.getByRole("textbox", { name: "Reply", exact: true }),
+  ).not.toBeVisible();
+  await expect(thread.getByText(/Owner Example:\s*Yes/)).not.toBeVisible();
+  await thread.getByLabel("Prompt").selectOption("");
+  await expect(thread.getByLabel("Prompt")).toHaveValue("");
+  await expect(
+    thread.getByLabel("Prompt").locator('option[value=""]'),
+  ).toHaveText("Reply");
+  await expect(
+    thread.getByRole("button", { name: "Yes", exact: true }),
+  ).not.toBeVisible();
   await thread
     .getByRole("textbox", { name: "Reply", exact: true })
     .fill("Yes, the hierarchy is easy to follow.");
@@ -59,11 +90,46 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   await expect(
     thread.getByText("Yes, the hierarchy is easy to follow."),
   ).toBeVisible();
+  await thread.getByLabel("Prompt").selectOption("rating");
+  await expect(thread.getByLabel("Prompt")).toHaveValue("rating");
+  await expect(
+    thread.getByRole("button", { name: "5", exact: true }),
+  ).toBeVisible();
+  await expect(
+    thread.getByRole("textbox", { name: "Reply", exact: true }),
+  ).not.toBeVisible();
+  await thread.getByRole("button", { name: "Edit initial comment" }).click();
+  await thread
+    .getByRole("textbox", { name: "Edit initial comment" })
+    .fill("How clear is this direction from 1 to 5?");
+  await thread.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    thread.getByText("How clear is this direction from 1 to 5?"),
+  ).toBeVisible();
   await thread.getByRole("button", { name: "Close comment thread" }).click();
+  await expect(focusShield).not.toBeVisible();
 
   await expect(
     page.getByRole("button", { name: /Open comment by/ }),
   ).toBeVisible();
+  const marker = page.getByRole("button", { name: /Open comment by/ });
+  const collapsedMarker = await marker.boundingBox();
+  expect(collapsedMarker?.width).toBeCloseTo(52, 0);
+  await marker.hover();
+  await expect
+    .poll(async () => (await marker.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(300);
+  await expect(marker).toContainText(
+    "How clear is this direction from 1 to 5?",
+  );
+  await marker.click();
+  await expect(
+    page.getByRole("dialog", { name: "Comment thread" }),
+  ).toContainText("How clear is this direction from 1 to 5?");
+  await page
+    .getByRole("dialog", { name: "Comment thread" })
+    .getByRole("button", { name: "Close comment thread" })
+    .click();
   await page.getByRole("button", { name: "Hide markers" }).click();
   await expect(
     page.getByRole("button", { name: /Open comment by/ }),
@@ -75,8 +141,13 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
 
   await page.reload();
   await page.getByRole("button", { name: "Comments", exact: true }).click();
-  await expect(page.getByText("Does this direction feel clear?")).toBeVisible();
-  await page.getByText("Does this direction feel clear?").click();
+  const persistedThread = page
+    .getByRole("dialog", { name: "Comments" })
+    .getByRole("button", {
+      name: /How clear is this direction from 1 to 5\?/,
+    });
+  await expect(persistedThread).toBeVisible();
+  await persistedThread.click();
   await expect(
     page.getByRole("dialog", { name: "Comment thread" }),
   ).toContainText("Yes, the hierarchy is easy to follow.");
@@ -90,7 +161,7 @@ test("permanently deletes an authored comment after confirmation", async ({
   await openFreshCanvas(page);
   await addRectangle(page);
   await page.getByRole("button", { name: "Comments", exact: true }).click();
-  await page.getByRole("button", { name: "New comment" }).click();
+  await placeArmedComment(page);
   const composer = page.getByRole("dialog", { name: "New comment" });
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
@@ -123,15 +194,10 @@ test("places comments over an unselected object and on empty canvas", async ({
   await page
     .getByTestId("product-canvas-surface")
     .click({ position: { x: 760, y: 560 } });
-  await expect(page.getByTestId("selection-status")).toHaveText(
-    "None selected",
-  );
+  await expect(page.getByTestId("selection-status")).toHaveText("No selection");
 
   await page.getByRole("button", { name: "Comments", exact: true }).click();
-  await page.getByRole("button", { name: "New comment" }).click();
-  await page
-    .getByRole("button", { name: "Place comment on canvas" })
-    .click({ position: { x: 420, y: 280 } });
+  await placeArmedComment(page);
   let composer = page.getByRole("dialog", { name: "New comment" });
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
@@ -151,6 +217,12 @@ test("places comments over an unselected object and on empty canvas", async ({
     .getByRole("textbox", { name: "Comment", exact: true })
     .fill("Free canvas feedback.");
   await composer.getByRole("button", { name: "Submit comment" }).click();
+  const otherMarker = page
+    .getByRole("button", { name: /Open comment by/ })
+    .filter({ hasText: "Attached without selecting first." });
+  await otherMarker.hover();
+  await page.waitForTimeout(300);
+  expect((await otherMarker.boundingBox())?.width).toBeCloseTo(52, 0);
   await page
     .getByRole("dialog", { name: "Comment thread" })
     .getByRole("button", { name: "Close comment thread" })
@@ -161,10 +233,15 @@ test("places comments over an unselected object and on empty canvas", async ({
   ).toHaveCount(2);
   await page.reload();
   await page.getByRole("button", { name: "Comments", exact: true }).click();
+  const commentsPanel = page.getByRole("dialog", { name: "Comments" });
   await expect(
-    page.getByText("Attached without selecting first."),
+    commentsPanel.getByRole("button", {
+      name: /Attached without selecting first\./,
+    }),
   ).toBeVisible();
-  await expect(page.getByText("Free canvas feedback.")).toBeVisible();
+  await expect(
+    commentsPanel.getByRole("button", { name: /Free canvas feedback\./ }),
+  ).toBeVisible();
 });
 
 test("creates preview AI feedback with explicit provenance", async ({
@@ -174,7 +251,7 @@ test("creates preview AI feedback with explicit provenance", async ({
   await openFreshCanvas(page);
   await addRectangle(page);
   await page.getByRole("button", { name: "Comments", exact: true }).click();
-  await page.getByRole("button", { name: "New comment" }).click();
+  await placeArmedComment(page);
   const composer = page.getByRole("dialog", { name: "New comment" });
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
@@ -214,7 +291,7 @@ test("anchors one thread to a complete group and preserves it after target delet
   await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
 
   await page.getByRole("button", { name: "Comments", exact: true }).click();
-  await page.getByRole("button", { name: "New comment" }).click();
+  await placeArmedComment(page);
   const composer = page.getByRole("dialog", { name: "New comment" });
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
@@ -227,8 +304,12 @@ test("anchors one thread to a complete group and preserves it after target delet
   const marker = page.getByRole("button", { name: /Open comment by/ });
   const markerBefore = await marker.boundingBox();
 
+  await page.getByRole("button", { name: "Select", exact: true }).click();
   const surface = page.getByTestId("product-canvas-surface");
   await surface.focus();
+  await surface.press("Control+a");
+  await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
+
   await surface.press("ArrowRight");
   await expect
     .poll(async () => (await marker.boundingBox())?.x)
@@ -237,7 +318,12 @@ test("anchors one thread to a complete group and preserves it after target delet
   await surface.press("Delete");
   await expect(page.getByTestId("product-object-count")).toHaveText("0");
   await expect(page.getByText("Target unavailable")).toBeVisible();
-  await page.getByText("This feedback belongs to the whole group.").click();
+  await page
+    .getByRole("dialog", { name: "Comments" })
+    .getByRole("button", {
+      name: /This feedback belongs to the whole group\./,
+    })
+    .click();
   await expect(
     page.getByRole("dialog", { name: "Comment thread" }),
   ).toContainText("This feedback belongs to the whole group.");
@@ -255,7 +341,13 @@ test("renders review and fixed rating controls and preserves closed history", as
   await page.getByRole("button", { name: "Comments", exact: true }).click();
 
   async function createPrompt(body: string, kind: "review" | "rating") {
-    await page.getByRole("button", { name: "New comment" }).click();
+    const placement = page.getByRole("button", {
+      name: "Place comment on canvas",
+    });
+    if (await placement.isHidden()) {
+      await page.getByRole("button", { name: "New comment" }).click();
+    }
+    await placeArmedComment(page);
     const composer = page.getByRole("dialog", { name: "New comment" });
     await composer
       .getByRole("textbox", { name: "Comment", exact: true })
@@ -267,12 +359,16 @@ test("renders review and fixed rating controls and preserves closed history", as
 
   let thread = await createPrompt("Choose a review outcome.", "review");
   await thread.getByRole("button", { name: "Revise", exact: true }).click();
-  await expect(thread.getByText(/Revise$/)).toBeVisible();
+  await expect(
+    thread.getByRole("button", { name: "Revise", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await thread.getByRole("button", { name: "Close comment thread" }).click();
 
   thread = await createPrompt("Rate this direction.", "rating");
   await thread.getByRole("button", { name: "5", exact: true }).click();
-  await expect(thread.getByText("5 / 5")).toBeVisible();
+  await expect(
+    thread.getByRole("button", { name: "5", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await thread.getByRole("button", { name: "Resolve", exact: true }).click();
   await expect(thread.getByText("resolved", { exact: true })).toBeVisible();
   await expect(
@@ -281,10 +377,14 @@ test("renders review and fixed rating controls and preserves closed history", as
 
   await page.reload();
   await page.getByRole("button", { name: "Comments", exact: true }).click();
-  await page.getByText("Rate this direction.").click();
+  await page
+    .getByRole("dialog", { name: "Comments" })
+    .getByRole("button", { name: /Rate this direction\./ })
+    .last()
+    .click();
   await expect(
     page.getByRole("dialog", { name: "Comment thread" }),
-  ).toContainText("5 / 5");
+  ).toContainText("Rating (1–5)");
 });
 
 test("broadcasts comment changes between canvas members", async ({
@@ -335,16 +435,23 @@ test("broadcasts comment changes between canvas members", async ({
 
   await editor.getByRole("button", { name: "Comments", exact: true }).click();
   await owner.getByRole("button", { name: "Comments", exact: true }).click();
-  await owner.getByRole("button", { name: "New comment" }).click();
+  await placeArmedComment(owner, { x: 520, y: 360 });
   const composer = owner.getByRole("dialog", { name: "New comment" });
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
     .fill(threadBody);
   await composer.getByRole("button", { name: "Submit comment" }).click();
 
-  await expect(editor.getByText(threadBody)).toBeVisible();
-  await editor.getByText(threadBody).click();
+  const editorThreadListItem = editor
+    .getByRole("dialog", { name: "Comments" })
+    .getByRole("button", { name: new RegExp(threadBody) });
+  await expect(editorThreadListItem).toBeVisible();
+  await editorThreadListItem.click();
   const editorThread = editor.getByRole("dialog", { name: "Comment thread" });
+  await expect(editorThread.getByLabel("Prompt")).not.toBeVisible();
+  await expect(
+    editorThread.getByRole("button", { name: "Edit initial comment" }),
+  ).not.toBeVisible();
   await editorThread
     .getByRole("textbox", { name: "Reply", exact: true })
     .fill(replyBody);

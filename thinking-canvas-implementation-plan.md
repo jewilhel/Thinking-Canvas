@@ -1,10 +1,10 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–2 closed; Milestone 3 approved for implementation; later milestones remain draft
+Status: Milestones 0–2 closed; Milestone 3 closure approved pending final immutable-preview and exact-head CI evidence; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-08-13
+Last updated: 2026-08-24
 
 ## Purpose
 
@@ -202,6 +202,8 @@ Evidence: [Milestone 2 implementation and verification record](docs/implementati
 ### Exit gate
 
 - [ ] Complete the sourced **Comment prompt** acceptance scenario with two authenticated browser sessions and persisted thread history.
+
+Current evidence: [Milestone 3 implementation and verification record](docs/implementation/milestone-03-comments-and-structured-feedback.md). The product owner approved closure on 2026-08-24 after local preview review. The requirements and exit gate remain unchecked until the final working tree is committed, protected CI passes for that exact head, and the authenticated two-session scenario passes on its immutable Netlify preview, as required by this ledger's completion rules.
 
 ## Milestone 4 — AI collaborator, permissions, and typed interaction
 

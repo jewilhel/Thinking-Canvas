@@ -821,12 +821,23 @@ export type Database = {
           response_id: string
         }[]
       }
+      set_comment_prompt: {
+        Args: {
+          target_comment_id: string
+          target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
+        }
+        Returns: string
+      }
       transition_comment_status: {
         Args: {
           target_comment_id: string
           target_status: Database["public"]["Enums"]["comment_status"]
         }
         Returns: Database["public"]["Enums"]["comment_status"]
+      }
+      update_comment_body: {
+        Args: { target_body: string; target_comment_id: string }
+        Returns: string
       }
     }
     Enums: {

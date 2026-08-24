@@ -61,6 +61,8 @@ import {
   maxCanvasScale,
   minCanvasScale,
   pointWithinObjectHoverZone,
+  previewGeometryDuringTransform,
+  proportionalTextLayoutDuringResize,
   resolveConnectorEndpointV2,
   resolveConnectorPointsV2,
   selectionAffordanceScale,
@@ -276,6 +278,9 @@ export function ProductCanvas({
   const [dragPreviewPositions, setDragPreviewPositions] = useState<
     Record<string, Point>
   >({});
+  const [resizePreviewGeometries, setResizePreviewGeometries] = useState<
+    Record<string, CanvasObjectV2["geometry"]>
+  >({});
   const [clipboardText, setClipboardText] = useState("");
   const [undoStack, setUndoStack] = useState<CanvasHistoryEntry[]>([]);
   const [redoStack, setRedoStack] = useState<CanvasHistoryEntry[]>([]);
@@ -337,9 +342,20 @@ export function ProductCanvas({
       }),
     [dragPreviewPositions, objects],
   );
-  const displayObjectsById = useMemo(
-    () => new Map(displayObjects.map((object) => [object.id, object])),
-    [displayObjects],
+  const connectorLayoutObjectsById = useMemo(
+    () =>
+      new Map(
+        displayObjects.map((object) => {
+          const preview = resizePreviewGeometries[object.id];
+          return [
+            object.id,
+            preview && object.type !== "connector"
+              ? { ...object, geometry: preview }
+              : object,
+          ] as const;
+        }),
+      ),
+    [displayObjects, resizePreviewGeometries],
   );
   const selectedId = selectedIds.at(-1) ?? null;
   const inlineEditorObjectId = inlineTextEditor?.objectId ?? null;
@@ -809,7 +825,7 @@ export function ProductCanvas({
     fallback: Point,
   ) {
     if (endpoint.kind === "attached") {
-      const target = displayObjectsById.get(endpoint.objectId);
+      const target = connectorLayoutObjectsById.get(endpoint.objectId);
       if (target?.type === "shape")
         return connectionHandlePoint(target, endpoint.anchor);
     }
@@ -1639,6 +1655,52 @@ export function ProductCanvas({
     return <Rect {...common} cornerRadius={12} />;
   }
 
+  function updateLiveResizeTextLayout(
+    node: Konva.Node,
+    object: CanvasObjectV2,
+    width: number,
+    height: number,
+    scaleX: number,
+    scaleY: number,
+  ) {
+    const textNodes = (node as Konva.Group).find<Konva.Text>(
+      ".resizable-object-text",
+    );
+    const frames =
+      object.type === "shape"
+        ? [{ x: 12, y: 12, width: width - 24, height: height - 24 }]
+        : object.type === "text"
+          ? [{ x: 0, y: 0, width, height }]
+          : object.type === "table"
+            ? (() => {
+                const rows = object.cells.length;
+                const columns = Math.max(
+                  ...object.cells.map((row) => row.length),
+                  1,
+                );
+                const rowHeight = height / rows;
+                const columnWidth = width / columns;
+                return object.cells.flatMap((row, rowIndex) =>
+                  row.map((_, columnIndex) => ({
+                    x: columnIndex * columnWidth + 8,
+                    y: rowIndex * rowHeight + 8,
+                    width: columnWidth - 16,
+                    height: rowHeight - 16,
+                  })),
+                );
+              })()
+            : [];
+
+    textNodes.forEach((textNode, index) => {
+      const frame = frames[index];
+      if (!frame) return;
+      textNode.setAttrs(
+        proportionalTextLayoutDuringResize(frame, scaleX, scaleY),
+      );
+    });
+    node.getLayer()?.batchDraw();
+  }
+
   function renderTable(object: Extract<CanvasObjectV2, { type: "table" }>) {
     const rows = object.cells.length;
     const columns = Math.max(...object.cells.map((row) => row.length), 1);
@@ -1684,6 +1746,7 @@ export function ProductCanvas({
           row.map((cell, columnIndex) => (
             <Text
               key={`${rowIndex}-${columnIndex}`}
+              name="resizable-object-text"
               x={columnIndex * columnWidth + 8}
               y={rowIndex * rowHeight + 8}
               width={columnWidth - 16}
@@ -1704,7 +1767,10 @@ export function ProductCanvas({
 
   function renderObject(object: CanvasObjectV2) {
     if (object.type === "connector") {
-      const points = resolveConnectorPointsV2(object, displayObjectsById);
+      const points = resolveConnectorPointsV2(
+        object,
+        connectorLayoutObjectsById,
+      );
       const endpointHandles = ([object.start, object.end] as const).map(
         (endpoint, index) =>
           connectorEndpointHandlePoint(endpoint, {
@@ -1821,28 +1887,67 @@ export function ProductCanvas({
           }}
           onTransformEnd={(event) => {
             const node = event.target;
-            const width = Math.max(
-              24,
-              object.geometry.width * Math.abs(node.scaleX()),
-            );
-            const height = Math.max(
-              24,
-              object.geometry.height * Math.abs(node.scaleY()),
-            );
-            node.scaleX(1);
-            node.scaleY(1);
-            runCommand("object.move", {
-              objectId: object.id,
+            const geometry = previewGeometryDuringTransform(object.geometry, {
               x: node.x(),
               y: node.y(),
+              scaleX: node.scaleX(),
+              scaleY: node.scaleY(),
             });
-            runCommand("object.resize", { objectId: object.id, width, height });
+            node.scaleX(1);
+            node.scaleY(1);
+            updateLiveResizeTextLayout(
+              node,
+              object,
+              geometry.width,
+              geometry.height,
+              1,
+              1,
+            );
+            runCommand("object.move", {
+              objectId: object.id,
+              x: geometry.x,
+              y: geometry.y,
+            });
+            runCommand("object.resize", {
+              objectId: object.id,
+              width: geometry.width,
+              height: geometry.height,
+            });
+            setResizePreviewGeometries((current) => {
+              const next = { ...current };
+              delete next[object.id];
+              return next;
+            });
+          }}
+          onTransform={(event) => {
+            const node = event.target;
+            const scaleX = node.scaleX();
+            const scaleY = node.scaleY();
+            const geometry = previewGeometryDuringTransform(object.geometry, {
+              x: node.x(),
+              y: node.y(),
+              scaleX,
+              scaleY,
+            });
+            setResizePreviewGeometries((current) => ({
+              ...current,
+              [object.id]: geometry,
+            }));
+            updateLiveResizeTextLayout(
+              node,
+              object,
+              geometry.width,
+              geometry.height,
+              scaleX,
+              scaleY,
+            );
           }}
         >
           {object.type === "shape" ? (
             <>
               {shapeNode(object)}
               <Text
+                name="resizable-object-text"
                 x={12}
                 y={12}
                 width={object.geometry.width - 24}
@@ -1863,6 +1968,7 @@ export function ProductCanvas({
             </>
           ) : object.type === "text" ? (
             <Text
+              name="resizable-object-text"
               width={object.geometry.width}
               height={object.geometry.height}
               text={formatListText(object.text, object.style.listStyle)}
@@ -2074,9 +2180,10 @@ export function ProductCanvas({
             .map((connector) =>
               [
                 connector.id,
-                ...resolveConnectorPointsV2(connector, displayObjectsById).map(
-                  Math.round,
-                ),
+                ...resolveConnectorPointsV2(
+                  connector,
+                  connectorLayoutObjectsById,
+                ).map(Math.round),
               ].join(":"),
             )
             .join(";")}
@@ -2315,6 +2422,11 @@ export function ProductCanvas({
         simulatedAiEnabled={simulatedAiEnabled}
         onDismissPanel={() => setSharedPanel(null)}
         onSelectTargets={(targetIds) => {
+          if (!targetIds.length) {
+            closeContextPanel(false);
+            setObjectContextMenu(null);
+            setHoveredShapeId(null);
+          }
           setSelectedIds(targetIds);
           setTool("select");
         }}

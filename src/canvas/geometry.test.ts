@@ -10,7 +10,10 @@ import {
   connectionHandlePointV2,
   normalizeTransformedGeometry,
   pointWithinObjectHoverZone,
+  previewGeometryDuringTransform,
+  proportionalTextLayoutDuringResize,
   resolveConnectorPoints,
+  resolveConnectorPointsV2,
   selectionAffordanceScale,
   zoomViewportAtPointer,
   zoomViewportAtPointerContinuously,
@@ -110,6 +113,105 @@ describe("canvas geometry", () => {
       width: object.geometry.width * 2,
       height: object.geometry.height * 0.5,
     });
+  });
+
+  it("counter-scales live resize text while using the resized wrapping frame", () => {
+    expect(
+      proportionalTextLayoutDuringResize(
+        { x: 12, y: 12, width: 96, height: 56 },
+        1.5,
+        0.5,
+      ),
+    ).toEqual({
+      x: 8,
+      y: 24,
+      width: 96,
+      height: 56,
+      scaleX: 2 / 3,
+      scaleY: 2,
+    });
+  });
+
+  it("projects temporary transform geometry for live connector anchors", () => {
+    expect(
+      previewGeometryDuringTransform(
+        { x: 100, y: 200, width: 180, height: 110, rotation: 0 },
+        { x: 72, y: 184, scaleX: 0.5, scaleY: 1.5 },
+      ),
+    ).toEqual({
+      x: 72,
+      y: 184,
+      width: 90,
+      height: 165,
+      rotation: 0,
+    });
+  });
+
+  it("resolves attached connectors against temporary resize geometry", () => {
+    const shared = {
+      schemaVersion: 2 as const,
+      canvasId: "20000000-0000-4000-8000-000000000001",
+      createdBy: "10000000-0000-4000-8000-000000000001",
+      createdAt: "2026-08-12T00:00:00.000Z",
+      updatedAt: "2026-08-12T00:00:00.000Z",
+      style: {
+        fill: "#ffffff",
+        outline: "#475569",
+        outlineWidth: 2,
+        fontFamily: "Inter",
+        fontSize: 16,
+      },
+    };
+    const start = {
+      ...shared,
+      id: "60000000-0000-4000-8000-000000000011",
+      type: "shape" as const,
+      shape: "rectangle" as const,
+      text: "Start",
+      geometry: { x: 100, y: 200, width: 180, height: 110, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const end = {
+      ...shared,
+      id: "60000000-0000-4000-8000-000000000012",
+      type: "shape" as const,
+      shape: "rectangle" as const,
+      text: "End",
+      geometry: { x: 500, y: 200, width: 180, height: 110, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const connector = {
+      ...shared,
+      id: "60000000-0000-4000-8000-000000000013",
+      type: "connector" as const,
+      start: {
+        kind: "attached" as const,
+        objectId: start.id,
+        anchor: "right" as const,
+      },
+      end: {
+        kind: "attached" as const,
+        objectId: end.id,
+        anchor: "left" as const,
+      },
+      geometry: { x: 280, y: 255, width: 220, height: 1, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const previewStart = {
+      ...start,
+      geometry: previewGeometryDuringTransform(start.geometry, {
+        x: 100,
+        y: 200,
+        scaleX: 1.5,
+        scaleY: 1,
+      }),
+    };
+    const byId = new Map<string, CanvasObjectV2>([
+      [previewStart.id, previewStart],
+      [end.id, end],
+      [connector.id, connector],
+    ]);
+
+    expect(resolveConnectorPointsV2(connector, byId)).toEqual([
+      370, 255, 500, 255,
+    ]);
   });
 
   it("places edge connection handles outside transform bounds and keeps center centered", () => {

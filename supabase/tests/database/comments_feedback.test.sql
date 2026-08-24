@@ -279,13 +279,156 @@ select is(
   'response changes keep one row per prompt and responder'
 );
 
+select throws_ok(
+  $$select public.set_comment_prompt(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    'rating'
+  )$$,
+  '42501',
+  'Changing this comment prompt is not permitted.',
+  'an editor cannot switch another author comment prompt'
+);
+
+select throws_ok(
+  $$select public.update_comment_body(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    'How useful is this direction from 1 to 5?'
+  )$$,
+  '42501',
+  'Editing this comment is not permitted.',
+  'an editor cannot revise another author root question'
+);
+
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
+select lives_ok(
+  $$select public.set_comment_prompt(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    'rating'
+  )$$,
+  'the comment author can switch their open thread to another supported prompt'
+);
+
+select lives_ok(
+  $$select public.update_comment_body(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    'How useful is this direction from 1 to 5?'
+  )$$,
+  'the comment author can revise the open root question to match its prompt widget'
+);
+
+select is(
+  (select body from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+  'How useful is this direction from 1 to 5?',
+  'the revised root question persists without replacing the thread'
+);
+
+select results_eq(
+  $$select kind::text, minimum, maximum from public.comment_prompts where comment_id = (
+    select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'
+  )$$,
+  $$values ('rating'::text, 1, 5)$$,
+  'switching prompt types applies the fixed rating configuration'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.comment_responses
+    where prompt_id = (
+      select id from public.comment_prompts where comment_id = (
+        select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'
+      )
+    )
+  ),
+  0,
+  'switching prompt types removes responses that no longer match the widget'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000004', true);
+select throws_ok(
+  $$select public.set_comment_prompt(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    null
+  )$$,
+  '42501',
+  'Changing this comment prompt is not permitted.',
+  'a viewer cannot change a comment prompt'
+);
+
+select throws_ok(
+  $$select public.update_comment_body(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    'Viewer rewrite'
+  )$$,
+  '42501',
+  'Editing this comment is not permitted.',
+  'a viewer cannot edit the root question'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
+select lives_ok(
+  $$select public.set_comment_prompt(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    null
+  )$$,
+  'selecting none removes the structured prompt'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.comment_prompts
+    where comment_id = (
+      select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'
+    )
+  ),
+  0,
+  'none leaves the thread without a prompt widget'
+);
+
+select lives_ok(
+  $$select public.set_comment_prompt(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    'yes_no'
+  )$$,
+  'a supported prompt can be added again after selecting none'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
+select lives_ok(
+  $$select public.update_comment_body(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    'Does this revised question work?'
+  )$$,
+  'a comment author can revise their own open root question'
+);
+
+select throws_ok(
+  $$select public.update_comment_body(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    '   '
+  )$$,
+  '22023',
+  'Comment body is invalid.',
+  'a root-question edit cannot be blank'
+);
+
 select lives_ok(
   $$select public.transition_comment_status(
     (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
     'resolved'
   )$$,
   'a commenter can resolve their own comment'
+);
+
+select throws_ok(
+  $$select public.update_comment_body(
+    (select id from public.comments where client_command_id = '71000000-0000-4000-8000-000000000004'),
+    'Edit after resolve'
+  )$$,
+  '22023',
+  'Closed comments are read-only.',
+  'resolved comments reject root-question edits'
 );
 
 select throws_ok(

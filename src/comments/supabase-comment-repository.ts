@@ -206,6 +206,21 @@ export class SupabaseCommentRepository {
       });
       return requireData(result.data, result.error).at(0);
     }
+    if (command.type === "comment.prompt.set") {
+      const result = await this.supabase.rpc("set_comment_prompt", {
+        target_comment_id: command.commentId,
+        target_prompt_kind: command.promptKind ?? undefined,
+      });
+      if (result.error) throw new Error(result.error.message);
+      return result.data;
+    }
+    if (command.type === "comment.body.update") {
+      const result = await this.supabase.rpc("update_comment_body", {
+        target_comment_id: command.commentId,
+        target_body: command.body,
+      });
+      return requireData(result.data, result.error);
+    }
     if (command.type === "comment.status") {
       const result = await this.supabase.rpc("transition_comment_status", {
         target_comment_id: command.commentId,

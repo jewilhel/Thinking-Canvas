@@ -7,11 +7,13 @@ import {
   Eye,
   EyeOff,
   MessageCircle,
+  Pencil,
   Trash2,
   X,
 } from "lucide-react";
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -34,6 +36,8 @@ import type { CanvasRole } from "@/domain/command";
 
 type Viewport = { x: number; y: number; scale: number };
 type CanvasPoint = { x: number; y: number };
+const COMMENT_MARKER_SIZE = 52;
+const COMMENT_PREVIEW_WIDTH = 320;
 type CommentTarget = {
   targetObjectIds: string[];
   canvasAnchor: CanvasPoint | null;
@@ -74,22 +78,53 @@ function Avatar({ name, ai = false }: { name: string; ai?: boolean }) {
   );
 }
 
-function threadAnchor(
+export function commentRelativeTime(createdAt: string, now = Date.now()) {
+  const elapsedSeconds = Math.max(
+    0,
+    Math.round((now - new Date(createdAt).getTime()) / 1000),
+  );
+  if (elapsedSeconds < 10) return "just now";
+  const formatter = new Intl.RelativeTimeFormat(undefined, {
+    numeric: "always",
+  });
+  if (elapsedSeconds < 60) return formatter.format(-elapsedSeconds, "second");
+  const elapsedMinutes = Math.round(elapsedSeconds / 60);
+  if (elapsedMinutes < 60) return formatter.format(-elapsedMinutes, "minute");
+  const elapsedHours = Math.round(elapsedMinutes / 60);
+  if (elapsedHours < 24) return formatter.format(-elapsedHours, "hour");
+  const elapsedDays = Math.round(elapsedHours / 24);
+  if (elapsedDays < 7) return formatter.format(-elapsedDays, "day");
+  const elapsedWeeks = Math.round(elapsedDays / 7);
+  return formatter.format(-elapsedWeeks, "week");
+}
+
+function commentMarkerStyle(
+  position: { left: number; top: number },
+  size: { width: number; height: number },
+) {
+  const markerRadius = COMMENT_MARKER_SIZE / 2;
+  const expandsLeft =
+    position.left + COMMENT_PREVIEW_WIDTH - markerRadius > size.width - 16;
+  return expandsLeft
+    ? {
+        right: size.width - position.left - markerRadius,
+        top: position.top - markerRadius,
+      }
+    : {
+        left: position.left - markerRadius,
+        top: position.top - markerRadius,
+      };
+}
+
+export function threadAnchor(
   thread: Pick<CommentThread, "targetObjectIds" | "canvasAnchor">,
   objectsById: Map<string, CanvasObjectV2>,
   viewport: Viewport,
-  size: { width: number; height: number },
 ) {
   if (thread.canvasAnchor) {
     return {
-      left: Math.min(
-        Math.max(56, viewport.x + thread.canvasAnchor.x * viewport.scale),
-        size.width - 56,
-      ),
-      top: Math.min(
-        Math.max(72, viewport.y + thread.canvasAnchor.y * viewport.scale),
-        size.height - 72,
-      ),
+      left: viewport.x + thread.canvasAnchor.x * viewport.scale,
+      top: viewport.y + thread.canvasAnchor.y * viewport.scale,
     };
   }
   const targets = thread.targetObjectIds.flatMap((id) => {
@@ -112,15 +147,42 @@ function threadAnchor(
   const right = Math.max(...bounds.map((bounds) => bounds.x + bounds.width));
   const top = Math.min(...bounds.map((bounds) => bounds.y));
   return {
-    left: Math.min(
-      Math.max(76, viewport.x + right * viewport.scale + 12),
-      size.width - 56,
-    ),
-    top: Math.min(
-      Math.max(92, viewport.y + top * viewport.scale - 12),
-      size.height - 96,
-    ),
+    left: viewport.x + right * viewport.scale + 12,
+    top: viewport.y + top * viewport.scale - 12,
   };
+}
+
+type ScreenBounds = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+function useElementSize<T extends HTMLElement>(
+  ref: React.RefObject<T | null>,
+  fallback: { width: number; height: number },
+  enabled: boolean,
+) {
+  const [measured, setMeasured] = useState(fallback);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!enabled || !element) return;
+    const measure = () => {
+      const bounds = element.getBoundingClientRect();
+      setMeasured((current) => {
+        const next = { width: bounds.width, height: bounds.height };
+        return current.width === next.width && current.height === next.height
+          ? current
+          : next;
+      });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [enabled, ref]);
+  return measured;
 }
 
 function objectBoundsForComments(
@@ -156,45 +218,153 @@ function topmostObjectAtPoint(
   });
 }
 
-function contextualCardPosition(
+function threadTargetBounds(
+  thread: Pick<CommentThread, "targetObjectIds" | "canvasAnchor">,
+  objectsById: Map<string, CanvasObjectV2>,
+  viewport: Viewport,
+): ScreenBounds | null {
+  if (thread.canvasAnchor) {
+    const left = viewport.x + thread.canvasAnchor.x * viewport.scale;
+    const top = viewport.y + thread.canvasAnchor.y * viewport.scale;
+    return { left, top, right: left, bottom: top };
+  }
+  const bounds = thread.targetObjectIds.flatMap((id) => {
+    const object = objectsById.get(id);
+    if (!object) return [];
+    const geometry = objectBoundsForComments(object, objectsById);
+    return [
+      {
+        left: viewport.x + geometry.x * viewport.scale,
+        top: viewport.y + geometry.y * viewport.scale,
+        right: viewport.x + (geometry.x + geometry.width) * viewport.scale,
+        bottom: viewport.y + (geometry.y + geometry.height) * viewport.scale,
+      },
+    ];
+  });
+  if (!bounds.length) return null;
+  return {
+    left: Math.min(...bounds.map((item) => item.left)),
+    top: Math.min(...bounds.map((item) => item.top)),
+    right: Math.max(...bounds.map((item) => item.right)),
+    bottom: Math.max(...bounds.map((item) => item.bottom)),
+  };
+}
+
+export function contextualCardPosition(
   anchor: { left: number; top: number },
+  target: ScreenBounds,
   size: { width: number; height: number },
   width: number,
   height: number,
 ) {
-  const gap = 22;
-  const left =
-    anchor.left + gap + width <= size.width - 16
-      ? anchor.left + gap
-      : Math.max(16, anchor.left - width - gap);
-  return {
-    left,
-    top: Math.min(Math.max(16, anchor.top - 36), size.height - height - 16),
-  };
+  const gap = 16;
+  const padding = 16;
+  const clampLeft = (left: number) =>
+    Math.min(
+      Math.max(padding, left),
+      Math.max(padding, size.width - width - padding),
+    );
+  const clampTop = (top: number) =>
+    Math.min(
+      Math.max(padding, top),
+      Math.max(padding, size.height - height - padding),
+    );
+  const centeredTop = clampTop(anchor.top - 36);
+  const centeredLeft = clampLeft(anchor.left - width / 2);
+
+  if (target.right + gap + width <= size.width - padding) {
+    return { left: target.right + gap, top: centeredTop };
+  }
+  if (target.left - gap - width >= padding) {
+    return { left: target.left - gap - width, top: centeredTop };
+  }
+  if (target.bottom + gap + height <= size.height - padding) {
+    return { left: centeredLeft, top: target.bottom + gap };
+  }
+  if (target.top - gap - height >= padding) {
+    return { left: centeredLeft, top: target.top - gap - height };
+  }
+
+  const horizontalRoom = Math.max(
+    target.left - padding,
+    size.width - padding - target.right,
+  );
+  const verticalRoom = Math.max(
+    target.top - padding,
+    size.height - padding - target.bottom,
+  );
+  if (horizontalRoom >= verticalRoom) {
+    return target.left - padding >= size.width - padding - target.right
+      ? { left: clampLeft(target.left - gap - width), top: centeredTop }
+      : { left: clampLeft(target.right + gap), top: centeredTop };
+  }
+  return target.top - padding >= size.height - padding - target.bottom
+    ? { left: centeredLeft, top: clampTop(target.top - gap - height) }
+    : { left: centeredLeft, top: clampTop(target.bottom + gap) };
 }
 
 function promptLabel(kind: CommentPromptKind | null) {
   if (kind === "yes_no") return "Yes / no";
   if (kind === "review") return "Review decision";
   if (kind === "rating") return "Rating (1–5)";
-  return "No structured prompt";
+  return "Reply";
 }
 
-function responseLabel(value: PromptResponseValue) {
-  if ("answer" in value) return value.answer === "yes" ? "Yes" : "No";
-  if ("decision" in value)
-    return value.decision[0]!.toUpperCase() + value.decision.slice(1);
-  return `${value.rating} / 5`;
+function PromptKindSelect({
+  id,
+  value,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  value: CommentPromptKind | null;
+  disabled: boolean;
+  onChange: (kind: CommentPromptKind | null) => void;
+}) {
+  return (
+    <select
+      id={id}
+      aria-label="Prompt"
+      value={value ?? ""}
+      disabled={disabled}
+      className="-ml-1 h-8 cursor-pointer rounded-lg border-0 bg-transparent px-1 pr-7 text-sm font-semibold text-zinc-800 outline-none hover:bg-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:cursor-default disabled:opacity-60"
+      onChange={(event) =>
+        onChange((event.target.value || null) as CommentPromptKind | null)
+      }
+    >
+      <option value="">Reply</option>
+      <option value="yes_no">Yes / no</option>
+      <option value="review">Review</option>
+      <option value="rating">Rating 1–5</option>
+    </select>
+  );
+}
+
+function promptResponseMatches(
+  left: PromptResponseValue,
+  right: PromptResponseValue,
+) {
+  if ("answer" in left && "answer" in right)
+    return left.answer === right.answer;
+  if ("decision" in left && "decision" in right)
+    return left.decision === right.decision;
+  return "rating" in left && "rating" in right && left.rating === right.rating;
 }
 
 function PromptControls({
   prompt,
+  userId,
   disabled,
+  canManagePrompt,
   onRespond,
+  onPromptChange,
 }: {
   prompt: CommentPrompt;
+  userId: string;
   disabled: boolean;
+  canManagePrompt: boolean;
   onRespond: (value: PromptResponseValue) => void;
+  onPromptChange: (kind: CommentPromptKind | null) => void;
 }) {
   const options: { label: string; value: PromptResponseValue }[] =
     prompt.kind === "yes_no"
@@ -212,35 +382,48 @@ function PromptControls({
             label: String(rating),
             value: { rating },
           }));
+  const selectedResponse = prompt.responses.find(
+    (response) => response.responderId === userId,
+  );
   return (
-    <div className="mt-3 rounded-xl bg-violet-50 p-3">
-      <p className="text-xs font-semibold text-violet-900">
-        {promptLabel(prompt.kind)}
-      </p>
+    <div className="mt-4 w-full rounded-2xl bg-zinc-100 p-3">
+      {canManagePrompt ? (
+        <PromptKindSelect
+          id={`active-prompt-kind-${prompt.id}`}
+          value={prompt.kind}
+          disabled={disabled}
+          onChange={onPromptChange}
+        />
+      ) : (
+        <p className="text-sm font-semibold text-zinc-700">
+          {promptLabel(prompt.kind)}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap gap-2">
-        {options.map((option) => (
-          <Button
-            key={option.label}
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={disabled}
-            onClick={() => onRespond(option.value)}
-          >
-            {option.label}
-          </Button>
-        ))}
+        {options.map((option) => {
+          const selected = selectedResponse
+            ? promptResponseMatches(selectedResponse.value, option.value)
+            : false;
+          return (
+            <Button
+              key={option.label}
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-pressed={selected}
+              className={
+                selected
+                  ? "rounded-xl border-zinc-700! bg-zinc-700! px-4 text-white! shadow-sm hover:border-zinc-800! hover:bg-zinc-800! hover:text-white!"
+                  : "rounded-xl border-zinc-300! bg-zinc-50! px-4 text-zinc-800! hover:border-zinc-400! hover:bg-zinc-200! hover:text-zinc-950!"
+              }
+              disabled={disabled}
+              onClick={() => onRespond(option.value)}
+            >
+              {option.label}
+            </Button>
+          );
+        })}
       </div>
-      {prompt.responses.length ? (
-        <div className="mt-2 space-y-1 text-xs text-violet-800">
-          {prompt.responses.map((response) => (
-            <p key={response.id}>
-              <span className="font-semibold">{response.responderName}:</span>{" "}
-              {responseLabel(response.value)}
-            </p>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -252,6 +435,8 @@ function ThreadBody({
   pending,
   onReply,
   onRespond,
+  onPromptChange,
+  onBodyChange,
   onStatus,
   onDelete,
 }: {
@@ -264,15 +449,20 @@ function ThreadBody({
     prompt: CommentPrompt,
     value: PromptResponseValue,
   ) => Promise<void>;
+  onPromptChange: (kind: CommentPromptKind | null) => Promise<void>;
+  onBodyChange: (body: string) => Promise<void>;
   onStatus: (status: "resolved" | "dismissed") => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
   const [reply, setReply] = useState("");
+  const [editingBody, setEditingBody] = useState(false);
+  const [bodyDraft, setBodyDraft] = useState(thread.body);
   const canComment = role !== "viewer";
   const canResolve =
     role === "owner" || role === "editor" || thread.authorId === userId;
   const canDismiss = role === "owner" || thread.authorId === userId;
   const canDelete = role === "owner" || thread.authorId === userId;
+  const canManagePrompt = thread.authorId === userId;
   return (
     <>
       <div className="flex items-start gap-3">
@@ -289,18 +479,86 @@ function ThreadBody({
               })}
             </time>
           </div>
-          <p className="mt-2 text-sm leading-6 whitespace-pre-wrap text-zinc-800">
-            {thread.body}
-          </p>
-          {thread.prompt ? (
-            <PromptControls
-              prompt={thread.prompt}
-              disabled={!canComment || pending || thread.status !== "open"}
-              onRespond={(value) => void onRespond(thread.prompt!, value)}
-            />
-          ) : null}
+          {editingBody ? (
+            <form
+              className="mt-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const body = bodyDraft.trim();
+                if (!body) return;
+                if (body === thread.body) {
+                  setEditingBody(false);
+                  return;
+                }
+                void onBodyChange(body).then(() => setEditingBody(false));
+              }}
+            >
+              <textarea
+                autoFocus
+                aria-label="Edit initial comment"
+                value={bodyDraft}
+                rows={3}
+                maxLength={100_000}
+                className="w-full resize-y rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm leading-6 text-zinc-800 outline-none focus-visible:border-zinc-500 focus-visible:ring-2 focus-visible:ring-zinc-300"
+                onChange={(event) => setBodyDraft(event.target.value)}
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={pending}
+                  onClick={() => {
+                    setBodyDraft(thread.body);
+                    setEditingBody(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={pending || !bodyDraft.trim()}
+                >
+                  <Check aria-hidden="true" /> Save
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="mt-2 flex items-start gap-2">
+              <p className="min-w-0 flex-1 text-sm leading-6 whitespace-pre-wrap text-zinc-800">
+                {thread.body}
+              </p>
+              {canManagePrompt && thread.status === "open" ? (
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  className="shrink-0 text-zinc-500 hover:text-zinc-800"
+                  aria-label="Edit initial comment"
+                  disabled={pending}
+                  onClick={() => {
+                    setBodyDraft(thread.body);
+                    setEditingBody(true);
+                  }}
+                >
+                  <Pencil aria-hidden="true" className="size-4" />
+                </Button>
+              ) : null}
+            </div>
+          )}
         </div>
       </div>
+      {thread.prompt ? (
+        <PromptControls
+          prompt={thread.prompt}
+          userId={userId}
+          disabled={!canComment || pending || thread.status !== "open"}
+          canManagePrompt={canManagePrompt && thread.status === "open"}
+          onRespond={(value) => void onRespond(thread.prompt!, value)}
+          onPromptChange={(kind) => void onPromptChange(kind)}
+        />
+      ) : null}
       {thread.replies.length ? (
         <div className="mt-4 space-y-4 border-l-2 border-zinc-100 pl-4">
           {thread.replies.map((item) => (
@@ -318,9 +576,9 @@ function ThreadBody({
           ))}
         </div>
       ) : null}
-      {thread.status === "open" && canComment ? (
+      {thread.status === "open" && canComment && !thread.prompt ? (
         <form
-          className="mt-4 flex items-end gap-2 rounded-2xl bg-zinc-100 p-2"
+          className="group mt-4 w-full rounded-2xl bg-zinc-100 p-3"
           onSubmit={(event) => {
             event.preventDefault();
             const body = reply.trim();
@@ -328,25 +586,37 @@ function ThreadBody({
             void onReply(body).then(() => setReply(""));
           }}
         >
-          <textarea
-            aria-label="Reply"
-            value={reply}
-            rows={1}
-            maxLength={100_000}
-            placeholder="Reply"
-            className="h-10 min-h-10 flex-1 resize-none bg-transparent px-2 py-1 text-sm transition-[height] outline-none placeholder:text-zinc-400 focus:h-24"
-            onChange={(event) => setReply(event.target.value)}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            variant="ghost"
-            className="size-11 shrink-0 rounded-full bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-300"
-            disabled={pending || !reply.trim()}
-            aria-label="Send reply"
-          >
-            <ArrowUp aria-hidden="true" className="size-5" />
-          </Button>
+          {canManagePrompt ? (
+            <PromptKindSelect
+              id={`thread-response-kind-${thread.id}`}
+              value={null}
+              disabled={pending}
+              onChange={(kind) => void onPromptChange(kind)}
+            />
+          ) : (
+            <p className="text-sm font-semibold text-zinc-700">Reply</p>
+          )}
+          <div className="mt-2 flex items-end gap-2">
+            <textarea
+              aria-label="Reply"
+              value={reply}
+              rows={1}
+              maxLength={100_000}
+              placeholder="Write a reply"
+              className="h-10 min-h-10 flex-1 resize-none bg-transparent px-2 py-1 text-sm transition-[height] outline-none group-focus-within:h-24 placeholder:text-zinc-400"
+              onChange={(event) => setReply(event.target.value)}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              variant="ghost"
+              className="size-11 shrink-0 rounded-full bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-300"
+              disabled={pending || !reply.trim()}
+              aria-label="Send reply"
+            >
+              <ArrowUp aria-hidden="true" className="size-5" />
+            </Button>
+          </div>
         </form>
       ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3">
@@ -432,6 +702,9 @@ export function CanvasComments({
   const [promptKind, setPromptKind] = useState<CommentPromptKind | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const placementRef = useRef<HTMLButtonElement>(null);
+  const composerCardRef = useRef<HTMLDivElement>(null);
+  const threadCardRef = useRef<HTMLDivElement>(null);
+  const panelWasOpenRef = useRef(panelOpen);
   const objectsById = useMemo(
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
@@ -455,6 +728,16 @@ export function CanvasComments({
     if (placementMode)
       requestAnimationFrame(() => placementRef.current?.focus());
   }, [placementMode]);
+  useEffect(() => {
+    if (panelOpen && !panelWasOpenRef.current && canComment) {
+      setSelectedThreadId(null);
+      closeComposer();
+      setPlacementMode(true);
+    } else if (!panelOpen && panelWasOpenRef.current) {
+      setPlacementMode(false);
+    }
+    panelWasOpenRef.current = panelOpen;
+  }, [canComment, panelOpen]);
 
   function closeComposer() {
     setComposerOpen(false);
@@ -463,12 +746,13 @@ export function CanvasComments({
 
   function beginComment() {
     setSelectedThreadId(null);
-    if (targetIds) {
-      setComposerTarget({ targetObjectIds: targetIds, canvasAnchor: null });
-      setComposerOpen(true);
-      return;
-    }
+    closeComposer();
     setPlacementMode(true);
+  }
+
+  function focusThread(threadId: string) {
+    onSelectTargets([]);
+    setSelectedThreadId(threadId);
   }
 
   function placeComment(event: ReactMouseEvent<HTMLButtonElement>) {
@@ -483,7 +767,11 @@ export function CanvasComments({
     };
     const object = topmostObjectAtPoint(objects, objectsById, canvasPoint);
     setComposerTarget({
-      targetObjectIds: object ? [object.id] : [],
+      targetObjectIds: object
+        ? targetIds?.includes(object.id)
+          ? targetIds
+          : [object.id]
+        : [],
       canvasAnchor: object ? null : canvasPoint,
     });
     setPlacementMode(false);
@@ -511,7 +799,7 @@ export function CanvasComments({
     setPromptKind(null);
     closeComposer();
     setVisible(true);
-    if (id) setSelectedThreadId(id);
+    if (id) focusThread(id);
   }
 
   async function reply(thread: CommentThread, body: string) {
@@ -533,6 +821,25 @@ export function CanvasComments({
     });
   }
 
+  async function setPrompt(
+    thread: CommentThread,
+    promptKind: CommentPromptKind | null,
+  ) {
+    await execute({
+      type: "comment.prompt.set",
+      commentId: thread.id,
+      promptKind,
+    });
+  }
+
+  async function updateBody(thread: CommentThread, body: string) {
+    await execute({
+      type: "comment.body.update",
+      commentId: thread.id,
+      body,
+    });
+  }
+
   async function status(thread: CommentThread, next: "resolved" | "dismissed") {
     await execute({
       type: "comment.status",
@@ -550,20 +857,58 @@ export function CanvasComments({
   }
 
   const composerPosition = composerTarget
-    ? threadAnchor(composerTarget, objectsById, viewport, size)
+    ? threadAnchor(composerTarget, objectsById, viewport)
+    : null;
+  const composerTargetBounds = composerTarget
+    ? threadTargetBounds(composerTarget, objectsById, viewport)
     : null;
   const threadPosition = selectedThread
-    ? (threadAnchor(selectedThread, objectsById, viewport, size) ?? {
+    ? (threadAnchor(selectedThread, objectsById, viewport) ?? {
         left: Math.max(520, size.width - 32),
         top: 112,
       })
     : null;
-  const composerCardPosition = composerPosition
-    ? contextualCardPosition(composerPosition, size, 480, 150)
-    : null;
-  const threadCardPosition = threadPosition
-    ? contextualCardPosition(threadPosition, size, 384, 448)
-    : null;
+  const threadTarget =
+    selectedThread && threadPosition
+      ? (threadTargetBounds(selectedThread, objectsById, viewport) ?? {
+          left: threadPosition.left,
+          top: threadPosition.top,
+          right: threadPosition.left,
+          bottom: threadPosition.top,
+          width: 0,
+          height: 0,
+        })
+      : null;
+  const composerCardSize = useElementSize(
+    composerCardRef,
+    { width: 480, height: 150 },
+    composerOpen,
+  );
+  const threadCardSize = useElementSize(
+    threadCardRef,
+    { width: 384, height: 320 },
+    selectedThread !== null,
+  );
+  const composerCardPosition =
+    composerPosition && composerTargetBounds
+      ? contextualCardPosition(
+          composerPosition,
+          composerTargetBounds,
+          size,
+          composerCardSize.width,
+          composerCardSize.height,
+        )
+      : null;
+  const threadCardPosition =
+    threadPosition && threadTarget
+      ? contextualCardPosition(
+          threadPosition,
+          threadTarget,
+          size,
+          threadCardSize.width,
+          threadCardSize.height,
+        )
+      : null;
 
   return (
     <>
@@ -587,30 +932,62 @@ export function CanvasComments({
         </button>
       ) : null}
 
+      {selectedThread ? (
+        <div
+          aria-hidden="true"
+          data-testid="comment-focus-shield"
+          className="absolute inset-0 z-20 cursor-default touch-none"
+        />
+      ) : null}
+
       {visible
         ? threads.map((thread) => {
-            const position = threadAnchor(thread, objectsById, viewport, size);
+            const position = threadAnchor(thread, objectsById, viewport);
             if (!position) return null;
+            const markerStyle = commentMarkerStyle(position, size);
+            const open = thread.status === "open";
+            const previewEnabled = selectedThreadId === null;
             return (
               <button
                 key={thread.id}
                 type="button"
                 aria-label={`Open comment by ${thread.authorName}`}
-                className={`absolute z-30 grid size-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-[3px] bg-white shadow-lg transition hover:scale-105 focus-visible:ring-3 focus-visible:ring-violet-500 focus-visible:outline-none ${thread.status === "open" ? "border-violet-500" : "border-zinc-300 opacity-75"}`}
-                style={position}
+                aria-expanded={selectedThreadId === thread.id}
+                className={`group absolute z-30 flex h-[3.25rem] w-[3.25rem] items-center gap-3 overflow-hidden rounded-[999px_999px_999px_0.55rem] border border-transparent bg-transparent p-2 text-left text-zinc-900 shadow-md transition-[width,height,border-color,background-color,border-radius,box-shadow] duration-200 ease-out focus-visible:ring-3 focus-visible:ring-violet-500 focus-visible:outline-none motion-reduce:transition-none ${previewEnabled ? "hover:h-24 hover:w-80 hover:rounded-[1.5rem_1.5rem_1.5rem_0.55rem] hover:border-zinc-200 hover:bg-white hover:shadow-xl focus-visible:h-24 focus-visible:w-80 focus-visible:rounded-[1.5rem_1.5rem_1.5rem_0.55rem] focus-visible:border-zinc-200 focus-visible:bg-white" : ""} ${open ? "text-violet-500" : "text-zinc-400 opacity-75"}`}
+                style={markerStyle}
                 onClick={() => {
                   setPlacementMode(false);
                   closeComposer();
-                  onSelectTargets(
-                    thread.targetObjectIds.filter((id) => objectsById.has(id)),
-                  );
-                  setSelectedThreadId(thread.id);
+                  focusThread(thread.id);
                 }}
               >
-                <Avatar
-                  name={thread.authorName}
-                  ai={thread.authorKind === "ai"}
+                <MessageCircle
+                  aria-hidden="true"
+                  fill="white"
+                  strokeWidth={1.25}
+                  className={`pointer-events-none absolute inset-0 size-[3.25rem] text-zinc-200 transition-opacity duration-150 ${previewEnabled ? "group-hover:opacity-0 group-focus-visible:opacity-0" : ""}`}
                 />
+                <span className="relative z-10 shrink-0">
+                  <Avatar
+                    name={thread.authorName}
+                    ai={thread.authorKind === "ai"}
+                  />
+                </span>
+                <span
+                  className={`pointer-events-none min-w-0 flex-1 pr-2 opacity-0 transition-opacity delay-0 duration-100 motion-reduce:transition-none ${previewEnabled ? "group-hover:opacity-100 group-hover:delay-75 group-focus-visible:opacity-100" : ""}`}
+                >
+                  <span className="flex min-w-0 items-baseline gap-2 whitespace-nowrap">
+                    <span className="truncate text-sm font-semibold text-zinc-900">
+                      {thread.authorName}
+                    </span>
+                    <span className="shrink-0 text-xs text-zinc-500">
+                      {commentRelativeTime(thread.createdAt)}
+                    </span>
+                  </span>
+                  <span className="mt-1 line-clamp-2 block text-sm leading-5 text-zinc-700">
+                    {thread.body}
+                  </span>
+                </span>
               </button>
             );
           })
@@ -618,12 +995,19 @@ export function CanvasComments({
 
       {composerOpen && composerPosition && composerCardPosition ? (
         <div
+          ref={composerCardRef}
           role="dialog"
           aria-label="New comment"
-          className="absolute z-50 w-[min(30rem,calc(100%-2rem))] rounded-3xl border border-zinc-200 bg-white p-2 text-zinc-900 shadow-2xl"
+          className="group absolute z-50 w-[min(30rem,calc(100%-2rem))] rounded-3xl border border-zinc-200 bg-white p-2 text-zinc-900 shadow-2xl"
           style={composerCardPosition}
         >
-          <div className="flex items-center gap-2">
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void createThread("human");
+            }}
+          >
             <textarea
               ref={composerRef}
               aria-label="Comment"
@@ -631,21 +1015,20 @@ export function CanvasComments({
               maxLength={100_000}
               value={draft}
               placeholder="Add a comment"
-              className="h-12 min-h-12 flex-1 resize-none rounded-2xl border-0 bg-transparent px-3 py-3 text-base leading-6 outline-none placeholder:text-zinc-400 focus:h-24"
+              className="h-12 min-h-12 flex-1 resize-none rounded-2xl border-0 bg-transparent px-3 py-3 text-base leading-6 outline-none group-focus-within:h-24 placeholder:text-zinc-400"
               onChange={(event) => setDraft(event.target.value)}
             />
             <Button
-              type="button"
+              type="submit"
               size="icon"
               variant="ghost"
               className="size-12 shrink-0 rounded-full bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-300"
               disabled={pending || !draft.trim()}
               aria-label="Submit comment"
-              onClick={() => void createThread("human")}
             >
               <ArrowUp aria-hidden="true" className="size-6" />
             </Button>
-          </div>
+          </form>
           <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 px-2 pt-2 pb-1">
             <label
               className="text-xs font-medium text-zinc-600"
@@ -663,7 +1046,7 @@ export function CanvasComments({
                 )
               }
             >
-              <option value="">None</option>
+              <option value="">Reply</option>
               <option value="yes_no">Yes / no</option>
               <option value="review">Review</option>
               <option value="rating">Rating 1–5</option>
@@ -695,6 +1078,7 @@ export function CanvasComments({
 
       {selectedThread && threadPosition && threadCardPosition ? (
         <div
+          ref={threadCardRef}
           role="dialog"
           aria-label="Comment thread"
           className="absolute z-50 max-h-[min(28rem,calc(100%-2rem))] w-[min(24rem,calc(100%-2rem))] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 text-zinc-900 shadow-2xl"
@@ -719,6 +1103,8 @@ export function CanvasComments({
             pending={pending}
             onReply={(body) => reply(selectedThread, body)}
             onRespond={respond}
+            onPromptChange={(kind) => setPrompt(selectedThread, kind)}
+            onBodyChange={(body) => updateBody(selectedThread, body)}
             onStatus={(next) => status(selectedThread, next)}
             onDelete={() => deleteThread(selectedThread)}
           />
@@ -750,12 +1136,11 @@ export function CanvasComments({
               {visible ? "Hide markers" : "Show markers"}
             </Button>
           </div>
-          {!targetIds ? (
-            <p className="mt-3 rounded-xl bg-zinc-100 p-3 text-sm text-zinc-600">
-              Choose New comment, then click an object or anywhere on the
-              canvas.
-            </p>
-          ) : null}
+          <p className="mt-3 rounded-xl bg-zinc-100 p-3 text-sm text-zinc-600">
+            {placementMode
+              ? "Click an object or anywhere on the canvas to add a comment."
+              : "Choose New comment to place another comment on an object or the canvas."}
+          </p>
           {error ? (
             <div className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">
               <p role="alert">{error}</p>
@@ -790,12 +1175,7 @@ export function CanvasComments({
                     setVisible(true);
                     setPlacementMode(false);
                     closeComposer();
-                    onSelectTargets(
-                      thread.targetObjectIds.filter((id) =>
-                        objectsById.has(id),
-                      ),
-                    );
-                    setSelectedThreadId(thread.id);
+                    focusThread(thread.id);
                   }}
                 >
                   <Avatar
