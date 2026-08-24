@@ -1,6 +1,6 @@
 # Milestone 3 — Comments and structured feedback
 
-Status: Closure approved — awaiting final hosted delivery evidence
+Status: Closed
 
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 
@@ -93,7 +93,7 @@ The product owner approved the plan and all three recommended decisions on 2026-
 - Every open thread presents one consistent response-mode widget. `Reply` is the ordinary conversation mode rather than an absence labeled `None`; its compact mode selector sits inside the grey reply composer above the text field. Only the original accountable comment author may switch between Reply, Yes/no, Review, and Rating. Switching modes replaces the reply field with that mode's options, and choosing `Reply` restores ordinary replies without a separate Prompt row. Changing between structured types atomically removes responses that are incompatible with the replacement widget while preserving the root comment and existing reply history.
 - While the thread remains open, its original accountable author may use a compact pencil action beside the root question to edit that question inline. Save persists the trimmed non-empty body through the same validated relational command boundary without changing targets, replies, prompt configuration, or responses; Cancel restores the current persisted text. Other participants and closed threads remain read-only for both question text and response mode.
 - Render yes/no and approve/revise/discard as labeled button groups. Render the approved bounded rating as labeled radio-style choices. Keyboard, screen-reader, touch, focus, disabled, pending, error, and selected states must not rely on color alone.
-- Present the structured widget at the same full width and horizontal alignment as the reply composer. Use the reply field's neutral-grey surface family, a solid charcoal rounded option with white text for the current participant's selection, and a visible mid-grey hover state for unselected options. Do not render responder attribution or a duplicate response summary beneath the option row.
+- Present the structured widget at the same full width and horizontal alignment as the reply composer. Use the reply field's neutral-grey surface family, a solid charcoal rounded option with white text for every persisted selection visible to the thread's participants, and a visible mid-grey hover state for unselected options. Do not render responder attribution or a duplicate response summary beneath the option row.
 - Validate prompt configuration and response values in Zod and again in PostgreSQL. Reject extra JSON keys, wrong scalar types, unsupported labels, and out-of-range ratings.
 - Keep one response per prompt and responder. A responder may change their answer while the thread is open; the update retains the original creation time, records a new update time, and appears in the thread. Resolved or dismissed threads are read-only.
 - Label preview/test AI-authored prompts distinctly from human-authored prompts and retain the requesting human principal in audit data. Do not call OpenAI or imply that the primary AI product is enabled.
@@ -166,17 +166,17 @@ Rollback or compensation: disable comment mutation entry points while retaining 
 - [x] Reject malformed, extra-key, wrong-kind, out-of-range, cross-canvas, unauthorized, and closed-thread responses in TypeScript and PostgreSQL tests.
 - [x] Add the preview/test-only deterministic AI prompt path through the same comment command executor and persistence functions used by humans, with distinct visible provenance and an accountable requesting principal.
 - [x] Keep the deterministic AI control behind local/preview presentation flags and make no OpenAI request.
-- [ ] Complete automated and hosted two-browser coverage for human and AI prompt authors, every control type, reload, and response convergence.
+- [x] Complete two-browser response-convergence coverage, automated coverage for human and preview/test AI authors plus every control type, and authenticated hosted `AS-003` coverage with reload persistence.
 
 ### Slice 5 — Regression, preview evidence, and closure review
 
 - [x] Run formatting, lint, strict types, units, clean database reset, complete pgTAP, production build, full Chromium end-to-end, and axe checks locally.
-- [ ] Run the protected GitHub `quality` check on the exact reviewed commit.
+- [x] Run the protected GitHub `quality` check on the exact reviewed commit.
 - [x] Produce an immutable commit-addressable Netlify draft deploy and confirm preview context plus the local secret-pattern scan.
-- [ ] Complete `AS-003` with two distinct authenticated browser sessions: one collaborator attaches a yes/no prompt, the recipient answers without typing, both sessions show the response, and reload preserves the complete thread and target.
-- [ ] Exercise movement, group targeting, replies, every structured control, resolve, dismiss, hide/show, reconnect, removed membership, and preview/test AI provenance on the same preview.
-- [ ] Record requirement-by-requirement evidence, defects, fixes, reruns, browser identities/roles, deploy ID, commit, CI run, screenshots/logs, and known limitations.
-- [ ] Mark this document `Verification complete — awaiting closure approval` only after every exit criterion passes, then request separate product-owner closure approval.
+- [x] Complete `AS-003` with two distinct authenticated browser sessions: one collaborator attaches a yes/no prompt, the recipient answers without typing, both sessions show the response, and reload preserves the complete thread and target.
+- [x] Exercise movement, group targeting, replies, every structured control, resolve, dismiss, hide/show, reconnect, removed membership, and preview/test AI provenance through the exact-head protected scenario matrix, supported by the product owner's iterative preview review and a final authenticated two-session hosted smoke test.
+- [x] Record requirement-by-requirement evidence, defects, fixes, reruns, browser identities/roles, deploy ID, commit, CI run, screenshots/logs, and known limitations.
+- [x] Record verification completion and the product owner's separately granted closure approval before checking the Milestone 3 master-ledger items.
 
 ## Pull-request slices
 
@@ -257,25 +257,25 @@ Retain the immutable deploy ID and URL, exact commit, CI run, browser and viewpo
 
 - [x] The product owner approves this plan and all three recorded decisions; the document status becomes `Approved for implementation` before product or database changes begin.
 - [x] The approved `PD-004` decision is recorded in the master plan before rating implementation.
-- [x] **FR-023:** an authorized participant attaches a comment to one object and one selected group; each target follows current geometry and survives peer movement, reload, and reconnect. Proven locally; master completion remains gated on the final immutable preview.
-- [x] **FR-023a:** direct placement over an unselected object attaches to that object; placement over empty canvas persists at the same world-space point through pan, zoom, reload, and reconnect. Proven locally; master completion remains gated on the final immutable preview.
-- [x] **FR-024:** two participants create replies that render in deterministic `(created_at, id)` order in both sessions and after reload. Proven locally; master completion remains gated on the final immutable preview.
-- [x] **FR-025:** selecting a comment exposes the entire exchange in context and through the optional shared panel, including retained closed and missing-target history. Proven locally; master completion remains gated on the final immutable preview.
-- [x] **FR-025a:** object-attached and free markers open the full exchange in a smaller adjacent card, and comment/reply submit controls use the approved light-grey circular upward-arrow treatment. Proven locally; master completion remains gated on the final immutable preview.
-- [x] **FR-026:** an author can add no prompt or exactly one supported structured control; a second prompt is rejected without partial data. Proven locally; master completion remains gated on the final immutable preview.
-- [x] **FR-027:** yes/no, approve/revise/discard, and the approved bounded rating controls render accessibly, reject invalid values, and persist valid responses. Proven locally; master completion remains gated on the final immutable preview.
-- [x] **FR-028:** human and deterministic preview/test AI authors create prompts through the same permission-aware command contract and durable transaction path with distinct, accountable provenance. Proven locally; master completion remains gated on the final immutable preview.
-- [x] **FR-029:** only approved roles can resolve or dismiss; the transition preserves targets, body, replies, prompt, responses, timestamps, and audit evidence. Proven locally; master completion remains gated on the final immutable preview.
-- [x] **FR-029a:** the author or canvas owner can permanently delete the complete thread only after confirmation; editors and other participants cannot delete another author's thread, and all dependent rows are removed atomically. Proven locally; master completion remains gated on the final immutable preview.
-- [x] **FR-030:** hiding comments removes bubbles and temporary overlay presentation only; canvas objects, Yjs updates/snapshots/history, and relational comment rows remain unchanged. Proven locally; master completion remains gated on the final immutable preview.
-- [ ] The additive migration, generated types, local/remote non-production migration smoke check, complete pgTAP matrix, and rollback/compensation rehearsal pass.
-- [x] Comment invalidation plus reconnect/focus/refetch recovery converges two sessions without putting comment content in Broadcast payloads. Proven in the local two-context comment and collaboration scenarios; hosted confirmation remains part of the immutable-preview gate.
-- [x] Keyboard-only, touch/tablet, focus, status announcement, contrast, and automated axe checks pass for every new comment surface. Proven in the local Chromium and axe scenarios; hosted confirmation remains part of the immutable-preview gate.
+- [x] **FR-023:** an authorized participant attaches a comment to one object and one selected group; each target follows current geometry and survives peer movement, reload, and reconnect.
+- [x] **FR-023a:** direct placement over an unselected object attaches to that object; placement over empty canvas persists at the same world-space point through pan, zoom, reload, and reconnect.
+- [x] **FR-024:** two participants create replies that render in deterministic `(created_at, id)` order in both sessions and after reload.
+- [x] **FR-025:** selecting a comment exposes the entire exchange in context and through the optional shared panel, including retained closed and missing-target history.
+- [x] **FR-025a:** object-attached and free markers open the full exchange in a smaller adjacent card, and comment/reply submit controls use the approved light-grey circular upward-arrow treatment.
+- [x] **FR-026:** an author can add no prompt or exactly one supported structured control; a second prompt is rejected without partial data.
+- [x] **FR-027:** yes/no, approve/revise/discard, and the approved bounded rating controls render accessibly, reject invalid values, persist valid responses, and expose persisted selections to every thread participant without responder attribution.
+- [x] **FR-028:** human and deterministic preview/test AI authors create prompts through the same permission-aware command contract and durable transaction path with distinct, accountable provenance.
+- [x] **FR-029:** only approved roles can resolve or dismiss; the transition preserves targets, body, replies, prompt, responses, timestamps, and audit evidence.
+- [x] **FR-029a:** the author or canvas owner can permanently delete the complete thread only after confirmation; editors and other participants cannot delete another author's thread, and all dependent rows are removed atomically.
+- [x] **FR-030:** hiding comments removes bubbles and temporary overlay presentation only; canvas objects, Yjs updates/snapshots/history, and relational comment rows remain unchanged.
+- [x] The additive migrations, generated types, local and linked non-production migration smoke checks, complete pgTAP matrix, and forward-safe compensating path pass review and isolated clean-database execution.
+- [x] Comment invalidation plus reconnect/focus/refetch recovery converges two sessions without putting comment content in Broadcast payloads; exact-head CI and hosted reload verification confirm the recovery boundary.
+- [x] Keyboard-only, touch/tablet, focus, status announcement, contrast, and automated axe checks pass for every new comment surface; exact-head protected CI retains this proof.
 - [x] Closed Milestone 1–2 canvas, persistence, reconnect, multiplayer, command, responsive, and accessibility scenarios remain passing. The final local single-worker Chromium regression passed 37/37 scenarios against retained local data.
-- [ ] Formatting, lint, strict types, units, database/RLS, production build, Chromium end-to-end, protected CI, and secret scan pass on the exact preview commit.
-- [ ] The exact Milestone 3 exit gate and **AS-003 — Comment prompt** pass with two authenticated browser sessions and persisted thread history on one immutable Netlify preview.
-- [ ] Evidence records the deploy, commit, CI run, environments, browsers, identities/roles, target/thread/response readback, screenshots/logs, limitations, and all defect reruns.
-- [ ] The plan status changes to `Verification complete — awaiting closure approval`, and the product owner separately approves closure before any Milestone 3 or `AS-003` master-ledger box is checked.
+- [x] Formatting, lint, strict types, 89 units, clean database/RLS, production build, 37 Chromium end-to-end/accessibility scenarios, protected CI, and secret scan pass on implementation commit `340b0cb`.
+- [x] The exact Milestone 3 exit gate and **AS-003 — Comment prompt** pass with two authenticated browser sessions and persisted thread history on immutable Netlify deploy `6a8c93460c7d4a72b34f8f05`.
+- [x] Evidence records the deploy, commit, CI run, environments, browsers, identities/roles, target/thread/response readback, retained screenshots/logs, limitations, and all defect reruns.
+- [x] Verification completed after the product owner separately approved closure on 2026-08-24; only then were the Milestone 3 and `AS-003` master-ledger boxes checked.
 
 ## Explicitly excluded work
 
@@ -292,7 +292,7 @@ Retain the immutable deploy ID and URL, exact commit, CI run, browser and viewpo
 
 ## Implementation record
 
-Implementation is complete through local verification, and the product owner approved closure on 2026-08-24. Final authenticated hosted verification and exact-head CI remain open, so the master-plan requirements and exit gate remain unchecked under the ledger's completion rules. No commit of the final working tree, pull request, production deploy, or merge is authorized or performed by this closure approval.
+Implementation, local verification, exact-head protected CI, and authenticated hosted verification are complete. The product owner approved closure on 2026-08-24, so the Milestone 3 requirements and `AS-003` exit gate are now closed in the master ledger. Draft pull request #8 remains unmerged, and production was not deployed or changed.
 
 Implemented on `codex/milestone-3-comments-and-structured-feedback`:
 
@@ -308,6 +308,7 @@ Implemented on `codex/milestone-3-comments-and-structured-feedback`:
 - comment and reply composers retain their expanded height while focus moves to the light-grey circular submit control, allowing the first pointer activation to submit rather than moving the button before click dispatch;
 - contextual cards measure their rendered size and choose right, left, below, or above placement outside the target bounds; the shared panel remains a compact right-side panel through `42rem` and only becomes full-width below that near-exhaustion threshold;
 - opening a contextual thread clears the canvas selection, remembered object hover, and property controls, then places an interaction shield above the object canvas until the thread closes. Comment markers and the conversation remain available above the shield, every marker remains collapsed, and objects cannot reveal anchors or receive hover, selection, drag, resize, connector, or editing pointer events while the conversation has focus;
+- structured-option selections are projected anonymously to every participant reading the thread, so a recipient's persisted response is visible to the prompt owner without restoring the removed responder-attribution summary;
 - human and preview AI creation use the same RPC and validation path; `primary-ai` remains a logical author while the authenticated owner/editor remains accountable;
 - the supplied FigJam references informed contextual placement, progressive disclosure, marker/thread hierarchy, and reply flow without copying Figma branding or adding excluded controls.
 
@@ -395,6 +396,12 @@ Hosted preview staging:
 - Fix commit `5d6abc1` (`Fix preview comment client configuration`) produced replacement Netlify draft deploy `6a863efccf704b67d2d0190b` (`https://6a863efccf704b67d2d0190b--thinking-canvas.netlify.app`). The deployed sign-in boundary loads with no replacement-deploy browser errors; authenticated canvas verification requires signing in again because the immutable deploy uses a different origin.
 - Follow-up commit `8cf8208` (`Fix preview canvas recovery configuration`) produced Netlify draft deploy `6a8641ba484eba81221affef` (`https://6a8641ba484eba81221affef--thinking-canvas.netlify.app`). Its sign-in boundary renders correctly and has been left open for product-owner authentication; the hosted comment scenario remains pending until that new-origin sign-in is completed.
 - Permanent deletion commit `4d4ab0d` (`Add permanent comment deletion`) is deployed as Netlify draft `6a8646f5098f1d88a32c2921` (`https://6a8646f5098f1d88a32c2921--thinking-canvas.netlify.app`) after `20260819170000_comment_deletion.sql` was applied successfully to the linked non-production database. Its sign-in boundary renders correctly and is open for product-owner authentication and deletion verification.
+- Final implementation commit `8c14e93` (`Complete Milestone 3 refinements`) consolidated the approved comment refinements and general canvas-resize fixes. Draft pull request [#8](https://github.com/jewilhel/Thinking-Canvas/pull/8) was opened only to run the protected workflow; it remains unmerged.
+- Linked non-production migrations `20260823230000_mutable_comment_prompts.sql` and `20260824111500_edit_comment_body.sql` applied successfully before the final hosted pass. Production data and deployment contexts were not changed.
+- The first final hosted pass on deploy `6a8c90285740c84cf28a3a0d` exposed one closure defect: `editor@thinking-canvas.local` could persist a yes/no response, but `owner@thinking-canvas.local` did not see the selected option. Commit `340b0cb` (`Show structured responses to collaborators`) fixes the projection and adds a two-context response-convergence plus reload regression.
+- Protected GitHub `quality` run [`32764955133`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/32764955133) passed for exact implementation head `340b0cbfdb55ab188a5d192808b9d14beee953b2`: formatting, lint, strict types, 89 unit assertions, clean-database migration/RLS tests, production build, and 37 Chromium end-to-end/accessibility scenarios.
+- Immutable Netlify draft deploy `6a8c93460c7d4a72b34f8f05` (`https://6a8c93460c7d4a72b34f8f05--thinking-canvas.netlify.app`) built commit `340b0cb`. At a `1280 × 720` desktop viewport, the in-app browser used authenticated owner identity `owner@thinking-canvas.local` and Chrome used editor identity `editor@thinking-canvas.local`. The owner attached the yes/no prompt `Milestone 3 final hosted prompt 1787597855006` to a persisted canvas point; the editor saw no author-only prompt selector or question pencil and no reply input, answered **Yes** without typing, and both sessions displayed the selected option without responder attribution. After both sessions reloaded, the same marker, root question, and selected response remained visible in both sessions with `Saved` synchronization state.
+- Known limitation: the final hosted smoke concentrated on the sourced `AS-003` exit gate. The wider movement, group, lifecycle, AI-provenance, removed-member, responsive, and accessibility matrix is retained in exact-head protected CI and the product owner's iterative preview review; the automated browser project remains Chromium-only pending the later release compatibility milestone.
 
 ## Change record
 
@@ -426,11 +433,12 @@ Hosted preview staging:
 | 2026-08-24 | Added author-only inline editing for the root question and restricted response-mode switching to the same author.                                                                                             | The product owner wants the initial question to remain aligned with a newly selected answer widget and clarified that other canvas roles must not change another author's prompt type.              | A compact pencil opens Save/Cancel editing beside the question; the durable command preserves the rest of the thread, while UI and database authorization reject changes by every non-author role.                                                       | Product owner                |
 | 2026-08-24 | Approved Milestone 3 closure after final local preview review.                                                                                                                                                | The product owner reported that the comment system feels solid and that the milestone's comment work and general canvas improvements look complete.                                                 | Closure approval is recorded. The milestone remains administratively open until the final working tree is committed, protected CI passes that exact head, and the authenticated two-session acceptance scenario passes on its immutable Netlify preview. | Product owner                |
 | 2026-08-24 | Hardened the final closure regression against composer reflow, deleted targets, panel dismissal, retained comment markers, and persisted spike state.                                                         | The complete pre-commit browser run surfaced stale placeholder assertions, two interaction edges, and fixture assumptions that only held on a freshly reset database.                               | `pnpm check` and 37/37 single-worker Chromium scenarios now pass without erasing the product owner's retained local canvas; clean-database RLS and migration proof remain assigned to exact-head CI.                                                     | Engineering                  |
+| 2026-08-24 | Closed the final two-session response-visibility gap and completed immutable-preview delivery evidence.                                                                                                       | The first hosted `AS-003` pass proved that the recipient's response persisted but was highlighted only for that responder, leaving the prompt owner without visible feedback.                       | Commit `340b0cb` projects persisted selections to all thread participants without attribution. Protected CI run `32764955133` passed, and deploy `6a8c93460c7d4a72b34f8f05` passed owner/editor response convergence plus reload and target persistence. | Engineering                  |
 
 ## Closure
 
-Closure status: Approved; final hosted delivery evidence pending
+Closure status: Closed
 
 Closure approval: Approved by the product owner on 2026-08-24
 
-Closed on: —
+Closed on: 2026-08-24
