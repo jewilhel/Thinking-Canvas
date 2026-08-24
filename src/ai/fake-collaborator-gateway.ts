@@ -45,9 +45,19 @@ export class FakePrimaryAiGateway {
       };
     }
 
-    const firstObject = projection.objects[0];
+    const objectsById = new Map(
+      projection.objects.map((object) => [object.id, object]),
+    );
+    const selectedPath = invocation.selectedPathIds.flatMap((id) => {
+      const object = objectsById.get(id);
+      return object ? [object] : [];
+    });
+    const firstObject = selectedPath[0] ?? projection.objects[0];
     const reply = aiReplySchema.parse({
-      body: `I inspected ${projection.objects.length} canvas objects and ${projection.commentThreads.length} comment conversations.`,
+      body:
+        selectedPath.length > 1
+          ? `I inspected ${selectedPath.length} selected path objects in order: ${selectedPath.map((object) => object.summary || object.type).join(" → ")}.`
+          : `I inspected ${projection.objects.length} canvas objects and ${projection.commentThreads.length} comment conversations.`,
       evidence: firstObject
         ? [
             {

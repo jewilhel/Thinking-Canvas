@@ -318,6 +318,7 @@ export class SupabaseCommentRepository {
           target_client_command_id: command.commandId,
           target_body: command.body,
           target_object_ids: command.targetObjectIds,
+          target_ordered_context_ids: command.orderedContextIds,
           target_author_kind: command.authorKind,
           target_author_key: command.authorKey ?? undefined,
           target_anchor_x: command.canvasAnchor?.x ?? undefined,

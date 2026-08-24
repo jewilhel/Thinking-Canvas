@@ -453,6 +453,107 @@ test("filters human collaborators and redirects inherited recipients to humans a
   ).toBeVisible();
 });
 
+test("captures a connected selection as ordered AI path context", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await addRectangle(page);
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page
+    .getByRole("menuitemradio", { name: "Ellipse", exact: true })
+    .click();
+  await page
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 650, y: 280 } });
+  await page.getByRole("button", { name: "Connector", exact: true }).click();
+  const surface = page.getByTestId("product-canvas-surface");
+  await surface.click({ position: { x: 500, y: 330 } });
+  await surface.click({ position: { x: 730, y: 330 } });
+  await expect(page.getByTestId("product-object-count")).toHaveText("3");
+
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await surface.click({ position: { x: 500, y: 330 } });
+  await surface.click({
+    position: { x: 730, y: 330 },
+    modifiers: ["Shift"],
+  });
+  await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  const enabled = page.getByRole("checkbox", { name: "Enabled" });
+  await enabled.click();
+  await expect(enabled).toBeChecked();
+  await placeArmedComment(page, { x: 500, y: 330 });
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  await expect(
+    composer.getByText("AI path context: 2 objects in selection order"),
+  ).toBeVisible();
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Interpret this connected path in order.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    thread.getByText(
+      /I inspected 2 selected path objects in order: rectangle: New idea → ellipse: New idea\./,
+    ),
+  ).toBeVisible();
+});
+
+test("keeps an unconnected ordered-path request and reports the path error inline", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await addRectangle(page);
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page
+    .getByRole("menuitemradio", { name: "Ellipse", exact: true })
+    .click();
+  const surface = page.getByTestId("product-canvas-surface");
+  await surface.click({ position: { x: 650, y: 280 } });
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await surface.click({ position: { x: 500, y: 330 } });
+  await surface.click({
+    position: { x: 730, y: 330 },
+    modifiers: ["Shift"],
+  });
+  await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Enabled" }).click();
+  await placeArmedComment(page, { x: 500, y: 330 });
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  await expect(
+    composer.getByText("AI path context: 2 objects in selection order"),
+  ).toBeVisible();
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Inspect this sequence without changing the canvas.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    thread.getByText("Inspect this sequence without changing the canvas."),
+  ).toBeVisible();
+  await expect(
+    thread.getByText("The selected path is not connected in selection order."),
+  ).toBeVisible();
+  await expect(page.getByTestId("product-object-count")).toHaveText("2");
+});
+
 test("anchors one thread to a complete group and preserves it after target deletion", async ({
   page,
 }) => {

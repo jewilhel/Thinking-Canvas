@@ -15,6 +15,7 @@ import {
   commentThreadDetailSchema,
   inspectCanvasObjects,
   inspectCommentThreads,
+  validateConnectedPath,
 } from "@/ai/grounding";
 import { postgresByteaToBytes } from "@/collaboration/canvas-document";
 import { buildCompactedSnapshot } from "@/collaboration/persistence";
@@ -138,6 +139,13 @@ export async function completeDeterministicAiRun(
     })),
   );
   const sourceObjects = listCanvasObjectsV2(compacted.document);
+  if (run.ordered_context_ids.length > 1) {
+    validateConnectedPath({
+      canvasId: run.canvas_id,
+      objects: sourceObjects,
+      orderedObjectIds: run.ordered_context_ids,
+    });
+  }
   const objectDetails = buildCanvasObjectDetails(run.canvas_id, sourceObjects);
   const objects = objectDetails.map((object) => ({
     id: object.id,

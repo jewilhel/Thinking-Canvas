@@ -116,7 +116,11 @@ select results_eq(
       null,
       null,
       null,
-      true
+      true,
+      array[
+        '61000000-0000-4000-8000-000000000001',
+        '61000000-0000-4000-8000-000000000002'
+      ]::uuid[]
     )$$,
   $$values (true, true)$$,
   'an addressed object selection queues one AI run'
@@ -141,10 +145,28 @@ select results_eq(
     from public.ai_runs
     where idempotency_key = '83000000-0000-4000-8000-000000000020'$$,
   $$values (array[
-    '61000000-0000-4000-8000-000000000002',
-    '61000000-0000-4000-8000-000000000001'
+    '61000000-0000-4000-8000-000000000001',
+    '61000000-0000-4000-8000-000000000002'
   ]::uuid[])$$,
-  'the queued AI run snapshots the exact ordered selection'
+  'the queued AI run snapshots the exact ordered path independently of comment target order'
+);
+
+select throws_ok(
+  $$select * from public.create_comment_thread(
+    target_canvas_id => '20000000-0000-4000-8000-000000000001',
+    target_client_command_id => '83000000-0000-4000-8000-000000000021',
+    target_body => 'Reject a duplicate path.',
+    target_anchor_x => 100,
+    target_anchor_y => 120,
+    target_include_primary_ai => true,
+    target_ordered_context_ids => array[
+      '61000000-0000-4000-8000-000000000001',
+      '61000000-0000-4000-8000-000000000001'
+    ]::uuid[]
+  )$$,
+  '22023',
+  'Ordered AI context objects must be unique.',
+  'direct callers cannot submit duplicate ordered path objects'
 );
 
 select results_eq(

@@ -1212,6 +1212,7 @@ export type Database = {
           target_client_command_id: string
           target_include_primary_ai?: boolean
           target_object_ids?: string[]
+          target_ordered_context_ids?: string[]
           target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
           target_recipient_user_ids?: string[]
         }

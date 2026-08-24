@@ -405,6 +405,7 @@ create function private.apply_comment_routing(
   target_recipient_user_ids uuid[],
   target_include_primary_ai boolean,
   target_explicit boolean,
+  target_ordered_context_ids uuid[],
   target_idempotency_key uuid
 )
 returns uuid
@@ -453,6 +454,15 @@ begin
   end if;
   if target_author_kind = 'ai' and target_author_key <> 'primary-ai' then
     raise exception 'Comment author provenance is invalid.' using errcode = '22023';
+  end if;
+  if cardinality(coalesce(target_ordered_context_ids, array[]::uuid[])) > 1000 then
+    raise exception 'An ordered AI context supports at most 1000 objects.' using errcode = '22023';
+  end if;
+  if cardinality(coalesce(target_ordered_context_ids, array[]::uuid[])) <> (
+    select count(distinct context_id)
+    from unnest(coalesce(target_ordered_context_ids, array[]::uuid[])) context_id
+  ) then
+    raise exception 'Ordered AI context objects must be unique.' using errcode = '22023';
   end if;
 
   if target_explicit then
@@ -657,6 +667,7 @@ begin
       target_idempotency_key,
       effective_authority,
       coalesce(
+        nullif(target_ordered_context_ids, array[]::uuid[]),
         (
           select array_agg(target.target_object_id order by target.target_order)
           from public.comment_targets target
@@ -695,7 +706,8 @@ create function public.create_comment_thread(
   target_anchor_x double precision default null,
   target_anchor_y double precision default null,
   target_recipient_user_ids uuid[] default null,
-  target_include_primary_ai boolean default false
+  target_include_primary_ai boolean default false,
+  target_ordered_context_ids uuid[] default array[]::uuid[]
 )
 returns table (comment_id uuid, created boolean, ai_run_id uuid)
 language plpgsql
@@ -756,6 +768,15 @@ begin
   ) <> object_target_count then
     raise exception 'Comment targets must be unique.' using errcode = '22023';
   end if;
+  if cardinality(coalesce(target_ordered_context_ids, array[]::uuid[])) > 1000 then
+    raise exception 'An ordered AI context supports at most 1000 objects.' using errcode = '22023';
+  end if;
+  if cardinality(coalesce(target_ordered_context_ids, array[]::uuid[])) <> (
+    select count(distinct context_id)
+    from unnest(coalesce(target_ordered_context_ids, array[]::uuid[])) context_id
+  ) then
+    raise exception 'Ordered AI context objects must be unique.' using errcode = '22023';
+  end if;
 
   normalized_author_key := case
     when target_author_kind = 'human' then actor_id::text
@@ -778,7 +799,8 @@ begin
     normalized_author_key,
     normalized_recipient_ids::text,
     target_include_primary_ai::text,
-    routing_explicit::text
+    routing_explicit::text,
+    target_ordered_context_ids::text
   ));
 
   select * into existing
@@ -828,6 +850,7 @@ begin
       target_recipient_user_ids,
       target_include_primary_ai,
       true,
+      target_ordered_context_ids,
       target_client_command_id
     );
   end if;
@@ -962,6 +985,7 @@ begin
     target_recipient_user_ids,
     target_include_primary_ai,
     routing_explicit,
+    null,
     target_client_command_id
   );
 
@@ -1068,6 +1092,7 @@ begin
     null,
     false,
     false,
+    null,
     target_run.id
   );
 
@@ -1347,7 +1372,8 @@ revoke all on function public.create_comment_thread(
   double precision,
   double precision,
   uuid[],
-  boolean
+  boolean,
+  uuid[]
 ) from public, anon;
 revoke all on function public.create_comment_reply(
   uuid,
@@ -1380,7 +1406,8 @@ grant execute on function public.create_comment_thread(
   double precision,
   double precision,
   uuid[],
-  boolean
+  boolean,
+  uuid[]
 ) to authenticated;
 grant execute on function public.create_comment_reply(
   uuid,

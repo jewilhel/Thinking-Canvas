@@ -8,6 +8,7 @@ import {
   failAiRun,
   retryAiRun,
 } from "@/ai/collaborator-run-service";
+import { ConnectedPathError } from "@/ai/grounding";
 
 const bodySchema = z.strictObject({ runId: z.uuid() });
 
@@ -49,9 +50,12 @@ export async function POST(
         const aborted =
           error instanceof DOMException && error.name === "AbortError";
         if (!aborted) {
-          await failAiRun(parsed.data.runId, "deterministic_run_failed").catch(
-            () => undefined,
-          );
+          await failAiRun(
+            parsed.data.runId,
+            error instanceof ConnectedPathError
+              ? `connected_path_${error.code}`
+              : "deterministic_run_failed",
+          ).catch(() => undefined);
         }
         send({
           status: aborted ? "cancelled" : "failed",

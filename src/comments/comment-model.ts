@@ -22,6 +22,12 @@ export const commentCreateCommandSchema = z
     canvasId: uuid,
     body: strictText,
     targetObjectIds: z.array(uuid).max(100),
+    orderedContextIds: z
+      .array(uuid)
+      .max(1_000)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "Ordered context objects must be unique.",
+      }),
     canvasAnchor: z
       .strictObject({
         x: z.number().finite().min(-1_000_000_000).max(1_000_000_000),
@@ -247,6 +253,22 @@ export function commentTargetObjectIds(
     completeGroup.every((id, index) => id === selectedGroup[index])
     ? selectedInOrder
     : null;
+}
+
+export function commentOrderedContextIds(
+  objects: CanvasObjectV2[],
+  selectedIds: string[],
+  targetObjectIds: string[],
+) {
+  if (
+    selectedIds.length < 2 ||
+    targetObjectIds.length !== 1 ||
+    !selectedIds.includes(targetObjectIds[0]!)
+  ) {
+    return [];
+  }
+  const existingIds = new Set(objects.map((object) => object.id));
+  return selectedIds.every((id) => existingIds.has(id)) ? [...selectedIds] : [];
 }
 
 export function compareChronologically(

@@ -24,6 +24,7 @@ import {
 } from "react";
 
 import {
+  commentOrderedContextIds,
   commentTargetObjectIds,
   type CommentCollaborator,
   type CommentPrompt,
@@ -45,6 +46,7 @@ const COMMENT_MARKER_SIZE = 52;
 const COMMENT_PREVIEW_WIDTH = 320;
 type CommentTarget = {
   targetObjectIds: string[];
+  orderedContextIds: string[];
   canvasAnchor: CanvasPoint | null;
 };
 
@@ -313,6 +315,18 @@ function promptLabel(kind: CommentPromptKind | null) {
   if (kind === "review") return "Review decision";
   if (kind === "rating") return "Rating (1–5)";
   return "Reply";
+}
+
+function aiRunFailureMessage(errorCode: string | null) {
+  if (errorCode === "connected_path_not_connected")
+    return "The selected path is not connected in selection order.";
+  if (errorCode === "connected_path_ambiguous_path")
+    return "The selected path has an ambiguous connection.";
+  if (errorCode === "connected_path_stale_object")
+    return "The selected path includes an object that is no longer available.";
+  if (errorCode === "connected_path_cross_canvas_object")
+    return "The selected path includes an object from another canvas.";
+  return "The response could not be completed. Your comment remains saved.";
 }
 
 function PromptKindSelect({
@@ -852,8 +866,7 @@ function ThreadBody({
               </div>
               {run.status === "failed" ? (
                 <p className="mt-1 text-xs text-violet-800">
-                  The response could not be completed. Your comment remains
-                  saved.
+                  {aiRunFailureMessage(run.errorCode)}
                 </p>
               ) : null}
               {run.requestedBy === userId ? (
@@ -1100,12 +1113,18 @@ export function CanvasComments({
       y: (screenPoint.y - viewport.y) / viewport.scale,
     };
     const object = topmostObjectAtPoint(objects, objectsById, canvasPoint);
+    const targetObjectIds = object
+      ? targetIds?.includes(object.id)
+        ? targetIds
+        : [object.id]
+      : [];
     setComposerTarget({
-      targetObjectIds: object
-        ? targetIds?.includes(object.id)
-          ? targetIds
-          : [object.id]
-        : [],
+      targetObjectIds,
+      orderedContextIds: commentOrderedContextIds(
+        objects,
+        selectedIds,
+        targetObjectIds,
+      ),
       canvasAnchor: object ? null : canvasPoint,
     });
     setPlacementMode(false);
@@ -1120,6 +1139,7 @@ export function CanvasComments({
       canvasId,
       body: draft.trim(),
       targetObjectIds: composerTarget.targetObjectIds,
+      orderedContextIds: composerTarget.orderedContextIds,
       canvasAnchor: composerTarget.canvasAnchor,
       promptKind,
       authorKind: "human",
@@ -1353,7 +1373,10 @@ export function CanvasComments({
             })
         : null}
 
-      {composerOpen && composerPosition && composerCardPosition ? (
+      {composerOpen &&
+      composerTarget &&
+      composerPosition &&
+      composerCardPosition ? (
         <div
           ref={composerCardRef}
           role="dialog"
@@ -1394,6 +1417,12 @@ export function CanvasComments({
             </Button>
           </form>
           <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 px-2 pt-2 pb-1">
+            {composerTarget.orderedContextIds.length > 1 ? (
+              <p className="w-full text-xs text-violet-700">
+                AI path context: {composerTarget.orderedContextIds.length}
+                {" objects in selection order"}
+              </p>
+            ) : null}
             <label
               className="text-xs font-medium text-zinc-600"
               htmlFor="comment-prompt-kind"
