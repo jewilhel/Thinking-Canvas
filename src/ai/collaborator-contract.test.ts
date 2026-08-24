@@ -36,13 +36,26 @@ const invocation = aiInvocationSchema.parse({
 const projection = aiProjectionEnvelopeSchema.parse({
   version: 1,
   canvasId: ids.canvas,
-  objects: [{ id: ids.object, type: "shape", summary: "Main idea" }],
+  objects: [
+    {
+      id: ids.object,
+      type: "shape",
+      summary: "Main idea",
+      geometry: { x: 0, y: 0, width: 100, height: 80, rotation: 0 },
+      groupId: null,
+      orderIndex: 0,
+      relationshipIds: [],
+    },
+  ],
   commentThreads: [
     {
       id: ids.comment,
       status: "resolved",
       targetObjectIds: [ids.object],
       summary: "Prior decision",
+      participantKeys: [ids.user, PRIMARY_AI_KEY],
+      createdAt: "2026-08-24T12:00:00.000Z",
+      updatedAt: "2026-08-24T12:00:00.000Z",
     },
   ],
   serializedBytes: 512,

@@ -93,6 +93,16 @@ const projectionObjectSchema = z.strictObject({
   id: z.uuid(),
   type: z.string().min(1).max(80),
   summary: z.string().max(10_000),
+  geometry: z.strictObject({
+    x: z.number().finite(),
+    y: z.number().finite(),
+    width: z.number().finite().nonnegative(),
+    height: z.number().finite().nonnegative(),
+    rotation: z.number().finite(),
+  }),
+  groupId: z.uuid().nullable(),
+  orderIndex: z.number().int().nonnegative(),
+  relationshipIds: z.array(z.uuid()).max(1_000),
 });
 
 const projectionThreadSchema = z.strictObject({
@@ -100,6 +110,9 @@ const projectionThreadSchema = z.strictObject({
   status: z.enum(["open", "resolved"]),
   targetObjectIds: z.array(z.uuid()).max(100),
   summary: z.string().max(10_000),
+  participantKeys: z.array(z.string().min(1).max(255)).max(100),
+  createdAt: z.iso.datetime({ offset: true }),
+  updatedAt: z.iso.datetime({ offset: true }),
 });
 
 export const aiProjectionEnvelopeSchema = z.strictObject({

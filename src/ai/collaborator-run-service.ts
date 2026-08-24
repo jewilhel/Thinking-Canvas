@@ -10,6 +10,12 @@ import {
 import { FakePrimaryAiGateway } from "@/ai/fake-collaborator-gateway";
 import type { FakeAiScenario } from "@/ai/fake-collaborator-gateway";
 import { listCanvasObjectsV2 } from "@/canvas/canvas-document";
+import {
+  buildCanvasObjectDetails,
+  commentThreadDetailSchema,
+  inspectCanvasObjects,
+  inspectCommentThreads,
+} from "@/ai/grounding";
 import { postgresByteaToBytes } from "@/collaboration/canvas-document";
 import { buildCompactedSnapshot } from "@/collaboration/persistence";
 import { getAuthenticatedUser } from "@/lib/auth/session";
@@ -19,17 +25,6 @@ const runRequestSchema = z.strictObject({
   runId: z.uuid(),
   canvasId: z.uuid(),
 });
-
-function objectSummary(object: ReturnType<typeof listCanvasObjectsV2>[number]) {
-  if (object.type === "shape")
-    return `${object.shape}: ${object.text}`.slice(0, 10_000);
-  if (object.type === "text") return object.text.slice(0, 10_000);
-  if (object.type === "table")
-    return object.cells.flat().join(" | ").slice(0, 10_000);
-  if (object.type === "document") return object.title.slice(0, 10_000);
-  if (object.type === "connector") return "Connector";
-  return "Annotation";
-}
 
 export async function completeDeterministicAiRun(
   input: unknown,
@@ -110,7 +105,7 @@ export async function completeDeterministicAiRun(
     supabase
       .from("comments")
       .select(
-        "id,body,status,comment_targets(target_object_id),comment_replies(body)",
+        "id,body,status,author_kind,author_key,created_at,updated_at,comment_targets(target_object_id,target_order),comment_thread_participants(participant_kind,participant_user_id,participant_ai_key),comment_replies(id,author_kind,author_key,body,created_at,updated_at),comment_prompts(kind,comment_responses(value))",
       )
       .eq("canvas_id", run.canvas_id)
       .in("status", ["open", "resolved"])
@@ -142,21 +137,77 @@ export async function completeDeterministicAiRun(
       update: postgresByteaToBytes(row.update_data),
     })),
   );
-  const objects = listCanvasObjectsV2(compacted.document).map((object) => ({
+  const sourceObjects = listCanvasObjectsV2(compacted.document);
+  const objectDetails = buildCanvasObjectDetails(run.canvas_id, sourceObjects);
+  const objects = objectDetails.map((object) => ({
     id: object.id,
     type: object.type,
-    summary: objectSummary(object),
+    summary: object.summary,
+    geometry: object.geometry,
+    groupId: object.groupId,
+    orderIndex: object.orderIndex,
+    relationshipIds: object.relationshipIds,
   }));
-  const commentThreads = (threadsResult.data ?? []).map((thread) => ({
+  const threadDetails = (threadsResult.data ?? []).map((thread) => {
+    const prompt = thread.comment_prompts?.[0];
+    return commentThreadDetailSchema.parse({
+      id: thread.id,
+      status: thread.status,
+      body: thread.body,
+      authorKind: thread.author_kind,
+      authorKey: thread.author_key,
+      targetObjectIds: [...thread.comment_targets]
+        .sort((left, right) => left.target_order - right.target_order)
+        .map((target) => target.target_object_id),
+      participantKeys: thread.comment_thread_participants
+        .map((participant) =>
+          participant.participant_kind === "ai"
+            ? participant.participant_ai_key
+            : participant.participant_user_id,
+        )
+        .filter((key): key is string => key !== null)
+        .sort(),
+      createdAt: thread.created_at,
+      updatedAt: thread.updated_at,
+      replies: thread.comment_replies.map((reply) => ({
+        id: reply.id,
+        authorKind: reply.author_kind,
+        authorKey: reply.author_key,
+        body: reply.body,
+        createdAt: reply.created_at,
+        updatedAt: reply.updated_at,
+      })),
+      prompt: prompt
+        ? {
+            kind: prompt.kind,
+            responses: prompt.comment_responses.map(
+              (response) => response.value,
+            ),
+          }
+        : null,
+    });
+  });
+  const commentThreads = threadDetails.map((thread) => ({
     id: thread.id,
-    status: thread.status as "open" | "resolved",
-    targetObjectIds: thread.comment_targets.map(
-      (target) => target.target_object_id,
-    ),
-    summary: [thread.body, ...thread.comment_replies.map((reply) => reply.body)]
+    status: thread.status,
+    targetObjectIds: thread.targetObjectIds,
+    summary: [thread.body, ...thread.replies.map((reply) => reply.body)]
       .join("\n")
       .slice(0, 10_000),
+    participantKeys: thread.participantKeys,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
   }));
+  const objectInspection = inspectCanvasObjects(objectDetails, {
+    tool: "inspect_canvas_objects",
+    cursor: 0,
+    limit: 25,
+  });
+  const threadInspection = inspectCommentThreads(threadDetails, {
+    tool: "inspect_comment_threads",
+    cursor: 0,
+    limit: 25,
+  });
   const projectionBase = {
     version: 1 as const,
     canvasId: run.canvas_id,
@@ -231,6 +282,11 @@ export async function completeDeterministicAiRun(
       serializedBytes: projection.serializedBytes,
       lastSequence: compacted.lastSequence,
       evidence: gatewayResult.reply.evidence,
+      inspectionTools: ["inspect_canvas_objects", "inspect_comment_threads"],
+      objectDetailPageSize: objectInspection.items.length,
+      objectDetailNextCursor: objectInspection.nextCursor,
+      threadDetailPageSize: threadInspection.items.length,
+      threadDetailNextCursor: threadInspection.nextCursor,
     },
   });
   if (completionResult.error || !completionResult.data?.[0]) {

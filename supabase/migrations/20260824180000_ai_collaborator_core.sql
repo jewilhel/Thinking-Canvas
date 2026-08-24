@@ -54,6 +54,26 @@ alter table public.comment_replies
   add constraint comment_replies_human_author_key
     check (author_kind <> 'human' or author_key = author_id::text);
 
+alter table public.comment_targets add column target_order integer;
+
+with ordered_targets as (
+  select
+    id,
+    row_number() over (
+      partition by comment_id order by created_at, id
+    ) - 1 as target_order
+  from public.comment_targets
+)
+update public.comment_targets target
+set target_order = ordered_targets.target_order
+from ordered_targets
+where ordered_targets.id = target.id;
+
+alter table public.comment_targets
+  alter column target_order set not null,
+  add constraint comment_targets_nonnegative_order check (target_order >= 0),
+  add constraint comment_targets_unique_order unique (comment_id, target_order);
+
 create function private.normalize_comment_reply_author()
 returns trigger
 language plpgsql
@@ -638,7 +658,7 @@ begin
       effective_authority,
       coalesce(
         (
-          select array_agg(target.target_object_id order by target.created_at, target.id)
+          select array_agg(target.target_object_id order by target.target_order)
           from public.comment_targets target
           where target.comment_id = target_comment_id
         ),
@@ -785,8 +805,9 @@ begin
   );
 
   if object_target_count > 0 then
-    insert into public.comment_targets (comment_id, target_object_id)
-    select next_comment_id, target_id from unnest(target_object_ids) target_id;
+    insert into public.comment_targets (comment_id, target_object_id, target_order)
+    select next_comment_id, target_id, target_order - 1
+    from unnest(target_object_ids) with ordinality target(target_id, target_order);
   end if;
   if target_prompt_kind is not null then
     insert into public.comment_prompts (comment_id, kind, minimum, maximum)

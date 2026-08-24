@@ -241,10 +241,11 @@ export function commentTargetObjectIds(
     .filter((object) => object.groupId === groupId)
     .map((object) => object.id)
     .sort();
-  const selectedGroup = selected.map((object) => object.id).sort();
+  const selectedInOrder = selected.map((object) => object.id);
+  const selectedGroup = [...selectedInOrder].sort();
   return completeGroup.length === selectedGroup.length &&
     completeGroup.every((id, index) => id === selectedGroup[index])
-    ? selectedGroup
+    ? selectedInOrder
     : null;
 }
 

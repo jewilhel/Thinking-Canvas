@@ -392,6 +392,67 @@ test("shows a failed AI response inline and retries without duplicating the comm
   ).toHaveCount(1);
 });
 
+test("filters human collaborators and redirects inherited recipients to humans and AI", async ({
+  page,
+}) => {
+  await signIn(page, "owner@thinking-canvas.local");
+  await page.goto(`/app/canvases/${seedCanvasId}`);
+  await expect(page.getByTestId("product-canvas-surface")).toBeVisible();
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page.getByRole("button", { name: "Hide markers" }).click();
+  const enabled = page.getByRole("checkbox", { name: "Enabled" });
+  if (!(await enabled.isChecked())) {
+    await enabled.click();
+    await expect(enabled).toBeChecked();
+  }
+  await placeArmedComment(page, { x: 760, y: 520 });
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@edi");
+  await expect(
+    composer.getByRole("option", { name: /Editor Example editor/ }),
+  ).toBeVisible();
+  await expect(
+    composer.getByRole("option", { name: /Commenter Example commenter/ }),
+  ).not.toBeVisible();
+  await composer.getByRole("option", { name: /Editor Example editor/ }).click();
+  await comment.fill("Please review this direction.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(thread.getByText("To Editor Example")).toBeVisible();
+  await expect(thread.getByText("To (inherited)")).toBeVisible();
+  await thread.getByRole("button", { name: "Remove Editor Example" }).click();
+  const reply = thread.getByRole("textbox", { name: "Reply", exact: true });
+  await reply.fill("@com");
+  await thread
+    .getByRole("option", { name: /Commenter Example commenter/ })
+    .click();
+  await reply.fill("Handing this conversation to another collaborator @");
+  await thread
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await reply.fill(
+    "Handing this conversation to another collaborator and the AI.",
+  );
+  await thread.getByRole("button", { name: "Send reply" }).click();
+
+  await expect(thread.getByText("To Editor Example")).toHaveCount(1);
+  await expect(
+    thread.getByText(
+      /To (?:Commenter Example, Thinking Canvas AI|Thinking Canvas AI, Commenter Example)/,
+    ),
+  ).toBeVisible();
+  await expect(
+    thread.getByText(
+      /I inspected \d+ canvas objects and \d+ comment conversations\./,
+    ),
+  ).toBeVisible();
+});
+
 test("anchors one thread to a complete group and preserves it after target deletion", async ({
   page,
 }) => {

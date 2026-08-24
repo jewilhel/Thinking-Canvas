@@ -101,6 +101,53 @@ select results_eq(
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
 
 select results_eq(
+  $$select created, ai_run_id is not null
+    from public.create_comment_thread(
+      '20000000-0000-4000-8000-000000000001',
+      '83000000-0000-4000-8000-000000000020',
+      'Inspect this ordered selection.',
+      array[
+        '61000000-0000-4000-8000-000000000002',
+        '61000000-0000-4000-8000-000000000001'
+      ]::uuid[],
+      null,
+      'human',
+      null,
+      null,
+      null,
+      null,
+      true
+    )$$,
+  $$values (true, true)$$,
+  'an addressed object selection queues one AI run'
+);
+
+select results_eq(
+  $$select target_object_id
+    from public.comment_targets
+    where comment_id = (
+      select id from public.comments
+      where client_command_id = '83000000-0000-4000-8000-000000000020'
+    )
+    order by target_order$$,
+  $$values
+    ('61000000-0000-4000-8000-000000000002'::uuid),
+    ('61000000-0000-4000-8000-000000000001'::uuid)$$,
+  'comment targets preserve the authors selection order'
+);
+
+select results_eq(
+  $$select ordered_context_ids
+    from public.ai_runs
+    where idempotency_key = '83000000-0000-4000-8000-000000000020'$$,
+  $$values (array[
+    '61000000-0000-4000-8000-000000000002',
+    '61000000-0000-4000-8000-000000000001'
+  ]::uuid[])$$,
+  'the queued AI run snapshots the exact ordered selection'
+);
+
+select results_eq(
   $$select effective_authority::text, can_manage
     from public.get_canvas_ai_access('20000000-0000-4000-8000-000000000001')$$,
   $$values ('comment_only'::text, false)$$,
@@ -369,6 +416,41 @@ select is(
   ),
   2,
   'redirecting later leaves earlier AI recipient history unchanged'
+);
+
+select lives_ok(
+  $$select * from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '83000000-0000-4000-8000-000000000030',
+    'A human-only conversation that will become stale.',
+    array[]::uuid[],
+    null,
+    'human',
+    null,
+    180,
+    220,
+    array['10000000-0000-4000-8000-000000000002']::uuid[],
+    false
+  )$$,
+  'a commenter can explicitly address a current human collaborator'
+);
+
+set local role postgres;
+delete from public.canvas_members
+where canvas_id = '20000000-0000-4000-8000-000000000001'
+  and user_id = '10000000-0000-4000-8000-000000000002';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
+
+select throws_ok(
+  $$select * from public.create_comment_reply(
+    (select id from public.comments where client_command_id = '83000000-0000-4000-8000-000000000030'),
+    '83000000-0000-4000-8000-000000000031',
+    'This inherited reply must not route to a removed collaborator.'
+  )$$,
+  '42501',
+  'An addressed collaborator is no longer available; redirect this conversation.',
+  'inherited routing fails visibly when a human collaborator is removed'
 );
 
 set local role postgres;

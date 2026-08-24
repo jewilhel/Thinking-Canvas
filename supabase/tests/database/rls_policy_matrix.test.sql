@@ -55,11 +55,12 @@ values (
   '10000000-0000-4000-8000-000000000001'
 );
 
-insert into public.comment_targets (id, comment_id, target_object_id)
+insert into public.comment_targets (id, comment_id, target_object_id, target_order)
 values (
   '50000000-0000-4000-8000-000000000003',
   '30000000-0000-4000-8000-000000000001',
-  '60000000-0000-4000-8000-000000000001'
+  '60000000-0000-4000-8000-000000000001',
+  0
 );
 
 insert into public.comment_replies (id, comment_id, author_id, body)

@@ -808,18 +808,21 @@ export type Database = {
           created_at: string
           id: string
           target_object_id: string
+          target_order: number
         }
         Insert: {
           comment_id: string
           created_at?: string
           id?: string
           target_object_id: string
+          target_order: number
         }
         Update: {
           comment_id?: string
           created_at?: string
           id?: string
           target_object_id?: string
+          target_order?: number
         }
         Relationships: [
           {

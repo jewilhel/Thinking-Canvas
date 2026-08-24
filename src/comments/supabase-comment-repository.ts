@@ -61,9 +61,9 @@ export class SupabaseCommentRepository {
     ] = await Promise.all([
       this.supabase
         .from("comment_targets")
-        .select("id,comment_id,target_object_id,created_at")
+        .select("id,comment_id,target_object_id,target_order,created_at")
         .in("comment_id", commentIds)
-        .order("created_at", { ascending: true })
+        .order("target_order", { ascending: true })
         .order("id", { ascending: true }),
       this.supabase
         .from("comment_replies")
