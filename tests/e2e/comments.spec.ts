@@ -244,27 +244,152 @@ test("places comments over an unselected object and on empty canvas", async ({
   ).toBeVisible();
 });
 
-test("creates preview AI feedback with explicit provenance", async ({
+test("addresses the primary AI once and inherits it on the next reply", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 768, height: 1024 });
   await openFreshCanvas(page);
   await addRectangle(page);
   await page.getByRole("button", { name: "Comments", exact: true }).click();
+  const enabled = page.getByRole("checkbox", { name: "Enabled" });
+  await enabled.click();
+  await expect(enabled).toBeChecked();
   await placeArmedComment(page);
   const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
   await composer
-    .getByRole("textbox", { name: "Comment", exact: true })
-    .fill("Preview suggestion from the canvas assistant.");
-  await composer.getByRole("button", { name: "Add as preview AI" }).click();
-  await expect(
-    page.getByRole("dialog", { name: "Comment thread" }),
-  ).toContainText("Thinking Canvas AI");
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Please inspect this canvas direction.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(thread.getByText("To Thinking Canvas AI")).toBeVisible();
+  const groundedReply = thread.getByText(
+    "I inspected 1 canvas objects and 1 comment conversations.",
+  );
+  await expect(groundedReply).toHaveCount(1);
+  await thread
+    .getByRole("button", { name: /View rectangle: New idea/ })
+    .click();
+  await expect(page.getByTestId("selection-status")).toContainText("rectangle");
+  await expect(thread.getByText("To (inherited)")).toBeVisible();
+  await thread
+    .getByRole("textbox", { name: "Reply", exact: true })
+    .fill("Please continue with the same context.");
+  await thread.getByRole("button", { name: "Send reply" }).click();
+  await expect(thread.getByText("To Thinking Canvas AI")).toHaveCount(2);
+  await expect(groundedReply).toHaveCount(2);
   const bounds = await page
     .getByRole("dialog", { name: "Comment thread" })
     .boundingBox();
   expect(bounds?.x).toBeGreaterThanOrEqual(0);
   expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(768);
+  await page.reload();
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Comments" })
+    .getByRole("button", { name: /Please inspect this canvas direction/ })
+    .click();
+  await expect(
+    page
+      .getByRole("dialog", { name: "Comment thread" })
+      .getByText("I inspected 1 canvas objects and 1 comment conversations."),
+  ).toHaveCount(2);
+});
+
+test("cancels and retries an AI response inline in its comment thread", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await addRectangle(page);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  const enabled = page.getByRole("checkbox", { name: "Enabled" });
+  await enabled.click();
+  await expect(enabled).toBeChecked();
+  await placeArmedComment(page);
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Inspect this, but let me control the run.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  const cancel = thread.getByRole("button", { name: "Cancel", exact: true });
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await expect(thread.getByText("AI response cancelled")).toBeVisible();
+  const retry = thread.getByRole("button", { name: "Retry", exact: true });
+  await retry.click();
+  await expect(thread.getByText(/Thinking Canvas AI is/)).toBeVisible();
+  await expect(
+    thread.getByText(
+      "I inspected 1 canvas objects and 1 comment conversations.",
+    ),
+  ).toBeVisible();
+  await expect(thread.getByText("AI response cancelled")).not.toBeVisible();
+});
+
+test("shows a failed AI response inline and retries without duplicating the comment", async ({
+  page,
+}) => {
+  let failNextRun = true;
+  await page.route("**/api/canvases/*/ai/runs", async (route) => {
+    if (route.request().method() === "POST" && failNextRun) {
+      failNextRun = false;
+      await route.continue({
+        headers: {
+          ...route.request().headers(),
+          "x-thinking-canvas-test-scenario": "failed",
+        },
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await openFreshCanvas(page);
+  await addRectangle(page);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  const enabled = page.getByRole("checkbox", { name: "Enabled" });
+  await enabled.click();
+  await expect(enabled).toBeChecked();
+  await placeArmedComment(page);
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Keep this comment even if the response fails.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(thread.getByText("AI response failed")).toBeVisible();
+  await expect(
+    thread.getByText("Keep this comment even if the response fails."),
+  ).toHaveCount(1);
+  await thread.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(
+    thread.getByText(
+      "I inspected 1 canvas objects and 1 comment conversations.",
+    ),
+  ).toBeVisible();
+  await expect(thread.getByText("AI response failed")).not.toBeVisible();
+  await expect(
+    thread.getByText("Keep this comment even if the response fails."),
+  ).toHaveCount(1);
 });
 
 test("anchors one thread to a complete group and preserves it after target deletion", async ({
@@ -370,10 +495,10 @@ test("renders review and fixed rating controls and preserves closed history", as
     thread.getByRole("button", { name: "5", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await thread.getByRole("button", { name: "Resolve", exact: true }).click();
-  await expect(thread.getByText("resolved", { exact: true })).toBeVisible();
+  await expect(thread).not.toBeVisible();
   await expect(
-    thread.getByRole("textbox", { name: "Reply" }),
-  ).not.toBeVisible();
+    page.getByRole("button", { name: /Open comment by/ }),
+  ).toHaveCount(1);
 
   await page.reload();
   await page.getByRole("button", { name: "Comments", exact: true }).click();

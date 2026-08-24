@@ -1,8 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { CommentCommand, CommentThread } from "@/comments/comment-model";
+import type {
+  CommentCollaboration,
+  CommentCommand,
+  CommentThread,
+} from "@/comments/comment-model";
 import { SupabaseCommentRepository } from "@/comments/supabase-comment-repository";
 import { createClient } from "@/lib/supabase/client";
 
@@ -22,14 +26,21 @@ export function useCanvasComments(
     [supabasePublishableKey, supabaseUrl],
   );
   const [threads, setThreads] = useState<CommentThread[]>([]);
+  const [collaboration, setCollaboration] =
+    useState<CommentCollaboration | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const runControllers = useRef(new Map<string, AbortController>());
 
   const refresh = useCallback(async () => {
     try {
-      const next = await repository.load(canvasId);
+      const [next, nextCollaboration] = await Promise.all([
+        repository.load(canvasId),
+        repository.loadCollaboration(canvasId),
+      ]);
       setThreads(next);
+      setCollaboration(nextCollaboration);
       setError("");
     } catch (caught) {
       setError(
@@ -43,6 +54,7 @@ export function useCanvasComments(
   }, [canvasId, repository]);
 
   useEffect(() => {
+    const controllers = runControllers.current;
     const initialFrame = requestAnimationFrame(() => void refresh());
     let disposed = false;
     let unsubscribe: (() => Promise<void>) | undefined;
@@ -71,8 +83,65 @@ export function useCanvasComments(
       disposed = true;
       window.removeEventListener("focus", handleFocus);
       void unsubscribe?.();
+      for (const controller of controllers.values()) {
+        controller.abort();
+      }
+      controllers.clear();
     };
   }, [canvasId, refresh, repository]);
+
+  const processAiRun = useCallback(
+    async (runId: string) => {
+      const controller = new AbortController();
+      runControllers.current.set(runId, controller);
+      try {
+        const response = await fetch(`/api/canvases/${canvasId}/ai/runs`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ runId }),
+          signal: controller.signal,
+        });
+        if (!response.ok || !response.body) {
+          throw new Error("Thinking Canvas AI could not start.");
+        }
+        const reader = response.body
+          .pipeThrough(new TextDecoderStream())
+          .getReader();
+        let buffer = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += value;
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line) continue;
+            const event = JSON.parse(line) as {
+              status?: unknown;
+              error?: unknown;
+            };
+            if (event.status === "failed" && typeof event.error === "string") {
+              setError(event.error);
+            }
+            await refresh();
+          }
+        }
+        await refresh();
+        await repository.broadcastInvalidated();
+      } catch (caught) {
+        if (!(caught instanceof DOMException && caught.name === "AbortError")) {
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : "Thinking Canvas AI could not respond.",
+          );
+        }
+      } finally {
+        runControllers.current.delete(runId);
+      }
+    },
+    [canvasId, refresh, repository],
+  );
 
   const execute = useCallback(
     async (command: CommentCommand) => {
@@ -82,6 +151,16 @@ export function useCanvasComments(
         const result = await repository.execute(command);
         await refresh();
         await repository.broadcastInvalidated();
+        const aiRunId =
+          result &&
+          typeof result === "object" &&
+          "ai_run_id" in result &&
+          typeof result.ai_run_id === "string"
+            ? result.ai_run_id
+            : null;
+        if (aiRunId) {
+          void processAiRun(aiRunId);
+        }
         return result;
       } catch (caught) {
         const message =
@@ -94,8 +173,101 @@ export function useCanvasComments(
         setPending(false);
       }
     },
-    [refresh, repository],
+    [processAiRun, refresh, repository],
   );
 
-  return { threads, loading, pending, error, refresh, execute };
+  const cancelAiRun = useCallback(
+    async (runId: string) => {
+      runControllers.current.get(runId)?.abort();
+      const response = await fetch(`/api/canvases/${canvasId}/ai/runs`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: unknown;
+        } | null;
+        throw new Error(
+          typeof body?.error === "string"
+            ? body.error
+            : "AI run could not be cancelled.",
+        );
+      }
+      await refresh();
+      await repository.broadcastInvalidated();
+    },
+    [canvasId, refresh, repository],
+  );
+
+  const retryAiRun = useCallback(
+    async (runId: string) => {
+      const response = await fetch(`/api/canvases/${canvasId}/ai/runs`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: unknown;
+        run_id?: unknown;
+      } | null;
+      if (!response.ok || typeof body?.run_id !== "string") {
+        throw new Error(
+          typeof body?.error === "string"
+            ? body.error
+            : "AI run could not be retried.",
+        );
+      }
+      await refresh();
+      await repository.broadcastInvalidated();
+      void processAiRun(body.run_id);
+    },
+    [canvasId, processAiRun, refresh, repository],
+  );
+
+  const setAiSettings = useCallback(
+    async (
+      enabled: boolean,
+      authority: NonNullable<
+        typeof collaboration
+      >["aiAccess"]["configuredAuthority"],
+    ) => {
+      if (!collaboration) return;
+      setPending(true);
+      setError("");
+      try {
+        await repository.setAiSettings(
+          canvasId,
+          enabled,
+          authority,
+          collaboration.aiAccess.version,
+        );
+        await refresh();
+        await repository.broadcastInvalidated();
+      } catch (caught) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "AI settings could not be changed.",
+        );
+        throw caught;
+      } finally {
+        setPending(false);
+      }
+    },
+    [canvasId, collaboration, refresh, repository],
+  );
+
+  return {
+    threads,
+    collaboration,
+    loading,
+    pending,
+    error,
+    refresh,
+    execute,
+    setAiSettings,
+    cancelAiRun,
+    retryAiRun,
+  };
 }

@@ -221,6 +221,8 @@ Evidence: [Milestone 3 implementation and verification record](docs/implementati
 ### Supporting work
 
 - [ ] Implement typed messaging that remains available independently of voice.
+- [ ] Use the existing comment system as the only human/AI conversation surface; `@` establishes human or AI participants, following turns inherit that routing, and a later `@` redirects subsequent turns without rewriting history.
+- [ ] Resolve ends a comment conversation and removes its canvas marker without deleting history; authorized open and resolved conversations remain available as AI context, while permanently deleted conversations do not.
 - [ ] Build a deterministic canvas-to-AI projection with object IDs, types, text, geometry, relationships, document summaries, and selected-path order.
 - [ ] Bound AI context by relevance without hiding the fact that off-screen canvas content exists.
 - [ ] Validate every AI tool call with Zod and re-check current membership and AI permission server-side at execution time.
@@ -408,7 +410,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [ ] **PD-003 — Page sizes:** select the initial standard sizes and orientation behavior for `FR-050`.
 - [x] **PD-004 — Rating scale:** use one fixed inclusive `1–5` numeric rating scale in the first version; the comment author does not choose among multiple ranges. Approved by the product owner on 2026-08-19.
 - [ ] **PD-005 — Important interruption:** define testable examples and non-examples for `FR-013` and `FR-014`.
-- [ ] **PD-006 — Permission ownership:** define which human roles may change the AI permission level in `FR-022`.
+- [x] **PD-006 — Permission ownership:** only the canvas owner may enable or disable the primary AI and change its authority; editors may invoke tools allowed by the selected authority, commenters may invoke comment-only interaction when enabled, and viewers remain read-only. Approved by the product owner with the Milestone 4 plan on 2026-08-24.
 - [ ] **PD-007 — Performance budgets:** approve target hardware, representative canvas size, latency thresholds, and maximum acceptable degradation.
 - [ ] **PD-008 — Voice data:** approve consent, transcript visibility, retention, deletion, and whether audio is ever recorded.
 - [x] **PD-009 — Offline behavior:** decide whether the first version supports deliberate offline editing or only temporary disconnect recovery. **Decision:** the first version supports temporary disconnect recovery only; a fully loaded canvas may retain and retry pending edits through a transient connection loss, while deliberate offline entry and opening an uncached canvas offline remain unsupported.

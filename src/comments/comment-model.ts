@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
+import type { CanvasRole } from "@/domain/command";
 
 export const commentPromptKindSchema = z.enum(["yes_no", "review", "rating"]);
 export const commentStatusSchema = z.enum(["open", "resolved", "dismissed"]);
@@ -8,6 +9,11 @@ export const commentAuthorKindSchema = z.enum(["human", "ai"]);
 
 const strictText = z.string().trim().min(1).max(100_000);
 const uuid = z.uuid();
+
+export const commentRoutingSchema = z.strictObject({
+  recipientUserIds: z.array(uuid).max(100),
+  includePrimaryAi: z.boolean(),
+});
 
 export const commentCreateCommandSchema = z
   .strictObject({
@@ -25,6 +31,7 @@ export const commentCreateCommandSchema = z
     promptKind: commentPromptKindSchema.nullable(),
     authorKind: commentAuthorKindSchema,
     authorKey: z.string().min(1).max(255).nullable(),
+    routing: commentRoutingSchema.optional(),
   })
   .superRefine((command, context) => {
     if (
@@ -44,6 +51,7 @@ export const commentReplyCommandSchema = z.strictObject({
   commandId: uuid,
   commentId: uuid,
   body: strictText,
+  routing: commentRoutingSchema.optional(),
 });
 
 export const yesNoResponseSchema = z.strictObject({
@@ -109,7 +117,59 @@ export type CommentReply = {
   id: string;
   authorId: string;
   authorName: string;
+  authorKind: "human" | "ai";
+  authorKey: string;
   body: string;
+  createdAt: string;
+  updatedAt: string;
+  recipients: CommentRecipient[];
+  evidence: Array<{ objectId: string; label: string }>;
+};
+
+export type CommentRecipient = {
+  kind: "human" | "ai";
+  key: string;
+  name: string;
+};
+
+export type CommentCollaborator = CommentRecipient & {
+  role: CanvasRole | "primary_ai";
+};
+
+export type CanvasAiAccess = {
+  enabled: boolean;
+  configuredAuthority:
+    "comment_only" | "propose_changes" | "edit_with_review" | "trusted_editor";
+  effectiveAuthority:
+    | "comment_only"
+    | "propose_changes"
+    | "edit_with_review"
+    | "trusted_editor"
+    | null;
+  canManage: boolean;
+  version: number;
+};
+
+export type CommentCollaboration = {
+  collaborators: CommentCollaborator[];
+  aiAccess: CanvasAiAccess;
+};
+
+export type CommentAiRun = {
+  id: string;
+  status:
+    | "queued"
+    | "projecting"
+    | "thinking"
+    | "tool_pending"
+    | "applying"
+    | "completed"
+    | "cancelled"
+    | "failed";
+  requestedBy: string;
+  invokingReplyId: string | null;
+  outputReplyId: string | null;
+  errorCode: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -145,6 +205,9 @@ export type CommentThread = {
   targetObjectIds: string[];
   canvasAnchor: { x: number; y: number } | null;
   replies: CommentReply[];
+  recipients: CommentRecipient[];
+  activeParticipants: CommentRecipient[];
+  aiRuns: CommentAiRun[];
   prompt: CommentPrompt | null;
 };
 
