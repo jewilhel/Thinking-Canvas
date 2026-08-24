@@ -353,14 +353,12 @@ function promptResponseMatches(
 
 function PromptControls({
   prompt,
-  userId,
   disabled,
   canManagePrompt,
   onRespond,
   onPromptChange,
 }: {
   prompt: CommentPrompt;
-  userId: string;
   disabled: boolean;
   canManagePrompt: boolean;
   onRespond: (value: PromptResponseValue) => void;
@@ -382,9 +380,6 @@ function PromptControls({
             label: String(rating),
             value: { rating },
           }));
-  const selectedResponse = prompt.responses.find(
-    (response) => response.responderId === userId,
-  );
   return (
     <div className="mt-4 w-full rounded-2xl bg-zinc-100 p-3">
       {canManagePrompt ? (
@@ -401,9 +396,9 @@ function PromptControls({
       )}
       <div className="mt-2 flex flex-wrap gap-2">
         {options.map((option) => {
-          const selected = selectedResponse
-            ? promptResponseMatches(selectedResponse.value, option.value)
-            : false;
+          const selected = prompt.responses.some((response) =>
+            promptResponseMatches(response.value, option.value),
+          );
           return (
             <Button
               key={option.label}
@@ -552,7 +547,6 @@ function ThreadBody({
       {thread.prompt ? (
         <PromptControls
           prompt={thread.prompt}
-          userId={userId}
           disabled={!canComment || pending || thread.status !== "open"}
           canManagePrompt={canManagePrompt && thread.status === "open"}
           onRespond={(value) => void onRespond(thread.prompt!, value)}

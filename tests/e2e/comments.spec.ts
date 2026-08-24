@@ -392,6 +392,7 @@ test("broadcasts comment changes between canvas members", async ({
 }) => {
   const threadBody = `Realtime feedback ${Date.now()} is visible to collaborators.`;
   const replyBody = `Editor reply ${Date.now()} arrived live.`;
+  const promptBody = `Shared prompt response ${Date.now()} converged.`;
   const ownerContext = await browser.newContext();
   const editorContext = await browser.newContext();
   const owner = await ownerContext.newPage();
@@ -458,6 +459,71 @@ test("broadcasts comment changes between canvas members", async ({
   await editorThread.getByRole("button", { name: "Send reply" }).click();
   await expect(editorThread.getByText(replyBody)).toBeVisible();
   await expect(owner.getByText(replyBody)).toBeVisible();
+
+  await editorThread
+    .getByRole("button", { name: "Close comment thread" })
+    .click();
+  await owner
+    .getByRole("dialog", { name: "Comment thread" })
+    .getByRole("button", { name: "Close comment thread" })
+    .click();
+  await owner
+    .getByRole("dialog", { name: "Comments" })
+    .getByRole("button", { name: "New comment" })
+    .click();
+  await placeArmedComment(owner, { x: 620, y: 420 });
+  const promptComposer = owner.getByRole("dialog", { name: "New comment" });
+  await promptComposer
+    .getByRole("textbox", { name: "Comment", exact: true })
+    .fill(promptBody);
+  await promptComposer.getByLabel("Prompt").selectOption("yes_no");
+  await promptComposer.getByRole("button", { name: "Submit comment" }).click();
+
+  const ownerPromptThread = owner.getByRole("dialog", {
+    name: "Comment thread",
+  });
+  const editorPromptListItem = editor
+    .getByRole("dialog", { name: "Comments" })
+    .getByRole("button", { name: new RegExp(promptBody) });
+  await expect(editorPromptListItem).toBeVisible();
+  await editorPromptListItem.click();
+  const editorPromptThread = editor.getByRole("dialog", {
+    name: "Comment thread",
+  });
+  await expect(editorPromptThread.getByLabel("Prompt")).not.toBeVisible();
+  await expect(
+    editorPromptThread.getByRole("button", { name: "Edit initial comment" }),
+  ).not.toBeVisible();
+  await expect(
+    editorPromptThread.getByRole("textbox", { name: "Reply" }),
+  ).not.toBeVisible();
+  await editorPromptThread
+    .getByRole("button", { name: "Yes", exact: true })
+    .click();
+  await expect(
+    editorPromptThread.getByRole("button", { name: "Yes", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    ownerPromptThread.getByRole("button", { name: "Yes", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    ownerPromptThread.getByText(/Editor Example:\s*Yes/),
+  ).not.toBeVisible();
+
+  await Promise.all([owner.reload(), editor.reload()]);
+  await owner.getByRole("button", { name: "Comments", exact: true }).click();
+  await editor.getByRole("button", { name: "Comments", exact: true }).click();
+  for (const page of [owner, editor]) {
+    await page
+      .getByRole("dialog", { name: "Comments" })
+      .getByRole("button", { name: new RegExp(promptBody) })
+      .click();
+    await expect(
+      page
+        .getByRole("dialog", { name: "Comment thread" })
+        .getByRole("button", { name: "Yes", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+  }
 
   await editorContext.close();
   await ownerContext.close();
