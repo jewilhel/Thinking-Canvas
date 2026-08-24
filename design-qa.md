@@ -118,3 +118,95 @@ The four `8.15–8.16 PM` zoom references and four matching implementation state
 - None required for this bounded refinement.
 
 final result: passed
+
+---
+
+# Design QA — Comment marker soft shell
+
+## Comparison target
+
+- Source visual truth: `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-21 at 9.15.04 AM.png` (`146 × 126` pixels), supplied as the focused collapsed-marker reference.
+- Browser-rendered implementation: `artifacts/design-qa/comments-soft-shell-collapsed.png`, captured from the authenticated local Milestone 3 canvas at a `1280 × 720` CSS viewport and normalized to `1280 × 720` pixels.
+- Focused implementation crop: `artifacts/design-qa/comments-soft-shell-collapsed-focus.png` (`146 × 126` pixels).
+- Same-input comparison: `artifacts/design-qa/comments-soft-shell-comparison.png` (`292 × 126` pixels), with the source on the left and normalized implementation crop on the right.
+- State: collapsed free-canvas and object-attached comment markers; the current local fixture uses the established initials fallback rather than the source participant photo.
+
+## Required fidelity surfaces
+
+- Fonts and typography: no marker typography appears in the collapsed source; the existing initials fallback remains centered and legible without altering the hover-preview type hierarchy.
+- Spacing and layout rhythm: the approved compact speech-bubble silhouette and avatar placement are preserved; the reduced shadow matches the source's lighter elevation.
+- Colors and visual tokens: the inherited dark icon stroke is replaced with a `1.25px` zinc-200 edge around a white shell, producing the nearly outline-free treatment in the reference.
+- Image quality and assets: the installed icon-library silhouette remains crisp, and the existing initials/avatar layer stays above the shell without clipping.
+- Copy and content: no new copy is introduced; the source photo versus fixture initials difference is an existing data constraint rather than visual drift.
+
+## Findings and comparison history
+
+- Pass 1 identified one P2 mismatch: the implementation's inherited dark `2.5px` stroke produced a heavy black outline that dominated the compact marker.
+- Pass 2 applies an explicit light-neutral icon color, reduces the stroke to `1.25px`, and lowers the collapsed shadow from large to medium. The combined focused comparison shows the requested soft white shell with no remaining actionable P0, P1, or P2 difference.
+- Clicking the revised marker still opens the complete conversation dialog in the authenticated local preview.
+
+final result: passed
+
+---
+
+# Design QA — Milestone 3 comment refinements
+
+final result: passed
+
+## Compared states
+
+- Product-owner references: the supplied 2026-08-19 compact right-side Comments panel and undesirable early full-width panel screenshots.
+- Implementation captures: `artifacts/design-qa/comments-compact-panel.png` and `artifacts/design-qa/comments-target-avoiding-thread.png` from the authenticated local canvas at `729 × 856`.
+
+## Findings
+
+- The Comments panel retains the established compact right-side column at the tested narrow desktop width instead of becoming a wide horizontal sheet.
+- Selecting the Comments tool immediately shows the canvas placement affordance and direct instruction; no intermediate New comment activation is required.
+- The contextual thread remains compact and renders outside the referenced sticky-note bounds, preserving the visible relationship between comment and target.
+- Comment markers keep their canvas-derived positions beyond the viewport instead of sticking to the window edge.
+- Comment and reply submit controls retain the approved upward arrow in a light-grey circular button; focus-within sizing keeps the button stationary for first activation.
+- Thinking Canvas typography, spacing, borders, radii, shadows, iconography, and violet comment state remain consistent with the existing product and the supplied interaction direction.
+
+## Remaining release evidence
+
+- This QA covers the authenticated local visual and interaction states. The milestone still requires its separately gated immutable hosted preview, two-session acceptance evidence, CI, and product-owner closure approval.
+
+---
+
+# Design QA — Comment marker hover preview
+
+## Comparison target
+
+- Source visual truth:
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-20 at 11.15.14 PM.png` — supplied `692 × 278` focused collapsed-marker reference.
+  - `/Users/jasonwilhelm/Desktop/Screenshot 2026-08-20 at 11.15.32 PM.png` — supplied `640 × 224` focused expanded-preview reference.
+- Browser-rendered implementation:
+  - `artifacts/design-qa/comments-teardrop-collapsed.png`
+  - `artifacts/design-qa/comments-hover-preview.png`
+- Route: authenticated local Milestone 3 canvas.
+- Viewport: `1280 × 720` CSS pixels at device pixel ratio `2`; browser captures are normalized to `1280 × 720` pixels.
+- State: existing object-attached and canvas comments, first collapsed and then hovered; the hover preview shows the root comment and clicking it opens the current complete thread dialog.
+
+## Comparison evidence
+
+- The focused source attachments and focused implementation states were reviewed together in the current task context. The source crops do not establish a full application viewport or density, so comparison used visible component proportions rather than treating crop pixels as CSS dimensions.
+- Collapsed state: the implementation replaces the circular ring with the Comments-toolbar speech-bubble silhouette, keeps the participant identity nested inside, and preserves a compact shadowed canvas marker.
+- Expanded state: the marker animates to a white horizontal preview with the participant identity, author, relative time, and first/root comment in the same hierarchy as the source; its softened shadow, rounded body, and tighter lower-left corner preserve the comment-tail cue.
+- Interaction: hover and keyboard focus expose the preview, reduced-motion users avoid the animation, and clicking either visual state opens the existing complete conversation dialog.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing Thinking Canvas sans-serif, semibold author, muted compact time, and readable body hierarchy match the reference direction.
+- Spacing and layout rhythm: `52 × 52` collapsed and `320 × 96` expanded sizes preserve a compact canvas footprint with centered avatar and two-line content capacity.
+- Colors and tokens: white surface, zinc copy/time, existing open/resolved treatment, subtle border, and elevated shadow remain consistent with the product.
+- Image quality and assets: the established initials/AI avatar fallback remains crisp; the marker silhouette reuses the installed icon library rather than a handcrafted asset.
+- Copy and content: the preview shows existing durable author, age, and root-comment data without introducing new controls or changing the complete thread.
+
+## Findings and comparison history
+
+- Pass 1 found one P2 stacking issue: the filled speech-bubble icon rendered above and hid the collapsed avatar.
+- Pass 2 wrapped the avatar in the foreground stacking layer and changed relative-time output from `yesterday` to the source-like `1 day ago`. The collapsed avatar is now visible and the expanded preview retains the intended hierarchy.
+- No actionable P0, P1, or P2 differences remain. The initials fallback instead of a profile photo is an approved existing product constraint, not design drift.
+- Browser console warnings/errors checked: none.
+
+final result: passed

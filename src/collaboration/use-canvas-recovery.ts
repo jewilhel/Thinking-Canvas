@@ -43,11 +43,15 @@ export function useCanvasRecovery({
   canvasId,
   document,
   selectedObjectIds,
+  supabasePublishableKey,
+  supabaseUrl,
   userId,
 }: {
   canvasId: string;
   document: Y.Doc;
   selectedObjectIds: string[];
+  supabasePublishableKey: string;
+  supabaseUrl: string;
   userId: string;
 }) {
   const key = pendingCanvasUpdateKey(userId, canvasId);
@@ -152,7 +156,10 @@ export function useCanvasRecovery({
     loadedRef.current = null;
 
     const repository = new SupabaseCanvasRepository(
-      createClient(),
+      createClient({
+        NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey,
+      }),
       userId,
       (nextParticipants) => {
         setParticipants(nextParticipants);
@@ -245,6 +252,8 @@ export function useCanvasRecovery({
     flushPending,
     markSequenceApplied,
     persistPending,
+    supabasePublishableKey,
+    supabaseUrl,
     userId,
   ]);
 

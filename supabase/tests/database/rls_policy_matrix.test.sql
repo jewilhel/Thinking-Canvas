@@ -230,17 +230,25 @@ select throws_ok(
 );
 
 select lives_ok(
-  $$insert into public.comments (canvas_id, author_id, body)
-    values ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000003', 'Allowed commenter mutation')$$,
+  $$select * from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000001',
+    'Allowed commenter mutation',
+    array['60000000-0000-4000-8000-000000000001']::uuid[]
+  )$$,
   'commenter may create a comment'
 );
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000004', true);
 select throws_ok(
-  $$insert into public.comments (canvas_id, author_id, body)
-    values ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000004', 'Denied viewer mutation')$$,
+  $$select * from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000002',
+    'Denied viewer mutation',
+    array['60000000-0000-4000-8000-000000000001']::uuid[]
+  )$$,
   '42501',
-  'new row violates row-level security policy for table "comments"',
+  'Comment creation is not permitted.',
   'viewer may not create a comment'
 );
 
@@ -262,10 +270,14 @@ select throws_ok(
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000005', true);
 select throws_ok(
-  $$insert into public.comments (canvas_id, author_id, body)
-    values ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000005', 'Denied non-member mutation')$$,
+  $$select * from public.create_comment_thread(
+    '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000003',
+    'Denied non-member mutation',
+    array['60000000-0000-4000-8000-000000000001']::uuid[]
+  )$$,
   '42501',
-  'new row violates row-level security policy for table "comments"',
+  'Comment creation is not permitted.',
   'non-member may not mutate a canvas'
 );
 
@@ -276,15 +288,17 @@ where canvas_id = '20000000-0000-4000-8000-000000000001'
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
-delete from public.comments
-where id = '30000000-0000-4000-8000-000000000001';
-reset role;
-
-select is(
-  (select count(*)::integer from public.comments where id = '30000000-0000-4000-8000-000000000001'),
-  1,
+select throws_ok(
+  $$select * from public.create_comment_reply(
+    '30000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000004',
+    'Denied former-member reply'
+  )$$,
+  '42501',
+  'Reply creation is not permitted.',
   'former commenter immediately loses mutation rights'
 );
+reset role;
 
 set local role anon;
 select throws_ok(

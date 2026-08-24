@@ -94,6 +94,42 @@ export function normalizeTransformedGeometry(
   };
 }
 
+export function proportionalTextLayoutDuringResize(
+  frame: { x: number; y: number; width: number; height: number },
+  scaleX: number,
+  scaleY: number,
+) {
+  const safeScaleX = Math.abs(scaleX) < 0.001 ? 1 : scaleX;
+  const safeScaleY = Math.abs(scaleY) < 0.001 ? 1 : scaleY;
+  return {
+    x: frame.x / safeScaleX,
+    y: frame.y / safeScaleY,
+    width: Math.max(0, frame.width),
+    height: Math.max(0, frame.height),
+    scaleX: 1 / safeScaleX,
+    scaleY: 1 / safeScaleY,
+  };
+}
+
+export function previewGeometryDuringTransform(
+  geometry: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rotation: number;
+  },
+  transform: { x: number; y: number; scaleX: number; scaleY: number },
+) {
+  return {
+    ...geometry,
+    x: transform.x,
+    y: transform.y,
+    width: Math.max(24, geometry.width * Math.abs(transform.scaleX)),
+    height: Math.max(24, geometry.height * Math.abs(transform.scaleY)),
+  };
+}
+
 function center(object: CanvasObject): Point {
   return {
     x: object.geometry.x + object.geometry.width / 2,

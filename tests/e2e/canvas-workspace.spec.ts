@@ -269,7 +269,12 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
 
   await page.getByRole("button", { name: "Comments", exact: true }).click();
   await expect(
-    page.getByText("Contextual feedback arrives in Milestone 3"),
+    page.getByText(
+      "Attach feedback to a selection, an object, or anywhere on the canvas.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Place comment on canvas" }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Comments", exact: true }),
@@ -327,7 +332,10 @@ test("uses dismissible responsive panels with focus containment, help, and true 
   await commentsInvoker.click();
   const commentsPanel = page.getByRole("dialog", { name: "Comments" });
   await expect(commentsPanel).toContainText(
-    "No comments can be entered, loaded, or saved here yet.",
+    "Attach feedback to a selection, an object, or anywhere on the canvas.",
+  );
+  await expect(commentsPanel).toContainText(
+    "Click an object or anywhere on the canvas to add a comment.",
   );
   await expect(page.getByTestId("product-pending-count")).toHaveText(
     pendingCountBeforeComments,
@@ -335,6 +343,11 @@ test("uses dismissible responsive panels with focus containment, help, and true 
   const commentsAccessibility = await new AxeBuilder({ page }).analyze();
   expect(commentsAccessibility.violations).toEqual([]);
   await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("button", { name: "Place comment on canvas" }),
+  ).not.toBeVisible();
+  await page.getByRole("button", { name: "Close Comments" }).click();
+  await expect(commentsPanel).not.toBeVisible();
   await expect(commentsInvoker).toBeFocused();
 
   const helpInvoker = page.getByRole("button", { name: "Open canvas help" });
@@ -454,6 +467,21 @@ test("two product canvases converge after concurrent work and a disconnected edi
       ),
     )
     .toBeGreaterThanOrEqual(2);
+  await Promise.all(
+    [owner, editor].map(async (page) => {
+      const comments = page.getByRole("button", {
+        name: "Comments",
+        exact: true,
+      });
+      await comments.click();
+      const hideMarkers = page.getByRole("button", { name: "Hide markers" });
+      if (await hideMarkers.isVisible()) await hideMarkers.click();
+      await page.getByRole("button", { name: "Close Comments" }).click();
+      await expect(
+        page.getByRole("button", { name: "Place comment on canvas" }),
+      ).not.toBeVisible();
+    }),
+  );
   const ownerSurface = owner.getByTestId("product-canvas-surface");
   const ownerBounds = await ownerSurface.boundingBox();
   if (!ownerBounds) throw new Error("Owner canvas bounds are unavailable.");

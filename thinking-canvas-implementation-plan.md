@@ -1,10 +1,10 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–2 closed; later milestones remain draft
+Status: Milestones 0–3 closed; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-08-13
+Last updated: 2026-08-24
 
 ## Purpose
 
@@ -187,18 +187,23 @@ Evidence: [Milestone 2 implementation and verification record](docs/implementati
 
 ### Product requirements
 
-- [ ] **FR-023 — Anchored comments.** A participant can attach a comment to one object or a selected group, and the target survives movement and reload.
-- [ ] **FR-024 — Threaded replies.** Participants can reply to a comment and see replies in deterministic chronological order.
-- [ ] **FR-025 — Complete history.** Selecting a comment exposes its entire exchange in-context and through an optional side panel.
-- [ ] **FR-026 — Structured prompt creation.** A comment author can add exactly one supported structured response control.
-- [ ] **FR-027 — Initial controls.** Yes/no, approve/revise/discard, and bounded numeric rating prompts render, validate, and persist responses.
-- [ ] **FR-028 — Human and AI prompt authors.** Both participant types can create structured prompts through the same permission-aware domain command.
-- [ ] **FR-029 — Dismiss and resolve.** An authorized participant can dismiss or resolve a temporary comment without deleting its history.
-- [ ] **FR-030 — Hide comments.** Comment bubbles and the annotation overlay can be hidden without altering underlying canvas objects or deleting comments.
+- [x] **FR-023 — Anchored comments.** A participant can attach a comment to one object or a selected group, and the target survives movement and reload.
+- [x] **FR-023a — Direct canvas comment placement.** A participant can place a comment at any canvas position; placement over an unselected object attaches to that object, while placement over empty canvas persists at its world-space position through pan, zoom, and reload.
+- [x] **FR-024 — Threaded replies.** Participants can reply to a comment and see replies in deterministic chronological order.
+- [x] **FR-025 — Complete history.** Selecting a comment exposes its entire exchange in-context and through an optional side panel.
+- [x] **FR-025a — Compact contextual conversation.** Opening a canvas comment marker shows the complete exchange in a smaller card beside that marker or its object, and comment/reply submission uses an obvious upward arrow inside a light-grey circular control.
+- [x] **FR-026 — Structured prompt creation.** A comment author can add exactly one supported structured response control.
+- [x] **FR-027 — Initial controls.** Yes/no, approve/revise/discard, and bounded numeric rating prompts render, validate, and persist responses.
+- [x] **FR-028 — Human and AI prompt authors.** Both participant types can create structured prompts through the same permission-aware domain command.
+- [x] **FR-029 — Dismiss and resolve.** An authorized participant can dismiss or resolve a temporary comment without deleting its history.
+- [x] **FR-029a — Permanent comment deletion.** A comment author or canvas owner can permanently delete an entire comment thread after explicit irreversible-action confirmation; other participants cannot delete it.
+- [x] **FR-030 — Hide comments.** Comment bubbles and the annotation overlay can be hidden without altering underlying canvas objects or deleting comments.
 
 ### Exit gate
 
-- [ ] Complete the sourced **Comment prompt** acceptance scenario with two authenticated browser sessions and persisted thread history.
+- [x] Complete the sourced **Comment prompt** acceptance scenario with two authenticated browser sessions and persisted thread history.
+
+Evidence: [Milestone 3 implementation and verification record](docs/implementation/milestone-03-comments-and-structured-feedback.md), implementation commits `8c14e93` and `340b0cb`, draft pull request [#8](https://github.com/jewilhel/Thinking-Canvas/pull/8), protected CI [run `32764955133`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/32764955133), immutable Netlify deploy `6a8c93460c7d4a72b34f8f05`, authenticated owner/editor `AS-003` verification, and product-owner closure approval on 2026-08-24. The pull request remains unmerged and production was not changed.
 
 ## Milestone 4 — AI collaborator, permissions, and typed interaction
 
@@ -392,7 +397,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 
 - [ ] **AS-001 — Live co-thinking.** While a user draws connected ideas in live voice, the AI can leave a relevant contextual comment without ending the conversation and defers non-urgent observations while the user speaks.
 - [ ] **AS-002 — Reviewable AI edit.** In edit-with-review mode, an AI label change receives an explanation; keep, revise, and discard are available; discard immediately restores the prior label.
-- [ ] **AS-003 — Comment prompt.** A collaborator attaches a yes/no prompt, the recipient answers without typing, and the response appears in the thread.
+- [x] **AS-003 — Comment prompt.** A collaborator attaches a yes/no prompt, the recipient answers without typing, and the response appears in the thread.
 - [ ] **AS-004 — Document collaboration.** Rich text, a shape, and an annotation remain inside a document and support comments and AI review without connecting to the parent canvas.
 - [ ] **AS-005 — Guided review.** A multi-change AI review story visits one affected area at a time and provides the correct review controls at each scene.
 
@@ -401,7 +406,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [ ] **PD-001 — Human voice transport:** choose the free/open-source WebRTC approach or explicitly phase remote-human voice after AI voice; `FR-010` cannot be checked until it works.
 - [ ] **PD-002 — Document preview:** define how a long document appears at board zoom while keeping `FR-045` understandable and performant.
 - [ ] **PD-003 — Page sizes:** select the initial standard sizes and orientation behavior for `FR-050`.
-- [ ] **PD-004 — Rating scale:** define allowed numeric ranges and whether the author chooses among them for `FR-027`.
+- [x] **PD-004 — Rating scale:** use one fixed inclusive `1–5` numeric rating scale in the first version; the comment author does not choose among multiple ranges. Approved by the product owner on 2026-08-19.
 - [ ] **PD-005 — Important interruption:** define testable examples and non-examples for `FR-013` and `FR-014`.
 - [ ] **PD-006 — Permission ownership:** define which human roles may change the AI permission level in `FR-022`.
 - [ ] **PD-007 — Performance budgets:** approve target hardware, representative canvas size, latency thresholds, and maximum acceptable degradation.

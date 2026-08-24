@@ -78,7 +78,7 @@ export function WorkspacePanel({
       aria-describedby={description ? descriptionId : undefined}
       tabIndex={-1}
       data-testid="workspace-shared-panel"
-      className="absolute right-4 bottom-20 z-30 flex max-h-[calc(100%-7rem)] w-[min(24rem,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome-solid)] text-zinc-900 shadow-[var(--workspace-shadow-strong)] max-xl:right-4 max-xl:left-4 max-xl:max-h-[min(65vh,34rem)] max-xl:w-auto"
+      className="absolute right-4 bottom-20 z-30 flex max-h-[calc(100%-7rem)] w-[min(24rem,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome-solid)] text-zinc-900 shadow-[var(--workspace-shadow-strong)] max-[42rem]:right-4 max-[42rem]:left-4 max-[42rem]:max-h-[min(65vh,34rem)] max-[42rem]:w-auto"
       onKeyDown={containFocus}
     >
       <div className="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-200 px-4 py-3">

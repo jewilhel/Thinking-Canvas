@@ -374,6 +374,8 @@ export type Database = {
         Row: {
           author_id: string
           body: string
+          client_command_id: string | null
+          command_fingerprint: string | null
           comment_id: string
           created_at: string
           id: string
@@ -382,6 +384,8 @@ export type Database = {
         Insert: {
           author_id: string
           body: string
+          client_command_id?: string | null
+          command_fingerprint?: string | null
           comment_id: string
           created_at?: string
           id?: string
@@ -390,6 +394,8 @@ export type Database = {
         Update: {
           author_id?: string
           body?: string
+          client_command_id?: string | null
+          command_fingerprint?: string | null
           comment_id?: string
           created_at?: string
           id?: string
@@ -414,6 +420,7 @@ export type Database = {
       }
       comment_responses: {
         Row: {
+          client_command_id: string | null
           created_at: string
           id: string
           prompt_id: string
@@ -422,6 +429,7 @@ export type Database = {
           value: Json
         }
         Insert: {
+          client_command_id?: string | null
           created_at?: string
           id?: string
           prompt_id: string
@@ -430,6 +438,7 @@ export type Database = {
           value: Json
         }
         Update: {
+          client_command_id?: string | null
           created_at?: string
           id?: string
           prompt_id?: string
@@ -485,27 +494,45 @@ export type Database = {
       }
       comments: {
         Row: {
+          anchor_x: number | null
+          anchor_y: number | null
           author_id: string
+          author_key: string
+          author_kind: Database["public"]["Enums"]["comment_author_kind"]
           body: string
           canvas_id: string
+          client_command_id: string | null
+          command_fingerprint: string | null
           created_at: string
           id: string
           status: Database["public"]["Enums"]["comment_status"]
           updated_at: string
         }
         Insert: {
+          anchor_x?: number | null
+          anchor_y?: number | null
           author_id: string
+          author_key: string
+          author_kind?: Database["public"]["Enums"]["comment_author_kind"]
           body: string
           canvas_id: string
+          client_command_id?: string | null
+          command_fingerprint?: string | null
           created_at?: string
           id?: string
           status?: Database["public"]["Enums"]["comment_status"]
           updated_at?: string
         }
         Update: {
+          anchor_x?: number | null
+          anchor_y?: number | null
           author_id?: string
+          author_key?: string
+          author_kind?: Database["public"]["Enums"]["comment_author_kind"]
           body?: string
           canvas_id?: string
+          client_command_id?: string | null
+          command_fingerprint?: string | null
           created_at?: string
           id?: string
           status?: Database["public"]["Enums"]["comment_status"]
@@ -737,6 +764,38 @@ export type Database = {
               sequence: number
             }[]
           }
+      create_comment_reply: {
+        Args: {
+          target_body: string
+          target_client_command_id: string
+          target_comment_id: string
+        }
+        Returns: {
+          created: boolean
+          reply_id: string
+        }[]
+      }
+      create_comment_thread: {
+        Args: {
+          target_anchor_x?: number
+          target_anchor_y?: number
+          target_author_key?: string
+          target_author_kind?: Database["public"]["Enums"]["comment_author_kind"]
+          target_body: string
+          target_canvas_id: string
+          target_client_command_id: string
+          target_object_ids?: string[]
+          target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
+        }
+        Returns: {
+          comment_id: string
+          created: boolean
+        }[]
+      }
+      delete_comment_thread: {
+        Args: { target_comment_id: string }
+        Returns: string
+      }
       publish_canvas_compaction: {
         Args: {
           covered_last_sequence: number
@@ -751,6 +810,35 @@ export type Database = {
           version: number
         }[]
       }
+      respond_to_comment_prompt: {
+        Args: {
+          target_client_command_id: string
+          target_prompt_id: string
+          target_value: Json
+        }
+        Returns: {
+          created: boolean
+          response_id: string
+        }[]
+      }
+      set_comment_prompt: {
+        Args: {
+          target_comment_id: string
+          target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
+        }
+        Returns: string
+      }
+      transition_comment_status: {
+        Args: {
+          target_comment_id: string
+          target_status: Database["public"]["Enums"]["comment_status"]
+        }
+        Returns: Database["public"]["Enums"]["comment_status"]
+      }
+      update_comment_body: {
+        Args: { target_body: string; target_comment_id: string }
+        Returns: string
+      }
     }
     Enums: {
       ai_change_status:
@@ -760,6 +848,7 @@ export type Database = {
         | "complete"
         | "failed"
       canvas_role: "owner" | "editor" | "commenter" | "viewer"
+      comment_author_kind: "human" | "ai"
       comment_prompt_kind: "yes_no" | "review" | "rating"
       comment_status: "open" | "resolved" | "dismissed"
       invitation_status: "pending" | "accepted" | "revoked" | "expired"
@@ -902,6 +991,7 @@ export const Constants = {
         "failed",
       ],
       canvas_role: ["owner", "editor", "commenter", "viewer"],
+      comment_author_kind: ["human", "ai"],
       comment_prompt_kind: ["yes_no", "review", "rating"],
       comment_status: ["open", "resolved", "dismissed"],
       invitation_status: ["pending", "accepted", "revoked", "expired"],
@@ -909,4 +999,3 @@ export const Constants = {
     },
   },
 } as const
-
