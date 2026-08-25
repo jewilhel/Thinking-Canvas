@@ -38,6 +38,15 @@ select ok(
   'authenticated clients cannot call the server-only proposal recorder directly'
 );
 
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.stage_ai_canvas_changes(uuid,uuid,text,text,jsonb,bigint)',
+    'EXECUTE'
+  ),
+  'authenticated clients cannot call the server-only review-stage transaction directly'
+);
+
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
 
 select results_eq(
@@ -443,6 +452,34 @@ select results_eq(
   $$select created, ai_run_id is not null
     from public.create_comment_thread(
       target_canvas_id => '20000000-0000-4000-8000-000000000001',
+      target_client_command_id => '83000000-0000-4000-8000-000000000061',
+      target_body => 'Stage this only if review authority is still current.',
+      target_object_ids => array['61000000-0000-4000-8000-000000000001']::uuid[],
+      target_include_primary_ai => true
+    )$$,
+  $$values (true, true)$$,
+  'a second review run is queued before an authority downgrade'
+);
+
+select results_eq(
+  $$select status::text
+    from public.start_ai_run(
+      (select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000061')
+    )$$,
+  $$values ('projecting'::text)$$,
+  'the authority-transition run is active before the settings change'
+);
+
+select set_config(
+  'test.review_downgrade_run_id',
+  (select id::text from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000061'),
+  true
+);
+
+select results_eq(
+  $$select created, ai_run_id is not null
+    from public.create_comment_thread(
+      target_canvas_id => '20000000-0000-4000-8000-000000000001',
       target_client_command_id => '83000000-0000-4000-8000-000000000050',
       target_body => 'Propose moving the evidence object to the right.',
       target_object_ids => array['61000000-0000-4000-8000-000000000001']::uuid[],
@@ -593,6 +630,359 @@ select results_eq(
     )$$,
   $$values (false)$$,
   'an exact proposal tool retry returns its existing non-mutating audit record'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+
+select results_eq(
+  $$select authority::text, version
+    from public.set_canvas_ai_settings(
+      '20000000-0000-4000-8000-000000000001',
+      true,
+      'edit_with_review',
+      2
+    )$$,
+  $$values ('edit_with_review'::text, 3::bigint)$$,
+  'the owner explicitly selects review-stage authority for the next run'
+);
+
+select results_eq(
+  $$select created, ai_run_id is not null
+    from public.create_comment_thread(
+      target_canvas_id => '20000000-0000-4000-8000-000000000001',
+      target_client_command_id => '83000000-0000-4000-8000-000000000060',
+      target_body => 'Stage moving the evidence object to the right for review.',
+      target_object_ids => array['61000000-0000-4000-8000-000000000001']::uuid[],
+      target_include_primary_ai => true
+    )$$,
+  $$values (true, true)$$,
+  'an owner can queue an addressed request for review staging'
+);
+
+select results_eq(
+  $$select status::text
+    from public.start_ai_run(
+      (select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000060')
+    )$$,
+  $$values ('projecting'::text)$$,
+  'the review-stage run enters the server execution boundary'
+);
+
+select set_config(
+  'test.review_run_id',
+  (select id::text from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000060'),
+  true
+);
+select set_config(
+  'test.review_sequence',
+  greatest(
+    coalesce((select max(last_sequence) from public.canvas_snapshots where canvas_id = '20000000-0000-4000-8000-000000000001'), 0),
+    coalesce((select max(sequence) from public.canvas_updates where canvas_id = '20000000-0000-4000-8000-000000000001'), 0)
+  )::text,
+  true
+);
+select set_config(
+  'test.review_canvas_update_count',
+  (select count(*)::text from public.canvas_updates where canvas_id = '20000000-0000-4000-8000-000000000001'),
+  true
+);
+select set_config(
+  'test.review_decision_count',
+  (select count(*)::text from public.review_decisions),
+  true
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select results_eq(
+  $$select object_change_count, created
+    from public.stage_ai_canvas_changes(
+      current_setting('test.review_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'review-stage-1',
+      'Move the supporting object to the right.',
+      '[{
+        "objectId":"61000000-0000-4000-8000-000000000001",
+        "beforeState":{
+          "object":{
+            "id":"61000000-0000-4000-8000-000000000001",
+            "canvasId":"20000000-0000-4000-8000-000000000001",
+            "geometry":{"x":0,"y":0}
+          },
+          "orderIndex":0
+        },
+        "afterState":{
+          "object":{
+            "id":"61000000-0000-4000-8000-000000000001",
+            "canvasId":"20000000-0000-4000-8000-000000000001",
+            "geometry":{"x":40,"y":0}
+          },
+          "orderIndex":0
+        },
+        "affectedFields":["object.geometry.x"]
+      }]'::jsonb,
+      current_setting('test.review_sequence')::bigint
+    )$$,
+  $$values (1, true)$$,
+  'current review authority stages one validated object change without applying it'
+);
+
+select throws_ok(
+  $$select * from public.stage_ai_canvas_changes(
+      current_setting('test.review_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'review-stage-stale',
+      'This stale stage must not persist.',
+      '[{
+        "objectId":"61000000-0000-4000-8000-000000000001",
+        "beforeState":{"object":{"id":"61000000-0000-4000-8000-000000000001","canvasId":"20000000-0000-4000-8000-000000000001"},"orderIndex":0},
+        "afterState":{"object":{"id":"61000000-0000-4000-8000-000000000001","canvasId":"20000000-0000-4000-8000-000000000001"},"orderIndex":0},
+        "affectedFields":["object.geometry.x"]
+      }]'::jsonb,
+      999999
+    )$$,
+  '40001',
+  'The canvas changed after the AI projection was built.',
+  'review staging fails closed on a stale durable projection'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+
+select set_config(
+  'test.review_change_set_id',
+  (
+    select change_set_id::text from public.ai_tool_executions
+    where run_id = current_setting('test.review_run_id')::uuid
+      and call_key = 'review-stage-1'
+  ),
+  true
+);
+
+select results_eq(
+  $$select status::text, ai_run_id, tool_call_key, stage_fingerprint is not null
+    from public.ai_change_sets
+    where id = current_setting('test.review_change_set_id')::uuid$$,
+  $$values (
+    'pending'::text,
+    current_setting('test.review_run_id')::uuid,
+    'review-stage-1'::text,
+    true
+  )$$,
+  'the staged change set retains pending run provenance and an idempotency fingerprint'
+);
+
+select results_eq(
+  $$select object_id,
+      before_state #>> '{object,geometry,x}',
+      after_state #>> '{object,geometry,x}',
+      affected_fields,
+      explanation
+    from public.ai_object_changes
+    where change_set_id = current_setting('test.review_change_set_id')::uuid$$,
+  $$values (
+    '61000000-0000-4000-8000-000000000001'::uuid,
+    '0'::text,
+    '40'::text,
+    array['object.geometry.x']::text[],
+    'Move the supporting object to the right.'::text
+  )$$,
+  'review staging stores one before/after object record with affected fields'
+);
+
+select results_eq(
+  $$select outcome::text, tool_name, affected_object_ids,
+      command_id is null, comment_id is null,
+      change_set_id = current_setting('test.review_change_set_id')::uuid
+    from public.ai_tool_executions
+    where run_id = current_setting('test.review_run_id')::uuid
+      and call_key = 'review-stage-1'$$,
+  $$values (
+    'succeeded'::text,
+    'stage_canvas_changes'::text,
+    array['61000000-0000-4000-8000-000000000001']::uuid[],
+    true,
+    true,
+    true
+  )$$,
+  'the privacy-safe tool audit links the run to its staged change set without a canvas command'
+);
+
+select is(
+  (select count(*)::bigint from public.canvas_updates where canvas_id = '20000000-0000-4000-8000-000000000001'),
+  current_setting('test.review_canvas_update_count')::bigint,
+  'review staging does not mutate durable canvas updates'
+);
+
+select is(
+  (select count(*)::bigint from public.review_decisions),
+  current_setting('test.review_decision_count')::bigint,
+  'review staging does not create Milestone 5 review decisions'
+);
+
+select results_eq(
+  $$update public.ai_change_sets
+    set status = 'applied'
+    where id = current_setting('test.review_change_set_id')::uuid
+    returning status::text$$,
+  $$select 'applied'::text where false$$,
+  'authenticated clients cannot relabel an AI-staged change set'
+);
+
+select throws_ok(
+  $$insert into public.ai_change_sets (
+      id, canvas_id, requested_by, status,
+      ai_run_id, tool_call_key, stage_fingerprint
+    ) values (
+      '84000000-0000-4000-8000-000000000061',
+      '20000000-0000-4000-8000-000000000001',
+      '10000000-0000-4000-8000-000000000001',
+      'pending',
+      current_setting('test.review_run_id')::uuid,
+      'forged-browser-stage',
+      repeat('0', 64)
+    )$$,
+  '42501',
+  null,
+  'authenticated clients cannot forge an AI-staged change set through table access'
+);
+
+select throws_ok(
+  $$insert into public.ai_object_changes (
+      id, change_set_id, object_id, before_state, after_state,
+      affected_fields, explanation
+    ) values (
+      '84000000-0000-4000-8000-000000000062',
+      current_setting('test.review_change_set_id')::uuid,
+      '61000000-0000-4000-8000-000000000001',
+      '{"object":{"id":"61000000-0000-4000-8000-000000000001"}}'::jsonb,
+      '{"object":{"id":"61000000-0000-4000-8000-000000000001"}}'::jsonb,
+      array['object.text'],
+      'Forged browser object change.'
+    )$$,
+  '42501',
+  null,
+  'authenticated clients cannot append forged object records to an AI-staged change set'
+);
+
+select throws_ok(
+  $$insert into public.review_decisions (
+      object_change_id, reviewer_id, decision
+    ) values (
+      (
+        select id from public.ai_object_changes
+        where change_set_id = current_setting('test.review_change_set_id')::uuid
+      ),
+      '10000000-0000-4000-8000-000000000001',
+      'keep'
+    )$$,
+  '42501',
+  null,
+  'authenticated clients cannot create a Milestone 5 decision for AI-staged work'
+);
+
+select results_eq(
+  $$select status::text
+    from public.complete_fake_ai_run(
+      current_setting('test.review_run_id')::uuid,
+      E'I staged validated changes for later review without changing the canvas.\n\nStaged for review (canvas unchanged):\n1. object.move — affected 61000000-0000-4000-8000-000000000001\n1 object change staged for later review.',
+      'fake-request-review-stage-1',
+      '{"version":1,"reviewStageToolCount":1}'::jsonb
+    )$$,
+  $$values ('completed'::text)$$,
+  'the staged result is returned as an ordinary AI reply in the originating thread'
+);
+
+select ok(
+  (
+    select body like '%Staged for review (canvas unchanged):%object.move%'
+    from public.comment_replies
+    where client_command_id = current_setting('test.review_run_id')::uuid
+  ),
+  'the visible AI reply summarizes the staged command without review actions'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select results_eq(
+  $$select object_change_count, created
+    from public.stage_ai_canvas_changes(
+      current_setting('test.review_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'review-stage-1',
+      'Move the supporting object to the right.',
+      '[{
+        "objectId":"61000000-0000-4000-8000-000000000001",
+        "beforeState":{"object":{"id":"61000000-0000-4000-8000-000000000001","canvasId":"20000000-0000-4000-8000-000000000001","geometry":{"x":0,"y":0}},"orderIndex":0},
+        "afterState":{"object":{"id":"61000000-0000-4000-8000-000000000001","canvasId":"20000000-0000-4000-8000-000000000001","geometry":{"x":40,"y":0}},"orderIndex":0},
+        "affectedFields":["object.geometry.x"]
+      }]'::jsonb,
+      current_setting('test.review_sequence')::bigint
+    )$$,
+  $$values (1, false)$$,
+  'an exact review-stage retry returns the existing change set without duplication'
+);
+
+select throws_ok(
+  $$select * from public.stage_ai_canvas_changes(
+      current_setting('test.review_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'review-stage-1',
+      'Different staged work under the same tool identity.',
+      '[{
+        "objectId":"61000000-0000-4000-8000-000000000001",
+        "beforeState":{"object":{"id":"61000000-0000-4000-8000-000000000001","canvasId":"20000000-0000-4000-8000-000000000001"},"orderIndex":0},
+        "afterState":{"object":{"id":"61000000-0000-4000-8000-000000000001","canvasId":"20000000-0000-4000-8000-000000000001"},"orderIndex":0},
+        "affectedFields":["object.geometry.x"]
+      }]'::jsonb,
+      current_setting('test.review_sequence')::bigint
+    )$$,
+  '23505',
+  'The tool call identity was reused with different or mutating work.',
+  'a review-stage call-key collision fails instead of replacing staged work'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+
+select results_eq(
+  $$select authority::text, version
+    from public.set_canvas_ai_settings(
+      '20000000-0000-4000-8000-000000000001',
+      true,
+      'propose_changes',
+      3
+    )$$,
+  $$values ('propose_changes'::text, 4::bigint)$$,
+  'the owner can downgrade authority after a review stage completes'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select throws_ok(
+  $$select * from public.stage_ai_canvas_changes(
+      current_setting('test.review_downgrade_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'review-stage-after-downgrade',
+      'This downgraded stage must not persist.',
+      '[{
+        "objectId":"61000000-0000-4000-8000-000000000001",
+        "beforeState":{"object":{"id":"61000000-0000-4000-8000-000000000001","canvasId":"20000000-0000-4000-8000-000000000001"},"orderIndex":0},
+        "afterState":{"object":{"id":"61000000-0000-4000-8000-000000000001","canvasId":"20000000-0000-4000-8000-000000000001"},"orderIndex":0},
+        "affectedFields":["object.geometry.x"]
+      }]'::jsonb,
+      current_setting('test.review_sequence')::bigint
+    )$$,
+  '42501',
+  'Current AI authority does not allow review staging.',
+  'review staging rechecks current authority and fails closed after downgrade'
 );
 
 set local role authenticated;
@@ -927,7 +1317,7 @@ select is(
 
 select is(
   (select count(*)::integer from public.ai_tool_executions),
-  3,
+  4,
   'a canvas viewer may read privacy-safe AI tool outcomes'
 );
 

@@ -79,12 +79,18 @@ export class FakePrimaryAiGateway {
       invocation.instruction.toLowerCase().includes("propose") &&
       firstObject !== undefined &&
       input.allowedToolNames.includes("propose_canvas_commands");
+    const shouldStageReview =
+      invocation.instruction.toLowerCase().includes("review") &&
+      firstObject !== undefined &&
+      input.allowedToolNames.includes("stage_canvas_changes");
     const reply = aiReplySchema.parse({
-      body: shouldProposeChanges
-        ? "I prepared a validated proposal without changing the canvas."
-        : selectedPath.length > 1
-          ? `I inspected ${selectedPath.length} selected path objects in order: ${selectedPath.map((object) => object.summary || object.type).join(" → ")}.`
-          : `I inspected ${projection.objects.length} canvas objects and ${projection.commentThreads.length} comment conversations.`,
+      body: shouldStageReview
+        ? "I staged validated changes for later review without changing the canvas."
+        : shouldProposeChanges
+          ? "I prepared a validated proposal without changing the canvas."
+          : selectedPath.length > 1
+            ? `I inspected ${selectedPath.length} selected path objects in order: ${selectedPath.map((object) => object.summary || object.type).join(" → ")}.`
+            : `I inspected ${projection.objects.length} canvas objects and ${projection.commentThreads.length} comment conversations.`,
       evidence: firstObject
         ? [
             {
@@ -95,12 +101,13 @@ export class FakePrimaryAiGateway {
         : [],
       contextualTargetObjectIds: firstObject ? [firstObject.id] : [],
     });
-    const toolCalls = shouldProposeChanges
+    const toolCalls = shouldStageReview
       ? [
           {
-            callKey: "proposal-1",
-            toolName: "propose_canvas_commands",
+            callKey: "review-stage-1",
+            toolName: "stage_canvas_changes",
             arguments: {
+              summary: "Move the supporting object to the right.",
               commands: [
                 {
                   type: "object.move",
@@ -114,18 +121,37 @@ export class FakePrimaryAiGateway {
             },
           },
         ]
-      : shouldCreateContextualComment
+      : shouldProposeChanges
         ? [
             {
-              callKey: "contextual-comment-1",
-              toolName: "create_contextual_comment",
+              callKey: "proposal-1",
+              toolName: "propose_canvas_commands",
               arguments: {
-                body: `Grounded observation: ${firstObject.summary || firstObject.type} is a concrete evidence point for this canvas.`,
-                targetObjectIds: [firstObject.id],
+                commands: [
+                  {
+                    type: "object.move",
+                    payload: {
+                      objectId: firstObject.id,
+                      x: firstObject.geometry.x + 40,
+                      y: firstObject.geometry.y,
+                    },
+                  },
+                ],
               },
             },
           ]
-        : [];
+        : shouldCreateContextualComment
+          ? [
+              {
+                callKey: "contextual-comment-1",
+                toolName: "create_contextual_comment",
+                arguments: {
+                  body: `Grounded observation: ${firstObject.summary || firstObject.type} is a concrete evidence point for this canvas.`,
+                  targetObjectIds: [firstObject.id],
+                },
+              },
+            ]
+          : [];
     return { status: "completed", requestId, reply, toolCalls };
   }
 }

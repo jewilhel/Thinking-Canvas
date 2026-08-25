@@ -36,33 +36,49 @@ export type Database = {
     Tables: {
       ai_change_sets: {
         Row: {
+          ai_run_id: string | null
           canvas_id: string
           created_at: string
           id: string
           request_id: string | null
           requested_by: string
+          stage_fingerprint: string | null
           status: Database["public"]["Enums"]["ai_change_status"]
+          tool_call_key: string | null
           updated_at: string
         }
         Insert: {
+          ai_run_id?: string | null
           canvas_id: string
           created_at?: string
           id?: string
           request_id?: string | null
           requested_by: string
+          stage_fingerprint?: string | null
           status?: Database["public"]["Enums"]["ai_change_status"]
+          tool_call_key?: string | null
           updated_at?: string
         }
         Update: {
+          ai_run_id?: string | null
           canvas_id?: string
           created_at?: string
           id?: string
           request_id?: string | null
           requested_by?: string
+          stage_fingerprint?: string | null
           status?: Database["public"]["Enums"]["ai_change_status"]
+          tool_call_key?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "ai_change_sets_ai_run_id_fkey"
+            columns: ["ai_run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_runs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "ai_change_sets_canvas_id_fkey"
             columns: ["canvas_id"]
@@ -1328,6 +1344,21 @@ export type Database = {
           target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
         }
         Returns: string
+      }
+      stage_ai_canvas_changes: {
+        Args: {
+          target_call_key: string
+          target_changes: Json
+          target_expected_sequence: number
+          target_requester_id: string
+          target_run_id: string
+          target_summary: string
+        }
+        Returns: {
+          change_set_id: string
+          created: boolean
+          object_change_count: number
+        }[]
       }
       start_ai_run: {
         Args: { target_run_id: string }

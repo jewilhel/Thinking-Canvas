@@ -246,6 +246,41 @@ describe("FakePrimaryAiGateway", () => {
     });
   });
 
+  it("returns a strict review-stage tool call only when authority allows it", async () => {
+    const gateway = new FakePrimaryAiGateway();
+    const reviewInvocation = {
+      ...invocation,
+      authority: "edit_with_review" as const,
+      instruction: "Stage moving this object to the right for review.",
+    };
+    const result = await gateway.request({
+      invocation: reviewInvocation,
+      projection,
+      allowedToolNames: allowedAiToolNames(reviewInvocation.authority),
+    });
+    expect(result).toMatchObject({
+      status: "completed",
+      reply: {
+        body: "I staged validated changes for later review without changing the canvas.",
+      },
+      toolCalls: [
+        {
+          callKey: "review-stage-1",
+          toolName: "stage_canvas_changes",
+          arguments: {
+            summary: "Move the supporting object to the right.",
+            commands: [
+              {
+                type: "object.move",
+                payload: { objectId: ids.object, x: 40, y: 0 },
+              },
+            ],
+          },
+        },
+      ],
+    });
+  });
+
   it("returns deterministic cancellation and failure results", async () => {
     const gateway = new FakePrimaryAiGateway();
     await expect(

@@ -12,6 +12,10 @@ const mutationListSchema = z.array(productCanvasMutationSchema).min(1).max(50);
 export const proposalArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
 });
+export const reviewStageArgumentsSchema = z.strictObject({
+  summary: z.string().trim().min(1).max(10_000),
+  commands: mutationListSchema,
+});
 
 export const contextualCommentArgumentsSchema = z
   .strictObject({
@@ -68,10 +72,7 @@ export const AI_TOOL_REGISTRY = {
     minimumAuthority: "edit_with_review" as const,
     description:
       "Stage validated pending changes for later Milestone 5 review without changing canonical canvas state.",
-    argumentsSchema: z.strictObject({
-      summary: z.string().trim().min(1).max(10_000),
-      commands: mutationListSchema,
-    }),
+    argumentsSchema: reviewStageArgumentsSchema,
   },
   execute_canvas_commands: {
     effect: "mutation" as const,

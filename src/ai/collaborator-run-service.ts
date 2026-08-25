@@ -21,12 +21,17 @@ import {
   allowedAiToolNames,
   contextualCommentArgumentsSchema,
   proposalArgumentsSchema,
+  reviewStageArgumentsSchema,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
-import { validateCanvasProposal } from "@/ai/proposals";
+import {
+  validateCanvasProposal,
+  validateCanvasReviewStage,
+} from "@/ai/proposals";
 import { postgresByteaToBytes } from "@/collaboration/canvas-document";
 import { buildCompactedSnapshot } from "@/collaboration/persistence";
 import { getAuthenticatedUser } from "@/lib/auth/session";
+import type { Json } from "@/lib/supabase/database.types";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 const runRequestSchema = z.strictObject({
@@ -307,6 +312,14 @@ export async function completeDeterministicAiRun(
     affectedObjectIds: string[];
     created: boolean;
   }> = [];
+  const reviewStageToolResults: Array<{
+    callKey: string;
+    changeSetId: string;
+    objectChangeCount: number;
+    commandTypes: string[];
+    affectedObjectIds: string[];
+    created: boolean;
+  }> = [];
   const replySections = [gatewayResult.reply.body];
   for (const toolCall of gatewayResult.toolCalls) {
     const validatedTool = validateAiToolRequest({
@@ -346,6 +359,46 @@ export async function completeDeterministicAiRun(
         created: toolResult.data[0].created,
       });
       replySections.push(proposal.summary);
+      continue;
+    }
+    if (validatedTool.toolName === "stage_canvas_changes") {
+      const toolArguments = reviewStageArgumentsSchema.parse(
+        validatedTool.arguments,
+      );
+      const reviewStage = validateCanvasReviewStage({
+        document: compacted.document,
+        canvasId: run.canvas_id,
+        actorId: run.requested_by,
+        commands: toolArguments.commands,
+      });
+      const toolResult = await createServiceClient().rpc(
+        "stage_ai_canvas_changes",
+        {
+          target_run_id: run.id,
+          target_requester_id: run.requested_by,
+          target_call_key: toolCall.callKey,
+          target_summary: toolArguments.summary,
+          target_changes: JSON.parse(
+            JSON.stringify(reviewStage.objectChanges),
+          ) as Json,
+          target_expected_sequence: compacted.lastSequence,
+        },
+      );
+      if (toolResult.error || !toolResult.data?.[0]) {
+        throw new AiRunConflictError(
+          toolResult.error?.message ??
+            "The review-stage changes could not be saved.",
+        );
+      }
+      reviewStageToolResults.push({
+        callKey: toolCall.callKey,
+        changeSetId: toolResult.data[0].change_set_id,
+        objectChangeCount: toolResult.data[0].object_change_count,
+        commandTypes: reviewStage.commandTypes,
+        affectedObjectIds: reviewStage.affectedObjectIds,
+        created: toolResult.data[0].created,
+      });
+      replySections.push(reviewStage.summary);
       continue;
     }
     if (validatedTool.toolName !== "create_contextual_comment") {
@@ -400,6 +453,7 @@ export async function completeDeterministicAiRun(
       allowedTools: allowedToolNames,
       contextualTools: contextualToolResults,
       proposalTools: proposalToolResults,
+      reviewStageTools: reviewStageToolResults,
       objectDetailPageSize: objectInspection.items.length,
       objectDetailNextCursor: objectInspection.nextCursor,
       threadDetailPageSize: threadInspection.items.length,

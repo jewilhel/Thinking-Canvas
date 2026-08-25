@@ -428,6 +428,86 @@ test("returns an ordered AI proposal in comments without changing the canvas", a
   ).toBeVisible();
 });
 
+test("stages AI changes for later review without changing the canvas", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await addRectangle(page);
+  const saveStatus = page.getByTestId("canvas-save-status");
+  await expect(saveStatus).toHaveAttribute("data-pending-count", "0");
+  const durableSequenceBefore = await saveStatus.getAttribute("title");
+
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await page.locator('[data-testid^="object-list-item-"]').first().click();
+  const positionBefore = await page
+    .getByTestId("selected-position-x")
+    .textContent();
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  const authority = page.getByLabel("AI authority");
+  await authority.selectOption("edit_with_review");
+  await expect(authority).toHaveValue("edit_with_review");
+  const enabled = page.getByRole("checkbox", { name: "Enabled" });
+  await enabled.click();
+  await expect(enabled).toBeChecked();
+  await placeArmedComment(page);
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Stage moving this object to the right for review.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    thread.getByText(
+      "I staged validated changes for later review without changing the canvas.",
+    ),
+  ).toBeVisible();
+  await expect(
+    thread.getByText(/Staged for review \(canvas unchanged\):/),
+  ).toBeVisible();
+  await expect(
+    thread.getByText(/1\. object\.move — affected [0-9a-f-]+/),
+  ).toBeVisible();
+  await expect(
+    thread.getByText("1 object change staged for later review."),
+  ).toBeVisible();
+  await expect(
+    thread.getByRole("button", { name: /^(Keep|Revise|Discard)$/ }),
+  ).toHaveCount(0);
+  await expect(saveStatus).toHaveAttribute(
+    "title",
+    durableSequenceBefore ?? "",
+  );
+
+  await thread.getByRole("button", { name: "Close comment thread" }).click();
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await page.locator('[data-testid^="object-list-item-"]').first().click();
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    positionBefore ?? "",
+  );
+
+  await page.reload();
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Comments" })
+    .getByRole("button", {
+      name: /Stage moving this object to the right for review/,
+    })
+    .click();
+  await expect(
+    page
+      .getByRole("dialog", { name: "Comment thread" })
+      .getByText(/1 object change staged for later review/),
+  ).toBeVisible();
+});
+
 test("cancels and retries an AI response inline in its comment thread", async ({
   page,
 }) => {
