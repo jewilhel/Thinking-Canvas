@@ -13,7 +13,7 @@ const providerEnvironmentSchema = z.object({
   OPENAI_BASE_URL: z.url().optional(),
   OPENAI_RESPONSES_MODEL: z
     .enum(["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"])
-    .default("gpt-5.6-terra"),
+    .default("gpt-5.6-luna"),
   OPENAI_RESPONSES_TIMEOUT_MS: z.coerce
     .number()
     .int()

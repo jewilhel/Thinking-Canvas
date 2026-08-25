@@ -219,12 +219,12 @@ describe("OpenAiPrimaryAiGateway", () => {
 });
 
 describe("primary AI gateway configuration", () => {
-  it("defaults to the deterministic gateway and Terra evaluation baseline", () => {
+  it("defaults to the deterministic gateway and approved Luna model", () => {
     expect(
       parsePrimaryAiProviderEnvironment({ UNRELATED_SERVER_VALUE: "ignored" }),
     ).toMatchObject({
       THINKING_CANVAS_AI_GATEWAY: "fake",
-      OPENAI_RESPONSES_MODEL: "gpt-5.6-terra",
+      OPENAI_RESPONSES_MODEL: "gpt-5.6-luna",
       OPENAI_RESPONSES_TIMEOUT_MS: 45_000,
       OPENAI_RESPONSES_MAX_OUTPUT_TOKENS: 4_000,
     });

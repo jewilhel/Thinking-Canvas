@@ -28,7 +28,7 @@ import {
   type AiToolName,
 } from "@/ai/tool-registry";
 
-const DEFAULT_MODEL = "gpt-5.6-terra";
+const DEFAULT_MODEL = "gpt-5.6-luna";
 const DEFAULT_TIMEOUT_MS = 45_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 4_000;
 const MAX_TOOL_CALLS_PER_TURN = 8;
