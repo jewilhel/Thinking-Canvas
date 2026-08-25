@@ -9,6 +9,9 @@ const pagingFields = {
   limit: z.number().int().min(1).max(100).default(25),
 };
 const mutationListSchema = z.array(productCanvasMutationSchema).min(1).max(50);
+export const proposalArgumentsSchema = z.strictObject({
+  commands: mutationListSchema,
+});
 
 export const contextualCommentArgumentsSchema = z
   .strictObject({
@@ -58,7 +61,7 @@ export const AI_TOOL_REGISTRY = {
     minimumAuthority: "propose_changes" as const,
     description:
       "Return validated ordered canvas commands as a non-mutating proposal in the originating comment thread.",
-    argumentsSchema: z.strictObject({ commands: mutationListSchema }),
+    argumentsSchema: proposalArgumentsSchema,
   },
   stage_canvas_changes: {
     effect: "review" as const,

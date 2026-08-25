@@ -1273,6 +1273,19 @@ export type Database = {
           version: number
         }[]
       }
+      record_ai_canvas_proposal: {
+        Args: {
+          target_affected_object_ids: string[]
+          target_call_key: string
+          target_expected_sequence: number
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: {
+          created: boolean
+          tool_execution_id: string
+        }[]
+      }
       respond_to_comment_prompt: {
         Args: {
           target_client_command_id: string

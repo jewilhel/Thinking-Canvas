@@ -75,9 +75,14 @@ export class FakePrimaryAiGateway {
       invocation.instruction.toLowerCase().includes("contextual comment") &&
       firstObject !== undefined &&
       sourceThread?.targetObjectIds.length === 0;
+    const shouldProposeChanges =
+      invocation.instruction.toLowerCase().includes("propose") &&
+      firstObject !== undefined &&
+      input.allowedToolNames.includes("propose_canvas_commands");
     const reply = aiReplySchema.parse({
-      body:
-        selectedPath.length > 1
+      body: shouldProposeChanges
+        ? "I prepared a validated proposal without changing the canvas."
+        : selectedPath.length > 1
           ? `I inspected ${selectedPath.length} selected path objects in order: ${selectedPath.map((object) => object.summary || object.type).join(" → ")}.`
           : `I inspected ${projection.objects.length} canvas objects and ${projection.commentThreads.length} comment conversations.`,
       evidence: firstObject
@@ -90,18 +95,37 @@ export class FakePrimaryAiGateway {
         : [],
       contextualTargetObjectIds: firstObject ? [firstObject.id] : [],
     });
-    const toolCalls = shouldCreateContextualComment
+    const toolCalls = shouldProposeChanges
       ? [
           {
-            callKey: "contextual-comment-1",
-            toolName: "create_contextual_comment",
+            callKey: "proposal-1",
+            toolName: "propose_canvas_commands",
             arguments: {
-              body: `Grounded observation: ${firstObject.summary || firstObject.type} is a concrete evidence point for this canvas.`,
-              targetObjectIds: [firstObject.id],
+              commands: [
+                {
+                  type: "object.move",
+                  payload: {
+                    objectId: firstObject.id,
+                    x: firstObject.geometry.x + 40,
+                    y: firstObject.geometry.y,
+                  },
+                },
+              ],
             },
           },
         ]
-      : [];
+      : shouldCreateContextualComment
+        ? [
+            {
+              callKey: "contextual-comment-1",
+              toolName: "create_contextual_comment",
+              arguments: {
+                body: `Grounded observation: ${firstObject.summary || firstObject.type} is a concrete evidence point for this canvas.`,
+                targetObjectIds: [firstObject.id],
+              },
+            },
+          ]
+        : [];
     return { status: "completed", requestId, reply, toolCalls };
   }
 }

@@ -20,8 +20,10 @@ import {
 import {
   allowedAiToolNames,
   contextualCommentArgumentsSchema,
+  proposalArgumentsSchema,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
+import { validateCanvasProposal } from "@/ai/proposals";
 import { postgresByteaToBytes } from "@/collaboration/canvas-document";
 import { buildCompactedSnapshot } from "@/collaboration/persistence";
 import { getAuthenticatedUser } from "@/lib/auth/session";
@@ -299,12 +301,53 @@ export async function completeDeterministicAiRun(
     created: boolean;
     targetObjectIds: string[];
   }> = [];
+  const proposalToolResults: Array<{
+    callKey: string;
+    commandTypes: string[];
+    affectedObjectIds: string[];
+    created: boolean;
+  }> = [];
+  const replySections = [gatewayResult.reply.body];
   for (const toolCall of gatewayResult.toolCalls) {
     const validatedTool = validateAiToolRequest({
       authority: currentAuthority,
       toolName: toolCall.toolName,
       arguments: toolCall.arguments,
     });
+    if (validatedTool.toolName === "propose_canvas_commands") {
+      const toolArguments = proposalArgumentsSchema.parse(
+        validatedTool.arguments,
+      );
+      const proposal = validateCanvasProposal({
+        document: compacted.document,
+        canvasId: run.canvas_id,
+        actorId: run.requested_by,
+        commands: toolArguments.commands,
+      });
+      const toolResult = await createServiceClient().rpc(
+        "record_ai_canvas_proposal",
+        {
+          target_run_id: run.id,
+          target_requester_id: run.requested_by,
+          target_call_key: toolCall.callKey,
+          target_affected_object_ids: proposal.affectedObjectIds,
+          target_expected_sequence: compacted.lastSequence,
+        },
+      );
+      if (toolResult.error || !toolResult.data?.[0]) {
+        throw new AiRunConflictError(
+          toolResult.error?.message ?? "The proposal could not be recorded.",
+        );
+      }
+      proposalToolResults.push({
+        callKey: toolCall.callKey,
+        commandTypes: proposal.commandTypes,
+        affectedObjectIds: proposal.affectedObjectIds,
+        created: toolResult.data[0].created,
+      });
+      replySections.push(proposal.summary);
+      continue;
+    }
     if (validatedTool.toolName !== "create_contextual_comment") {
       throw new AiRunConflictError(
         "This AI tool is not executable in the current slice.",
@@ -344,7 +387,7 @@ export async function completeDeterministicAiRun(
   }
   const completionResult = await supabase.rpc("complete_fake_ai_run", {
     target_run_id: run.id,
-    target_body: gatewayResult.reply.body,
+    target_body: replySections.join("\n\n"),
     target_provider_request_id: gatewayResult.requestId,
     target_projection_metadata: {
       version: projection.version,
@@ -356,6 +399,7 @@ export async function completeDeterministicAiRun(
       inspectionTools: ["inspect_canvas_objects", "inspect_comment_threads"],
       allowedTools: allowedToolNames,
       contextualTools: contextualToolResults,
+      proposalTools: proposalToolResults,
       objectDetailPageSize: objectInspection.items.length,
       objectDetailNextCursor: objectInspection.nextCursor,
       threadDetailPageSize: threadInspection.items.length,

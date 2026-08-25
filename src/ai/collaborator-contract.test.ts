@@ -212,6 +212,40 @@ describe("FakePrimaryAiGateway", () => {
     });
   });
 
+  it("returns a strict non-mutating proposal tool call only when authority allows it", async () => {
+    const gateway = new FakePrimaryAiGateway();
+    const proposalInvocation = {
+      ...invocation,
+      authority: "propose_changes" as const,
+      instruction: "Propose moving this object to the right.",
+    };
+    const result = await gateway.request({
+      invocation: proposalInvocation,
+      projection,
+      allowedToolNames: allowedAiToolNames(proposalInvocation.authority),
+    });
+    expect(result).toMatchObject({
+      status: "completed",
+      reply: {
+        body: "I prepared a validated proposal without changing the canvas.",
+      },
+      toolCalls: [
+        {
+          callKey: "proposal-1",
+          toolName: "propose_canvas_commands",
+          arguments: {
+            commands: [
+              {
+                type: "object.move",
+                payload: { objectId: ids.object, x: 40, y: 0 },
+              },
+            ],
+          },
+        },
+      ],
+    });
+  });
+
   it("returns deterministic cancellation and failure results", async () => {
     const gateway = new FakePrimaryAiGateway();
     await expect(

@@ -29,6 +29,15 @@ select ok(
   'authenticated clients cannot call the server-only contextual comment executor directly'
 );
 
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.record_ai_canvas_proposal(uuid,uuid,text,uuid[],bigint)',
+    'EXECUTE'
+  ),
+  'authenticated clients cannot call the server-only proposal recorder directly'
+);
+
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
 
 select results_eq(
@@ -428,6 +437,167 @@ select results_eq(
 
 set local role authenticated;
 select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+
+select results_eq(
+  $$select created, ai_run_id is not null
+    from public.create_comment_thread(
+      target_canvas_id => '20000000-0000-4000-8000-000000000001',
+      target_client_command_id => '83000000-0000-4000-8000-000000000050',
+      target_body => 'Propose moving the evidence object to the right.',
+      target_object_ids => array['61000000-0000-4000-8000-000000000001']::uuid[],
+      target_include_primary_ai => true
+    )$$,
+  $$values (true, true)$$,
+  'an owner can queue an addressed request for a canvas proposal'
+);
+
+select results_eq(
+  $$select status::text
+    from public.start_ai_run(
+      (select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000050')
+    )$$,
+  $$values ('projecting'::text)$$,
+  'the proposal run enters the server execution boundary'
+);
+
+select set_config(
+  'test.proposal_run_id',
+  (select id::text from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000050'),
+  true
+);
+select set_config(
+  'test.proposal_sequence',
+  greatest(
+    coalesce((select max(last_sequence) from public.canvas_snapshots where canvas_id = '20000000-0000-4000-8000-000000000001'), 0),
+    coalesce((select max(sequence) from public.canvas_updates where canvas_id = '20000000-0000-4000-8000-000000000001'), 0)
+  )::text,
+  true
+);
+select set_config(
+  'test.proposal_canvas_update_count',
+  (select count(*)::text from public.canvas_updates where canvas_id = '20000000-0000-4000-8000-000000000001'),
+  true
+);
+select set_config(
+  'test.proposal_change_set_count',
+  (select count(*)::text from public.ai_change_sets where canvas_id = '20000000-0000-4000-8000-000000000001'),
+  true
+);
+select set_config(
+  'test.proposal_object_change_count',
+  (select count(*)::text from public.ai_object_changes),
+  true
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select results_eq(
+  $$select created
+    from public.record_ai_canvas_proposal(
+      current_setting('test.proposal_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'proposal-1',
+      array['61000000-0000-4000-8000-000000000001']::uuid[],
+      current_setting('test.proposal_sequence')::bigint
+    )$$,
+  $$values (true)$$,
+  'current owner authority records a validated non-mutating proposal tool outcome'
+);
+
+select throws_ok(
+  $$select * from public.record_ai_canvas_proposal(
+      current_setting('test.proposal_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'proposal-stale',
+      array['61000000-0000-4000-8000-000000000001']::uuid[],
+      999999
+    )$$,
+  '40001',
+  'The canvas changed after the AI projection was built.',
+  'proposal recording fails closed on a stale durable projection'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+
+select results_eq(
+  $$select outcome::text, tool_name, affected_object_ids,
+      command_id is null, comment_id is null, change_set_id is null
+    from public.ai_tool_executions
+    where run_id = current_setting('test.proposal_run_id')::uuid
+      and call_key = 'proposal-1'$$,
+  $$values (
+    'succeeded'::text,
+    'propose_canvas_commands'::text,
+    array['61000000-0000-4000-8000-000000000001']::uuid[],
+    true,
+    true,
+    true
+  )$$,
+  'the proposal audit stores affected identities without a command, comment, or review record'
+);
+
+select is(
+  (select count(*)::bigint from public.canvas_updates where canvas_id = '20000000-0000-4000-8000-000000000001'),
+  current_setting('test.proposal_canvas_update_count')::bigint,
+  'recording a proposal does not mutate durable canvas updates'
+);
+
+select is(
+  (select count(*)::bigint from public.ai_change_sets where canvas_id = '20000000-0000-4000-8000-000000000001'),
+  current_setting('test.proposal_change_set_count')::bigint,
+  'recording a proposal does not create an AI review change set'
+);
+
+select is(
+  (select count(*)::bigint from public.ai_object_changes),
+  current_setting('test.proposal_object_change_count')::bigint,
+  'recording a proposal does not create per-object review records'
+);
+
+select results_eq(
+  $$select status::text
+    from public.complete_fake_ai_run(
+      current_setting('test.proposal_run_id')::uuid,
+      E'I prepared a validated proposal without changing the canvas.\n\nProposed changes (not applied):\n1. object.move — affected 61000000-0000-4000-8000-000000000001',
+      'fake-request-proposal-1',
+      '{"version":1,"proposalToolCount":1}'::jsonb
+    )$$,
+  $$values ('completed'::text)$$,
+  'the validated proposal is returned as an ordinary AI reply in the originating thread'
+);
+
+select ok(
+  (
+    select body like '%Proposed changes (not applied):%object.move%'
+    from public.comment_replies
+    where client_command_id = current_setting('test.proposal_run_id')::uuid
+  ),
+  'the visible AI reply contains the ordered command proposal'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select results_eq(
+  $$select created
+    from public.record_ai_canvas_proposal(
+      current_setting('test.proposal_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'proposal-1',
+      array['61000000-0000-4000-8000-000000000001']::uuid[],
+      current_setting('test.proposal_sequence')::bigint
+    )$$,
+  $$values (false)$$,
+  'an exact proposal tool retry returns its existing non-mutating audit record'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
 
 select is(
   (
@@ -757,7 +927,7 @@ select is(
 
 select is(
   (select count(*)::integer from public.ai_tool_executions),
-  2,
+  3,
   'a canvas viewer may read privacy-safe AI tool outcomes'
 );
 
