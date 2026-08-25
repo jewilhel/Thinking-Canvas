@@ -127,4 +127,21 @@ describe("validated canvas proposals", () => {
     expect(review.summary).toContain("Staged for review (canvas unchanged)");
     expect(Y.encodeStateAsUpdate(document)).toEqual(before);
   });
+
+  it("rejects nonexistent or cross-canvas review targets without staging", () => {
+    const document = createProductCanvasDocument(canvasId);
+    expect(() =>
+      validateCanvasReviewStage({
+        document,
+        canvasId,
+        actorId,
+        commands: [
+          {
+            type: "object.move",
+            payload: { objectId, x: 240, y: 180 },
+          },
+        ],
+      }),
+    ).toThrow("The target object does not exist");
+  });
 });

@@ -1,8 +1,10 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
 
 const password = "LocalPassword1!";
 const seedCanvasId = "20000000-0000-4000-8000-000000000001";
+const editorUserId = "10000000-0000-4000-8000-000000000002";
 
 async function signIn(page: Page, email: string) {
   await page.goto("/auth/sign-in");
@@ -28,6 +30,29 @@ async function addRectangle(page: Page) {
     .getByTestId("product-canvas-surface")
     .click({ position: { x: 420, y: 280 } });
   await expect(page.getByTestId("product-object-count")).toHaveText("1");
+}
+
+async function addEditorMembership(canvasId: string) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !publishableKey) {
+    throw new Error("Local Supabase public environment is required.");
+  }
+  const ownerClient = createClient(url, publishableKey, {
+    auth: { persistSession: false },
+  });
+  const signInResult = await ownerClient.auth.signInWithPassword({
+    email: "owner@thinking-canvas.local",
+    password,
+  });
+  expect(signInResult.error).toBeNull();
+  const result = await ownerClient.from("canvas_members").insert({
+    canvas_id: canvasId,
+    user_id: editorUserId,
+    role: "editor",
+  });
+  expect(result.error).toBeNull();
+  await ownerClient.auth.signOut();
 }
 
 async function placeArmedComment(page: Page, position = { x: 420, y: 280 }) {
@@ -506,6 +531,66 @@ test("stages AI changes for later review without changing the canvas", async ({
       .getByRole("dialog", { name: "Comment thread" })
       .getByText(/1 object change staged for later review/),
   ).toBeVisible();
+});
+
+test("converges a review-staged AI reply in two authenticated contexts", async ({
+  browser,
+}) => {
+  const ownerContext = await browser.newContext();
+  const editorContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const editor = await editorContext.newPage();
+  const requestBody = `Stage this review for both collaborators ${Date.now()}.`;
+
+  await openFreshCanvas(owner);
+  await addRectangle(owner);
+  const canvasId = owner.url().split("/").at(-1);
+  if (!canvasId) throw new Error("The fresh canvas ID is unavailable.");
+  await addEditorMembership(canvasId);
+
+  await owner.getByRole("button", { name: "Comments", exact: true }).click();
+  await owner.getByLabel("AI authority").selectOption("edit_with_review");
+  const enabled = owner.getByRole("checkbox", { name: "Enabled" });
+  await enabled.click();
+  await expect(enabled).toBeChecked();
+
+  await signIn(editor, "editor@thinking-canvas.local");
+  await editor.goto(`/app/canvases/${canvasId}`);
+  await editor.getByRole("button", { name: "Comments", exact: true }).click();
+
+  await placeArmedComment(owner);
+  const composer = owner.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill(
+    `Stage moving this object to the right for review. ${requestBody}`,
+  );
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const editorListItem = editor
+    .getByRole("dialog", { name: "Comments" })
+    .getByRole("button", { name: new RegExp(requestBody) });
+  await expect(editorListItem).toBeVisible();
+  await editorListItem.click();
+  const editorThread = editor.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    editorThread.getByText(/Staged for review \(canvas unchanged\):/),
+  ).toBeVisible();
+  await expect(
+    editorThread.getByText("1 object change staged for later review."),
+  ).toBeVisible();
+  await expect(
+    editorThread.getByRole("button", { name: /^(Keep|Revise|Discard)$/ }),
+  ).toHaveCount(0);
+
+  await editorContext.close();
+  await ownerContext.close();
 });
 
 test("cancels and retries an AI response inline in its comment thread", async ({

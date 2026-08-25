@@ -31,6 +31,14 @@ describe("AI authority tool registry", () => {
     expect(allowedAiToolNames("trusted_editor")).toContain(
       "execute_canvas_commands",
     );
+    expect(allowedAiToolNames("trusted_editor")).toEqual([
+      "inspect_canvas_objects",
+      "inspect_comment_threads",
+      "create_contextual_comment",
+      "propose_canvas_commands",
+      "stage_canvas_changes",
+      "execute_canvas_commands",
+    ]);
   });
 
   it("denies mutation and review tools below their persisted authority", () => {

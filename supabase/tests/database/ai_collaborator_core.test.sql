@@ -1163,6 +1163,46 @@ select is(
   'redirecting later leaves earlier AI recipient history unchanged'
 );
 
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
+
+select results_eq(
+  $$select created, ai_run_id is not null
+    from public.create_comment_thread(
+      target_canvas_id => '20000000-0000-4000-8000-000000000001',
+      target_client_command_id => '83000000-0000-4000-8000-000000000070',
+      target_body => 'Propose only if my editor membership remains current.',
+      target_object_ids => array['61000000-0000-4000-8000-000000000001']::uuid[],
+      target_include_primary_ai => true
+    )$$,
+  $$values (true, true)$$,
+  'an editor queues a proposal before membership removal'
+);
+
+select results_eq(
+  $$select status::text
+    from public.start_ai_run(
+      (select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000070')
+    )$$,
+  $$values ('projecting'::text)$$,
+  'the removed-member proposal reaches the execution boundary while membership is current'
+);
+
+select set_config(
+  'test.removed_member_run_id',
+  (select id::text from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000070'),
+  true
+);
+select set_config(
+  'test.removed_member_sequence',
+  greatest(
+    coalesce((select max(last_sequence) from public.canvas_snapshots where canvas_id = '20000000-0000-4000-8000-000000000001'), 0),
+    coalesce((select max(sequence) from public.canvas_updates where canvas_id = '20000000-0000-4000-8000-000000000001'), 0)
+  )::text,
+  true
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
+
 select lives_ok(
   $$select * from public.create_comment_thread(
     '20000000-0000-4000-8000-000000000001',
@@ -1184,7 +1224,25 @@ set local role postgres;
 delete from public.canvas_members
 where canvas_id = '20000000-0000-4000-8000-000000000001'
   and user_id = '10000000-0000-4000-8000-000000000002';
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select throws_ok(
+  $$select * from public.record_ai_canvas_proposal(
+      current_setting('test.removed_member_run_id')::uuid,
+      '10000000-0000-4000-8000-000000000002',
+      'proposal-after-member-removal',
+      array['61000000-0000-4000-8000-000000000001']::uuid[],
+      current_setting('test.removed_member_sequence')::bigint
+    )$$,
+  '42501',
+  'Canvas proposal access is no longer permitted.',
+  'proposal execution rechecks membership and fails closed after member removal'
+);
+
 set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
 
 select throws_ok(

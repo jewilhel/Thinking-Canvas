@@ -9,6 +9,7 @@ import {
   retryAiRun,
 } from "@/ai/collaborator-run-service";
 import { ConnectedPathError } from "@/ai/grounding";
+import { resolveDeterministicTestScenario } from "@/ai/fake-scenario";
 
 const bodySchema = z.strictObject({ runId: z.uuid() });
 
@@ -28,10 +29,10 @@ export async function POST(
   const requestedScenario = request.headers.get(
     "x-thinking-canvas-test-scenario",
   );
-  const scenario =
-    process.env.NODE_ENV !== "production" && requestedScenario === "failed"
-      ? "failed"
-      : undefined;
+  const scenario = resolveDeterministicTestScenario({
+    nodeEnv: process.env.NODE_ENV,
+    requestedScenario,
+  });
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: Record<string, unknown>) =>
