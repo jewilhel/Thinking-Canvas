@@ -4,33 +4,23 @@ import {
   aiReplySchema,
   type AiInvocation,
   type AiProjectionEnvelope,
-  type AiReply,
-  type AiToolCall,
 } from "@/ai/collaborator-contract";
+import type {
+  FakeAiScenario,
+  PrimaryAiGateway,
+  PrimaryAiGatewayResult,
+} from "@/ai/primary-ai-gateway";
 import { allowedAiToolNames, type AiToolName } from "@/ai/tool-registry";
 
-export type FakeAiScenario = "complete" | "cancelled" | "failed";
+export type { FakeAiScenario } from "@/ai/primary-ai-gateway";
 
-export type FakeAiGatewayResult =
-  | {
-      status: "completed";
-      requestId: string;
-      reply: AiReply;
-      toolCalls: AiToolCall[];
-    }
-  | {
-      status: "cancelled" | "failed";
-      requestId: string;
-      errorCode: "cancelled_by_user" | "fake_provider_failure";
-    };
-
-export class FakePrimaryAiGateway {
+export class FakePrimaryAiGateway implements PrimaryAiGateway {
   async request(input: {
     invocation: AiInvocation;
     projection: AiProjectionEnvelope;
     allowedToolNames: AiToolName[];
     scenario?: FakeAiScenario;
-  }): Promise<FakeAiGatewayResult> {
+  }): Promise<PrimaryAiGatewayResult> {
     const invocation = aiInvocationSchema.parse(input.invocation);
     const projection = aiProjectionEnvelopeSchema.parse(input.projection);
     if (invocation.canvasId !== projection.canvasId) {

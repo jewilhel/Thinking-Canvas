@@ -1188,6 +1188,23 @@ export type Database = {
           status: Database["public"]["Enums"]["ai_run_status"]
         }[]
       }
+      complete_ai_run: {
+        Args: {
+          target_body: string
+          target_input_tokens: number
+          target_latency_ms: number
+          target_model: string
+          target_output_tokens: number
+          target_projection_metadata: Json
+          target_provider_request_id: string
+          target_run_id: string
+        }
+        Returns: {
+          reply_id: string
+          run_id: string
+          status: Database["public"]["Enums"]["ai_run_status"]
+        }[]
+      }
       complete_fake_ai_run: {
         Args: {
           target_body: string

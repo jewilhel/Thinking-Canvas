@@ -4,7 +4,7 @@ import {
   AiRunAccessError,
   AiRunConflictError,
   cancelAiRun,
-  completeDeterministicAiRun,
+  completeAiRun,
   failAiRun,
   retryAiRun,
 } from "@/ai/collaborator-run-service";
@@ -38,7 +38,7 @@ export async function POST(
       const send = (event: Record<string, unknown>) =>
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       try {
-        const result = await completeDeterministicAiRun(
+        const result = await completeAiRun(
           { ...parsed.data, canvasId },
           {
             signal: request.signal,
@@ -55,7 +55,7 @@ export async function POST(
             parsed.data.runId,
             error instanceof ConnectedPathError
               ? `connected_path_${error.code}`
-              : "deterministic_run_failed",
+              : "provider_run_failed",
           ).catch(() => undefined);
         }
         send({

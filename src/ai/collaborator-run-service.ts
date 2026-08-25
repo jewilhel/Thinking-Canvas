@@ -7,8 +7,8 @@ import {
   type AiProjectionEnvelope,
   aiProjectionEnvelopeSchema,
 } from "@/ai/collaborator-contract";
-import { FakePrimaryAiGateway } from "@/ai/fake-collaborator-gateway";
 import type { FakeAiScenario } from "@/ai/fake-collaborator-gateway";
+import { createPrimaryAiGateway } from "@/ai/primary-ai-gateway-factory";
 import { listCanvasObjectsV2 } from "@/canvas/canvas-document";
 import {
   buildCanvasObjectDetails,
@@ -48,7 +48,7 @@ const runRequestSchema = z.strictObject({
   canvasId: z.uuid(),
 });
 
-export async function completeDeterministicAiRun(
+export async function completeAiRun(
   input: unknown,
   options: {
     signal?: AbortSignal;
@@ -280,7 +280,7 @@ export async function completeDeterministicAiRun(
     throw new DOMException("The AI run was cancelled.", "AbortError");
   }
   const instruction = replyResult.data?.body ?? commentResult.data.body;
-  const gatewayResult = await new FakePrimaryAiGateway().request({
+  const gatewayResult = await createPrimaryAiGateway().request({
     invocation: {
       runId: run.id,
       canvasId: run.canvas_id,
@@ -295,14 +295,18 @@ export async function completeDeterministicAiRun(
     projection,
     allowedToolNames,
     scenario: options.scenario,
+    signal: options.signal,
   });
   if (gatewayResult.status !== "completed") {
-    throw new AiRunConflictError("The deterministic AI run did not complete.");
+    throw new AiRunConflictError("The AI collaborator run did not complete.");
   }
   const objectIds = new Set(projection.objects.map((object) => object.id));
   if (
     gatewayResult.reply.evidence.some(
       (reference) => !objectIds.has(reference.objectId),
+    ) ||
+    gatewayResult.reply.contextualTargetObjectIds.some(
+      (objectId) => !objectIds.has(objectId),
     )
   ) {
     throw new AiRunConflictError(
@@ -533,10 +537,14 @@ export async function completeDeterministicAiRun(
       targetObjectIds: toolArguments.targetObjectIds,
     });
   }
-  const completionResult = await supabase.rpc("complete_fake_ai_run", {
+  const completionResult = await supabase.rpc("complete_ai_run", {
     target_run_id: run.id,
     target_body: replySections.join("\n\n"),
     target_provider_request_id: gatewayResult.requestId,
+    target_model: gatewayResult.telemetry?.model ?? "deterministic-fake",
+    target_input_tokens: gatewayResult.telemetry?.inputTokens ?? 0,
+    target_output_tokens: gatewayResult.telemetry?.outputTokens ?? 0,
+    target_latency_ms: gatewayResult.telemetry?.latencyMs ?? 0,
     target_projection_metadata: {
       version: projection.version,
       objectCount: projection.objects.length,
@@ -546,6 +554,7 @@ export async function completeDeterministicAiRun(
       evidence: gatewayResult.reply.evidence,
       inspectionTools: ["inspect_canvas_objects", "inspect_comment_threads"],
       allowedTools: allowedToolNames,
+      providerTelemetry: gatewayResult.telemetry ?? null,
       contextualTools: contextualToolResults,
       proposalTools: proposalToolResults,
       reviewStageTools: reviewStageToolResults,

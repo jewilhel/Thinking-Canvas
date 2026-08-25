@@ -258,14 +258,32 @@ select results_eq(
 
 select results_eq(
   $$select status::text
-    from public.complete_fake_ai_run(
+    from public.complete_ai_run(
       (select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000001'),
       'I inspected the durable canvas and authorized comment history.',
-      'fake-request-1',
-      '{"version":1,"objectCount":1,"commentThreadCount":1}'::jsonb
+      'provider-request-1',
+      '{"version":1,"objectCount":1,"commentThreadCount":1}'::jsonb,
+      'gpt-5.6-terra',
+      120,
+      45,
+      900
     )$$,
   $$values ('completed'::text)$$,
-  'the requesting commenter may persist one deterministic AI reply through the server completion boundary'
+  'the requesting commenter may persist one provider AI reply through the server completion boundary'
+);
+
+select results_eq(
+  $$select provider_request_id, model, input_tokens, output_tokens, latency_ms
+    from public.ai_runs
+    where idempotency_key = '83000000-0000-4000-8000-000000000001'$$,
+  $$values (
+    'provider-request-1'::text,
+    'gpt-5.6-terra'::text,
+    120::bigint,
+    45::bigint,
+    900::bigint
+  )$$,
+  'provider completion retains privacy-safe request, model, token, and latency evidence'
 );
 
 select results_eq(
@@ -305,6 +323,34 @@ select results_eq(
   $$select output_reply_id, 'completed'::text from public.ai_runs
     where idempotency_key = '83000000-0000-4000-8000-000000000001'$$,
   'an exact completion retry returns the existing AI reply without duplication'
+);
+
+select lives_ok(
+  $$select * from public.complete_ai_run(
+      (select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000001'),
+      'I inspected the durable canvas and authorized comment history.',
+      'forged-retry-request',
+      '{"version":999}'::jsonb,
+      'gpt-5.6-sol',
+      999,
+      999,
+      999
+    )$$,
+  'a completion retry returns without replacing the existing reply'
+);
+
+select results_eq(
+  $$select provider_request_id, model, input_tokens, output_tokens, latency_ms
+    from public.ai_runs
+    where idempotency_key = '83000000-0000-4000-8000-000000000001'$$,
+  $$values (
+    'provider-request-1'::text,
+    'gpt-5.6-terra'::text,
+    120::bigint,
+    45::bigint,
+    900::bigint
+  )$$,
+  'a completion retry cannot replace the original provider audit measurements'
 );
 
 select results_eq(
