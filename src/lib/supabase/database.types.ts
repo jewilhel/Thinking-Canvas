@@ -1242,6 +1242,22 @@ export type Database = {
         Args: { target_comment_id: string }
         Returns: string
       }
+      execute_ai_canvas_commands: {
+        Args: {
+          target_affected_object_ids: string[]
+          target_call_key: string
+          target_command_id: string
+          target_expected_sequence: number
+          target_requester_id: string
+          target_run_id: string
+          target_update_data: string
+        }
+        Returns: {
+          created: boolean
+          sequence: number
+          tool_execution_id: string
+        }[]
+      }
       execute_ai_contextual_comment: {
         Args: {
           target_body: string
@@ -1263,6 +1279,19 @@ export type Database = {
           error_code: string
           run_id: string
           status: Database["public"]["Enums"]["ai_run_status"]
+        }[]
+      }
+      get_ai_canvas_execution_retry: {
+        Args: {
+          target_call_key: string
+          target_command_id: string
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: {
+          affected_object_ids: string[]
+          sequence: number
+          update_data: string
         }[]
       }
       get_canvas_ai_access: {

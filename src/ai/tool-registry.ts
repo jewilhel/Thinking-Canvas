@@ -16,6 +16,9 @@ export const reviewStageArgumentsSchema = z.strictObject({
   summary: z.string().trim().min(1).max(10_000),
   commands: mutationListSchema,
 });
+export const executeArgumentsSchema = z.strictObject({
+  commands: mutationListSchema,
+});
 
 export const contextualCommentArgumentsSchema = z
   .strictObject({
@@ -79,7 +82,7 @@ export const AI_TOOL_REGISTRY = {
     minimumAuthority: "trusted_editor" as const,
     description:
       "Execute validated ordered product commands against current durable canvas state with idempotent persistence.",
-    argumentsSchema: z.strictObject({ commands: mutationListSchema }),
+    argumentsSchema: executeArgumentsSchema,
   },
 } as const;
 

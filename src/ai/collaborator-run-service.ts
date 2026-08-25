@@ -20,15 +20,24 @@ import {
 import {
   allowedAiToolNames,
   contextualCommentArgumentsSchema,
+  executeArgumentsSchema,
   proposalArgumentsSchema,
   reviewStageArgumentsSchema,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
+import { broadcastAiCanvasUpdate } from "@/ai/realtime-broadcast";
+import {
+  buildTrustedCanvasUpdate,
+  stableAiToolCommandId,
+} from "@/ai/trusted-execution";
 import {
   validateCanvasProposal,
   validateCanvasReviewStage,
 } from "@/ai/proposals";
-import { postgresByteaToBytes } from "@/collaboration/canvas-document";
+import {
+  bytesToPostgresBytea,
+  postgresByteaToBytes,
+} from "@/collaboration/canvas-document";
 import { buildCompactedSnapshot } from "@/collaboration/persistence";
 import { getAuthenticatedUser } from "@/lib/auth/session";
 import type { Json } from "@/lib/supabase/database.types";
@@ -43,7 +52,7 @@ export async function completeDeterministicAiRun(
   input: unknown,
   options: {
     signal?: AbortSignal;
-    onStatus?: (status: "projecting" | "thinking") => void;
+    onStatus?: (status: "projecting" | "thinking" | "applying") => void;
     scenario?: FakeAiScenario;
   } = {},
 ) {
@@ -77,9 +86,9 @@ export async function completeDeterministicAiRun(
     return { runId: run.id, replyId: run.output_reply_id, status: run.status };
   }
   if (
-    !(["queued", "projecting", "thinking", "tool_pending"] as const).includes(
-      run.status as never,
-    ) ||
+    !(
+      ["queued", "projecting", "thinking", "tool_pending", "applying"] as const
+    ).includes(run.status as never) ||
     !run.invoking_comment_id
   ) {
     throw new AiRunConflictError("AI run is not queued.");
@@ -320,6 +329,14 @@ export async function completeDeterministicAiRun(
     affectedObjectIds: string[];
     created: boolean;
   }> = [];
+  const trustedExecutionResults: Array<{
+    callKey: string;
+    commandTypes: string[];
+    affectedObjectIds: string[];
+    commandId: string;
+    sequence: number;
+    created: boolean;
+  }> = [];
   const replySections = [gatewayResult.reply.body];
   for (const toolCall of gatewayResult.toolCalls) {
     const validatedTool = validateAiToolRequest({
@@ -327,6 +344,84 @@ export async function completeDeterministicAiRun(
       toolName: toolCall.toolName,
       arguments: toolCall.arguments,
     });
+    if (validatedTool.toolName === "execute_canvas_commands") {
+      options.onStatus?.("applying");
+      const toolArguments = executeArgumentsSchema.parse(
+        validatedTool.arguments,
+      );
+      const service = createServiceClient();
+      const commandId = await stableAiToolCommandId({
+        runId: run.id,
+        callKey: toolCall.callKey,
+      });
+      const retryResult = await service.rpc("get_ai_canvas_execution_retry", {
+        target_run_id: run.id,
+        target_requester_id: run.requested_by,
+        target_call_key: toolCall.callKey,
+        target_command_id: commandId,
+      });
+      if (retryResult.error) {
+        throw new AiRunConflictError(retryResult.error.message);
+      }
+
+      let update: Uint8Array;
+      let affectedObjectIds: string[];
+      let sequence: number;
+      let created: boolean;
+      let summary: string;
+      if (retryResult.data?.[0]) {
+        update = postgresByteaToBytes(retryResult.data[0].update_data);
+        affectedObjectIds = retryResult.data[0].affected_object_ids;
+        sequence = retryResult.data[0].sequence;
+        created = false;
+        summary = "Resumed delivery of the already-applied canvas changes.";
+      } else {
+        const execution = await buildTrustedCanvasUpdate({
+          document: compacted.document,
+          canvasId: run.canvas_id,
+          actorId: run.requested_by,
+          runId: run.id,
+          callKey: toolCall.callKey,
+          commands: toolArguments.commands,
+        });
+        const toolResult = await service.rpc("execute_ai_canvas_commands", {
+          target_run_id: run.id,
+          target_requester_id: run.requested_by,
+          target_call_key: toolCall.callKey,
+          target_command_id: execution.commandId,
+          target_update_data: bytesToPostgresBytea(execution.update),
+          target_affected_object_ids: execution.affectedObjectIds,
+          target_expected_sequence: compacted.lastSequence,
+        });
+        if (toolResult.error || !toolResult.data?.[0]) {
+          throw new AiRunConflictError(
+            toolResult.error?.message ??
+              "The trusted canvas changes could not be applied.",
+          );
+        }
+        update = execution.update;
+        affectedObjectIds = execution.affectedObjectIds;
+        sequence = toolResult.data[0].sequence;
+        created = toolResult.data[0].created;
+        summary = execution.summary;
+      }
+
+      await broadcastAiCanvasUpdate({
+        canvasId: run.canvas_id,
+        sequence,
+        update,
+      });
+      trustedExecutionResults.push({
+        callKey: toolCall.callKey,
+        commandTypes: toolArguments.commands.map((command) => command.type),
+        affectedObjectIds,
+        commandId,
+        sequence,
+        created,
+      });
+      replySections.push(summary);
+      continue;
+    }
     if (validatedTool.toolName === "propose_canvas_commands") {
       const toolArguments = proposalArgumentsSchema.parse(
         validatedTool.arguments,
@@ -454,6 +549,7 @@ export async function completeDeterministicAiRun(
       contextualTools: contextualToolResults,
       proposalTools: proposalToolResults,
       reviewStageTools: reviewStageToolResults,
+      trustedExecutionTools: trustedExecutionResults,
       objectDetailPageSize: objectInspection.items.length,
       objectDetailNextCursor: objectInspection.nextCursor,
       threadDetailPageSize: threadInspection.items.length,

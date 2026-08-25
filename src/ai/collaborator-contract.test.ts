@@ -281,6 +281,40 @@ describe("FakePrimaryAiGateway", () => {
     });
   });
 
+  it("returns a strict canonical command only for trusted-editor authority", async () => {
+    const gateway = new FakePrimaryAiGateway();
+    const trustedInvocation = {
+      ...invocation,
+      authority: "trusted_editor" as const,
+      instruction: "Apply moving this object to the right.",
+    };
+    const result = await gateway.request({
+      invocation: trustedInvocation,
+      projection,
+      allowedToolNames: allowedAiToolNames(trustedInvocation.authority),
+    });
+    expect(result).toMatchObject({
+      status: "completed",
+      reply: {
+        body: "I applied validated canvas changes as the primary AI collaborator.",
+      },
+      toolCalls: [
+        {
+          callKey: "trusted-execution-1",
+          toolName: "execute_canvas_commands",
+          arguments: {
+            commands: [
+              {
+                type: "object.move",
+                payload: { objectId: ids.object, x: 40, y: 0 },
+              },
+            ],
+          },
+        },
+      ],
+    });
+  });
+
   it("returns deterministic cancellation and failure results", async () => {
     const gateway = new FakePrimaryAiGateway();
     await expect(
