@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   AiRunAccessError,
   AiRunConflictError,
+  AiRunLimitError,
   cancelAiRun,
   completeAiRun,
   failAiRun,
@@ -55,7 +56,9 @@ export async function POST(
             parsed.data.runId,
             error instanceof ConnectedPathError
               ? `connected_path_${error.code}`
-              : "provider_run_failed",
+              : error instanceof AiRunLimitError
+                ? "rate_or_budget_limit"
+                : "provider_run_failed",
           ).catch(() => undefined);
         }
         send({

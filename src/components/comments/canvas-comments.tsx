@@ -326,6 +326,8 @@ function aiRunFailureMessage(errorCode: string | null) {
     return "The selected path includes an object that is no longer available.";
   if (errorCode === "connected_path_cross_canvas_object")
     return "The selected path includes an object from another canvas.";
+  if (errorCode === "rate_or_budget_limit")
+    return "The AI request limit is reached. Retry after the current five-minute window.";
   return "The response could not be completed. Your comment remains saved.";
 }
 

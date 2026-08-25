@@ -7,7 +7,7 @@ import { OpenAiPrimaryAiGateway } from "@/ai/openai-primary-ai-gateway";
 import { OpenAiConfigurationError } from "@/ai/openai-responses-gateway";
 import type { PrimaryAiGateway } from "@/ai/primary-ai-gateway";
 
-const providerEnvironmentSchema = z.strictObject({
+const providerEnvironmentSchema = z.object({
   THINKING_CANVAS_AI_GATEWAY: z.enum(["fake", "openai"]).default("fake"),
   OPENAI_API_KEY: z.string().min(1).optional(),
   OPENAI_BASE_URL: z.url().optional(),

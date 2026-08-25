@@ -8,7 +8,11 @@ import {
   aiProjectionEnvelopeSchema,
 } from "@/ai/collaborator-contract";
 import type { FakeAiScenario } from "@/ai/fake-collaborator-gateway";
-import { createPrimaryAiGateway } from "@/ai/primary-ai-gateway-factory";
+import {
+  createPrimaryAiGateway,
+  parsePrimaryAiProviderEnvironment,
+} from "@/ai/primary-ai-gateway-factory";
+import { estimateAiInputTokens } from "@/ai/run-budgets";
 import { listCanvasObjectsV2 } from "@/canvas/canvas-document";
 import {
   buildCanvasObjectDetails,
@@ -260,10 +264,33 @@ export async function completeAiRun(
       "This canvas is too large for a grounded AI response.",
     );
   }
+  const instruction = replyResult.data?.body ?? commentResult.data.body;
   const projection: AiProjectionEnvelope = aiProjectionEnvelopeSchema.parse({
     ...projectionBase,
     serializedBytes,
   });
+  const providerConfig = parsePrimaryAiProviderEnvironment(process.env);
+  const reservationResult = await createServiceClient().rpc(
+    "reserve_ai_run_budget",
+    {
+      target_run_id: run.id,
+      target_requester_id: run.requested_by,
+      target_input_tokens: estimateAiInputTokens({
+        instruction,
+        projectionSerializedBytes: projection.serializedBytes,
+      }),
+      target_output_tokens: providerConfig.OPENAI_RESPONSES_MAX_OUTPUT_TOKENS,
+    },
+  );
+  if (reservationResult.error || !reservationResult.data?.[0]) {
+    const message =
+      reservationResult.error?.message ??
+      "The AI request budget is unavailable.";
+    if (reservationResult.error?.code === "P0001") {
+      throw new AiRunLimitError(message);
+    }
+    throw new AiRunConflictError(message);
+  }
   options.onStatus?.("thinking");
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(resolve, 1_200);
@@ -279,7 +306,6 @@ export async function completeAiRun(
   if (options.signal?.aborted) {
     throw new DOMException("The AI run was cancelled.", "AbortError");
   }
-  const instruction = replyResult.data?.body ?? commentResult.data.body;
   const gatewayResult = await createPrimaryAiGateway().request({
     invocation: {
       runId: run.id,
@@ -647,3 +673,4 @@ export async function failAiRun(runId: string, errorCode: string) {
 
 export class AiRunAccessError extends Error {}
 export class AiRunConflictError extends Error {}
+export class AiRunLimitError extends AiRunConflictError {}

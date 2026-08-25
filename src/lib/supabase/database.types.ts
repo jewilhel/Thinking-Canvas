@@ -187,6 +187,7 @@ export type Database = {
       ai_runs: {
         Row: {
           authority_snapshot: Database["public"]["Enums"]["ai_authority_level"]
+          budget_reserved_at: string | null
           cancelled_at: string | null
           canvas_id: string
           created_at: string
@@ -204,12 +205,16 @@ export type Database = {
           output_tokens: number | null
           projection_metadata: Json
           provider_request_id: string | null
+          rate_window_started_at: string | null
           requested_by: string
+          reserved_input_tokens: number | null
+          reserved_output_tokens: number | null
           status: Database["public"]["Enums"]["ai_run_status"]
           updated_at: string
         }
         Insert: {
           authority_snapshot: Database["public"]["Enums"]["ai_authority_level"]
+          budget_reserved_at?: string | null
           cancelled_at?: string | null
           canvas_id: string
           created_at?: string
@@ -227,12 +232,16 @@ export type Database = {
           output_tokens?: number | null
           projection_metadata?: Json
           provider_request_id?: string | null
+          rate_window_started_at?: string | null
           requested_by: string
+          reserved_input_tokens?: number | null
+          reserved_output_tokens?: number | null
           status?: Database["public"]["Enums"]["ai_run_status"]
           updated_at?: string
         }
         Update: {
           authority_snapshot?: Database["public"]["Enums"]["ai_authority_level"]
+          budget_reserved_at?: string | null
           cancelled_at?: string | null
           canvas_id?: string
           created_at?: string
@@ -250,7 +259,10 @@ export type Database = {
           output_tokens?: number | null
           projection_metadata?: Json
           provider_request_id?: string | null
+          rate_window_started_at?: string | null
           requested_by?: string
+          reserved_input_tokens?: number | null
+          reserved_output_tokens?: number | null
           status?: Database["public"]["Enums"]["ai_run_status"]
           updated_at?: string
         }
@@ -1346,6 +1358,20 @@ export type Database = {
         Returns: {
           created: boolean
           tool_execution_id: string
+        }[]
+      }
+      reserve_ai_run_budget: {
+        Args: {
+          target_input_tokens: number
+          target_output_tokens: number
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: {
+          canvas_request_count: number
+          reserved: boolean
+          user_request_count: number
+          window_ends_at: string
         }[]
       }
       respond_to_comment_prompt: {

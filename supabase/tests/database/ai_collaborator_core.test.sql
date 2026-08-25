@@ -47,6 +47,15 @@ select ok(
   'authenticated clients cannot call the server-only review-stage transaction directly'
 );
 
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.reserve_ai_run_budget(uuid,uuid,bigint,bigint)',
+    'EXECUTE'
+  ),
+  'authenticated clients cannot reserve or forge AI rate budgets directly'
+);
+
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
 
 select results_eq(
@@ -352,6 +361,193 @@ select results_eq(
   )$$,
   'a completion retry cannot replace the original provider audit measurements'
 );
+
+reset role;
+
+insert into public.ai_runs (
+  id, canvas_id, invoking_comment_id, requested_by, idempotency_key,
+  authority_snapshot, status
+) values (
+  '84000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000001',
+  (select id from public.comments where client_command_id = '83000000-0000-4000-8000-000000000001'),
+  '10000000-0000-4000-8000-000000000003',
+  '84000000-0000-4000-8000-000000000011',
+  'comment_only',
+  'projecting'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select results_eq(
+  $$select reserved, user_request_count, canvas_request_count
+    from public.reserve_ai_run_budget(
+      '84000000-0000-4000-8000-000000000001',
+      '10000000-0000-4000-8000-000000000003',
+      5000,
+      4000
+    )$$,
+  $$values (true, 1::bigint, 1::bigint)$$,
+  'the server atomically reserves one pre-provider user and canvas budget'
+);
+
+select results_eq(
+  $$select reserved, user_request_count, canvas_request_count
+    from public.reserve_ai_run_budget(
+      '84000000-0000-4000-8000-000000000001',
+      '10000000-0000-4000-8000-000000000003',
+      5000,
+      4000
+    )$$,
+  $$values (false, 1::bigint, 1::bigint)$$,
+  'an exact run retry cannot reserve the same budget twice'
+);
+
+reset role;
+
+select results_eq(
+  $$select request_count, input_tokens, output_tokens
+    from public.ai_rate_limit_windows
+    where canvas_id = '20000000-0000-4000-8000-000000000001'
+      and user_id = '10000000-0000-4000-8000-000000000003'$$,
+  $$values (1, 5000::bigint, 4000::bigint)$$,
+  'the privacy-safe window stores only request and token counters'
+);
+
+update public.ai_rate_limit_windows
+set request_count = 60
+where canvas_id = '20000000-0000-4000-8000-000000000001'
+  and user_id = '10000000-0000-4000-8000-000000000003';
+
+insert into public.ai_runs (
+  id, canvas_id, invoking_comment_id, requested_by, idempotency_key,
+  authority_snapshot, status
+) values (
+  '84000000-0000-4000-8000-000000000002',
+  '20000000-0000-4000-8000-000000000001',
+  (select id from public.comments where client_command_id = '83000000-0000-4000-8000-000000000001'),
+  '10000000-0000-4000-8000-000000000003',
+  '84000000-0000-4000-8000-000000000012',
+  'comment_only',
+  'projecting'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select throws_ok(
+  $$select * from public.reserve_ai_run_budget(
+      '84000000-0000-4000-8000-000000000002',
+      '10000000-0000-4000-8000-000000000003',
+      5000,
+      4000
+    )$$,
+  'P0001',
+  'Your AI request limit is reached. Retry after the current five-minute window.',
+  'the user burst limit fails before provider access without reserving the rejected run'
+);
+
+reset role;
+
+select is(
+  (select budget_reserved_at from public.ai_runs where id = '84000000-0000-4000-8000-000000000002'),
+  null::timestamptz,
+  'a rate-limited run retains no budget reservation'
+);
+
+update public.ai_rate_limit_windows
+set request_count = 1
+where canvas_id = '20000000-0000-4000-8000-000000000001'
+  and user_id = '10000000-0000-4000-8000-000000000003';
+
+insert into public.ai_rate_limit_windows (
+  canvas_id, user_id, window_started_at, window_ends_at,
+  request_count, input_tokens, output_tokens
+)
+select
+  canvas_id,
+  '10000000-0000-4000-8000-000000000001',
+  window_started_at,
+  window_ends_at,
+  179,
+  0,
+  0
+from public.ai_rate_limit_windows
+where canvas_id = '20000000-0000-4000-8000-000000000001'
+  and user_id = '10000000-0000-4000-8000-000000000003';
+
+insert into public.ai_runs (
+  id, canvas_id, invoking_comment_id, requested_by, idempotency_key,
+  authority_snapshot, status
+) values (
+  '84000000-0000-4000-8000-000000000003',
+  '20000000-0000-4000-8000-000000000001',
+  (select id from public.comments where client_command_id = '83000000-0000-4000-8000-000000000001'),
+  '10000000-0000-4000-8000-000000000003',
+  '84000000-0000-4000-8000-000000000013',
+  'comment_only',
+  'projecting'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select throws_ok(
+  $$select * from public.reserve_ai_run_budget(
+      '84000000-0000-4000-8000-000000000003',
+      '10000000-0000-4000-8000-000000000003',
+      5000,
+      4000
+    )$$,
+  'P0001',
+  'This canvas AI request limit is reached. Retry after the current five-minute window.',
+  'the canvas burst limit fails before provider access across different requesters'
+);
+
+reset role;
+
+delete from public.ai_rate_limit_windows
+where canvas_id = '20000000-0000-4000-8000-000000000001'
+  and user_id = '10000000-0000-4000-8000-000000000001';
+update public.ai_rate_limit_windows
+set input_tokens = 3999000
+where canvas_id = '20000000-0000-4000-8000-000000000001'
+  and user_id = '10000000-0000-4000-8000-000000000003';
+
+insert into public.ai_runs (
+  id, canvas_id, invoking_comment_id, requested_by, idempotency_key,
+  authority_snapshot, status
+) values (
+  '84000000-0000-4000-8000-000000000004',
+  '20000000-0000-4000-8000-000000000001',
+  (select id from public.comments where client_command_id = '83000000-0000-4000-8000-000000000001'),
+  '10000000-0000-4000-8000-000000000003',
+  '84000000-0000-4000-8000-000000000014',
+  'comment_only',
+  'projecting'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select throws_ok(
+  $$select * from public.reserve_ai_run_budget(
+      '84000000-0000-4000-8000-000000000004',
+      '10000000-0000-4000-8000-000000000003',
+      5000,
+      4000
+    )$$,
+  'P0001',
+  'Your AI token budget is reached. Retry after the current five-minute window.',
+  'the user input or output token budget fails before provider access'
+);
+
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
 
 select results_eq(
   $$select created, ai_run_id is not null
