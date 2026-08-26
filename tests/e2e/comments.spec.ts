@@ -1,10 +1,43 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 const password = "LocalPassword1!";
 const seedCanvasId = "20000000-0000-4000-8000-000000000001";
 const editorUserId = "10000000-0000-4000-8000-000000000002";
+
+async function settleButtonTransition(button: Locator) {
+  await button.evaluate(async (element) => {
+    await Promise.all(
+      element
+        .getAnimations()
+        .map((animation) => animation.finished.catch(() => {})),
+    );
+  });
+}
+
+async function expectFilledReadableHover(page: Page, button: Locator) {
+  await page.mouse.move(0, 0);
+  await settleButtonTransition(button);
+  const before = await button.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      color: style.color,
+    };
+  });
+
+  await button.hover();
+  await settleButtonTransition(button);
+  await expect
+    .poll(() =>
+      button.evaluate((element) => getComputedStyle(element).backgroundColor),
+    )
+    .not.toBe(before.backgroundColor);
+  await expect
+    .poll(() => button.evaluate((element) => getComputedStyle(element).color))
+    .toBe(before.color);
+}
 
 async function signIn(page: Page, email: string) {
   await page.goto("/auth/sign-in");
@@ -721,9 +754,11 @@ test("cancels and retries an AI response inline in its comment thread", async ({
   const thread = page.getByRole("dialog", { name: "Comment thread" });
   const cancel = thread.getByRole("button", { name: "Cancel", exact: true });
   await expect(cancel).toBeVisible();
+  await expectFilledReadableHover(page, cancel);
   await cancel.click();
   await expect(thread.getByText("AI response cancelled")).toBeVisible();
   const retry = thread.getByRole("button", { name: "Retry", exact: true });
+  await expectFilledReadableHover(page, retry);
   await retry.click();
   await expect(thread.getByText(/Thinking Canvas AI is/)).toBeVisible();
   await expect(
@@ -732,6 +767,10 @@ test("cancels and retries an AI response inline in its comment thread", async ({
     ),
   ).toBeVisible();
   await expect(thread.getByText("AI response cancelled")).not.toBeVisible();
+  await expectFilledReadableHover(
+    page,
+    thread.getByRole("button", { name: "Resolve", exact: true }),
+  );
 });
 
 test("shows a failed AI response inline and retries without duplicating the comment", async ({
