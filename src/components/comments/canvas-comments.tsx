@@ -1105,6 +1105,24 @@ export function CanvasComments({
     }
     panelWasOpenRef.current = panelOpen;
   }, [canComment, panelOpen]);
+  useEffect(() => {
+    if (!selectedThreadId) return;
+
+    function dismissThreadOutside(event: PointerEvent) {
+      const target = event.target;
+      if (
+        !(target instanceof Node) ||
+        threadCardRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setSelectedThreadId(null);
+    }
+
+    document.addEventListener("pointerdown", dismissThreadOutside);
+    return () =>
+      document.removeEventListener("pointerdown", dismissThreadOutside);
+  }, [selectedThreadId]);
 
   function closeComposer() {
     setComposerOpen(false);

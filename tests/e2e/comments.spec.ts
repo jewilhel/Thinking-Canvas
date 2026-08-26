@@ -122,6 +122,8 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   await expect(
     page.getByRole("toolbar", { name: "Selection controls" }),
   ).not.toBeVisible();
+  await expect(thread).not.toBeVisible();
+  await page.getByRole("button", { name: /Open comment by/ }).click();
   await expect(
     thread.getByText("Does this direction feel clear?"),
   ).toBeVisible();
