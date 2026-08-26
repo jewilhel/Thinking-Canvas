@@ -1,12 +1,12 @@
 # Milestone 4 — AI collaborator, permissions, and typed interaction
 
-Status: Approved for implementation
+Status: Closed
 
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 
 Plan owner: Product owner
 
-Last updated: 2026-08-25
+Last updated: 2026-08-26
 
 ## Goal and user-visible outcome
 
@@ -179,14 +179,14 @@ Rollback or compensation: disable AI invocation and settings mutation while reta
 - [x] Persist active thread participants plus immutable effective `To` recipients per root comment or reply; inherit routing without repeated `@`, replace it on later explicit redirection, and never change earlier history.
 - [x] Trigger exactly one run only when the primary AI is an effective recipient of a human-authored turn; prove inherited AI conversation continues without repeated `@`, human-only and undirected turns do not invoke it, and AI output does not recursively invoke itself.
 - [x] Prove that no dedicated AI panel, chatbot route, AI-only composer, global chat drawer, separate conversation list, `ai_conversations`, or `ai_messages` surface/model exists.
-- [ ] Implement the server-only AI DAL and streamed Route Handler with re-authentication, membership checks, current settings checks, `store: false`, and minimal DTOs.
+- [x] Implement the server-only AI DAL and streamed Route Handler with re-authentication, membership checks, current settings checks, `store: false`, and minimal DTOs.
 - [x] Build the versioned complete manifest, deterministic detailed projection, context budgets, off-screen guarantees, and read-only object-inspection tool.
 - [x] Add ordered selection and connected-path capture/validation with stale and ambiguous-path errors.
 - [x] Render validated object references as navigable canvas links/highlights inside AI-authored comments/replies without allowing provider output to select arbitrary cross-canvas IDs.
 - [x] Add inline pending, streamed, cancel, retry, completed, and failed states to the originating thread while preserving its complete history and existing human reply behavior.
 - [x] Correct resolved-thread presentation so Resolve ends editing/replies, closes the card, and removes the canvas marker in every session while the resolved thread remains readable through authorized comment history.
 - [x] Add the complete authorized open/resolved thread manifest and paged `inspect_comment_threads` tool; exclude dismissed/deleted threads and prove current database state, not marker visibility or stale cache, controls eligibility.
-- [ ] Add unit, database, component, Chromium, accessibility, reconnect, and reload coverage for comments-only typed AI interaction, `@` filtering/selection/chip removal, inherited routing, recipient history, redirection, stale participants, and exactly-once non-recursive invocation.
+- [x] Add unit, database, component, Chromium, accessibility, reconnect, and reload coverage for comments-only typed AI interaction, `@` filtering/selection/chip removal, inherited routing, recipient history, redirection, stale participants, and exactly-once non-recursive invocation.
 
 ### Slice 3 — Contextual comments, proposals, review staging, and authority enforcement
 
@@ -209,12 +209,12 @@ Rollback or compensation: disable AI invocation and settings mutation while reta
 ### Slice 5 — Provider integration, adversarial evaluation, and closure readiness
 
 - [x] Run the fixed evaluation set against the candidate model configurations; record quality, security, latency, token use, and estimated cost without selecting solely from subjective preference.
-- [ ] Configure the approved model and server-only preview credential; run provider smoke, streaming, safety identifier, timeout, cancellation, rate/budget, and retry scenarios.
-- [ ] Run formatting, lint, strict types, units, clean database reset, full pgTAP, production build, complete Chromium E2E, and axe checks.
-- [ ] Run protected GitHub `quality` on the exact reviewed commit and produce an immutable Git-backed Netlify deploy preview for that commit.
-- [ ] In Codex's in-app browser, complete full-canvas, off-screen, connected-path, contextual-comment, each authority level, trusted-edit convergence, cancel, retry, and adversarial scenarios; use a second authenticated browser context for collaboration.
-- [ ] Trace evidence to every requirement/supporting item and the exact exit gate; record defects, fixes, reruns, limitations, provider request IDs, commit, CI, deploy, browsers, identities, and screenshots/logs.
-- [ ] Mark the plan `Verification complete — awaiting closure approval` only when all exit criteria pass, then request separate product-owner closure approval.
+- [x] Configure the approved model and server-only preview credential; run provider smoke, streaming, safety identifier, timeout, cancellation, rate/budget, and retry scenarios.
+- [x] Run formatting, lint, strict types, units, clean database reset, full pgTAP, production build, complete Chromium E2E, and axe checks.
+- [x] Run protected GitHub `quality` on the exact reviewed commit and produce an immutable Git-backed Netlify deploy preview for that commit.
+- [x] In Codex's in-app browser, complete full-canvas, off-screen, connected-path, contextual-comment, each authority level, trusted-edit convergence, cancel, retry, and adversarial scenarios; use a second authenticated browser context for collaboration.
+- [x] Trace evidence to every requirement/supporting item and the exact exit gate; record defects, fixes, reruns, limitations, provider request IDs, commit, CI, deploy, browsers, identities, and screenshots/logs.
+- [x] Mark the plan `Verification complete — awaiting closure approval` only when all exit criteria pass, then request separate product-owner closure approval.
 
 ## Pull-request slices
 
@@ -311,27 +311,27 @@ Retain deploy ID/URL, exact commit, CI run, selected model/configuration, browse
 
 - [x] The product owner approves this plan, `PD-006`, authority semantics, model-selection method, and evaluation thresholds before implementation; comments-only communication and inherited `@` conversation routing remain fixed product directions.
 - [x] PR #8 received separate merge approval, merged as `bf8f3c6`, and the planning branch is based on that `main` tree with the closed Milestone 3 baseline passing.
-- [ ] **FR-015:** every tested canvas can enable no more than one clearly identified primary AI, and only the approved settings actor can enable/disable it or change authority.
-- [ ] **FR-016:** the AI correctly inspects a deterministic complete semantic projection including off-screen objects; limits never silently substitute viewport or relevance-only content for the complete manifest.
-- [ ] **FR-017:** explicit ordered sequences retain user order, and connected-path requests validate consecutive relationships and reject stale/ambiguous/cross-canvas input.
-- [ ] **FR-018:** trusted editor mode creates and edits every currently supported human canvas object through strict tools and shared commands; all lower authorities block canonical mutation.
-- [ ] **FR-019:** the AI creates a durable contextual comment on the evidence-bearing object/group through the Milestone 3 command and permission boundary.
-- [ ] **FR-020:** the fixed evaluation set meets the approved constructive-challenge threshold with evidence-linked questions or alternatives and no manufactured criticism in control cases.
-- [ ] **FR-021:** the fixed evaluation set meets the approved no-empty-praise threshold; praise alone cannot pass.
-- [ ] **FR-022:** all four authority choices persist and the server blocks every disallowed tool/mutation, including forged clients, mid-run downgrade, and removed membership.
-- [ ] Typed messaging works without voice entirely through existing comment threads; `@` exposes current humans and the enabled primary AI in one accessible picker; following turns inherit the active participants without repeated `@`; later `@` use replaces future routing; each turn preserves visible effective recipients; only a human-authored AI-addressed turn invokes exactly one run; progress, cancellation, and retry remain inline.
-- [ ] Resolve is terminal: it closes the contextual card, prevents further edits/replies/AI runs, and removes the marker in every session and after reload without deleting the conversation from authorized history or AI context.
-- [ ] Every current authorized open or resolved thread is available to the AI through a complete manifest and bounded detail paging regardless of marker visibility; dismissed threads are excluded.
-- [ ] Permanent deletion removes the full conversation and routing data from product history and every subsequent AI context; any in-flight run that already received it is cancelled or has late output/tools discarded; no retained provider, cache, embedding, projection, run, tool, or audit record can reconstruct deleted conversation content.
-- [ ] No dedicated AI panel, chatbot route, AI-only composer, global chat drawer, parallel conversation history, `ai_conversations`, or `ai_messages` entity exists; the Comments panel and contextual thread cards are the only visible human/AI communication surfaces.
-- [ ] Projection, tool calls, citations, comments, replies, settings, proposals, staged review records, trusted updates, and retries pass strict validation, idempotency, authorization, and canvas-isolation tests.
-- [ ] Rate, budget, timeout, cancellation, and retry behavior passes locally and on authenticated preview with no post-cancel or duplicate unapproved mutation.
-- [ ] Privacy-safe audit records contain the required request/tool/affected-ID/outcome/failure metadata and exclude secrets, hidden reasoning, raw sensitive tool arguments, and unredacted provider errors.
-- [ ] Formatting, lint, strict types, units, clean migration/RLS, production build, full Chromium E2E, axe, protected CI, and exact-head immutable preview checks pass.
-- [ ] The authenticated preview matrix passes in Codex's in-app browser plus a second authenticated context, with retained traceable evidence and no regression of closed Milestones 1–3.
-- [ ] The exact exit gate passes at the approved groundedness, permission, malformed-tool-call, prompt-injection, and cancellation thresholds.
-- [ ] Every known in-scope failure is fixed and rerun; failed, deferred, or unverified items remain explicit.
-- [ ] The plan reaches `Verification complete — awaiting closure approval`; master-plan Milestone 4 boxes remain unchecked until separate product-owner closure approval.
+- [x] **FR-015:** every tested canvas can enable no more than one clearly identified primary AI, and only the approved settings actor can enable/disable it or change authority.
+- [x] **FR-016:** the AI correctly inspects a deterministic complete semantic projection including off-screen objects; limits never silently substitute viewport or relevance-only content for the complete manifest.
+- [x] **FR-017:** explicit ordered sequences retain user order, and connected-path requests validate consecutive relationships and reject stale/ambiguous/cross-canvas input.
+- [x] **FR-018:** trusted editor mode creates and edits every currently supported human canvas object through strict tools and shared commands; all lower authorities block canonical mutation.
+- [x] **FR-019:** the AI creates a durable contextual comment on the evidence-bearing object/group through the Milestone 3 command and permission boundary.
+- [x] **FR-020:** the fixed evaluation set meets the approved constructive-challenge threshold with evidence-linked questions or alternatives and no manufactured criticism in control cases.
+- [x] **FR-021:** the fixed evaluation set meets the approved no-empty-praise threshold; praise alone cannot pass.
+- [x] **FR-022:** all four authority choices persist and the server blocks every disallowed tool/mutation, including forged clients, mid-run downgrade, and removed membership.
+- [x] Typed messaging works without voice entirely through existing comment threads; `@` exposes current humans and the enabled primary AI in one accessible picker; following turns inherit the active participants without repeated `@`; later `@` use replaces future routing; each turn preserves visible effective recipients; only a human-authored AI-addressed turn invokes exactly one run; progress, cancellation, and retry remain inline.
+- [x] Resolve is terminal: it closes the contextual card, prevents further edits/replies/AI runs, and removes the marker in every session and after reload without deleting the conversation from authorized history or AI context.
+- [x] Every current authorized open or resolved thread is available to the AI through a complete manifest and bounded detail paging regardless of marker visibility; dismissed threads are excluded.
+- [x] Permanent deletion removes the full conversation and routing data from product history and every subsequent AI context; any in-flight run that already received it is cancelled or has late output/tools discarded; no retained provider, cache, embedding, projection, run, tool, or audit record can reconstruct deleted conversation content.
+- [x] No dedicated AI panel, chatbot route, AI-only composer, global chat drawer, parallel conversation history, `ai_conversations`, or `ai_messages` entity exists; the Comments panel and contextual thread cards are the only visible human/AI communication surfaces.
+- [x] Projection, tool calls, citations, comments, replies, settings, proposals, staged review records, trusted updates, and retries pass strict validation, idempotency, authorization, and canvas-isolation tests.
+- [x] Rate, budget, timeout, cancellation, and retry behavior passes locally and on authenticated preview with no post-cancel or duplicate unapproved mutation.
+- [x] Privacy-safe audit records contain the required request/tool/affected-ID/outcome/failure metadata and exclude secrets, hidden reasoning, raw sensitive tool arguments, and unredacted provider errors.
+- [x] Formatting, lint, strict types, units, clean migration/RLS, production build, full Chromium E2E, axe, protected CI, and exact-head immutable preview checks pass.
+- [x] The authenticated preview matrix passes in Codex's in-app browser plus a second authenticated context, with retained traceable evidence and no regression of closed Milestones 1–3.
+- [x] The exact exit gate passes at the approved groundedness, permission, malformed-tool-call, prompt-injection, and cancellation thresholds.
+- [x] Every known in-scope failure is fixed and rerun; failed, deferred, or unverified items remain explicit.
+- [x] The plan reached `Verification complete — awaiting closure approval`; the product owner then approved closure on 2026-08-26.
 
 ## Explicitly excluded work
 
@@ -453,7 +453,7 @@ Local checkpoint commits `371316e`, `2c40af3`, `bf4ea37`, `62c44b3`, `2650f19`, 
 
 ## Verification evidence
 
-Focused Slice 1 verification has run; complete Milestone 4 verification and hosted-preview acceptance have not.
+Milestone 4 verification, exact-head protected CI, hosted-preview acceptance, and product-owner closure approval are complete.
 
 Planning inputs inspected on 2026-08-24:
 
@@ -485,6 +485,7 @@ Planning inputs inspected on 2026-08-24:
 - The follow-up reply-composer refinement on 2026-08-25 hides inherited recipients entirely while preserving their durable routing. An untouched reply continues with the thread's active participant; the first explicit `@` selection replaces that inherited route, and later `@` selections can add collaborators while showing only that deliberate change. The two focused inheritance/redirection scenarios passed `2/2`, the complete serial comment suite passed `17/17`, and `pnpm check` passed formatting, lint, strict types, `139/139` Vitest assertions across `32` files, and the Next.js 16.3 production build. The product owner authorized commit, push, and an updated preview; exact-head CI and replacement hosted-preview acceptance remain open.
 - After confirming the refreshed preview works, the product owner identified an inconsistent light-canvas hover treatment: shared outline and ghost actions inherited the dark application foreground and turned white on hover. The shared variants now preserve each action's local text color while retaining a filled hover background. Focused Chromium coverage verifies Cancel, Retry, and Resolve hover states, and `pnpm check` passes formatting, lint, strict types, `139/139` Vitest assertions across `32` files, and the Next.js 16.3 production build. Commit `820233b` passed protected CI run `32935841765`; exact-head Netlify deploy `6a8e7f5e9a84b90008f92c48` reached `ready` with no reported deploy error. Hosted product-owner hover acceptance remains open.
 - The final pre-closure UX refinement makes an outside click dismiss an open contextual comment thread exactly like its X action while the existing focus shield continues to prevent that click from selecting or editing the canvas. The focused Chromium scenario and complete serial comment suite pass `1/1` and `17/17`; `pnpm check` passes formatting, lint, strict types, `139/139` Vitest assertions across `32` files, and the Next.js 16.3 production build. Commit `efb415b` passed protected CI run `32938140914`; exact-head Netlify deploy `6a8e8701fed7330008cd7421` reached `ready` with no reported deploy error. Hosted product-owner acceptance remains open.
+- Final closure evidence on 2026-08-26: PR #9 exact head `1f9234c` passed protected GitHub Actions `quality` run `32938748793`; Git-backed Netlify deploy preview `6a8e88fa3512c700083c983b` reached `ready` for that exact commit with no deploy error. After exercising the hosted canvas and the final comment-thread refinements, the product owner confirmed that everything looks good and explicitly approved Milestone 4 closure. PR #9 remains open and unmerged, and production was not changed.
 
 The merged-tree results are predecessor planning inputs. The Slice 1 and resolved-marker results are local implementation evidence, not hosted-preview or milestone acceptance evidence.
 
@@ -527,11 +528,12 @@ The merged-tree results are predecessor planning inputs. The Slice 1 and resolve
 | 2026-08-25 | Removed inherited-recipient presentation from the reply composer while retaining `@` redirection.                                                                                                    | The visible `To` label and AI tag repeat context that is already clear from the preceding conversation.                                                                                               | Untouched replies inherit routing without a visible row; the first explicit `@` replaces that route and further selections can add collaborators. Focused routing `2/2`, comments `17/17`, and `pnpm check` pass locally; commit, push, and replacement preview are authorized while exact-head acceptance remains open.                                                                                                                             | Product owner feedback  |
 | 2026-08-25 | Normalized filled hover feedback for outline and ghost actions in the light canvas workspace.                                                                                                        | Resolve, Cancel, and Retry inherited the dark root foreground and turned white instead of retaining readable text over their hover fill.                                                              | Shared variants preserve local text color while retaining their hover background. Commit `820233b`, protected CI run `32935841765`, and ready exact-head deploy `6a8e7f5e9a84b90008f92c48` carry the change; hosted hover acceptance remains open.                                                                                                                                                                                                   | Product owner feedback  |
 | 2026-08-25 | Made outside clicks dismiss an open contextual comment thread without affecting the canvas.                                                                                                          | Long conversations can scroll the thread's X action out of view, making dismissal unnecessarily difficult.                                                                                            | The existing focus shield still absorbs canvas clicks while document-level outside-pointer handling closes the thread from any workspace chrome. Commit `efb415b`, protected CI run `32938140914`, and ready exact-head deploy `6a8e8701fed7330008cd7421` carry the change; hosted acceptance remains open.                                                                                                                                          | Product owner feedback  |
+| 2026-08-26 | Approved and closed Milestone 4 after final authenticated preview acceptance.                                                                                                                        | The exact-head automated and hosted evidence passes, and the product owner confirmed that the completed comments-only AI collaboration experience looks good.                                         | All genuinely proven Milestone 4 requirements, supporting work, and exit-gate items are checked in the master ledger. PR #9 remains open and unmerged; production remains unchanged.                                                                                                                                                                                                                                                                 | Product owner           |
 
 ## Closure
 
-Closure status: Not ready
+Closure status: Closed
 
-Closure approval: Pending
+Closure approval: Product owner approved 2026-08-26
 
-Closed on: —
+Closed on: 2026-08-26

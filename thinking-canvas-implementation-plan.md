@@ -1,10 +1,10 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–3 closed; later milestones remain draft
+Status: Milestones 0–4 closed; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-08-24
+Last updated: 2026-08-26
 
 ## Purpose
 
@@ -209,30 +209,32 @@ Evidence: [Milestone 3 implementation and verification record](docs/implementati
 
 ### Product requirements
 
-- [ ] **FR-015 — One primary AI.** Every canvas can enable one clearly identified primary AI collaborator in the first version.
-- [ ] **FR-016 — Full-canvas inspection.** With permission, the AI receives a complete semantic canvas projection, including off-screen objects, within documented context-size safeguards.
-- [ ] **FR-017 — Connected-path inspection.** A user can select a connected path or ordered sequence and ask the AI to interpret that exact selection in order.
-- [ ] **FR-018 — Shared visual vocabulary.** The AI can create and edit every supported human canvas object through validated domain tools, subject to permission.
-- [ ] **FR-019 — AI contextual comments.** The AI can attach a comment to the specific object or group supporting its observation.
-- [ ] **FR-020 — Constructive challenge.** Evaluation fixtures demonstrate grounded questions or alternatives for weak assumptions, gaps, ambiguities, and clearer framings.
-- [ ] **FR-021 — No empty praise.** Evaluation fixtures reject responses that substitute unsupported praise for substantive canvas-grounded feedback.
-- [ ] **FR-022 — Adjustable authority.** A user can select comment only, propose changes, edit with review, or trusted editor, and server-side enforcement blocks every disallowed mutation.
+- [x] **FR-015 — One primary AI.** Every canvas can enable one clearly identified primary AI collaborator in the first version.
+- [x] **FR-016 — Full-canvas inspection.** With permission, the AI receives a complete semantic canvas projection, including off-screen objects, within documented context-size safeguards.
+- [x] **FR-017 — Connected-path inspection.** A user can select a connected path or ordered sequence and ask the AI to interpret that exact selection in order.
+- [x] **FR-018 — Shared visual vocabulary.** The AI can create and edit every supported human canvas object through validated domain tools, subject to permission.
+- [x] **FR-019 — AI contextual comments.** The AI can attach a comment to the specific object or group supporting its observation.
+- [x] **FR-020 — Constructive challenge.** Evaluation fixtures demonstrate grounded questions or alternatives for weak assumptions, gaps, ambiguities, and clearer framings.
+- [x] **FR-021 — No empty praise.** Evaluation fixtures reject responses that substitute unsupported praise for substantive canvas-grounded feedback.
+- [x] **FR-022 — Adjustable authority.** A user can select comment only, propose changes, edit with review, or trusted editor, and server-side enforcement blocks every disallowed mutation.
 
 ### Supporting work
 
-- [ ] Implement typed messaging that remains available independently of voice.
-- [ ] Use the existing comment system as the only human/AI conversation surface; `@` establishes human or AI participants, following turns inherit that routing, and a later `@` redirects subsequent turns without rewriting history.
-- [ ] Resolve ends a comment conversation and removes its canvas marker without deleting history; authorized open and resolved conversations remain available as AI context, while permanently deleted conversations do not.
-- [ ] Build a deterministic canvas-to-AI projection with object IDs, types, text, geometry, relationships, document summaries, and selected-path order.
-- [ ] Bound AI context by relevance without hiding the fact that off-screen canvas content exists.
-- [ ] Validate every AI tool call with Zod and re-check current membership and AI permission server-side at execution time.
-- [ ] Store AI request identifiers, tool decisions, affected object IDs, outcome, and failure status without storing secret credentials.
-- [ ] Add rate limits, budget limits, cancellation, timeout handling, and a visible retry path.
-- [ ] Treat canvas and comment content as untrusted input; prompt text cannot grant tools or permissions.
+- [x] Implement typed messaging that remains available independently of voice.
+- [x] Use the existing comment system as the only human/AI conversation surface; `@` establishes human or AI participants, following turns inherit that routing, and a later `@` redirects subsequent turns without rewriting history.
+- [x] Resolve ends a comment conversation and removes its canvas marker without deleting history; authorized open and resolved conversations remain available as AI context, while permanently deleted conversations do not.
+- [x] Build a deterministic canvas-to-AI projection with object IDs, types, text, geometry, relationships, document summaries, and selected-path order.
+- [x] Bound AI context by relevance without hiding the fact that off-screen canvas content exists.
+- [x] Validate every AI tool call with Zod and re-check current membership and AI permission server-side at execution time.
+- [x] Store AI request identifiers, tool decisions, affected object IDs, outcome, and failure status without storing secret credentials.
+- [x] Add rate limits, budget limits, cancellation, timeout handling, and a visible retry path.
+- [x] Treat canvas and comment content as untrusted input; prompt text cannot grant tools or permissions.
 
 ### Exit gate
 
-- [ ] Evaluation suite passes groundedness, permission, malformed-tool-call, prompt-injection, and cancellation cases at the approved threshold.
+- [x] Evaluation suite passes groundedness, permission, malformed-tool-call, prompt-injection, and cancellation cases at the approved threshold.
+
+Evidence: [Milestone 4 implementation and verification record](docs/implementation/milestone-04-ai-collaborator-permissions-and-typed-interaction.md), pull request [#9](https://github.com/jewilhel/Thinking-Canvas/pull/9), exact-head protected CI [run `32938748793`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/32938748793) for commit `1f9234c`, ready Git-backed Netlify deploy preview `6a8e88fa3512c700083c983b`, the Luna evaluation trace, and product-owner hosted acceptance and closure approval on 2026-08-26. The pull request remains open and unmerged; production was not changed.
 
 ## Milestone 5 — Reviewable AI changes
 
