@@ -6,13 +6,16 @@ import {
   Check,
   Eye,
   EyeOff,
+  LoaderCircle,
   MessageCircle,
   Pencil,
+  RotateCcw,
   Trash2,
   X,
 } from "lucide-react";
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -21,10 +24,13 @@ import {
 } from "react";
 
 import {
+  commentOrderedContextIds,
   commentTargetObjectIds,
+  type CommentCollaborator,
   type CommentPrompt,
   type CommentPromptKind,
   type CommentThread,
+  type CommentRecipient,
   type PromptResponseValue,
 } from "@/comments/comment-model";
 import { useCanvasComments } from "@/comments/use-canvas-comments";
@@ -40,6 +46,7 @@ const COMMENT_MARKER_SIZE = 52;
 const COMMENT_PREVIEW_WIDTH = 320;
 type CommentTarget = {
   targetObjectIds: string[];
+  orderedContextIds: string[];
   canvasAnchor: CanvasPoint | null;
 };
 
@@ -67,13 +74,39 @@ function initials(name: string) {
   ).toUpperCase();
 }
 
-function Avatar({ name, ai = false }: { name: string; ai?: boolean }) {
+const HUMAN_AVATAR_STYLES = [
+  "bg-sky-700",
+  "bg-emerald-700",
+  "bg-amber-700",
+  "bg-rose-700",
+  "bg-indigo-700",
+  "bg-teal-700",
+] as const;
+
+function humanAvatarStyle(identityKey: string) {
+  const index = [...identityKey].reduce(
+    (hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0,
+    0,
+  );
+  return HUMAN_AVATAR_STYLES[index % HUMAN_AVATAR_STYLES.length]!;
+}
+
+function Avatar({
+  name,
+  identityKey = name,
+  ai = false,
+}: {
+  name: string;
+  identityKey?: string;
+  ai?: boolean;
+}) {
   return (
     <span
       aria-hidden="true"
-      className={`grid size-9 shrink-0 place-items-center rounded-full border-2 border-white text-xs font-semibold text-white shadow-sm ${ai ? "bg-violet-600" : "bg-zinc-700"}`}
+      data-avatar-kind={ai ? "ai" : "human"}
+      className={`grid size-9 shrink-0 place-items-center rounded-full border-2 border-white text-xs font-semibold text-white shadow-sm ${ai ? "bg-violet-600" : humanAvatarStyle(identityKey)}`}
     >
-      {ai ? <Bot className="size-4" /> : initials(name)}
+      {ai ? "AI" : initials(name)}
     </span>
   );
 }
@@ -310,6 +343,20 @@ function promptLabel(kind: CommentPromptKind | null) {
   return "Reply";
 }
 
+function aiRunFailureMessage(errorCode: string | null) {
+  if (errorCode === "connected_path_not_connected")
+    return "The selected path is not connected in selection order.";
+  if (errorCode === "connected_path_ambiguous_path")
+    return "The selected path has an ambiguous connection.";
+  if (errorCode === "connected_path_stale_object")
+    return "The selected path includes an object that is no longer available.";
+  if (errorCode === "connected_path_cross_canvas_object")
+    return "The selected path includes an object from another canvas.";
+  if (errorCode === "rate_or_budget_limit")
+    return "The AI request limit is reached. Retry after the current five-minute window.";
+  return "The response could not be completed. Your comment remains saved.";
+}
+
 function PromptKindSelect({
   id,
   value,
@@ -423,23 +470,207 @@ function PromptControls({
   );
 }
 
+function RecipientComposer({
+  label,
+  value,
+  recipients,
+  collaborators,
+  pending,
+  inputRef,
+  placeholder,
+  onChange,
+  onRecipientsChange,
+}: {
+  label: string;
+  value: string;
+  recipients: CommentRecipient[];
+  collaborators: CommentCollaborator[];
+  pending: boolean;
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>;
+  placeholder: string;
+  onChange: (value: string) => void;
+  onRecipientsChange: (recipients: CommentRecipient[]) => void;
+}) {
+  const listboxId = useId();
+  const [query, setQuery] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const available = collaborators.filter(
+    (collaborator) =>
+      !recipients.some(
+        (recipient) =>
+          recipient.kind === collaborator.kind &&
+          recipient.key === collaborator.key,
+      ) &&
+      (query === null ||
+        collaborator.name.toLowerCase().includes(query.toLowerCase())),
+  );
+
+  function updateValue(next: string) {
+    onChange(next);
+    const match = next.match(/(?:^|\s)@([^\s@]*)$/);
+    setQuery(match ? match[1] : null);
+    setActiveIndex(0);
+  }
+
+  function select(collaborator: CommentCollaborator) {
+    onRecipientsChange([
+      ...recipients,
+      {
+        kind: collaborator.kind,
+        key: collaborator.key,
+        name: collaborator.name,
+      },
+    ]);
+    onChange(
+      value.replace(/(?:^|\s)@[^\s@]*$/, (match) =>
+        match.startsWith(" ") ? " " : "",
+      ),
+    );
+    setQuery(null);
+  }
+
+  return (
+    <div
+      role="combobox"
+      aria-label={`${label} recipients`}
+      aria-haspopup="listbox"
+      aria-controls={query !== null ? listboxId : undefined}
+      aria-expanded={query !== null}
+      className="min-w-0 flex-1"
+    >
+      {recipients.length ? (
+        <div className="mb-1 flex flex-wrap items-center gap-1 px-2">
+          <span className="text-xs font-medium text-zinc-500">To</span>
+          {recipients.map((recipient) => (
+            <span
+              key={`${recipient.kind}:${recipient.key}`}
+              className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-1 text-xs font-medium text-violet-900"
+            >
+              {recipient.kind === "ai" ? (
+                <Bot aria-hidden="true" className="size-3" />
+              ) : null}
+              {recipient.name}
+              <button
+                type="button"
+                disabled={pending}
+                aria-label={`Remove ${recipient.name}`}
+                className="rounded-full p-0.5 hover:bg-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500"
+                onClick={() =>
+                  onRecipientsChange(
+                    recipients.filter(
+                      (candidate) =>
+                        candidate.kind !== recipient.kind ||
+                        candidate.key !== recipient.key,
+                    ),
+                  )
+                }
+              >
+                <X aria-hidden="true" className="size-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <textarea
+        ref={inputRef}
+        aria-label={label}
+        aria-autocomplete="list"
+        value={value}
+        rows={1}
+        maxLength={100_000}
+        disabled={pending}
+        placeholder={placeholder}
+        className="h-10 min-h-10 w-full resize-none bg-transparent px-2 py-1 text-sm transition-[height] outline-none group-focus-within:h-24 placeholder:text-zinc-400"
+        onChange={(event) => updateValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (query === null) return;
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setQuery(null);
+          } else if (event.key === "ArrowDown" && available.length) {
+            event.preventDefault();
+            setActiveIndex((current) => (current + 1) % available.length);
+          } else if (event.key === "ArrowUp" && available.length) {
+            event.preventDefault();
+            setActiveIndex(
+              (current) => (current - 1 + available.length) % available.length,
+            );
+          } else if (event.key === "Enter" && available.length) {
+            event.preventDefault();
+            select(available[activeIndex] ?? available[0]!);
+          }
+        }}
+      />
+      {query !== null ? (
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label="Collaborators"
+          className="mx-1 mt-1 max-h-44 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-lg"
+        >
+          {available.length ? (
+            available.map((collaborator, index) => (
+              <button
+                key={`${collaborator.kind}:${collaborator.key}`}
+                type="button"
+                role="option"
+                aria-selected={index === activeIndex}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${index === activeIndex ? "bg-violet-100 text-violet-950" : "hover:bg-zinc-100"}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => select(collaborator)}
+              >
+                {collaborator.kind === "ai" ? (
+                  <Bot aria-hidden="true" className="size-4 text-violet-600" />
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className="size-4 rounded-full bg-zinc-500"
+                  />
+                )}
+                <span className="font-medium">{collaborator.name}</span>
+                <span className="ml-auto text-xs text-zinc-500">
+                  {collaborator.role === "primary_ai"
+                    ? "Primary AI"
+                    : collaborator.role}
+                </span>
+              </button>
+            ))
+          ) : (
+            <p className="px-3 py-2 text-sm text-zinc-500">
+              No collaborators found.
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ThreadBody({
   thread,
   userId,
   role,
   pending,
+  collaborators,
   onReply,
   onRespond,
   onPromptChange,
   onBodyChange,
   onStatus,
   onDelete,
+  onNavigateEvidence,
+  onCancelAiRun,
+  onRetryAiRun,
 }: {
   thread: CommentThread;
   userId: string;
   role: CanvasRole;
   pending: boolean;
-  onReply: (body: string) => Promise<void>;
+  collaborators: CommentCollaborator[];
+  onReply: (
+    body: string,
+    recipients: CommentRecipient[] | undefined,
+  ) => Promise<void>;
   onRespond: (
     prompt: CommentPrompt,
     value: PromptResponseValue,
@@ -448,8 +679,20 @@ function ThreadBody({
   onBodyChange: (body: string) => Promise<void>;
   onStatus: (status: "resolved" | "dismissed") => Promise<void>;
   onDelete: () => Promise<void>;
+  onNavigateEvidence: (objectId: string) => void;
+  onCancelAiRun: (runId: string) => Promise<void>;
+  onRetryAiRun: (runId: string) => Promise<void>;
 }) {
   const [reply, setReply] = useState("");
+  const inheritedRecipients = thread.activeParticipants.filter(
+    (participant) => participant.kind === "ai" || participant.key !== userId,
+  );
+  const [replyRecipients, setReplyRecipients] =
+    useState<CommentRecipient[]>(inheritedRecipients);
+  const [routingExplicit, setRoutingExplicit] = useState(false);
+  const effectiveReplyRecipients = routingExplicit
+    ? replyRecipients
+    : inheritedRecipients;
   const [editingBody, setEditingBody] = useState(false);
   const [bodyDraft, setBodyDraft] = useState(thread.body);
   const canComment = role !== "viewer";
@@ -458,10 +701,23 @@ function ThreadBody({
   const canDismiss = role === "owner" || thread.authorId === userId;
   const canDelete = role === "owner" || thread.authorId === userId;
   const canManagePrompt = thread.authorId === userId;
+  const latestRuns = [...thread.aiRuns]
+    .reverse()
+    .filter(
+      (run, index, runs) =>
+        runs.findIndex(
+          (candidate) => candidate.invokingReplyId === run.invokingReplyId,
+        ) === index,
+    )
+    .reverse();
   return (
     <>
       <div className="flex items-start gap-3">
-        <Avatar name={thread.authorName} ai={thread.authorKind === "ai"} />
+        <Avatar
+          name={thread.authorName}
+          identityKey={thread.authorKey}
+          ai={thread.authorKind === "ai"}
+        />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2">
             <p className="font-semibold text-zinc-900">{thread.authorName}</p>
@@ -554,22 +810,116 @@ function ThreadBody({
         />
       ) : null}
       {thread.replies.length ? (
-        <div className="mt-4 space-y-4 border-l-2 border-zinc-100 pl-4">
+        <div className="mt-4 space-y-4">
           {thread.replies.map((item) => (
-            <div key={item.id} className="flex items-start gap-3">
-              <Avatar name={item.authorName} />
-              <div>
+            <div
+              key={item.id}
+              data-comment-author-kind={item.authorKind}
+              className="flex items-start gap-3"
+            >
+              <Avatar
+                name={item.authorName}
+                identityKey={item.authorKey}
+                ai={item.authorKind === "ai"}
+              />
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-zinc-900">
                   {item.authorName}
                 </p>
                 <p className="mt-1 text-sm leading-6 whitespace-pre-wrap text-zinc-700">
                   {item.body}
                 </p>
+                {item.evidence.length ? (
+                  <div
+                    className="mt-2 flex flex-wrap gap-2"
+                    aria-label="Canvas evidence"
+                  >
+                    {item.evidence.map((reference) => (
+                      <Button
+                        key={reference.objectId}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onNavigateEvidence(reference.objectId)}
+                      >
+                        View {reference.label}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}
         </div>
       ) : null}
+      {latestRuns
+        .filter((run) => run.status !== "completed")
+        .map((run) => {
+          const active = [
+            "queued",
+            "projecting",
+            "thinking",
+            "tool_pending",
+            "applying",
+          ].includes(run.status);
+          return (
+            <div
+              key={run.id}
+              role="status"
+              aria-live="polite"
+              className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-950"
+            >
+              <div className="flex items-center gap-2 font-semibold">
+                {active ? (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="size-4 animate-spin motion-reduce:animate-none"
+                  />
+                ) : (
+                  <Bot aria-hidden="true" className="size-4" />
+                )}
+                {active
+                  ? run.status === "queued"
+                    ? "Thinking Canvas AI is queued…"
+                    : run.status === "projecting"
+                      ? "Thinking Canvas AI is reading the canvas…"
+                      : "Thinking Canvas AI is responding…"
+                  : run.status === "cancelled"
+                    ? "AI response cancelled"
+                    : "AI response failed"}
+              </div>
+              {run.status === "failed" ? (
+                <p className="mt-1 text-xs text-violet-800">
+                  {aiRunFailureMessage(run.errorCode)}
+                </p>
+              ) : null}
+              {run.requestedBy === userId ? (
+                <div className="mt-2 flex justify-end">
+                  {active ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void onCancelAiRun(run.id)}
+                    >
+                      <X aria-hidden="true" /> Cancel
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={thread.status !== "open"}
+                      onClick={() => void onRetryAiRun(run.id)}
+                    >
+                      <RotateCcw aria-hidden="true" /> Retry
+                    </Button>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       {thread.status === "open" && canComment && !thread.prompt ? (
         <form
           className="group mt-4 w-full rounded-2xl bg-zinc-100 p-3"
@@ -577,7 +927,13 @@ function ThreadBody({
             event.preventDefault();
             const body = reply.trim();
             if (!body) return;
-            void onReply(body).then(() => setReply(""));
+            void onReply(
+              body,
+              routingExplicit ? effectiveReplyRecipients : undefined,
+            ).then(() => {
+              setReply("");
+              setRoutingExplicit(false);
+            });
           }}
         >
           {canManagePrompt ? (
@@ -591,14 +947,21 @@ function ThreadBody({
             <p className="text-sm font-semibold text-zinc-700">Reply</p>
           )}
           <div className="mt-2 flex items-end gap-2">
-            <textarea
-              aria-label="Reply"
+            <RecipientComposer
+              label="Reply"
               value={reply}
-              rows={1}
-              maxLength={100_000}
-              placeholder="Write a reply"
-              className="h-10 min-h-10 flex-1 resize-none bg-transparent px-2 py-1 text-sm transition-[height] outline-none group-focus-within:h-24 placeholder:text-zinc-400"
-              onChange={(event) => setReply(event.target.value)}
+              recipients={routingExplicit ? replyRecipients : []}
+              collaborators={collaborators.filter(
+                (collaborator) =>
+                  collaborator.kind === "ai" || collaborator.key !== userId,
+              )}
+              pending={pending}
+              placeholder="Write a reply or type @"
+              onChange={setReply}
+              onRecipientsChange={(next) => {
+                setReplyRecipients(next);
+                setRoutingExplicit(true);
+              }}
             />
             <Button
               type="submit"
@@ -676,12 +1039,21 @@ export function CanvasComments({
   size,
   panelOpen,
   panelInvoker,
-  simulatedAiEnabled,
   onDismissPanel,
   onSelectTargets,
 }: Props) {
-  const { threads, loading, pending, error, refresh, execute } =
-    useCanvasComments(canvasId, supabaseUrl, supabasePublishableKey);
+  const {
+    threads,
+    collaboration,
+    loading,
+    pending,
+    error,
+    refresh,
+    execute,
+    setAiSettings,
+    cancelAiRun,
+    retryAiRun,
+  } = useCanvasComments(canvasId, supabaseUrl, supabasePublishableKey);
   const visibilityKey = `thinking-canvas:comments-visible:${userId}:${canvasId}`;
   const [visible, setVisible] = useState(
     () => window.localStorage.getItem(visibilityKey) !== "false",
@@ -693,6 +1065,9 @@ export function CanvasComments({
     null,
   );
   const [draft, setDraft] = useState("");
+  const [draftRecipients, setDraftRecipients] = useState<CommentRecipient[]>(
+    [],
+  );
   const [promptKind, setPromptKind] = useState<CommentPromptKind | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const placementRef = useRef<HTMLButtonElement>(null);
@@ -710,8 +1085,6 @@ export function CanvasComments({
   const selectedThread =
     threads.find((thread) => thread.id === selectedThreadId) ?? null;
   const canComment = canvasRole !== "viewer";
-  const canAuthorAi =
-    simulatedAiEnabled && (canvasRole === "owner" || canvasRole === "editor");
   useEffect(() => {
     window.localStorage.setItem(visibilityKey, String(visible));
   }, [visibilityKey, visible]);
@@ -732,10 +1105,29 @@ export function CanvasComments({
     }
     panelWasOpenRef.current = panelOpen;
   }, [canComment, panelOpen]);
+  useEffect(() => {
+    if (!selectedThreadId) return;
+
+    function dismissThreadOutside(event: PointerEvent) {
+      const target = event.target;
+      if (
+        !(target instanceof Node) ||
+        threadCardRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setSelectedThreadId(null);
+    }
+
+    document.addEventListener("pointerdown", dismissThreadOutside);
+    return () =>
+      document.removeEventListener("pointerdown", dismissThreadOutside);
+  }, [selectedThreadId]);
 
   function closeComposer() {
     setComposerOpen(false);
     setComposerTarget(null);
+    setDraftRecipients([]);
   }
 
   function beginComment() {
@@ -760,19 +1152,25 @@ export function CanvasComments({
       y: (screenPoint.y - viewport.y) / viewport.scale,
     };
     const object = topmostObjectAtPoint(objects, objectsById, canvasPoint);
+    const targetObjectIds = object
+      ? targetIds?.includes(object.id)
+        ? targetIds
+        : [object.id]
+      : [];
     setComposerTarget({
-      targetObjectIds: object
-        ? targetIds?.includes(object.id)
-          ? targetIds
-          : [object.id]
-        : [],
+      targetObjectIds,
+      orderedContextIds: commentOrderedContextIds(
+        objects,
+        selectedIds,
+        targetObjectIds,
+      ),
       canvasAnchor: object ? null : canvasPoint,
     });
     setPlacementMode(false);
     setComposerOpen(true);
   }
 
-  async function createThread(authorKind: "human" | "ai") {
+  async function createThread() {
     if (!composerTarget || !draft.trim()) return;
     const result = await execute({
       type: "comment.create",
@@ -780,10 +1178,21 @@ export function CanvasComments({
       canvasId,
       body: draft.trim(),
       targetObjectIds: composerTarget.targetObjectIds,
+      orderedContextIds: composerTarget.orderedContextIds,
       canvasAnchor: composerTarget.canvasAnchor,
       promptKind,
-      authorKind,
-      authorKey: authorKind === "ai" ? "primary-ai" : null,
+      authorKind: "human",
+      authorKey: null,
+      routing: draftRecipients.length
+        ? {
+            recipientUserIds: draftRecipients
+              .filter((recipient) => recipient.kind === "human")
+              .map((recipient) => recipient.key),
+            includePrimaryAi: draftRecipients.some(
+              (recipient) => recipient.kind === "ai",
+            ),
+          }
+        : undefined,
     });
     const id =
       result && typeof result === "object" && "comment_id" in result
@@ -796,12 +1205,26 @@ export function CanvasComments({
     if (id) focusThread(id);
   }
 
-  async function reply(thread: CommentThread, body: string) {
+  async function reply(
+    thread: CommentThread,
+    body: string,
+    recipients: CommentRecipient[] | undefined,
+  ) {
     await execute({
       type: "comment.reply",
       commandId: crypto.randomUUID(),
       commentId: thread.id,
       body,
+      routing: recipients
+        ? {
+            recipientUserIds: recipients
+              .filter((recipient) => recipient.kind === "human")
+              .map((recipient) => recipient.key),
+            includePrimaryAi: recipients.some(
+              (recipient) => recipient.kind === "ai",
+            ),
+          }
+        : undefined,
     });
   }
 
@@ -840,6 +1263,7 @@ export function CanvasComments({
       commentId: thread.id,
       status: next,
     });
+    setSelectedThreadId(null);
   }
 
   async function deleteThread(thread: CommentThread) {
@@ -935,59 +1359,64 @@ export function CanvasComments({
       ) : null}
 
       {visible
-        ? threads.map((thread) => {
-            const position = threadAnchor(thread, objectsById, viewport);
-            if (!position) return null;
-            const markerStyle = commentMarkerStyle(position, size);
-            const open = thread.status === "open";
-            const previewEnabled = selectedThreadId === null;
-            return (
-              <button
-                key={thread.id}
-                type="button"
-                aria-label={`Open comment by ${thread.authorName}`}
-                aria-expanded={selectedThreadId === thread.id}
-                className={`group absolute z-30 flex h-[3.25rem] w-[3.25rem] items-center gap-3 overflow-hidden rounded-[999px_999px_999px_0.55rem] border border-transparent bg-transparent p-2 text-left text-zinc-900 shadow-md transition-[width,height,border-color,background-color,border-radius,box-shadow] duration-200 ease-out focus-visible:ring-3 focus-visible:ring-violet-500 focus-visible:outline-none motion-reduce:transition-none ${previewEnabled ? "hover:h-24 hover:w-80 hover:rounded-[1.5rem_1.5rem_1.5rem_0.55rem] hover:border-zinc-200 hover:bg-white hover:shadow-xl focus-visible:h-24 focus-visible:w-80 focus-visible:rounded-[1.5rem_1.5rem_1.5rem_0.55rem] focus-visible:border-zinc-200 focus-visible:bg-white" : ""} ${open ? "text-violet-500" : "text-zinc-400 opacity-75"}`}
-                style={markerStyle}
-                onClick={() => {
-                  setPlacementMode(false);
-                  closeComposer();
-                  focusThread(thread.id);
-                }}
-              >
-                <MessageCircle
-                  aria-hidden="true"
-                  fill="white"
-                  strokeWidth={1.25}
-                  className={`pointer-events-none absolute inset-0 size-[3.25rem] text-zinc-200 transition-opacity duration-150 ${previewEnabled ? "group-hover:opacity-0 group-focus-visible:opacity-0" : ""}`}
-                />
-                <span className="relative z-10 shrink-0">
-                  <Avatar
-                    name={thread.authorName}
-                    ai={thread.authorKind === "ai"}
-                  />
-                </span>
-                <span
-                  className={`pointer-events-none min-w-0 flex-1 pr-2 opacity-0 transition-opacity delay-0 duration-100 motion-reduce:transition-none ${previewEnabled ? "group-hover:opacity-100 group-hover:delay-75 group-focus-visible:opacity-100" : ""}`}
+        ? threads
+            .filter((thread) => thread.status === "open")
+            .map((thread) => {
+              const position = threadAnchor(thread, objectsById, viewport);
+              if (!position) return null;
+              const markerStyle = commentMarkerStyle(position, size);
+              const previewEnabled = selectedThreadId === null;
+              return (
+                <button
+                  key={thread.id}
+                  type="button"
+                  aria-label={`Open comment by ${thread.authorName}`}
+                  aria-expanded={selectedThreadId === thread.id}
+                  className={`group absolute z-30 flex h-[3.25rem] w-[3.25rem] items-center gap-3 overflow-hidden rounded-[999px_999px_999px_0.55rem] border border-transparent bg-transparent p-2 text-left text-violet-500 shadow-md transition-[width,height,border-color,background-color,border-radius,box-shadow] duration-200 ease-out focus-visible:ring-3 focus-visible:ring-violet-500 focus-visible:outline-none motion-reduce:transition-none ${previewEnabled ? "hover:h-24 hover:w-80 hover:rounded-[1.5rem_1.5rem_1.5rem_0.55rem] hover:border-zinc-200 hover:bg-white hover:shadow-xl focus-visible:h-24 focus-visible:w-80 focus-visible:rounded-[1.5rem_1.5rem_1.5rem_0.55rem] focus-visible:border-zinc-200 focus-visible:bg-white" : ""}`}
+                  style={markerStyle}
+                  onClick={() => {
+                    setPlacementMode(false);
+                    closeComposer();
+                    focusThread(thread.id);
+                  }}
                 >
-                  <span className="flex min-w-0 items-baseline gap-2 whitespace-nowrap">
-                    <span className="truncate text-sm font-semibold text-zinc-900">
-                      {thread.authorName}
+                  <MessageCircle
+                    aria-hidden="true"
+                    fill="white"
+                    strokeWidth={1.25}
+                    className={`pointer-events-none absolute inset-0 size-[3.25rem] text-zinc-200 transition-opacity duration-150 ${previewEnabled ? "group-hover:opacity-0 group-focus-visible:opacity-0" : ""}`}
+                  />
+                  <span className="relative z-10 shrink-0">
+                    <Avatar
+                      name={thread.authorName}
+                      identityKey={thread.authorKey}
+                      ai={thread.authorKind === "ai"}
+                    />
+                  </span>
+                  <span
+                    className={`pointer-events-none min-w-0 flex-1 pr-2 opacity-0 transition-opacity delay-0 duration-100 motion-reduce:transition-none ${previewEnabled ? "group-hover:opacity-100 group-hover:delay-75 group-focus-visible:opacity-100" : ""}`}
+                  >
+                    <span className="flex min-w-0 items-baseline gap-2 whitespace-nowrap">
+                      <span className="truncate text-sm font-semibold text-zinc-900">
+                        {thread.authorName}
+                      </span>
+                      <span className="shrink-0 text-xs text-zinc-500">
+                        {commentRelativeTime(thread.createdAt)}
+                      </span>
                     </span>
-                    <span className="shrink-0 text-xs text-zinc-500">
-                      {commentRelativeTime(thread.createdAt)}
+                    <span className="mt-1 line-clamp-2 block text-sm leading-5 text-zinc-700">
+                      {thread.body}
                     </span>
                   </span>
-                  <span className="mt-1 line-clamp-2 block text-sm leading-5 text-zinc-700">
-                    {thread.body}
-                  </span>
-                </span>
-              </button>
-            );
-          })
+                </button>
+              );
+            })
         : null}
 
-      {composerOpen && composerPosition && composerCardPosition ? (
+      {composerOpen &&
+      composerTarget &&
+      composerPosition &&
+      composerCardPosition ? (
         <div
           ref={composerCardRef}
           role="dialog"
@@ -999,18 +1428,22 @@ export function CanvasComments({
             className="flex items-center gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              void createThread("human");
+              void createThread();
             }}
           >
-            <textarea
-              ref={composerRef}
-              aria-label="Comment"
-              rows={1}
-              maxLength={100_000}
+            <RecipientComposer
+              label="Comment"
               value={draft}
-              placeholder="Add a comment"
-              className="h-12 min-h-12 flex-1 resize-none rounded-2xl border-0 bg-transparent px-3 py-3 text-base leading-6 outline-none group-focus-within:h-24 placeholder:text-zinc-400"
-              onChange={(event) => setDraft(event.target.value)}
+              recipients={draftRecipients}
+              collaborators={(collaboration?.collaborators ?? []).filter(
+                (collaborator) =>
+                  collaborator.kind === "ai" || collaborator.key !== userId,
+              )}
+              pending={pending}
+              inputRef={composerRef}
+              placeholder="Add a comment or type @"
+              onChange={setDraft}
+              onRecipientsChange={setDraftRecipients}
             />
             <Button
               type="submit"
@@ -1024,6 +1457,12 @@ export function CanvasComments({
             </Button>
           </form>
           <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 px-2 pt-2 pb-1">
+            {composerTarget.orderedContextIds.length > 1 ? (
+              <p className="w-full text-xs text-violet-700">
+                AI path context: {composerTarget.orderedContextIds.length}
+                {" objects in selection order"}
+              </p>
+            ) : null}
             <label
               className="text-xs font-medium text-zinc-600"
               htmlFor="comment-prompt-kind"
@@ -1045,17 +1484,6 @@ export function CanvasComments({
               <option value="review">Review</option>
               <option value="rating">Rating 1–5</option>
             </select>
-            {canAuthorAi ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={pending || !draft.trim()}
-                onClick={() => void createThread("ai")}
-              >
-                <Bot aria-hidden="true" /> Add as preview AI
-              </Button>
-            ) : null}
             <Button
               className="ml-auto"
               type="button"
@@ -1095,12 +1523,18 @@ export function CanvasComments({
             userId={userId}
             role={canvasRole}
             pending={pending}
-            onReply={(body) => reply(selectedThread, body)}
+            collaborators={collaboration?.collaborators ?? []}
+            onReply={(body, recipients) =>
+              reply(selectedThread, body, recipients)
+            }
             onRespond={respond}
             onPromptChange={(kind) => setPrompt(selectedThread, kind)}
             onBodyChange={(body) => updateBody(selectedThread, body)}
             onStatus={(next) => status(selectedThread, next)}
             onDelete={() => deleteThread(selectedThread)}
+            onNavigateEvidence={(objectId) => onSelectTargets([objectId])}
+            onCancelAiRun={cancelAiRun}
+            onRetryAiRun={retryAiRun}
           />
         </div>
       ) : null}
@@ -1130,11 +1564,64 @@ export function CanvasComments({
               {visible ? "Hide markers" : "Show markers"}
             </Button>
           </div>
-          <p className="mt-3 rounded-xl bg-zinc-100 p-3 text-sm text-zinc-600">
-            {placementMode
-              ? "Click an object or anywhere on the canvas to add a comment."
-              : "Choose New comment to place another comment on an object or the canvas."}
-          </p>
+          {collaboration ? (
+            <div className="mt-3 rounded-xl border border-zinc-200 p-3">
+              <div className="flex items-center gap-2">
+                <Avatar name="Thinking Canvas AI" identityKey="primary-ai" ai />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-zinc-900">
+                    Thinking Canvas AI
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    Primary AI collaborator · communicates in comments
+                  </p>
+                </div>
+                {collaboration.aiAccess.canManage ? (
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={collaboration.aiAccess.enabled}
+                      disabled={pending}
+                      onChange={(event) =>
+                        void setAiSettings(
+                          event.target.checked,
+                          collaboration.aiAccess.configuredAuthority,
+                        )
+                      }
+                    />
+                    Enabled
+                  </label>
+                ) : (
+                  <span className="text-xs font-medium text-zinc-500">
+                    {collaboration.aiAccess.enabled ? "Enabled" : "Disabled"}
+                  </span>
+                )}
+              </div>
+              {collaboration.aiAccess.canManage ? (
+                <label className="mt-3 block text-xs font-medium text-zinc-600">
+                  Authority
+                  <select
+                    aria-label="AI authority"
+                    value={collaboration.aiAccess.configuredAuthority}
+                    disabled={pending}
+                    className="mt-1 h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-800"
+                    onChange={(event) =>
+                      void setAiSettings(
+                        collaboration.aiAccess.enabled,
+                        event.target
+                          .value as typeof collaboration.aiAccess.configuredAuthority,
+                      )
+                    }
+                  >
+                    <option value="comment_only">Comment only</option>
+                    <option value="propose_changes">Propose changes</option>
+                    <option value="edit_with_review">Edit with review</option>
+                    <option value="trusted_editor">Trusted editor</option>
+                  </select>
+                </label>
+              ) : null}
+            </div>
+          ) : null}
           {error ? (
             <div className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">
               <p role="alert">{error}</p>
@@ -1174,6 +1661,7 @@ export function CanvasComments({
                 >
                   <Avatar
                     name={thread.authorName}
+                    identityKey={thread.authorKey}
                     ai={thread.authorKind === "ai"}
                   />
                   <span className="min-w-0 flex-1">

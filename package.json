@@ -17,6 +17,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "ai:evaluate": "tsx scripts/evaluate-primary-ai.mts",
     "supabase:start": "supabase start -x studio,storage-api,imgproxy,edge-runtime,analytics,vector,pooler",
     "supabase:stop": "supabase stop",
     "db:reset": "supabase db reset --local",
@@ -74,6 +75,7 @@
     "prettier-plugin-tailwindcss": "0.8.1",
     "supabase": "2.113.0",
     "tailwindcss": "4.3.3",
+    "tsx": "4.20.5",
     "typescript": "5.9.3",
     "vitest": "4.1.10"
   },

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   commentCommandSchema,
   commentCreateCommandSchema,
+  commentOrderedContextIds,
   commentTargetObjectIds,
   parsePromptResponse,
 } from "@/comments/comment-model";
@@ -92,12 +93,26 @@ describe("comment model", () => {
     expect(commentTargetObjectIds(objects, ["a", "b"])).toBeNull();
   });
 
+  it("captures an ungrouped ordered selection without changing comment targets", () => {
+    const objects = [object("a"), object("b"), object("c", "g")];
+    expect(commentOrderedContextIds(objects, ["b", "a"], ["b"])).toEqual([
+      "b",
+      "a",
+    ]);
+    expect(commentOrderedContextIds(objects, ["b", "a"], ["c"])).toEqual([]);
+    expect(commentOrderedContextIds(objects, ["a"], ["a"])).toEqual([]);
+    expect(commentOrderedContextIds(objects, ["b", "missing"], ["b"])).toEqual(
+      [],
+    );
+  });
+
   it("requires exactly one object target set or finite canvas position", () => {
     const base = {
       type: "comment.create" as const,
       commandId: "71000000-0000-4000-8000-000000000001",
       canvasId: "20000000-0000-4000-8000-000000000001",
       body: "Placed feedback",
+      orderedContextIds: [],
       promptKind: null,
       authorKind: "human" as const,
       authorKey: null,

@@ -142,6 +142,31 @@ const duplicateCommand = commandBase.extend({
   }),
 });
 
+const trustedCommandFields = {
+  schemaVersion: true,
+  commandId: true,
+  canvasId: true,
+  actor: true,
+  origin: true,
+  issuedAt: true,
+} as const;
+
+export const productCanvasMutationSchema = z.discriminatedUnion("type", [
+  createCommand.omit(trustedCommandFields),
+  patchCommand.omit(trustedCommandFields),
+  moveCommand.omit(trustedCommandFields),
+  resizeCommand.omit(trustedCommandFields),
+  deleteCommand.omit(trustedCommandFields),
+  styleCommand.omit(trustedCommandFields),
+  endpointCommand.omit(trustedCommandFields),
+  reorderCommand.omit(trustedCommandFields),
+  groupCommand.omit(trustedCommandFields),
+  ungroupCommand.omit(trustedCommandFields),
+  duplicateCommand.omit(trustedCommandFields),
+]);
+
+export type ProductCanvasMutation = z.infer<typeof productCanvasMutationSchema>;
+
 export const productCanvasCommandSchema = z
   .discriminatedUnion("type", [
     createCommand,

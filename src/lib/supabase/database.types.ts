@@ -36,33 +36,49 @@ export type Database = {
     Tables: {
       ai_change_sets: {
         Row: {
+          ai_run_id: string | null
           canvas_id: string
           created_at: string
           id: string
           request_id: string | null
           requested_by: string
+          stage_fingerprint: string | null
           status: Database["public"]["Enums"]["ai_change_status"]
+          tool_call_key: string | null
           updated_at: string
         }
         Insert: {
+          ai_run_id?: string | null
           canvas_id: string
           created_at?: string
           id?: string
           request_id?: string | null
           requested_by: string
+          stage_fingerprint?: string | null
           status?: Database["public"]["Enums"]["ai_change_status"]
+          tool_call_key?: string | null
           updated_at?: string
         }
         Update: {
+          ai_run_id?: string | null
           canvas_id?: string
           created_at?: string
           id?: string
           request_id?: string | null
           requested_by?: string
+          stage_fingerprint?: string | null
           status?: Database["public"]["Enums"]["ai_change_status"]
+          tool_call_key?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "ai_change_sets_ai_run_id_fkey"
+            columns: ["ai_run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_runs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "ai_change_sets_canvas_id_fkey"
             columns: ["canvas_id"]
@@ -116,6 +132,293 @@ export type Database = {
             columns: ["change_set_id"]
             isOneToOne: false
             referencedRelation: "ai_change_sets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_rate_limit_windows: {
+        Row: {
+          canvas_id: string
+          input_tokens: number
+          output_tokens: number
+          request_count: number
+          updated_at: string
+          user_id: string
+          window_ends_at: string
+          window_started_at: string
+        }
+        Insert: {
+          canvas_id: string
+          input_tokens?: number
+          output_tokens?: number
+          request_count?: number
+          updated_at?: string
+          user_id: string
+          window_ends_at: string
+          window_started_at: string
+        }
+        Update: {
+          canvas_id?: string
+          input_tokens?: number
+          output_tokens?: number
+          request_count?: number
+          updated_at?: string
+          user_id?: string
+          window_ends_at?: string
+          window_started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_rate_limit_windows_canvas_id_fkey"
+            columns: ["canvas_id"]
+            isOneToOne: false
+            referencedRelation: "canvases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_rate_limit_windows_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_runs: {
+        Row: {
+          authority_snapshot: Database["public"]["Enums"]["ai_authority_level"]
+          budget_reserved_at: string | null
+          cancelled_at: string | null
+          canvas_id: string
+          created_at: string
+          error_code: string | null
+          id: string
+          idempotency_key: string
+          input_tokens: number | null
+          invoking_comment_id: string | null
+          invoking_reply_id: string | null
+          latency_ms: number | null
+          model: string | null
+          ordered_context_ids: string[]
+          output_comment_id: string | null
+          output_reply_id: string | null
+          output_tokens: number | null
+          projection_metadata: Json
+          provider_request_id: string | null
+          rate_window_started_at: string | null
+          requested_by: string
+          reserved_input_tokens: number | null
+          reserved_output_tokens: number | null
+          status: Database["public"]["Enums"]["ai_run_status"]
+          updated_at: string
+        }
+        Insert: {
+          authority_snapshot: Database["public"]["Enums"]["ai_authority_level"]
+          budget_reserved_at?: string | null
+          cancelled_at?: string | null
+          canvas_id: string
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          idempotency_key: string
+          input_tokens?: number | null
+          invoking_comment_id?: string | null
+          invoking_reply_id?: string | null
+          latency_ms?: number | null
+          model?: string | null
+          ordered_context_ids?: string[]
+          output_comment_id?: string | null
+          output_reply_id?: string | null
+          output_tokens?: number | null
+          projection_metadata?: Json
+          provider_request_id?: string | null
+          rate_window_started_at?: string | null
+          requested_by: string
+          reserved_input_tokens?: number | null
+          reserved_output_tokens?: number | null
+          status?: Database["public"]["Enums"]["ai_run_status"]
+          updated_at?: string
+        }
+        Update: {
+          authority_snapshot?: Database["public"]["Enums"]["ai_authority_level"]
+          budget_reserved_at?: string | null
+          cancelled_at?: string | null
+          canvas_id?: string
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          idempotency_key?: string
+          input_tokens?: number | null
+          invoking_comment_id?: string | null
+          invoking_reply_id?: string | null
+          latency_ms?: number | null
+          model?: string | null
+          ordered_context_ids?: string[]
+          output_comment_id?: string | null
+          output_reply_id?: string | null
+          output_tokens?: number | null
+          projection_metadata?: Json
+          provider_request_id?: string | null
+          rate_window_started_at?: string | null
+          requested_by?: string
+          reserved_input_tokens?: number | null
+          reserved_output_tokens?: number | null
+          status?: Database["public"]["Enums"]["ai_run_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_runs_canvas_id_fkey"
+            columns: ["canvas_id"]
+            isOneToOne: false
+            referencedRelation: "canvases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_runs_invoking_comment_id_fkey"
+            columns: ["invoking_comment_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_runs_invoking_reply_thread_fk"
+            columns: ["invoking_reply_id", "invoking_comment_id"]
+            isOneToOne: false
+            referencedRelation: "comment_replies"
+            referencedColumns: ["id", "comment_id"]
+          },
+          {
+            foreignKeyName: "ai_runs_output_comment_id_fkey"
+            columns: ["output_comment_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_runs_output_reply_thread_fk"
+            columns: ["output_reply_id", "output_comment_id"]
+            isOneToOne: false
+            referencedRelation: "comment_replies"
+            referencedColumns: ["id", "comment_id"]
+          },
+          {
+            foreignKeyName: "ai_runs_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_tool_executions: {
+        Row: {
+          affected_object_ids: string[]
+          call_key: string
+          change_set_id: string | null
+          command_id: string | null
+          comment_id: string | null
+          created_at: string
+          error_code: string | null
+          id: string
+          outcome: Database["public"]["Enums"]["ai_tool_outcome"]
+          run_id: string
+          tool_name: string
+          updated_at: string
+        }
+        Insert: {
+          affected_object_ids?: string[]
+          call_key: string
+          change_set_id?: string | null
+          command_id?: string | null
+          comment_id?: string | null
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          outcome?: Database["public"]["Enums"]["ai_tool_outcome"]
+          run_id: string
+          tool_name: string
+          updated_at?: string
+        }
+        Update: {
+          affected_object_ids?: string[]
+          call_key?: string
+          change_set_id?: string | null
+          command_id?: string | null
+          comment_id?: string | null
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          outcome?: Database["public"]["Enums"]["ai_tool_outcome"]
+          run_id?: string
+          tool_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_tool_executions_change_set_id_fkey"
+            columns: ["change_set_id"]
+            isOneToOne: false
+            referencedRelation: "ai_change_sets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_tool_executions_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_tool_executions_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      canvas_ai_settings: {
+        Row: {
+          authority: Database["public"]["Enums"]["ai_authority_level"]
+          canvas_id: string
+          changed_by: string
+          created_at: string
+          enabled: boolean
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          authority?: Database["public"]["Enums"]["ai_authority_level"]
+          canvas_id: string
+          changed_by: string
+          created_at?: string
+          enabled?: boolean
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          authority?: Database["public"]["Enums"]["ai_authority_level"]
+          canvas_id?: string
+          changed_by?: string
+          created_at?: string
+          enabled?: boolean
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "canvas_ai_settings_canvas_id_fkey"
+            columns: ["canvas_id"]
+            isOneToOne: true
+            referencedRelation: "canvases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "canvas_ai_settings_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -335,6 +638,64 @@ export type Database = {
           },
         ]
       }
+      comment_message_recipients: {
+        Row: {
+          comment_id: string
+          created_at: string
+          id: string
+          recipient_ai_key: string | null
+          recipient_kind: Database["public"]["Enums"]["comment_author_kind"]
+          recipient_user_id: string | null
+          reply_id: string | null
+          routing_version: number
+          source: Database["public"]["Enums"]["comment_recipient_source"]
+        }
+        Insert: {
+          comment_id: string
+          created_at?: string
+          id?: string
+          recipient_ai_key?: string | null
+          recipient_kind: Database["public"]["Enums"]["comment_author_kind"]
+          recipient_user_id?: string | null
+          reply_id?: string | null
+          routing_version: number
+          source: Database["public"]["Enums"]["comment_recipient_source"]
+        }
+        Update: {
+          comment_id?: string
+          created_at?: string
+          id?: string
+          recipient_ai_key?: string | null
+          recipient_kind?: Database["public"]["Enums"]["comment_author_kind"]
+          recipient_user_id?: string | null
+          reply_id?: string | null
+          routing_version?: number
+          source?: Database["public"]["Enums"]["comment_recipient_source"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comment_message_recipients_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_message_recipients_recipient_user_id_fkey"
+            columns: ["recipient_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_message_recipients_reply_thread_fk"
+            columns: ["reply_id", "comment_id"]
+            isOneToOne: false
+            referencedRelation: "comment_replies"
+            referencedColumns: ["id", "comment_id"]
+          },
+        ]
+      }
       comment_prompts: {
         Row: {
           comment_id: string
@@ -373,6 +734,8 @@ export type Database = {
       comment_replies: {
         Row: {
           author_id: string
+          author_key: string
+          author_kind: Database["public"]["Enums"]["comment_author_kind"]
           body: string
           client_command_id: string | null
           command_fingerprint: string | null
@@ -383,6 +746,8 @@ export type Database = {
         }
         Insert: {
           author_id: string
+          author_key: string
+          author_kind?: Database["public"]["Enums"]["comment_author_kind"]
           body: string
           client_command_id?: string | null
           command_fingerprint?: string | null
@@ -393,6 +758,8 @@ export type Database = {
         }
         Update: {
           author_id?: string
+          author_key?: string
+          author_kind?: Database["public"]["Enums"]["comment_author_kind"]
           body?: string
           client_command_id?: string | null
           command_fingerprint?: string | null
@@ -469,18 +836,21 @@ export type Database = {
           created_at: string
           id: string
           target_object_id: string
+          target_order: number
         }
         Insert: {
           comment_id: string
           created_at?: string
           id?: string
           target_object_id: string
+          target_order: number
         }
         Update: {
           comment_id?: string
           created_at?: string
           id?: string
           target_object_id?: string
+          target_order?: number
         }
         Relationships: [
           {
@@ -489,6 +859,64 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "comments"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      comment_thread_participants: {
+        Row: {
+          changed_by_reply_id: string | null
+          comment_id: string
+          created_at: string
+          id: string
+          participant_ai_key: string | null
+          participant_kind: Database["public"]["Enums"]["comment_author_kind"]
+          participant_user_id: string | null
+          routing_version: number
+          updated_at: string
+        }
+        Insert: {
+          changed_by_reply_id?: string | null
+          comment_id: string
+          created_at?: string
+          id?: string
+          participant_ai_key?: string | null
+          participant_kind: Database["public"]["Enums"]["comment_author_kind"]
+          participant_user_id?: string | null
+          routing_version: number
+          updated_at?: string
+        }
+        Update: {
+          changed_by_reply_id?: string | null
+          comment_id?: string
+          created_at?: string
+          id?: string
+          participant_ai_key?: string | null
+          participant_kind?: Database["public"]["Enums"]["comment_author_kind"]
+          participant_user_id?: string | null
+          routing_version?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comment_thread_participants_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_thread_participants_participant_user_id_fkey"
+            columns: ["participant_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_thread_participants_reply_thread_fk"
+            columns: ["changed_by_reply_id", "comment_id"]
+            isOneToOne: false
+            referencedRelation: "comment_replies"
+            referencedColumns: ["id", "comment_id"]
           },
         ]
       }
@@ -764,13 +1192,56 @@ export type Database = {
               sequence: number
             }[]
           }
+      cancel_ai_run: {
+        Args: { target_run_id: string }
+        Returns: {
+          cancelled_at: string
+          run_id: string
+          status: Database["public"]["Enums"]["ai_run_status"]
+        }[]
+      }
+      complete_ai_run: {
+        Args: {
+          target_body: string
+          target_input_tokens: number
+          target_latency_ms: number
+          target_model: string
+          target_output_tokens: number
+          target_projection_metadata: Json
+          target_provider_request_id: string
+          target_run_id: string
+        }
+        Returns: {
+          reply_id: string
+          run_id: string
+          status: Database["public"]["Enums"]["ai_run_status"]
+        }[]
+      }
+      complete_fake_ai_run: {
+        Args: {
+          target_body: string
+          target_projection_metadata: Json
+          target_provider_request_id: string
+          target_run_id: string
+        }
+        Returns: {
+          reply_id: string
+          run_id: string
+          status: Database["public"]["Enums"]["ai_run_status"]
+        }[]
+      }
       create_comment_reply: {
         Args: {
+          target_author_key?: string
+          target_author_kind?: Database["public"]["Enums"]["comment_author_kind"]
           target_body: string
           target_client_command_id: string
           target_comment_id: string
+          target_include_primary_ai?: boolean
+          target_recipient_user_ids?: string[]
         }
         Returns: {
+          ai_run_id: string
           created: boolean
           reply_id: string
         }[]
@@ -784,10 +1255,14 @@ export type Database = {
           target_body: string
           target_canvas_id: string
           target_client_command_id: string
+          target_include_primary_ai?: boolean
           target_object_ids?: string[]
+          target_ordered_context_ids?: string[]
           target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
+          target_recipient_user_ids?: string[]
         }
         Returns: {
+          ai_run_id: string
           comment_id: string
           created: boolean
         }[]
@@ -795,6 +1270,68 @@ export type Database = {
       delete_comment_thread: {
         Args: { target_comment_id: string }
         Returns: string
+      }
+      execute_ai_canvas_commands: {
+        Args: {
+          target_affected_object_ids: string[]
+          target_call_key: string
+          target_command_id: string
+          target_expected_sequence: number
+          target_requester_id: string
+          target_run_id: string
+          target_update_data: string
+        }
+        Returns: {
+          created: boolean
+          sequence: number
+          tool_execution_id: string
+        }[]
+      }
+      execute_ai_contextual_comment: {
+        Args: {
+          target_body: string
+          target_call_key: string
+          target_expected_sequence: number
+          target_object_ids: string[]
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: {
+          comment_id: string
+          created: boolean
+          tool_execution_id: string
+        }[]
+      }
+      fail_ai_run: {
+        Args: { target_error_code: string; target_run_id: string }
+        Returns: {
+          error_code: string
+          run_id: string
+          status: Database["public"]["Enums"]["ai_run_status"]
+        }[]
+      }
+      get_ai_canvas_execution_retry: {
+        Args: {
+          target_call_key: string
+          target_command_id: string
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: {
+          affected_object_ids: string[]
+          sequence: number
+          update_data: string
+        }[]
+      }
+      get_canvas_ai_access: {
+        Args: { target_canvas_id: string }
+        Returns: {
+          can_manage: boolean
+          configured_authority: Database["public"]["Enums"]["ai_authority_level"]
+          effective_authority: Database["public"]["Enums"]["ai_authority_level"]
+          enabled: boolean
+          version: number
+        }[]
       }
       publish_canvas_compaction: {
         Args: {
@@ -810,6 +1347,33 @@ export type Database = {
           version: number
         }[]
       }
+      record_ai_canvas_proposal: {
+        Args: {
+          target_affected_object_ids: string[]
+          target_call_key: string
+          target_expected_sequence: number
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: {
+          created: boolean
+          tool_execution_id: string
+        }[]
+      }
+      reserve_ai_run_budget: {
+        Args: {
+          target_input_tokens: number
+          target_output_tokens: number
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: {
+          canvas_request_count: number
+          reserved: boolean
+          user_request_count: number
+          window_ends_at: string
+        }[]
+      }
       respond_to_comment_prompt: {
         Args: {
           target_client_command_id: string
@@ -821,12 +1385,59 @@ export type Database = {
           response_id: string
         }[]
       }
+      retry_ai_run: {
+        Args: { target_idempotency_key: string; target_run_id: string }
+        Returns: {
+          created: boolean
+          run_id: string
+          status: Database["public"]["Enums"]["ai_run_status"]
+        }[]
+      }
+      set_canvas_ai_settings: {
+        Args: {
+          target_authority: Database["public"]["Enums"]["ai_authority_level"]
+          target_canvas_id: string
+          target_enabled: boolean
+          target_expected_version?: number
+        }
+        Returns: {
+          authority: Database["public"]["Enums"]["ai_authority_level"]
+          canvas_id: string
+          changed_by: string
+          created_at: string
+          enabled: boolean
+          updated_at: string
+          version: number
+        }[]
+      }
       set_comment_prompt: {
         Args: {
           target_comment_id: string
           target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
         }
         Returns: string
+      }
+      stage_ai_canvas_changes: {
+        Args: {
+          target_call_key: string
+          target_changes: Json
+          target_expected_sequence: number
+          target_requester_id: string
+          target_run_id: string
+          target_summary: string
+        }
+        Returns: {
+          change_set_id: string
+          created: boolean
+          object_change_count: number
+        }[]
+      }
+      start_ai_run: {
+        Args: { target_run_id: string }
+        Returns: {
+          run_id: string
+          status: Database["public"]["Enums"]["ai_run_status"]
+        }[]
       }
       transition_comment_status: {
         Args: {
@@ -841,15 +1452,36 @@ export type Database = {
       }
     }
     Enums: {
+      ai_authority_level:
+        | "comment_only"
+        | "propose_changes"
+        | "edit_with_review"
+        | "trusted_editor"
       ai_change_status:
         | "pending"
         | "applied"
         | "partially_reviewed"
         | "complete"
         | "failed"
+      ai_run_status:
+        | "queued"
+        | "projecting"
+        | "thinking"
+        | "tool_pending"
+        | "applying"
+        | "completed"
+        | "cancelled"
+        | "failed"
+      ai_tool_outcome:
+        | "pending"
+        | "succeeded"
+        | "denied"
+        | "cancelled"
+        | "failed"
       canvas_role: "owner" | "editor" | "commenter" | "viewer"
       comment_author_kind: "human" | "ai"
       comment_prompt_kind: "yes_no" | "review" | "rating"
+      comment_recipient_source: "explicit" | "inherited"
       comment_status: "open" | "resolved" | "dismissed"
       invitation_status: "pending" | "accepted" | "revoked" | "expired"
       review_decision_kind: "keep" | "revise" | "discard"
@@ -983,6 +1615,12 @@ export const Constants = {
   },
   public: {
     Enums: {
+      ai_authority_level: [
+        "comment_only",
+        "propose_changes",
+        "edit_with_review",
+        "trusted_editor",
+      ],
       ai_change_status: [
         "pending",
         "applied",
@@ -990,9 +1628,27 @@ export const Constants = {
         "complete",
         "failed",
       ],
+      ai_run_status: [
+        "queued",
+        "projecting",
+        "thinking",
+        "tool_pending",
+        "applying",
+        "completed",
+        "cancelled",
+        "failed",
+      ],
+      ai_tool_outcome: [
+        "pending",
+        "succeeded",
+        "denied",
+        "cancelled",
+        "failed",
+      ],
       canvas_role: ["owner", "editor", "commenter", "viewer"],
       comment_author_kind: ["human", "ai"],
       comment_prompt_kind: ["yes_no", "review", "rating"],
+      comment_recipient_source: ["explicit", "inherited"],
       comment_status: ["open", "resolved", "dismissed"],
       invitation_status: ["pending", "accepted", "revoked", "expired"],
       review_decision_kind: ["keep", "revise", "discard"],
