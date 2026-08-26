@@ -74,13 +74,39 @@ function initials(name: string) {
   ).toUpperCase();
 }
 
-function Avatar({ name, ai = false }: { name: string; ai?: boolean }) {
+const HUMAN_AVATAR_STYLES = [
+  "bg-sky-700",
+  "bg-emerald-700",
+  "bg-amber-700",
+  "bg-rose-700",
+  "bg-indigo-700",
+  "bg-teal-700",
+] as const;
+
+function humanAvatarStyle(identityKey: string) {
+  const index = [...identityKey].reduce(
+    (hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0,
+    0,
+  );
+  return HUMAN_AVATAR_STYLES[index % HUMAN_AVATAR_STYLES.length]!;
+}
+
+function Avatar({
+  name,
+  identityKey = name,
+  ai = false,
+}: {
+  name: string;
+  identityKey?: string;
+  ai?: boolean;
+}) {
   return (
     <span
       aria-hidden="true"
-      className={`grid size-9 shrink-0 place-items-center rounded-full border-2 border-white text-xs font-semibold text-white shadow-sm ${ai ? "bg-violet-600" : "bg-zinc-700"}`}
+      data-avatar-kind={ai ? "ai" : "human"}
+      className={`grid size-9 shrink-0 place-items-center rounded-full border-2 border-white text-xs font-semibold text-white shadow-sm ${ai ? "bg-violet-600" : humanAvatarStyle(identityKey)}`}
     >
-      {ai ? <Bot className="size-4" /> : initials(name)}
+      {ai ? "AI" : initials(name)}
     </span>
   );
 }
@@ -444,21 +470,10 @@ function PromptControls({
   );
 }
 
-function ToLine({ recipients }: { recipients: CommentRecipient[] }) {
-  if (!recipients.length) return null;
-  return (
-    <p className="mt-1 text-xs text-zinc-500">
-      <span className="font-semibold text-zinc-600">To </span>
-      {recipients.map((recipient) => recipient.name).join(", ")}
-    </p>
-  );
-}
-
 function RecipientComposer({
   label,
   value,
   recipients,
-  inherited = false,
   collaborators,
   pending,
   inputRef,
@@ -469,7 +484,6 @@ function RecipientComposer({
   label: string;
   value: string;
   recipients: CommentRecipient[];
-  inherited?: boolean;
   collaborators: CommentCollaborator[];
   pending: boolean;
   inputRef?: React.RefObject<HTMLTextAreaElement | null>;
@@ -526,9 +540,7 @@ function RecipientComposer({
     >
       {recipients.length ? (
         <div className="mb-1 flex flex-wrap items-center gap-1 px-2">
-          <span className="text-xs font-medium text-zinc-500">
-            {inherited ? "To (inherited)" : "To"}
-          </span>
+          <span className="text-xs font-medium text-zinc-500">To</span>
           {recipients.map((recipient) => (
             <span
               key={`${recipient.kind}:${recipient.key}`}
@@ -701,7 +713,11 @@ function ThreadBody({
   return (
     <>
       <div className="flex items-start gap-3">
-        <Avatar name={thread.authorName} ai={thread.authorKind === "ai"} />
+        <Avatar
+          name={thread.authorName}
+          identityKey={thread.authorKey}
+          ai={thread.authorKind === "ai"}
+        />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2">
             <p className="font-semibold text-zinc-900">{thread.authorName}</p>
@@ -714,7 +730,6 @@ function ThreadBody({
               })}
             </time>
           </div>
-          <ToLine recipients={thread.recipients} />
           {editingBody ? (
             <form
               className="mt-2"
@@ -795,15 +810,22 @@ function ThreadBody({
         />
       ) : null}
       {thread.replies.length ? (
-        <div className="mt-4 space-y-4 border-l-2 border-zinc-100 pl-4">
+        <div className="mt-4 space-y-4">
           {thread.replies.map((item) => (
-            <div key={item.id} className="flex items-start gap-3">
-              <Avatar name={item.authorName} ai={item.authorKind === "ai"} />
-              <div>
+            <div
+              key={item.id}
+              data-comment-author-kind={item.authorKind}
+              className="flex items-start gap-3"
+            >
+              <Avatar
+                name={item.authorName}
+                identityKey={item.authorKey}
+                ai={item.authorKind === "ai"}
+              />
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-zinc-900">
                   {item.authorName}
                 </p>
-                <ToLine recipients={item.recipients} />
                 <p className="mt-1 text-sm leading-6 whitespace-pre-wrap text-zinc-700">
                   {item.body}
                 </p>
@@ -929,9 +951,6 @@ function ThreadBody({
               label="Reply"
               value={reply}
               recipients={effectiveReplyRecipients}
-              inherited={
-                !routingExplicit && effectiveReplyRecipients.length > 0
-              }
               collaborators={collaborators.filter(
                 (collaborator) =>
                   collaborator.kind === "ai" || collaborator.key !== userId,
@@ -1352,6 +1371,7 @@ export function CanvasComments({
                   <span className="relative z-10 shrink-0">
                     <Avatar
                       name={thread.authorName}
+                      identityKey={thread.authorKey}
                       ai={thread.authorKind === "ai"}
                     />
                   </span>
@@ -1526,15 +1546,10 @@ export function CanvasComments({
               {visible ? "Hide markers" : "Show markers"}
             </Button>
           </div>
-          <p className="mt-3 rounded-xl bg-zinc-100 p-3 text-sm text-zinc-600">
-            {placementMode
-              ? "Click an object or anywhere on the canvas to add a comment."
-              : "Choose New comment to place another comment on an object or the canvas."}
-          </p>
           {collaboration ? (
             <div className="mt-3 rounded-xl border border-zinc-200 p-3">
               <div className="flex items-center gap-2">
-                <Avatar name="Thinking Canvas AI" ai />
+                <Avatar name="Thinking Canvas AI" identityKey="primary-ai" ai />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-zinc-900">
                     Thinking Canvas AI
@@ -1628,6 +1643,7 @@ export function CanvasComments({
                 >
                   <Avatar
                     name={thread.authorName}
+                    identityKey={thread.authorKey}
                     ai={thread.authorKind === "ai"}
                   />
                   <span className="min-w-0 flex-1">

@@ -334,7 +334,7 @@ test("uses dismissible responsive panels with focus containment, help, and true 
   await expect(commentsPanel).toContainText(
     "Attach feedback to a selection, an object, or anywhere on the canvas.",
   );
-  await expect(commentsPanel).toContainText(
+  await expect(commentsPanel).not.toContainText(
     "Click an object or anywhere on the canvas to add a comment.",
   );
   await expect(page.getByTestId("product-pending-count")).toHaveText(

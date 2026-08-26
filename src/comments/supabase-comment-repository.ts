@@ -67,7 +67,9 @@ export class SupabaseCommentRepository {
         .order("id", { ascending: true }),
       this.supabase
         .from("comment_replies")
-        .select("id,comment_id,author_id,body,created_at,updated_at")
+        .select(
+          "id,comment_id,author_id,author_kind,author_key,body,created_at,updated_at",
+        )
         .in("comment_id", commentIds)
         .order("created_at", { ascending: true })
         .order("id", { ascending: true }),

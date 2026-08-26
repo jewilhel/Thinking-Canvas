@@ -292,21 +292,33 @@ test("addresses the primary AI once and inherits it on the next reply", async ({
   await comment.fill("Please inspect this canvas direction.");
   await composer.getByRole("button", { name: "Submit comment" }).click();
   const thread = page.getByRole("dialog", { name: "Comment thread" });
-  await expect(thread.getByText("To Thinking Canvas AI")).toBeVisible();
+  await expect(
+    thread.getByRole("button", { name: "Remove Thinking Canvas AI" }),
+  ).toBeVisible();
+  await expect(thread.getByText("To (inherited)")).toHaveCount(0);
   const groundedReply = thread.getByText(
     "I inspected 1 canvas objects and 1 comment conversations.",
   );
   await expect(groundedReply).toHaveCount(1);
+  const aiReply = thread.locator('[data-comment-author-kind="ai"]').filter({
+    hasText: "I inspected 1 canvas objects and 1 comment conversations.",
+  });
+  await expect(
+    aiReply.getByText("Thinking Canvas AI", { exact: true }),
+  ).toBeVisible();
+  await expect(aiReply.locator('[data-avatar-kind="ai"]')).toHaveText("AI");
+  await expect(aiReply.getByText("To Thinking Canvas AI")).toHaveCount(0);
   await thread
     .getByRole("button", { name: /View rectangle: New idea/ })
     .click();
   await expect(page.getByTestId("selection-status")).toContainText("rectangle");
-  await expect(thread.getByText("To (inherited)")).toBeVisible();
   await thread
     .getByRole("textbox", { name: "Reply", exact: true })
     .fill("Please continue with the same context.");
   await thread.getByRole("button", { name: "Send reply" }).click();
-  await expect(thread.getByText("To Thinking Canvas AI")).toHaveCount(2);
+  await expect(
+    thread.getByRole("button", { name: "Remove Thinking Canvas AI" }),
+  ).toBeVisible();
   await expect(groundedReply).toHaveCount(2);
   const bounds = await page
     .getByRole("dialog", { name: "Comment thread" })
@@ -370,7 +382,10 @@ test("creates a linked AI contextual comment through the existing comment workfl
   await expect(
     contextualThread.getByText("Thinking Canvas AI", { exact: true }).first(),
   ).toBeVisible();
-  await expect(contextualThread.getByText("To Owner Example")).toBeVisible();
+  await expect(contextualThread.locator('[data-avatar-kind="ai"]')).toHaveText(
+    "AI",
+  );
+  await expect(contextualThread.getByText("To Owner Example")).toHaveCount(0);
 
   await page.reload();
   await page.getByRole("button", { name: "Comments", exact: true }).click();
@@ -803,8 +818,10 @@ test("filters human collaborators and redirects inherited recipients to humans a
   await composer.getByRole("button", { name: "Submit comment" }).click();
 
   const thread = page.getByRole("dialog", { name: "Comment thread" });
-  await expect(thread.getByText("To Editor Example")).toBeVisible();
-  await expect(thread.getByText("To (inherited)")).toBeVisible();
+  await expect(
+    thread.getByRole("button", { name: "Remove Editor Example" }),
+  ).toBeVisible();
+  await expect(thread.getByText("To (inherited)")).toHaveCount(0);
   await thread.getByRole("button", { name: "Remove Editor Example" }).click();
   const reply = thread.getByRole("textbox", { name: "Reply", exact: true });
   await reply.fill("@com");
@@ -820,11 +837,11 @@ test("filters human collaborators and redirects inherited recipients to humans a
   );
   await thread.getByRole("button", { name: "Send reply" }).click();
 
-  await expect(thread.getByText("To Editor Example")).toHaveCount(1);
   await expect(
-    thread.getByText(
-      /To (?:Commenter Example, Thinking Canvas AI|Thinking Canvas AI, Commenter Example)/,
-    ),
+    thread.getByRole("button", { name: "Remove Commenter Example" }),
+  ).toBeVisible();
+  await expect(
+    thread.getByRole("button", { name: "Remove Thinking Canvas AI" }),
   ).toBeVisible();
   await expect(
     thread.getByText(
