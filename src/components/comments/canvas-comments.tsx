@@ -950,7 +950,7 @@ function ThreadBody({
             <RecipientComposer
               label="Reply"
               value={reply}
-              recipients={effectiveReplyRecipients}
+              recipients={routingExplicit ? replyRecipients : []}
               collaborators={collaborators.filter(
                 (collaborator) =>
                   collaborator.kind === "ai" || collaborator.key !== userId,

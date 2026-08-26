@@ -294,7 +294,7 @@ test("addresses the primary AI once and inherits it on the next reply", async ({
   const thread = page.getByRole("dialog", { name: "Comment thread" });
   await expect(
     thread.getByRole("button", { name: "Remove Thinking Canvas AI" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(thread.getByText("To (inherited)")).toHaveCount(0);
   const groundedReply = thread.getByText(
     "I inspected 1 canvas objects and 1 comment conversations.",
@@ -318,7 +318,7 @@ test("addresses the primary AI once and inherits it on the next reply", async ({
   await thread.getByRole("button", { name: "Send reply" }).click();
   await expect(
     thread.getByRole("button", { name: "Remove Thinking Canvas AI" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(groundedReply).toHaveCount(2);
   const bounds = await page
     .getByRole("dialog", { name: "Comment thread" })
@@ -820,9 +820,8 @@ test("filters human collaborators and redirects inherited recipients to humans a
   const thread = page.getByRole("dialog", { name: "Comment thread" });
   await expect(
     thread.getByRole("button", { name: "Remove Editor Example" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(thread.getByText("To (inherited)")).toHaveCount(0);
-  await thread.getByRole("button", { name: "Remove Editor Example" }).click();
   const reply = thread.getByRole("textbox", { name: "Reply", exact: true });
   await reply.fill("@com");
   await thread
