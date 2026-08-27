@@ -349,6 +349,7 @@ begin
   where change_set.id = target_change_set_id
   for update;
   if not found or target_change_set.ai_run_id is null
+    or target_change_set.source_comment_id is null
     or target_change_set.requested_by <> target_requester_id
     or target_change_set.finalization_fingerprint is null then
     raise exception 'AI review stage is not accessible.' using errcode = '42501';
