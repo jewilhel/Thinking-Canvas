@@ -9,6 +9,7 @@ import {
 } from "@/ai/collaborator-contract";
 import {
   AI_CANVAS_DESIGN_TOKENS,
+  AiVisualQualityError,
   assertNoNewDeterministicVisualDefects,
 } from "@/ai/visual-grounding";
 import type { FakeAiScenario } from "@/ai/fake-collaborator-gateway";
@@ -17,6 +18,7 @@ import {
   createPrimaryAiGateway,
   parsePrimaryAiProviderEnvironment,
 } from "@/ai/primary-ai-gateway-factory";
+import { AiProviderOutputError } from "@/ai/primary-ai-gateway";
 import { estimateAiInputTokens } from "@/ai/run-budgets";
 import { listCanvasObjectsV2 } from "@/canvas/canvas-document";
 import {
@@ -47,6 +49,7 @@ import {
 } from "@/ai/trusted-execution";
 import {
   validateCanvasProposal,
+  validateCanvasReviewRefinement,
   validateCanvasReviewStage,
   validateReviewExplanations,
 } from "@/ai/proposals";
@@ -415,11 +418,16 @@ export async function completeAiRun(
   }> = [];
   const replySections = [gatewayResult.reply.body];
   for (const toolCall of gatewayResult.toolCalls) {
-    const validatedTool = validateAiToolRequest({
-      authority: currentAuthority,
-      toolName: toolCall.toolName,
-      arguments: toolCall.arguments,
-    });
+    let validatedTool: ReturnType<typeof validateAiToolRequest>;
+    try {
+      validatedTool = validateAiToolRequest({
+        authority: currentAuthority,
+        toolName: toolCall.toolName,
+        arguments: toolCall.arguments,
+      });
+    } catch {
+      throw new AiProviderOutputError();
+    }
     if (validatedTool.toolName === "execute_canvas_commands") {
       options.onStatus?.("applying");
       const toolArguments = executeArgumentsSchema.parse(
@@ -644,7 +652,7 @@ export async function completeAiRun(
           signal: options.signal,
         });
         if (visualReview?.status === "fail") {
-          throw new AiRunConflictError(
+          throw new AiVisualQualityError(
             "The targeted visual quality check found a blocking layout defect.",
           );
         }
@@ -661,11 +669,12 @@ export async function completeAiRun(
           visualReview?.status === "refine" &&
           visualReview.replacementCommands
         ) {
-          const refinedStage = validateCanvasReviewStage({
+          const refinedStage = validateCanvasReviewRefinement({
             document: compacted.document,
             canvasId: run.canvas_id,
             actorId: run.requested_by,
-            commands: visualReview.replacementCommands,
+            proposedCommands: commands,
+            refinementCommands: visualReview.replacementCommands,
           });
           assertReviewChangesWithinScope({
             scope: reviewScope,
@@ -719,7 +728,7 @@ export async function completeAiRun(
           captureCount = 6;
           feedbackPassCount = 2;
           if (!confirmation || confirmation.status !== "pass") {
-            throw new AiRunConflictError(
+            throw new AiVisualQualityError(
               "The bounded visual refinement did not resolve the layout defect.",
             );
           }
@@ -744,6 +753,7 @@ export async function completeAiRun(
       } catch (error) {
         if (
           error instanceof AiRunConflictError ||
+          error instanceof AiVisualQualityError ||
           (error instanceof DOMException && error.name === "AbortError")
         ) {
           throw error;

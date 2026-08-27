@@ -172,6 +172,21 @@ export function validateCanvasReviewStage(input: {
   };
 }
 
+export function validateCanvasReviewRefinement(input: {
+  document: Y.Doc;
+  canvasId: string;
+  actorId: string;
+  proposedCommands: unknown[];
+  refinementCommands: unknown[];
+}) {
+  return validateCanvasReviewStage({
+    document: input.document,
+    canvasId: input.canvasId,
+    actorId: input.actorId,
+    commands: [...input.proposedCommands, ...input.refinementCommands],
+  });
+}
+
 export function validateReviewExplanations(input: {
   reviewStage: ValidatedCanvasReviewStage;
   explanations: ReviewObjectExplanation[];

@@ -355,6 +355,12 @@ function aiRunFailureMessage(errorCode: string | null) {
     return "The selected path includes an object from another canvas.";
   if (errorCode === "rate_or_budget_limit")
     return "The AI request limit is reached. Retry after the current five-minute window.";
+  if (errorCode === "provider_output_invalid")
+    return "The AI returned an invalid structured response. Retry the request.";
+  if (errorCode === "visual_quality_blocked")
+    return "The visual quality check could not produce a safe reviewable result.";
+  if (errorCode === "review_stage_failed")
+    return "The review changes could not be staged against the current canvas. Refresh and retry.";
   return "The response could not be completed. Your comment remains saved.";
 }
 

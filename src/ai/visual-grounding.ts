@@ -39,6 +39,13 @@ export const aiObjectVisualFactsSchema = z.strictObject({
   overlappingObjectIds: z.array(z.uuid()).max(10_000),
 });
 
+export class AiVisualQualityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AiVisualQualityError";
+  }
+}
+
 export const aiProjectionObjectStateSchema = canvasObjectV2Schema;
 
 function textForObject(object: CanvasObjectV2) {
@@ -246,7 +253,7 @@ export function assertNoNewDeterministicVisualDefects(input: {
     targetObjectIds: input.targetObjectIds,
   }).filter((issue) => !before.has(issue));
   if (introduced.length) {
-    throw new Error(
+    throw new AiVisualQualityError(
       `The review change introduces deterministic visual defects: ${introduced.join(", ")}`,
     );
   }

@@ -6,6 +6,13 @@ import type {
 } from "@/ai/collaborator-contract";
 import type { AiToolName } from "@/ai/tool-registry";
 
+export class AiProviderOutputError extends Error {
+  constructor() {
+    super("The AI provider returned an invalid structured response.");
+    this.name = "AiProviderOutputError";
+  }
+}
+
 export type FakeAiScenario = "complete" | "cancelled" | "failed";
 
 export type PrimaryAiGatewayResult =

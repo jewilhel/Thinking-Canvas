@@ -3,14 +3,13 @@ import { z } from "zod";
 import {
   AiRunAccessError,
   AiRunConflictError,
-  AiRunLimitError,
   cancelAiRun,
   completeAiRun,
   failAiRun,
   retryAiRun,
 } from "@/ai/collaborator-run-service";
-import { ConnectedPathError } from "@/ai/grounding";
 import { resolveDeterministicTestScenario } from "@/ai/fake-scenario";
+import { privacySafeAiRunErrorCode } from "@/ai/run-failure";
 
 const bodySchema = z.strictObject({ runId: z.uuid() });
 
@@ -52,14 +51,9 @@ export async function POST(
         const aborted =
           error instanceof DOMException && error.name === "AbortError";
         if (!aborted) {
-          await failAiRun(
-            parsed.data.runId,
-            error instanceof ConnectedPathError
-              ? `connected_path_${error.code}`
-              : error instanceof AiRunLimitError
-                ? "rate_or_budget_limit"
-                : "provider_run_failed",
-          ).catch(() => undefined);
+          const errorCode = privacySafeAiRunErrorCode(error);
+          console.error("AI collaborator run failed.", { errorCode });
+          await failAiRun(parsed.data.runId, errorCode).catch(() => undefined);
         }
         send({
           status: aborted ? "cancelled" : "failed",

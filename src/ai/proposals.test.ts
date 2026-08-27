@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   validateCanvasProposal,
+  validateCanvasReviewRefinement,
   validateCanvasReviewStage,
   validateReviewExplanations,
 } from "@/ai/proposals";
@@ -179,5 +180,75 @@ describe("validated canvas proposals", () => {
         ],
       }),
     ).toThrow("The target object does not exist");
+  });
+
+  it("layers visual adjustments after newly proposed objects exist", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const createdId = "61000000-0000-4000-8000-000000000002";
+    const review = validateCanvasReviewRefinement({
+      document,
+      canvasId,
+      actorId,
+      proposedCommands: [
+        {
+          type: "object.create",
+          payload: {
+            object: {
+              schemaVersion: 2,
+              id: createdId,
+              canvasId,
+              createdBy: actorId,
+              createdAt: "2026-08-26T00:00:00.000Z",
+              updatedAt: "2026-08-26T00:00:00.000Z",
+              type: "shape",
+              shape: "rectangle",
+              text: "Blue",
+              geometry: {
+                x: 100,
+                y: 100,
+                width: 160,
+                height: 96,
+                rotation: 0,
+              },
+              style: {
+                fill: "#bfdbfe",
+                outline: "#1e3a8a",
+                outlineWidth: 2,
+                fontFamily: "Inter, sans-serif",
+                fontSize: 16,
+                textColor: "#172554",
+              },
+            },
+          },
+        },
+      ],
+      refinementCommands: [
+        {
+          type: "object.move",
+          payload: { objectId: createdId, x: 140, y: 120 },
+        },
+        {
+          type: "object.resize",
+          payload: { objectId: createdId, width: 200, height: 120 },
+        },
+      ],
+    });
+
+    expect(review).toMatchObject({
+      affectedObjectIds: [createdId],
+      commandTypes: ["object.create", "object.move", "object.resize"],
+      objectChanges: [
+        {
+          objectId: createdId,
+          beforeState: { object: null },
+          afterState: {
+            object: {
+              geometry: { x: 140, y: 120, width: 200, height: 120 },
+            },
+          },
+        },
+      ],
+    });
+    expect(listCanvasObjectsV2(document)).toEqual([]);
   });
 });

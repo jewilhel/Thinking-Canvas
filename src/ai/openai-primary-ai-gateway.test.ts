@@ -236,7 +236,7 @@ describe("OpenAiPrimaryAiGateway", () => {
         projection,
         allowedToolNames: allowedAiToolNames("comment_only"),
       }),
-    ).rejects.toThrow("outside current authority");
+    ).rejects.toThrow("invalid structured response");
   });
 
   it("fails before provider access when already cancelled", async () => {
@@ -293,6 +293,7 @@ describe("OpenAiPrimaryAiGateway", () => {
     );
     expect(JSON.stringify(body.input)).toContain("data:image/png;base64,after");
     expect(body.store).toBe(false);
+    expect(body.instructions).toContain("applied after the proposed commands");
   });
 
   it("parses one bounded visual refinement through the canonical command schema", async () => {
