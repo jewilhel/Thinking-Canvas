@@ -53,7 +53,10 @@ import {
   validateCanvasReviewStage,
   validateReviewExplanations,
 } from "@/ai/proposals";
-import { materializeReviewNewShapes } from "@/ai/new-shape-stage";
+import {
+  coalesceReviewNewShapeToolCalls,
+  materializeReviewNewShapes,
+} from "@/ai/new-shape-stage";
 import {
   renderTargetedCanvasCapture,
   TARGETED_CAPTURE_RENDERER_VERSION,
@@ -375,13 +378,27 @@ export async function completeAiRun(
     throw new AiRunConflictError("The AI collaborator run did not complete.");
   }
   const objectIds = new Set(projection.objects.map((object) => object.id));
+  let toolCalls: typeof gatewayResult.toolCalls;
+  try {
+    toolCalls = coalesceReviewNewShapeToolCalls(gatewayResult.toolCalls);
+  } catch {
+    throw new AiProviderOutputError();
+  }
+  const isNewShapeReview = toolCalls.some(
+    (toolCall) => toolCall.toolName === "stage_new_shapes",
+  );
+  const groundedEvidence = gatewayResult.reply.evidence.filter((reference) =>
+    objectIds.has(reference.objectId),
+  );
+  const groundedContextualTargetObjectIds =
+    gatewayResult.reply.contextualTargetObjectIds.filter((objectId) =>
+      objectIds.has(objectId),
+    );
   if (
-    gatewayResult.reply.evidence.some(
-      (reference) => !objectIds.has(reference.objectId),
-    ) ||
-    gatewayResult.reply.contextualTargetObjectIds.some(
-      (objectId) => !objectIds.has(objectId),
-    )
+    !isNewShapeReview &&
+    (groundedEvidence.length !== gatewayResult.reply.evidence.length ||
+      groundedContextualTargetObjectIds.length !==
+        gatewayResult.reply.contextualTargetObjectIds.length)
   ) {
     throw new AiRunConflictError(
       "The AI response referenced an unavailable object.",
@@ -417,7 +434,7 @@ export async function completeAiRun(
     created: boolean;
   }> = [];
   const replySections = [gatewayResult.reply.body];
-  for (const toolCall of gatewayResult.toolCalls) {
+  for (const toolCall of toolCalls) {
     let validatedTool: ReturnType<typeof validateAiToolRequest>;
     try {
       validatedTool = validateAiToolRequest({
@@ -889,7 +906,7 @@ export async function completeAiRun(
       commentThreadCount: projection.commentThreads.length,
       serializedBytes: projection.serializedBytes,
       lastSequence: compacted.lastSequence,
-      evidence: gatewayResult.reply.evidence,
+      evidence: groundedEvidence,
       inspectionTools: ["inspect_canvas_objects", "inspect_comment_threads"],
       allowedTools: allowedToolNames,
       providerTelemetry: gatewayResult.telemetry ?? null,

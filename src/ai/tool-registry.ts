@@ -176,7 +176,7 @@ export const AI_TOOL_REGISTRY = {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
-      "Create one or more new shapes as one tentative reviewable change set. Use rectangle shapes for sticky notes. Supply local keys rather than object IDs; the server creates durable identities and metadata.",
+      "Create every new shape requested in this turn as one tentative reviewable change set and one tool call. Use rectangle shapes for sticky notes. Supply local keys rather than object IDs; the server creates durable identities and metadata.",
     argumentsSchema: reviewNewShapesArgumentsSchema,
   },
   execute_canvas_commands: {

@@ -1,3 +1,4 @@
+import type { AiToolCall } from "@/ai/collaborator-contract";
 import type { ReviewObjectExplanation } from "@/ai/proposals";
 import { stableAiToolCommandId } from "@/ai/trusted-execution";
 import {
@@ -5,6 +6,51 @@ import {
   type ReviewNewShapesArguments,
 } from "@/ai/tool-registry";
 import type { ProductCanvasMutation } from "@/domain/canvas-command";
+
+export function coalesceReviewNewShapeToolCalls(
+  toolCalls: AiToolCall[],
+): AiToolCall[] {
+  const creationCalls = toolCalls.filter(
+    (toolCall) => toolCall.toolName === "stage_new_shapes",
+  );
+  if (creationCalls.length <= 1) return toolCalls;
+
+  const parsedCalls = creationCalls.map((toolCall) => ({
+    callKey: toolCall.callKey,
+    arguments: reviewNewShapesArgumentsSchema.parse(toolCall.arguments),
+  }));
+  const mergedArguments = reviewNewShapesArgumentsSchema.parse({
+    summary: parsedCalls
+      .map((item) => item.arguments.summary)
+      .join(" ")
+      .slice(0, 10_000),
+    shapes: parsedCalls.flatMap((item, callIndex) =>
+      item.arguments.shapes.map((shape) => ({
+        ...shape,
+        key: `${callIndex + 1}-${shape.key}`.slice(0, 120),
+      })),
+    ),
+    explanations: parsedCalls.flatMap((item, callIndex) =>
+      item.arguments.explanations.map((explanation) => ({
+        ...explanation,
+        key: `${callIndex + 1}-${explanation.key}`.slice(0, 120),
+      })),
+    ),
+  });
+  let inserted = false;
+  return toolCalls.flatMap((toolCall) => {
+    if (toolCall.toolName !== "stage_new_shapes") return [toolCall];
+    if (inserted) return [];
+    inserted = true;
+    return [
+      {
+        callKey: parsedCalls[0]!.callKey,
+        toolName: "stage_new_shapes",
+        arguments: mergedArguments,
+      },
+    ];
+  });
+}
 
 export async function materializeReviewNewShapes(input: {
   arguments: ReviewNewShapesArguments;

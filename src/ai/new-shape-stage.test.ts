@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { materializeReviewNewShapes } from "@/ai/new-shape-stage";
+import {
+  coalesceReviewNewShapeToolCalls,
+  materializeReviewNewShapes,
+} from "@/ai/new-shape-stage";
 import {
   validateCanvasReviewStage,
   validateReviewExplanations,
@@ -15,6 +18,53 @@ const ids = {
 };
 
 describe("reviewable new shape materialization", () => {
+  it("combines provider-decomposed creation calls into one review set", () => {
+    const calls = ["red", "blue"].map((key, index) => ({
+      callKey: `create-${index}`,
+      toolName: "stage_new_shapes",
+      arguments: {
+        summary: `Create ${key}.`,
+        shapes: [
+          {
+            key: "sticky",
+            shape: "rectangle",
+            text: key,
+            x: 100 + index * 224,
+            y: 200,
+            width: 200,
+            height: 120,
+            fill: key === "red" ? "#fecaca" : "#bfdbfe",
+            outline: "#18181b",
+            outlineWidth: 2,
+            fontFamily: "Inter",
+            fontSize: 16,
+            fontWeight: "bold",
+            textAlign: "center",
+            textColor: "#18181b",
+          },
+        ],
+        explanations: [
+          {
+            key: "sticky",
+            whatChanged: `Created ${key}.`,
+            why: "The user requested it.",
+          },
+        ],
+      },
+    }));
+
+    expect(coalesceReviewNewShapeToolCalls(calls)).toMatchObject([
+      {
+        callKey: "create-0",
+        toolName: "stage_new_shapes",
+        arguments: {
+          shapes: [{ key: "1-sticky" }, { key: "2-sticky" }],
+          explanations: [{ key: "1-sticky" }, { key: "2-sticky" }],
+        },
+      },
+    ]);
+  });
+
   it("generates stable canonical identities and matching explanations", async () => {
     const argumentsValue = {
       summary: "Create the requested notes.",

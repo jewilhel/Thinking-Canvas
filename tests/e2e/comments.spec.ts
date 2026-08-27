@@ -923,6 +923,62 @@ test("guides a world-space multi-object review through mixed decisions", async (
   expect(accessibility.violations).toEqual([]);
 });
 
+test("stages five labeled sticky notes from an empty world-space comment", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page.getByLabel("AI authority").selectOption("edit_with_review");
+  await page.getByRole("checkbox", { name: "Enabled" }).click();
+  await placeArmedComment(page, { x: 420, y: 280 });
+
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill(
+    "Create five sticky notes labeled Red, Yellow, Orange, Green, and Blue.",
+  );
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    thread.getByText(
+      "I created five labeled sticky notes tentatively for review.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByTestId("product-object-count")).toHaveText("5");
+  await thread.getByRole("button", { name: "Review changes" }).click();
+  const review = page.getByRole("dialog", { name: "Review AI changes" });
+  await expect(review.getByText("Nearby canvas area")).toBeVisible();
+  await expect(review.getByText("Change 1 of 5")).toBeVisible();
+
+  const reviewedColors: string[] = [];
+  for (let index = 0; index < 5; index += 1) {
+    await expect(review.getByText(`Change ${index + 1} of 5`)).toBeVisible();
+    const explanation = review.getByText(
+      /^Created the (red|yellow|orange|green|blue) sticky note\.$/,
+    );
+    reviewedColors.push(await explanation.innerText());
+    await review.getByRole("button", { name: "Keep" }).click();
+  }
+  expect(new Set(reviewedColors)).toEqual(
+    new Set([
+      "Created the red sticky note.",
+      "Created the yellow sticky note.",
+      "Created the orange sticky note.",
+      "Created the green sticky note.",
+      "Created the blue sticky note.",
+    ]),
+  );
+  await expect(review.getByText("complete")).toBeVisible();
+});
+
 test("requests a revision as a child AI run in the originating thread", async ({
   page,
   browser,
