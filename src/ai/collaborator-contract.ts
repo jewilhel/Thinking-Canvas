@@ -82,6 +82,15 @@ export const aiInvocationSchema = z
     authority: aiAuthorityLevelSchema,
     instruction: z.string().trim().min(1).max(100_000),
     selectedPathIds: z.array(z.uuid()).max(1_000),
+    reviewContext: z
+      .strictObject({
+        kind: z.enum(["single_object", "explicit_context", "world_space"]),
+        objectIds: z.array(z.uuid()).max(1_000),
+        canvasAnchor: z
+          .strictObject({ x: z.number().finite(), y: z.number().finite() })
+          .nullable(),
+      })
+      .optional(),
   })
   .superRefine((invocation, context) => {
     if (

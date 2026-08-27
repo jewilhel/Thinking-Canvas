@@ -36,6 +36,7 @@ import {
   executeArgumentsSchema,
   proposalArgumentsSchema,
   reviewLayoutArgumentsSchema,
+  reviewNewShapesArgumentsSchema,
   reviewStageArgumentsSchema,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
@@ -49,6 +50,7 @@ import {
   validateCanvasReviewStage,
   validateReviewExplanations,
 } from "@/ai/proposals";
+import { materializeReviewNewShapes } from "@/ai/new-shape-stage";
 import {
   renderTargetedCanvasCapture,
   TARGETED_CAPTURE_RENDERER_VERSION,
@@ -348,6 +350,18 @@ export async function completeAiRun(
       authority: currentAuthority,
       instruction,
       selectedPathIds: run.ordered_context_ids,
+      reviewContext: {
+        kind: reviewScope.kind,
+        objectIds: reviewScope.objectIds,
+        canvasAnchor:
+          commentResult.data.anchor_x !== null &&
+          commentResult.data.anchor_y !== null
+            ? {
+                x: commentResult.data.anchor_x,
+                y: commentResult.data.anchor_y,
+              }
+            : null,
+      },
     },
     projection,
     allowedToolNames,
@@ -520,7 +534,8 @@ export async function completeAiRun(
     }
     if (
       validatedTool.toolName === "stage_canvas_changes" ||
-      validatedTool.toolName === "stage_layout_changes"
+      validatedTool.toolName === "stage_layout_changes" ||
+      validatedTool.toolName === "stage_new_shapes"
     ) {
       if (reviewStageToolResults.length > 0) {
         throw new AiRunConflictError(
@@ -530,14 +545,28 @@ export async function completeAiRun(
       const toolArguments =
         validatedTool.toolName === "stage_canvas_changes"
           ? reviewStageArgumentsSchema.parse(validatedTool.arguments)
-          : reviewLayoutArgumentsSchema.parse(validatedTool.arguments);
+          : validatedTool.toolName === "stage_layout_changes"
+            ? reviewLayoutArgumentsSchema.parse(validatedTool.arguments)
+            : reviewNewShapesArgumentsSchema.parse(validatedTool.arguments);
+      const newShapeStage =
+        "shapes" in toolArguments
+          ? await materializeReviewNewShapes({
+              arguments: toolArguments,
+              runId: run.id,
+              callKey: toolCall.callKey,
+              canvasId: run.canvas_id,
+              actorId: run.requested_by,
+            })
+          : null;
       const commands =
         "commands" in toolArguments
           ? toolArguments.commands
-          : planDeterministicLayout({
-              objects: sourceObjects,
-              request: toolArguments.layout,
-            });
+          : "layout" in toolArguments
+            ? planDeterministicLayout({
+                objects: sourceObjects,
+                request: toolArguments.layout,
+              })
+            : newShapeStage!.commands;
       let reviewStage = validateCanvasReviewStage({
         document: compacted.document,
         canvasId: run.canvas_id,
@@ -548,9 +577,13 @@ export async function completeAiRun(
         scope: reviewScope,
         changes: reviewStage.objectChanges,
       });
+      const explanations =
+        "shapes" in toolArguments
+          ? newShapeStage!.explanations
+          : toolArguments.explanations;
       let explainedChanges = validateReviewExplanations({
         reviewStage,
-        explanations: toolArguments.explanations,
+        explanations,
       });
       assertNoNewDeterministicVisualDefects({
         beforeObjects: sourceObjects,
@@ -647,7 +680,7 @@ export async function completeAiRun(
           }
           const refinedExplanations = validateReviewExplanations({
             reviewStage: refinedStage,
-            explanations: toolArguments.explanations,
+            explanations,
           });
           assertNoNewDeterministicVisualDefects({
             beforeObjects: sourceObjects,

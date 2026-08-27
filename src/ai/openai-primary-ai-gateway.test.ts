@@ -201,6 +201,16 @@ describe("OpenAiPrimaryAiGateway", () => {
     expect(tool.strict).toBe(true);
   });
 
+  it("exposes semantic review creation without provider-authored object IDs", () => {
+    const tool = buildSubmitTurnTool(allowedAiToolNames("edit_with_review"));
+    const serialized = JSON.stringify(tool.parameters);
+
+    expect(serialized).toContain("stage_new_shapes");
+    expect(serialized).toContain('\\"shapes\\"');
+    expect(serialized).toContain('\\"key\\"');
+    expect(serialized).not.toContain("new-shape:${shape.key}");
+  });
+
   it("rejects a provider action outside current authority", async () => {
     const client = clientReturning(
       providerResponse({

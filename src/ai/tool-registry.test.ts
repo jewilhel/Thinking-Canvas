@@ -38,6 +38,7 @@ describe("AI authority tool registry", () => {
       "propose_canvas_commands",
       "stage_canvas_changes",
       "stage_layout_changes",
+      "stage_new_shapes",
       "execute_canvas_commands",
     ]);
   });
@@ -77,6 +78,40 @@ describe("AI authority tool registry", () => {
       toolName: "propose_canvas_commands",
       effect: "proposal",
     });
+  });
+
+  it("accepts server-identified multi-shape review creation", () => {
+    expect(
+      validateAiToolRequest({
+        authority: "edit_with_review",
+        toolName: "stage_new_shapes",
+        arguments: {
+          summary: "Create two reviewable sticky notes.",
+          shapes: ["red", "blue"].map((key, index) => ({
+            key,
+            shape: "rectangle",
+            text: key,
+            x: index * 224,
+            y: 0,
+            width: 200,
+            height: 120,
+            fill: key,
+            outline: "#18181b",
+            outlineWidth: 2,
+            fontFamily: "Inter",
+            fontSize: 16,
+            fontWeight: "bold",
+            textAlign: "center",
+            textColor: "#18181b",
+          })),
+          explanations: ["red", "blue"].map((key) => ({
+            key,
+            whatChanged: `Created the ${key} sticky note.`,
+            why: "The comment requested a labeled color set.",
+          })),
+        },
+      }),
+    ).toMatchObject({ toolName: "stage_new_shapes", effect: "review" });
   });
 
   it("rejects malformed arguments and client-supplied trusted metadata", () => {

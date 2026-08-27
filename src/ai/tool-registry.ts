@@ -43,6 +43,67 @@ export const reviewLayoutArgumentsSchema = z.strictObject({
   layout: deterministicLayoutRequestSchema,
   explanations: reviewExplanationsSchema,
 });
+const newShapeSpecSchema = z.strictObject({
+  key: z.string().trim().min(1).max(120),
+  shape: z.enum(["rectangle", "ellipse", "diamond"]),
+  text: z.string().max(10_000),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  width: z.number().finite().min(24),
+  height: z.number().finite().min(24),
+  fill: z.string().min(1).max(100),
+  outline: z.string().min(1).max(100),
+  outlineWidth: z.number().finite().min(0).max(20),
+  fontFamily: z.string().min(1).max(200),
+  fontSize: z.number().finite().min(8).max(400),
+  fontWeight: z.enum(["normal", "bold"]),
+  textAlign: z.enum(["left", "center", "right"]),
+  textColor: z.string().min(1).max(100),
+});
+const newShapeExplanationSchema = z.strictObject({
+  key: z.string().trim().min(1).max(120),
+  whatChanged: z.string().trim().min(1).max(2_000),
+  why: z.string().trim().min(1).max(4_000),
+});
+export const reviewNewShapesArgumentsSchema = z
+  .strictObject({
+    summary: z.string().trim().min(1).max(10_000),
+    shapes: z.array(newShapeSpecSchema).min(1).max(50),
+    explanations: z.array(newShapeExplanationSchema).min(1).max(50),
+  })
+  .superRefine((value, context) => {
+    const shapeKeys = value.shapes.map((shape) => shape.key);
+    const explanationKeys = value.explanations.map(
+      (explanation) => explanation.key,
+    );
+    if (new Set(shapeKeys).size !== shapeKeys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "New shape keys must be unique.",
+      });
+    }
+    if (new Set(explanationKeys).size !== explanationKeys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "New shape explanation keys must be unique.",
+      });
+    }
+    if (
+      shapeKeys.length !== explanationKeys.length ||
+      [...shapeKeys]
+        .sort()
+        .some((key, index) => key !== [...explanationKeys].sort()[index])
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "New shape explanations must exactly match the new shape keys.",
+      });
+    }
+  });
+export type ReviewNewShapesArguments = z.infer<
+  typeof reviewNewShapesArgumentsSchema
+>;
 export const executeArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
 });
@@ -110,6 +171,13 @@ export const AI_TOOL_REGISTRY = {
     description:
       "Compute and tentatively apply a deterministic alignment, distribution, spacing, or resize-to-content operation for review.",
     argumentsSchema: reviewLayoutArgumentsSchema,
+  },
+  stage_new_shapes: {
+    effect: "review" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Create one or more new shapes as one tentative reviewable change set. Use rectangle shapes for sticky notes. Supply local keys rather than object IDs; the server creates durable identities and metadata.",
+    argumentsSchema: reviewNewShapesArgumentsSchema,
   },
   execute_canvas_commands: {
     effect: "mutation" as const,
