@@ -1036,6 +1036,113 @@ select results_eq(
   'review staging stores one before/after object record with affected fields'
 );
 
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.finalize_ai_review_stage(uuid,uuid,text,jsonb,text,uuid[],jsonb)',
+    'EXECUTE'
+  ),
+  'authenticated clients cannot finalize AI review scope or explanations'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select results_eq(
+  $$select object_change_count, created
+    from public.finalize_ai_review_stage(
+      current_setting('test.review_change_set_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'Move the supporting object to the right.',
+      '[{
+        "objectId":"61000000-0000-4000-8000-000000000001",
+        "whatChanged":"Moved the evidence object forty canvas units to the right.",
+        "why":"The added separation distinguishes evidence from the main assumption."
+      }]'::jsonb,
+      'single_object',
+      array['61000000-0000-4000-8000-000000000001']::uuid[],
+      '{"projectionVersion":2,"captureCount":0,"feedbackPassCount":0}'::jsonb
+    )$$,
+  $$values (1, true)$$,
+  'server finalization binds exact per-object explanations and persisted comment scope'
+);
+
+select results_eq(
+  $$select created
+    from public.finalize_ai_review_stage(
+      current_setting('test.review_change_set_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'Move the supporting object to the right.',
+      '[{
+        "objectId":"61000000-0000-4000-8000-000000000001",
+        "whatChanged":"Moved the evidence object forty canvas units to the right.",
+        "why":"The added separation distinguishes evidence from the main assumption."
+      }]'::jsonb,
+      'single_object',
+      array['61000000-0000-4000-8000-000000000001']::uuid[],
+      '{"projectionVersion":2,"captureCount":0,"feedbackPassCount":0}'::jsonb
+    )$$,
+  $$values (false)$$,
+  'an exact review finalization retry is idempotent'
+);
+
+select throws_ok(
+  $$select * from public.finalize_ai_review_stage(
+      current_setting('test.review_change_set_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'Move the supporting object to the right.',
+      '[{
+        "objectId":"61000000-0000-4000-8000-000000000001",
+        "whatChanged":"Moved the evidence object forty canvas units to the right.",
+        "why":"The added separation distinguishes evidence from the main assumption."
+      }]'::jsonb,
+      'single_object',
+      array['61000000-0000-4000-8000-000000000001']::uuid[],
+      '{"capture":"data:image/png;base64,AAAA"}'::jsonb
+    )$$,
+  '22023',
+  'Visual feedback metadata is invalid or contains image content.',
+  'provider capture payloads cannot be persisted as review metadata'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+
+select results_eq(
+  $$select scope_kind, scope_object_ids, summary,
+      visual_feedback_metadata ->> 'projectionVersion',
+      finalization_fingerprint is not null
+    from public.ai_change_sets
+    where id = current_setting('test.review_change_set_id')::uuid$$,
+  $$values (
+    'single_object'::text,
+    array['61000000-0000-4000-8000-000000000001']::uuid[],
+    'Move the supporting object to the right.'::text,
+    '2'::text,
+    true
+  )$$,
+  'members read finalized scope and content-free visual metadata'
+);
+
+select results_eq(
+  $$select what_changed, why, review_status
+    from public.ai_object_changes
+    where change_set_id = current_setting('test.review_change_set_id')::uuid$$,
+  $$values (
+    'Moved the evidence object forty canvas units to the right.'::text,
+    'The added separation distinguishes evidence from the main assumption.'::text,
+    'pending'::text
+  )$$,
+  'every staged object receives its own structured what and why explanation'
+);
+
+select set_config(
+  'test.review_object_change_id',
+  (select id::text from public.ai_object_changes where change_set_id = current_setting('test.review_change_set_id')::uuid),
+  true
+);
+
 select results_eq(
   $$select outcome::text, tool_name, affected_object_ids,
       command_id is null, comment_id is null,
@@ -1126,6 +1233,92 @@ select throws_ok(
   null,
   'authenticated clients cannot create a Milestone 5 decision for AI-staged work'
 );
+
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.activate_ai_review_stage(uuid,uuid,bytea,bigint)',
+    'EXECUTE'
+  ) and not has_function_privilege(
+    'authenticated',
+    'public.decide_ai_review_object(uuid,uuid,public.review_decision_kind,text,uuid,bytea,bigint,jsonb)',
+    'EXECUTE'
+  ),
+  'authenticated clients cannot bypass review activation or decision transactions'
+);
+
+select results_eq(
+  $$select story.kind, count(scene.id)::bigint
+    from public.stories story
+    join public.story_scenes scene on scene.story_id = story.id
+    where story.review_change_set_id = current_setting('test.review_change_set_id')::uuid
+    group by story.kind$$,
+  $$values ('review'::text, 1::bigint)$$,
+  'finalization creates one guided review story scene per changed object'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select results_eq(
+  $$select created
+    from public.activate_ai_review_stage(
+      current_setting('test.review_change_set_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      decode('0102', 'hex'),
+      current_setting('test.review_sequence')::bigint
+    )$$,
+  $$values (true)$$,
+  'the server deliberately activates the finalized review as tentative shared canvas state'
+);
+
+select results_eq(
+  $$select created
+    from public.activate_ai_review_stage(
+      current_setting('test.review_change_set_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      decode('0102', 'hex'),
+      current_setting('test.review_sequence')::bigint
+    )$$,
+  $$values (false)$$,
+  'an exact tentative activation retry returns the original durable update'
+);
+
+select results_eq(
+  $$select review_status, created
+    from public.decide_ai_review_object(
+      current_setting('test.review_object_change_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'keep',
+      null,
+      '85000000-0000-4000-8000-000000000001',
+      null,
+      null,
+      '[]'::jsonb
+    )$$,
+  $$values ('kept'::text, true)$$,
+  'the first owner or editor decision globally keeps one tentative object change'
+);
+
+select throws_ok(
+  $$select * from public.decide_ai_review_object(
+      current_setting('test.review_object_change_id')::uuid,
+      '10000000-0000-4000-8000-000000000002',
+      'discard',
+      null,
+      '85000000-0000-4000-8000-000000000002',
+      decode('0304', 'hex'),
+      null,
+      '[]'::jsonb
+    )$$,
+  '40001',
+  'Another collaborator already decided this object.',
+  'a completed first decision prevents a later collaborator from replacing it'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
 
 select results_eq(
   $$select status::text

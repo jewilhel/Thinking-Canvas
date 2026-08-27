@@ -7,7 +7,12 @@ import {
   type AiProjectionEnvelope,
   aiProjectionEnvelopeSchema,
 } from "@/ai/collaborator-contract";
+import {
+  AI_CANVAS_DESIGN_TOKENS,
+  assertNoNewDeterministicVisualDefects,
+} from "@/ai/visual-grounding";
 import type { FakeAiScenario } from "@/ai/fake-collaborator-gateway";
+import { planDeterministicLayout } from "@/ai/deterministic-layout";
 import {
   createPrimaryAiGateway,
   parsePrimaryAiProviderEnvironment,
@@ -22,10 +27,15 @@ import {
   validateConnectedPath,
 } from "@/ai/grounding";
 import {
+  assertReviewChangesWithinScope,
+  deriveAiReviewScope,
+} from "@/ai/review-scope";
+import {
   allowedAiToolNames,
   contextualCommentArgumentsSchema,
   executeArgumentsSchema,
   proposalArgumentsSchema,
+  reviewLayoutArgumentsSchema,
   reviewStageArgumentsSchema,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
@@ -37,7 +47,12 @@ import {
 import {
   validateCanvasProposal,
   validateCanvasReviewStage,
+  validateReviewExplanations,
 } from "@/ai/proposals";
+import {
+  renderTargetedCanvasCapture,
+  TARGETED_CAPTURE_RENDERER_VERSION,
+} from "@/ai/render-capture";
 import {
   bytesToPostgresBytea,
   postgresByteaToBytes,
@@ -114,7 +129,9 @@ export async function completeAiRun(
   ] = await Promise.all([
     supabase
       .from("comments")
-      .select("id,body,status")
+      .select(
+        "id,body,status,anchor_x,anchor_y,comment_targets(target_object_id,target_order)",
+      )
       .eq("id", run.invoking_comment_id)
       .maybeSingle(),
     run.invoking_reply_id
@@ -172,6 +189,16 @@ export async function completeAiRun(
     })),
   );
   const sourceObjects = listCanvasObjectsV2(compacted.document);
+  const sourceTargetObjectIds = [...commentResult.data.comment_targets]
+    .sort((left, right) => left.target_order - right.target_order)
+    .map((target) => target.target_object_id);
+  const reviewScope = deriveAiReviewScope({
+    targetObjectIds: sourceTargetObjectIds,
+    orderedContextIds: run.ordered_context_ids,
+    hasCanvasAnchor:
+      commentResult.data.anchor_x !== null &&
+      commentResult.data.anchor_y !== null,
+  });
   if (run.ordered_context_ids.length > 1) {
     validateConnectedPath({
       canvasId: run.canvas_id,
@@ -188,6 +215,8 @@ export async function completeAiRun(
     groupId: object.groupId,
     orderIndex: object.orderIndex,
     relationshipIds: object.relationshipIds,
+    state: object.state,
+    visual: object.visual,
   }));
   const threadDetails = (threadsResult.data ?? []).map((thread) => {
     const prompt = thread.comment_prompts?.[0];
@@ -250,10 +279,11 @@ export async function completeAiRun(
     limit: 25,
   });
   const projectionBase = {
-    version: 1 as const,
+    version: 2 as const,
     canvasId: run.canvas_id,
     objects,
     commentThreads,
+    designTokens: AI_CANVAS_DESIGN_TOKENS,
     truncated: false,
   };
   const serializedBytes = new TextEncoder().encode(
@@ -306,7 +336,8 @@ export async function completeAiRun(
   if (options.signal?.aborted) {
     throw new DOMException("The AI run was cancelled.", "AbortError");
   }
-  const gatewayResult = await createPrimaryAiGateway().request({
+  const gateway = createPrimaryAiGateway();
+  const gatewayResult = await gateway.request({
     invocation: {
       runId: run.id,
       canvasId: run.canvas_id,
@@ -357,6 +388,7 @@ export async function completeAiRun(
     objectChangeCount: number;
     commandTypes: string[];
     affectedObjectIds: string[];
+    activationSequence: number;
     created: boolean;
   }> = [];
   const trustedExecutionResults: Array<{
@@ -486,16 +518,121 @@ export async function completeAiRun(
       replySections.push(proposal.summary);
       continue;
     }
-    if (validatedTool.toolName === "stage_canvas_changes") {
-      const toolArguments = reviewStageArgumentsSchema.parse(
-        validatedTool.arguments,
-      );
+    if (
+      validatedTool.toolName === "stage_canvas_changes" ||
+      validatedTool.toolName === "stage_layout_changes"
+    ) {
+      if (reviewStageToolResults.length > 0) {
+        throw new AiRunConflictError(
+          "One AI run may create only one reviewable change set.",
+        );
+      }
+      const toolArguments =
+        validatedTool.toolName === "stage_canvas_changes"
+          ? reviewStageArgumentsSchema.parse(validatedTool.arguments)
+          : reviewLayoutArgumentsSchema.parse(validatedTool.arguments);
+      const commands =
+        "commands" in toolArguments
+          ? toolArguments.commands
+          : planDeterministicLayout({
+              objects: sourceObjects,
+              request: toolArguments.layout,
+            });
       const reviewStage = validateCanvasReviewStage({
         document: compacted.document,
         canvasId: run.canvas_id,
         actorId: run.requested_by,
-        commands: toolArguments.commands,
+        commands,
       });
+      assertReviewChangesWithinScope({
+        scope: reviewScope,
+        changes: reviewStage.objectChanges,
+      });
+      const explainedChanges = validateReviewExplanations({
+        reviewStage,
+        explanations: toolArguments.explanations,
+      });
+      assertNoNewDeterministicVisualDefects({
+        beforeObjects: sourceObjects,
+        afterObjects: reviewStage.visualObjects,
+        targetObjectIds: reviewStage.affectedObjectIds,
+      });
+      const allFocusObjects = [...sourceObjects, ...reviewStage.visualObjects];
+      const allObjectIds = [
+        ...new Set(allFocusObjects.map((object) => object.id)),
+      ];
+      let visualFeedbackMetadata: Record<string, string | number> = {
+        projectionVersion: projection.version,
+        rendererVersion: TARGETED_CAPTURE_RENDERER_VERSION,
+        captureCount: 0,
+        feedbackPassCount: 0,
+        feedbackStatus: "unavailable",
+        feedbackIssueCount: 0,
+      };
+      try {
+        const [beforeCapture, afterCapture, beforeOverview, afterOverview] =
+          await Promise.all([
+            renderTargetedCanvasCapture({
+              objects: sourceObjects,
+              focusObjects: allFocusObjects,
+              targetObjectIds: reviewStage.affectedObjectIds,
+              label: "before",
+            }),
+            renderTargetedCanvasCapture({
+              objects: reviewStage.visualObjects,
+              focusObjects: allFocusObjects,
+              targetObjectIds: reviewStage.affectedObjectIds,
+              label: "after",
+            }),
+            renderTargetedCanvasCapture({
+              objects: sourceObjects,
+              focusObjects: allFocusObjects,
+              targetObjectIds: allObjectIds,
+              label: "before",
+            }),
+            renderTargetedCanvasCapture({
+              objects: reviewStage.visualObjects,
+              focusObjects: allFocusObjects,
+              targetObjectIds: allObjectIds,
+              label: "after",
+            }),
+          ]);
+        const visualReview = await gateway.reviewVisualChange?.({
+          instruction,
+          targetObjectIds: reviewStage.affectedObjectIds,
+          beforeImageDataUrl: beforeCapture.dataUrl,
+          afterImageDataUrl: afterCapture.dataUrl,
+          beforeOverviewImageDataUrl: beforeOverview.dataUrl,
+          afterOverviewImageDataUrl: afterOverview.dataUrl,
+          signal: options.signal,
+        });
+        if (visualReview?.status === "fail") {
+          throw new AiRunConflictError(
+            "The targeted visual quality check found a blocking layout defect.",
+          );
+        }
+        visualFeedbackMetadata = {
+          projectionVersion: projection.version,
+          rendererVersion: TARGETED_CAPTURE_RENDERER_VERSION,
+          captureCount: 4,
+          feedbackPassCount: visualReview ? 1 : 0,
+          feedbackStatus: visualReview?.status ?? "not_available",
+          feedbackIssueCount: visualReview?.issueCount ?? 0,
+          captureWidth: Math.max(beforeCapture.width, afterCapture.width),
+          captureHeight: Math.max(beforeCapture.height, afterCapture.height),
+          contextObjectCount: new Set([
+            ...beforeCapture.contextObjectIds,
+            ...afterCapture.contextObjectIds,
+          ]).size,
+        };
+      } catch (error) {
+        if (
+          error instanceof AiRunConflictError ||
+          (error instanceof DOMException && error.name === "AbortError")
+        ) {
+          throw error;
+        }
+      }
       const toolResult = await createServiceClient().rpc(
         "stage_ai_canvas_changes",
         {
@@ -515,15 +652,64 @@ export async function completeAiRun(
             "The review-stage changes could not be saved.",
         );
       }
+      const finalizationResult = await createServiceClient().rpc(
+        "finalize_ai_review_stage",
+        {
+          target_change_set_id: toolResult.data[0].change_set_id,
+          target_requester_id: run.requested_by,
+          target_summary: toolArguments.summary,
+          target_explanations: JSON.parse(
+            JSON.stringify(
+              explainedChanges.map(({ objectId, whatChanged, why }) => ({
+                objectId,
+                whatChanged,
+                why,
+              })),
+            ),
+          ) as Json,
+          target_scope_kind: reviewScope.kind,
+          target_scope_object_ids: reviewScope.objectIds,
+          target_visual_feedback_metadata: visualFeedbackMetadata,
+        },
+      );
+      if (finalizationResult.error || !finalizationResult.data?.[0]) {
+        throw new AiRunConflictError(
+          finalizationResult.error?.message ??
+            "The review-stage contract could not be finalized.",
+        );
+      }
+      const activationResult = await createServiceClient().rpc(
+        "activate_ai_review_stage",
+        {
+          target_change_set_id: toolResult.data[0].change_set_id,
+          target_requester_id: run.requested_by,
+          target_update_data: bytesToPostgresBytea(reviewStage.tentativeUpdate),
+          target_expected_sequence: compacted.lastSequence,
+        },
+      );
+      if (activationResult.error || !activationResult.data?.[0]) {
+        throw new AiRunConflictError(
+          activationResult.error?.message ??
+            "The review changes could not be activated tentatively.",
+        );
+      }
+      await broadcastAiCanvasUpdate({
+        canvasId: run.canvas_id,
+        sequence: activationResult.data[0].sequence,
+        update: reviewStage.tentativeUpdate,
+      });
       reviewStageToolResults.push({
         callKey: toolCall.callKey,
         changeSetId: toolResult.data[0].change_set_id,
         objectChangeCount: toolResult.data[0].object_change_count,
         commandTypes: reviewStage.commandTypes,
         affectedObjectIds: reviewStage.affectedObjectIds,
+        activationSequence: activationResult.data[0].sequence,
         created: toolResult.data[0].created,
       });
-      replySections.push(reviewStage.summary);
+      replySections.push(
+        `${reviewStage.summary}\nThe changes are now visible tentatively on the shared canvas. Open Review changes to keep, discard, or request a revision for each object.`,
+      );
       continue;
     }
     if (validatedTool.toolName !== "create_contextual_comment") {

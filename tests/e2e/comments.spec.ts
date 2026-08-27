@@ -54,15 +54,19 @@ async function openFreshCanvas(page: Page) {
   await expect(page).toHaveURL(/\/app\/canvases\/[0-9a-f-]+$/);
 }
 
-async function addRectangle(page: Page) {
+async function addRectangle(
+  page: Page,
+  position = { x: 420, y: 280 },
+  expectedCount = 1,
+) {
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page
     .getByRole("menuitemradio", { name: "Rectangle", exact: true })
     .click();
-  await page
-    .getByTestId("product-canvas-surface")
-    .click({ position: { x: 420, y: 280 } });
-  await expect(page.getByTestId("product-object-count")).toHaveText("1");
+  await page.getByTestId("product-canvas-surface").click({ position });
+  await expect(page.getByTestId("product-object-count")).toHaveText(
+    String(expectedCount),
+  );
 }
 
 async function addEditorMembership(canvasId: string) {
@@ -503,7 +507,7 @@ test("returns an ordered AI proposal in comments without changing the canvas", a
   ).toBeVisible();
 });
 
-test("stages AI changes for later review without changing the canvas", async ({
+test("applies tentative AI changes and discards them through the review panel", async ({
   page,
 }) => {
   await openFreshCanvas(page);
@@ -540,28 +544,37 @@ test("stages AI changes for later review without changing the canvas", async ({
 
   const thread = page.getByRole("dialog", { name: "Comment thread" });
   await expect(
-    thread.getByText(
-      "I staged validated changes for later review without changing the canvas.",
-    ),
+    thread.getByText("I applied validated changes tentatively for review."),
   ).toBeVisible();
   await expect(
-    thread.getByText(/Staged for review \(canvas unchanged\):/),
+    thread.getByText(/Prepared for tentative review:/),
   ).toBeVisible();
   await expect(
     thread.getByText(/1\. object\.move — affected [0-9a-f-]+/),
   ).toBeVisible();
   await expect(
-    thread.getByText("1 object change staged for later review."),
+    thread.getByText(
+      "1 object change will remain reviewable as one change set.",
+    ),
   ).toBeVisible();
   await expect(
-    thread.getByRole("button", { name: /^(Keep|Revise|Discard)$/ }),
-  ).toHaveCount(0);
-  await expect(saveStatus).toHaveAttribute(
+    thread.getByRole("button", { name: "Review changes" }),
+  ).toBeVisible();
+  await expect(saveStatus).not.toHaveAttribute(
     "title",
     durableSequenceBefore ?? "",
   );
-
-  await thread.getByRole("button", { name: "Close comment thread" }).click();
+  await thread.getByRole("button", { name: "Review changes" }).click();
+  const reviewPanel = page.getByRole("dialog", { name: "Review AI changes" });
+  await expect(reviewPanel.getByText("Single object")).toBeVisible();
+  await expect(
+    reviewPanel.getByText("Moved the supporting object to the right."),
+  ).toBeVisible();
+  await reviewPanel.getByRole("button", { name: "Discard" }).click();
+  await expect(reviewPanel.getByText("discarded")).toBeVisible();
+  await reviewPanel
+    .getByRole("button", { name: "Close Review AI changes" })
+    .click();
   await page.getByRole("button", { name: "Open Object navigator" }).click();
   await page.locator('[data-testid^="object-list-item-"]').first().click();
   await expect(page.getByTestId("selected-position-x")).toHaveText(
@@ -579,7 +592,7 @@ test("stages AI changes for later review without changing the canvas", async ({
   await expect(
     page
       .getByRole("dialog", { name: "Comment thread" })
-      .getByText(/1 object change staged for later review/),
+      .getByText(/1 object change will remain reviewable as one change set/),
   ).toBeVisible();
 });
 
@@ -630,17 +643,136 @@ test("converges a review-staged AI reply in two authenticated contexts", async (
   await editorListItem.click();
   const editorThread = editor.getByRole("dialog", { name: "Comment thread" });
   await expect(
-    editorThread.getByText(/Staged for review \(canvas unchanged\):/),
+    editorThread.getByText(/Prepared for tentative review:/),
   ).toBeVisible();
   await expect(
-    editorThread.getByText("1 object change staged for later review."),
+    editorThread.getByText(
+      "1 object change will remain reviewable as one change set.",
+    ),
   ).toBeVisible();
   await expect(
-    editorThread.getByRole("button", { name: /^(Keep|Revise|Discard)$/ }),
-  ).toHaveCount(0);
+    editorThread.getByRole("button", { name: "Review changes" }),
+  ).toBeVisible();
+  await editorThread.getByRole("button", { name: "Review changes" }).click();
+  const editorReview = editor.getByRole("dialog", {
+    name: "Review AI changes",
+  });
+  await editorReview.getByRole("button", { name: "Keep" }).click();
+  await expect(editorReview.getByText("kept")).toBeVisible();
+
+  await owner.getByRole("button", { name: "Review AI changes" }).click();
+  await expect(
+    owner.getByRole("dialog", { name: "Review AI changes" }).getByText("kept"),
+  ).toBeVisible({ timeout: 8_000 });
 
   await editorContext.close();
   await ownerContext.close();
+});
+
+test("guides a world-space multi-object review through mixed decisions", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await addRectangle(page, { x: 360, y: 260 });
+  await addRectangle(page, { x: 640, y: 260 }, 2);
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await page
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 820, y: 600 } });
+  await expect(page.getByTestId("selection-status")).toHaveText("No selection");
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page.getByLabel("AI authority").selectOption("edit_with_review");
+  await page.getByRole("checkbox", { name: "Enabled" }).click();
+  await placeArmedComment(page, { x: 820, y: 600 });
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Review multiple nearby objects with better spacing.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await thread.getByRole("button", { name: "Review changes" }).click();
+  const review = page.getByRole("dialog", { name: "Review AI changes" });
+  await expect(review.getByText("Nearby canvas area")).toBeVisible();
+  await expect(review.getByText("Change 1 of 2")).toBeVisible();
+  await review.getByRole("button", { name: "Keep" }).click();
+  await expect(review.getByText("Change 2 of 2")).toBeVisible();
+  await review.getByRole("button", { name: "Discard" }).click();
+  await expect(review.getByText("complete")).toBeVisible();
+  await review.getByRole("button", { name: "Previous" }).click();
+  await expect(review.getByText("Change 1 of 2")).toBeVisible();
+  await expect(review.getByText("kept")).toBeVisible();
+
+  await page.reload();
+  await page.getByRole("button", { name: "Review AI changes" }).click();
+  const reloadedReview = page.getByRole("dialog", {
+    name: "Review AI changes",
+  });
+  await expect(reloadedReview.getByText("complete")).toBeVisible();
+  await expect(reloadedReview.getByText("Change 1 of 2")).toBeVisible();
+  await expect(reloadedReview.getByText("kept")).toBeVisible();
+  await reloadedReview.getByRole("button", { name: "Next" }).click();
+  await expect(reloadedReview.getByText("discarded")).toBeVisible();
+});
+
+test("requests a revision as a child AI run in the originating thread", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await addRectangle(page);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page.getByLabel("AI authority").selectOption("edit_with_review");
+  await page.getByRole("checkbox", { name: "Enabled" }).click();
+  await placeArmedComment(page);
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Review moving this object to the right.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await thread.getByRole("button", { name: "Review changes" }).click();
+  const review = page.getByRole("dialog", { name: "Review AI changes" });
+  await review.getByRole("button", { name: "Request revision" }).click();
+  await review
+    .getByLabel("What should the AI revise?")
+    .fill("Review moving this object to the right again with clearer spacing.");
+  const revisionResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PATCH" &&
+      response.url().endsWith("/reviews"),
+  );
+  await review.getByRole("button", { name: "Send revision" }).click();
+  const revisionResponse = await revisionResponsePromise;
+  expect(revisionResponse.ok(), await revisionResponse.text()).toBeTruthy();
+
+  await expect(review.getByText("revision requested")).toBeVisible();
+  await expect(review.getByText("Single object")).toHaveCount(2);
+  await expect(review.getByRole("button", { name: "Keep" })).toHaveCount(1);
+  await review.getByRole("button", { name: "Close Review AI changes" }).click();
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Comments" })
+    .getByRole("button", { name: /Review moving this object to the right\./ })
+    .click();
+  await expect(
+    page
+      .getByRole("dialog", { name: "Comment thread" })
+      .getByRole("button", { name: "Review changes" }),
+  ).toHaveCount(2);
 });
 
 test("applies a trusted AI canvas command and converges it in two authenticated contexts", async ({

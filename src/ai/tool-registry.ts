@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { AiAuthorityLevel } from "@/ai/collaborator-contract";
+import { deterministicLayoutRequestSchema } from "@/ai/deterministic-layout";
 import { productCanvasMutationSchema } from "@/domain/canvas-command";
 
 const uuid = z.uuid();
@@ -9,12 +10,38 @@ const pagingFields = {
   limit: z.number().int().min(1).max(100).default(25),
 };
 const mutationListSchema = z.array(productCanvasMutationSchema).min(1).max(50);
+export const reviewExplanationSchema = z.strictObject({
+  objectId: uuid,
+  whatChanged: z.string().trim().min(1).max(2_000),
+  why: z.string().trim().min(1).max(4_000),
+});
+const reviewExplanationsSchema = z
+  .array(reviewExplanationSchema)
+  .min(1)
+  .max(1_000)
+  .superRefine((explanations, context) => {
+    if (
+      new Set(explanations.map((explanation) => explanation.objectId)).size !==
+      explanations.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Review explanation object IDs must be unique.",
+      });
+    }
+  });
 export const proposalArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
 });
 export const reviewStageArgumentsSchema = z.strictObject({
   summary: z.string().trim().min(1).max(10_000),
   commands: mutationListSchema,
+  explanations: reviewExplanationsSchema,
+});
+export const reviewLayoutArgumentsSchema = z.strictObject({
+  summary: z.string().trim().min(1).max(10_000),
+  layout: deterministicLayoutRequestSchema,
+  explanations: reviewExplanationsSchema,
 });
 export const executeArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
@@ -74,8 +101,15 @@ export const AI_TOOL_REGISTRY = {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
-      "Stage validated pending changes for later Milestone 5 review without changing canonical canvas state.",
+      "Apply one validated change set tentatively to shared canonical canvas state, preserving per-object review decisions.",
     argumentsSchema: reviewStageArgumentsSchema,
+  },
+  stage_layout_changes: {
+    effect: "review" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Compute and tentatively apply a deterministic alignment, distribution, spacing, or resize-to-content operation for review.",
+    argumentsSchema: reviewLayoutArgumentsSchema,
   },
   execute_canvas_commands: {
     effect: "mutation" as const,

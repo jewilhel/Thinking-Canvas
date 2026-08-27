@@ -37,6 +37,7 @@ describe("AI authority tool registry", () => {
       "create_contextual_comment",
       "propose_canvas_commands",
       "stage_canvas_changes",
+      "stage_layout_changes",
       "execute_canvas_commands",
     ]);
   });

@@ -15,6 +15,15 @@ import { allowedAiToolNames, type AiToolName } from "@/ai/tool-registry";
 export type { FakeAiScenario } from "@/ai/primary-ai-gateway";
 
 export class FakePrimaryAiGateway implements PrimaryAiGateway {
+  async reviewVisualChange() {
+    return {
+      status: "pass" as const,
+      issueCount: 0,
+      requestId: "fake-visual-review",
+      model: "deterministic-fake",
+    };
+  }
+
   async request(input: {
     invocation: AiInvocation;
     projection: AiProjectionEnvelope;
@@ -73,6 +82,18 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       invocation.instruction.toLowerCase().includes("review") &&
       firstObject !== undefined &&
       input.allowedToolNames.includes("stage_canvas_changes");
+    const reviewObjects =
+      shouldStageReview &&
+      invocation.instruction.toLowerCase().includes("multiple")
+        ? projection.objects
+            .filter(
+              (object) =>
+                object.type !== "connector" && object.type !== "annotation",
+            )
+            .slice(0, 2)
+        : firstObject
+          ? [firstObject]
+          : [];
     const shouldExecuteChanges =
       invocation.instruction.toLowerCase().includes("apply") &&
       firstObject !== undefined &&
@@ -81,7 +102,7 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       body: shouldExecuteChanges
         ? "I applied validated canvas changes as the primary AI collaborator."
         : shouldStageReview
-          ? "I staged validated changes for later review without changing the canvas."
+          ? "I applied validated changes tentatively for review."
           : shouldProposeChanges
             ? "I prepared a validated proposal without changing the canvas."
             : selectedPath.length > 1
@@ -123,16 +144,24 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
               toolName: "stage_canvas_changes",
               arguments: {
                 summary: "Move the supporting object to the right.",
-                commands: [
-                  {
-                    type: "object.move",
-                    payload: {
-                      objectId: firstObject.id,
-                      x: firstObject.geometry.x + 40,
-                      y: firstObject.geometry.y,
-                    },
-                  },
+                explanations: [
+                  ...reviewObjects.map((object, index) => ({
+                    objectId: object.id,
+                    whatChanged:
+                      reviewObjects.length === 1
+                        ? "Moved the supporting object to the right."
+                        : `Moved supporting object ${index + 1} to the right.`,
+                    why: "The added spacing separates it from the main idea.",
+                  })),
                 ],
+                commands: reviewObjects.map((object) => ({
+                  type: "object.move",
+                  payload: {
+                    objectId: object.id,
+                    x: object.geometry.x + 40,
+                    y: object.geometry.y,
+                  },
+                })),
               },
             },
           ]

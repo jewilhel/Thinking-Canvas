@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+import {
+  AI_CANVAS_DESIGN_TOKENS,
+  aiCanvasDesignTokensSchema,
+  aiObjectVisualFactsSchema,
+  aiProjectionObjectStateSchema,
+} from "@/ai/visual-grounding";
+
 export const PRIMARY_AI_KEY = "primary-ai" as const;
 export const AI_PROJECTION_MAX_SERIALIZED_BYTES = 256 * 1024;
 
@@ -103,6 +110,8 @@ const projectionObjectSchema = z.strictObject({
   groupId: z.uuid().nullable(),
   orderIndex: z.number().int().nonnegative(),
   relationshipIds: z.array(z.uuid()).max(1_000),
+  state: aiProjectionObjectStateSchema,
+  visual: aiObjectVisualFactsSchema,
 });
 
 const projectionThreadSchema = z.strictObject({
@@ -116,10 +125,11 @@ const projectionThreadSchema = z.strictObject({
 });
 
 export const aiProjectionEnvelopeSchema = z.strictObject({
-  version: z.literal(1),
+  version: z.literal(2),
   canvasId: z.uuid(),
   objects: z.array(projectionObjectSchema).max(10_000),
   commentThreads: z.array(projectionThreadSchema).max(10_000),
+  designTokens: aiCanvasDesignTokensSchema.default(AI_CANVAS_DESIGN_TOKENS),
   serializedBytes: z
     .number()
     .int()

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   validateCanvasProposal,
   validateCanvasReviewStage,
+  validateReviewExplanations,
 } from "@/ai/proposals";
 import {
   createProductCanvasDocument,
@@ -124,7 +125,42 @@ describe("validated canvas proposals", () => {
         },
       ],
     });
-    expect(review.summary).toContain("Staged for review (canvas unchanged)");
+    expect(review.summary).toContain("Prepared for tentative review");
+    const tentativeDocument = new Y.Doc();
+    Y.applyUpdate(tentativeDocument, before);
+    Y.applyUpdate(tentativeDocument, review.tentativeUpdate);
+    expect(listCanvasObjectsV2(tentativeDocument)[0]?.geometry).toMatchObject({
+      x: 240,
+      y: 180,
+    });
+    expect(
+      validateReviewExplanations({
+        reviewStage: review,
+        explanations: [
+          {
+            objectId,
+            whatChanged: "Moved the evidence card to the review area.",
+            why: "The new position separates evidence from assumptions.",
+          },
+        ],
+      })[0],
+    ).toMatchObject({
+      objectId,
+      whatChanged: "Moved the evidence card to the review area.",
+      why: "The new position separates evidence from assumptions.",
+    });
+    expect(() =>
+      validateReviewExplanations({
+        reviewStage: review,
+        explanations: [
+          {
+            objectId: "61000000-0000-4000-8000-000000000099",
+            whatChanged: "Changed another object.",
+            why: "This must not be accepted.",
+          },
+        ],
+      }),
+    ).toThrow("exactly match");
     expect(Y.encodeStateAsUpdate(document)).toEqual(before);
   });
 

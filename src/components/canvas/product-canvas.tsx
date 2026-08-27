@@ -10,6 +10,7 @@ import {
   Ellipsis,
   ExternalLink,
   Link2,
+  ListChecks,
   ListTree,
   LogOut,
   Maximize2,
@@ -88,6 +89,7 @@ import {
   type CanvasTool,
 } from "@/components/canvas/workspace-primary-dock";
 import { WorkspacePanel } from "@/components/canvas/workspace-panel";
+import { CanvasAiReviews } from "@/components/ai/canvas-ai-reviews";
 import { CanvasComments } from "@/components/comments/canvas-comments";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { CanvasRole } from "@/domain/command";
@@ -118,7 +120,7 @@ type InlineTextEditor = {
 };
 type ContextPanel =
   "fill" | "outline" | "text" | "table" | "connector" | "more";
-type SharedPanel = "objects" | "comments" | "help";
+type SharedPanel = "objects" | "comments" | "review" | "help";
 type ObjectContextMenuPosition = { x: number; y: number; maxHeight: number };
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
@@ -1307,6 +1309,21 @@ export function ProductCanvas({
     });
   }
 
+  function focusReviewObject(objectId: string) {
+    const object = objectsById.get(objectId);
+    if (!object) return false;
+    const bounds = objectBounds(object);
+    const scale = Math.min(1.5, Math.max(0.75, viewport.scale));
+    setSelectedIds([objectId]);
+    setTool("select");
+    setViewport({
+      scale,
+      x: size.width / 2 - (bounds.x + bounds.width / 2) * scale,
+      y: size.height / 2 - (bounds.y + bounds.height / 2) * scale,
+    });
+    return true;
+  }
+
   function toggleSharedPanel(panel: SharedPanel, invoker: HTMLButtonElement) {
     if (sharedPanel === panel) {
       setSharedPanel(null);
@@ -2290,6 +2307,21 @@ export function ProductCanvas({
           >
             <Share2 aria-hidden="true" />
           </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            aria-label="Review AI changes"
+            aria-expanded={sharedPanel === "review"}
+            aria-controls="workspace-shared-panel"
+            title="Review AI changes"
+            className="border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50"
+            onClick={(event) =>
+              toggleSharedPanel("review", event.currentTarget)
+            }
+          >
+            <ListChecks aria-hidden="true" />
+          </Button>
           <span
             className="hidden max-w-48 truncate px-1 text-xs text-zinc-500 xl:block"
             title={userIdentity}
@@ -2381,11 +2413,19 @@ export function ProductCanvas({
 
       {sharedPanel && sharedPanel !== "comments" ? (
         <WorkspacePanel
-          title={sharedPanel === "objects" ? "Object navigator" : "Canvas help"}
+          title={
+            sharedPanel === "objects"
+              ? "Object navigator"
+              : sharedPanel === "review"
+                ? "Review AI changes"
+                : "Canvas help"
+          }
           description={
             sharedPanel === "objects"
               ? "Browse objects and inspect detailed selection geometry."
-              : "Keyboard shortcuts for moving around and editing this canvas."
+              : sharedPanel === "review"
+                ? "Inspect one coordinated change set and decide each object once."
+                : "Keyboard shortcuts for moving around and editing this canvas."
           }
           invoker={sharedPanelInvoker}
           onDismiss={() => setSharedPanel(null)}
@@ -2400,6 +2440,12 @@ export function ProductCanvas({
                 updateSelectionForObject(object, modifier);
                 setTool("select");
               }}
+            />
+          ) : sharedPanel === "review" ? (
+            <CanvasAiReviews
+              canvasId={canvasId}
+              canvasRole={canvasRole}
+              onFocusObject={focusReviewObject}
             />
           ) : (
             <ShortcutHelp />
@@ -2421,6 +2467,10 @@ export function ProductCanvas({
         panelInvoker={sharedPanelInvoker}
         simulatedAiEnabled={simulatedAiEnabled}
         onDismissPanel={() => setSharedPanel(null)}
+        onOpenReviews={() => {
+          setSharedPanelInvoker(null);
+          setSharedPanel("review");
+        }}
         onSelectTargets={(targetIds) => {
           if (!targetIds.length) {
             closeContextPanel(false);

@@ -1,6 +1,13 @@
 import { z } from "zod";
 
-import type { CanvasObjectV2 } from "@/canvas/canvas-document";
+import {
+  canvasObjectV2Schema,
+  type CanvasObjectV2,
+} from "@/canvas/canvas-document";
+import {
+  aiObjectVisualFactsSchema,
+  buildObjectVisualFacts,
+} from "@/ai/visual-grounding";
 
 const uuid = z.uuid();
 const pageRequestSchema = z.strictObject({
@@ -23,6 +30,8 @@ export const canvasObjectDetailSchema = z.strictObject({
   groupId: uuid.nullable(),
   orderIndex: z.number().int().nonnegative(),
   relationshipIds: z.array(uuid).max(1_000),
+  state: canvasObjectV2Schema,
+  visual: aiObjectVisualFactsSchema,
 });
 
 export const commentThreadDetailSchema = z.strictObject({
@@ -115,6 +124,8 @@ export function buildCanvasObjectDetails(
       groupId: object.groupId ?? null,
       orderIndex,
       relationshipIds: [...(adjacency.get(object.id) ?? [])].sort(),
+      state: object,
+      visual: buildObjectVisualFacts(object, objects),
     }),
   );
 }

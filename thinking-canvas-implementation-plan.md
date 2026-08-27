@@ -29,7 +29,7 @@ This document is the build and completion ledger for the first version of Thinki
 | Realtime transport | Supabase Realtime | Broadcast for high-frequency canvas updates and cursors; Presence for online participant state |
 | Web framework | Next.js + TypeScript | App Router application, server-only AI routes, and typed domain code |
 | UI | Tailwind CSS + shadcn/ui | Application shell, dialogs, menus, panels, toolbars, forms, and accessible controls |
-| AI reasoning and actions | OpenAI Responses API | Canvas interpretation, grounded responses, tool calls, starter structures, document work, and review explanations |
+| AI reasoning and actions | OpenAI Responses API | Multimodal canvas interpretation, grounded responses, validated tool calls, starter structures, document work, review explanations, and targeted visual feedback |
 | Live AI voice | OpenAI Realtime API | Low-latency speech sessions only; the Responses API remains the primary reasoning and action API |
 | Source control | GitHub | Repository, pull requests, protected main branch, and CI |
 | Domain | Any registrar | DNS points to Netlify; registrar choice remains independent of the application |
@@ -78,7 +78,7 @@ Use exact versions selected during project initialization and commit the lockfil
 1. The browser renders and edits the canvas, maintains the local Yjs document, and connects directly to authorized Supabase Realtime channels.
 2. Supabase Auth establishes identity. PostgreSQL Row Level Security enforces canvas membership and role permissions.
 3. PostgreSQL stores durable domain records plus append-only Yjs updates and periodic compacted snapshots.
-4. Next.js server routes on Netlify validate requests, load an authorized canvas projection, call OpenAI, and convert validated AI tool calls into domain commands.
+4. Next.js server routes on Netlify validate requests, load an authorized semantic canvas projection and any bounded transient render captures required for visual judgment, call OpenAI, and convert validated AI tool calls into domain commands.
 5. OpenAI Realtime WebRTC sessions use short-lived credentials issued by an authenticated server route; long-lived OpenAI keys never reach the browser.
 
 ### Canonical data boundaries
@@ -234,7 +234,7 @@ Evidence: [Milestone 3 implementation and verification record](docs/implementati
 
 - [x] Evaluation suite passes groundedness, permission, malformed-tool-call, prompt-injection, and cancellation cases at the approved threshold.
 
-Evidence: [Milestone 4 implementation and verification record](docs/implementation/milestone-04-ai-collaborator-permissions-and-typed-interaction.md), pull request [#9](https://github.com/jewilhel/Thinking-Canvas/pull/9), exact-head protected CI [run `32938748793`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/32938748793) for commit `1f9234c`, ready Git-backed Netlify deploy preview `6a8e88fa3512c700083c983b`, the Luna evaluation trace, and product-owner hosted acceptance and closure approval on 2026-08-26. The pull request remains open and unmerged; production was not changed.
+Evidence: [Milestone 4 implementation and verification record](docs/implementation/milestone-04-ai-collaborator-permissions-and-typed-interaction.md), pull request [#9](https://github.com/jewilhel/Thinking-Canvas/pull/9), exact-head protected CI [run `32938748793`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/32938748793) for commit `1f9234c`, ready Git-backed Netlify deploy preview `6a8e88fa3512c700083c983b`, the Luna evaluation trace, and product-owner hosted acceptance and closure approval on 2026-08-26. The pull request was squash-merged to `main` as `f965395`; production was not changed.
 
 ## Milestone 5 — Reviewable AI changes
 
@@ -246,9 +246,17 @@ Evidence: [Milestone 4 implementation and verification record](docs/implementati
 - [ ] **FR-034 — Guided review story.** The product can generate and play a review story that visits AI changes one at a time.
 - [ ] **FR-035 — Contextual review step.** Each step frames the relevant change and exposes its explanation and currently valid actions.
 
+### Supporting work
+
+- [ ] Expand the versioned semantic canvas projection to include every render-affecting style and layout property required to understand the current composition, including fill, outline, typography, text alignment, object geometry, group/order, connector relationships, computed bounds, and applicable canvas design tokens; keep stable object IDs and server-derived state authoritative.
+- [ ] Add a bounded initial set of deterministic higher-level layout tools for reviewable AI edits—at minimum alignment, distribution, spacing normalization, and resize-to-content—implemented through the same validated domain-command, authorization, idempotency, collaboration, and reversal boundaries as lower-level commands. Defer template-specific composition and broader layout expansion to Milestone 10.
+- [ ] Add targeted before-and-after render captures for visually sensitive AI changes: use an object-plus-context region for direct-object comments and a grounded affected region plus full-canvas orientation image for world-space multi-object comments. Send captures only to an approved vision-capable Responses API model, keep them supplementary to the semantic projection, bound resolution/count/cost, use `store: false`, and do not persist image content in operational logs.
+- [ ] Validate each visually sensitive staged result with deterministic checks for clipping, overlap, contrast, spacing, bounds, and connector integrity, plus a bounded visual-feedback pass before presenting it for human review; never let screenshot interpretation create object IDs, widen comment-defined scope, or bypass server simulation.
+
 ### Exit gate
 
 - [ ] Complete the sourced **Reviewable AI edit** and **Guided review** acceptance scenarios, including a mixed keep/discard change set and a concurrent unrelated human edit.
+- [ ] On the same immutable preview, a visually sensitive single-object change and a world-space multi-object arrangement prove complete semantic style/layout grounding, deterministic layout-tool execution, targeted before/after visual feedback, scope preservation, and human-reviewable results without clipping, unsafe overlap, invalid contrast, or retention of provider capture payloads.
 
 ## Milestone 6 — Vector annotations
 
@@ -337,6 +345,11 @@ Evidence: [Milestone 4 implementation and verification record](docs/implementati
 - [ ] **FR-065 — Generate with standard primitives.** The AI creates the requested initial structure using only supported standard objects and valid connections.
 - [ ] **FR-066 — Save reusable structure.** A user can save, name, list, instantiate, rename, and delete their own reusable starter structure.
 
+### Supporting work
+
+- [ ] Reuse and expand the Milestone 5 deterministic layout-tool foundation for larger starter structures, including bounded grid/flow composition, style-preset application, connector routing, and post-generation layout validation without introducing format-specific canvas modes.
+- [ ] Use the complete semantic projection and targeted vision feedback when refining generated starter structures; retain standard primitives and validated domain commands as the canonical output rather than storing or editing a screenshot.
+
 ### Exit gate
 
 - [ ] Fixtures for a mind map, procedure, mood board, and storyboard create editable standard objects and never switch the product into a format-specific mode.
@@ -351,6 +364,7 @@ Evidence: [Milestone 4 implementation and verification record](docs/implementati
 - [ ] User canvas text, comments, documents, and AI outputs are safely rendered without executable HTML or script injection.
 - [ ] File and payload size limits, request throttles, abuse controls, and AI spend limits fail safely with user-readable messages.
 - [ ] Define retention and deletion behavior for canvases, comments, AI records, transcripts, collaboration updates, and backups.
+- [ ] Define and verify privacy, retention, redaction, and access behavior for transient canvas render captures sent for AI visual feedback; operational telemetry must retain metadata rather than image content or reconstructable canvas text.
 - [ ] Complete a dependency license and vulnerability review; resolve all release-blocking findings.
 
 ### Reliability and recovery
@@ -417,6 +431,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [ ] **PD-008 — Voice data:** approve consent, transcript visibility, retention, deletion, and whether audio is ever recorded.
 - [x] **PD-009 — Offline behavior:** decide whether the first version supports deliberate offline editing or only temporary disconnect recovery. **Decision:** the first version supports temporary disconnect recovery only; a fully loaded canvas may retain and retry pending edits through a transient connection loss, while deliberate offline entry and opening an uncached canvas offline remain unsupported.
 - [ ] **PD-010 — Export and portability:** decide whether a user-facing export is a launch requirement; it is prudent for recovery but not stated in the source brief.
+- [x] **PD-011 — AI visual grounding and layout assistance:** keep the complete semantic canvas projection and stable object IDs authoritative; add validated deterministic layout tools for manipulation; use bounded targeted before-and-after render captures only as supplementary vision context and never as mutation authority. The bounded core is Milestone 5 scope, with broader starter-structure composition deferred to Milestone 10. Approved by the product owner on 2026-08-26.
 
 ## Explicitly deferred
 

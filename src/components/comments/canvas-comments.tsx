@@ -65,6 +65,7 @@ type Props = {
   simulatedAiEnabled: boolean;
   onDismissPanel: () => void;
   onSelectTargets: (targetIds: string[]) => void;
+  onOpenReviews: () => void;
 };
 
 function initials(name: string) {
@@ -659,6 +660,7 @@ function ThreadBody({
   onStatus,
   onDelete,
   onNavigateEvidence,
+  onOpenReviews,
   onCancelAiRun,
   onRetryAiRun,
 }: {
@@ -680,6 +682,7 @@ function ThreadBody({
   onStatus: (status: "resolved" | "dismissed") => Promise<void>;
   onDelete: () => Promise<void>;
   onNavigateEvidence: (objectId: string) => void;
+  onOpenReviews: () => void;
   onCancelAiRun: (runId: string) => Promise<void>;
   onRetryAiRun: (runId: string) => Promise<void>;
 }) {
@@ -829,6 +832,18 @@ function ThreadBody({
                 <p className="mt-1 text-sm leading-6 whitespace-pre-wrap text-zinc-700">
                   {item.body}
                 </p>
+                {item.authorKind === "ai" &&
+                item.body.includes("Open Review changes") ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="mt-2"
+                    onClick={onOpenReviews}
+                  >
+                    Review changes
+                  </Button>
+                ) : null}
                 {item.evidence.length ? (
                   <div
                     className="mt-2 flex flex-wrap gap-2"
@@ -1041,6 +1056,7 @@ export function CanvasComments({
   panelInvoker,
   onDismissPanel,
   onSelectTargets,
+  onOpenReviews,
 }: Props) {
   const {
     threads,
@@ -1533,6 +1549,10 @@ export function CanvasComments({
             onStatus={(next) => status(selectedThread, next)}
             onDelete={() => deleteThread(selectedThread)}
             onNavigateEvidence={(objectId) => onSelectTargets([objectId])}
+            onOpenReviews={() => {
+              setSelectedThreadId(null);
+              onOpenReviews();
+            }}
             onCancelAiRun={cancelAiRun}
             onRetryAiRun={retryAiRun}
           />

@@ -12,6 +12,7 @@ import {
 } from "@/ai/collaborator-contract";
 import { FakePrimaryAiGateway } from "@/ai/fake-collaborator-gateway";
 import { allowedAiToolNames } from "@/ai/tool-registry";
+import { AI_CANVAS_DESIGN_TOKENS } from "@/ai/visual-grounding";
 
 const ids = {
   run: "80000000-0000-4000-8000-000000000001",
@@ -35,7 +36,7 @@ const invocation = aiInvocationSchema.parse({
 });
 
 const projection = aiProjectionEnvelopeSchema.parse({
-  version: 1,
+  version: 2,
   canvasId: ids.canvas,
   objects: [
     {
@@ -46,6 +47,32 @@ const projection = aiProjectionEnvelopeSchema.parse({
       groupId: null,
       orderIndex: 0,
       relationshipIds: [],
+      state: {
+        schemaVersion: 2,
+        id: ids.object,
+        canvasId: ids.canvas,
+        createdBy: ids.user,
+        createdAt: "2026-08-24T12:00:00.000Z",
+        updatedAt: "2026-08-24T12:00:00.000Z",
+        type: "shape",
+        shape: "rectangle",
+        text: "Main idea",
+        geometry: { x: 0, y: 0, width: 100, height: 80, rotation: 0 },
+        style: {
+          fill: "#ffffff",
+          outline: "#18181b",
+          outlineWidth: 2,
+          fontFamily: "Inter",
+          fontSize: 16,
+          textColor: "#18181b",
+        },
+      },
+      visual: {
+        rotatedBounds: { x: 0, y: 0, width: 100, height: 80 },
+        estimatedTextLines: 1,
+        estimatedTextClipped: false,
+        overlappingObjectIds: [],
+      },
     },
   ],
   commentThreads: [
@@ -59,6 +86,7 @@ const projection = aiProjectionEnvelopeSchema.parse({
       updatedAt: "2026-08-24T12:00:00.000Z",
     },
   ],
+  designTokens: AI_CANVAS_DESIGN_TOKENS,
   serializedBytes: 512,
   truncated: false,
 });
@@ -261,7 +289,7 @@ describe("FakePrimaryAiGateway", () => {
     expect(result).toMatchObject({
       status: "completed",
       reply: {
-        body: "I staged validated changes for later review without changing the canvas.",
+        body: "I applied validated changes tentatively for review.",
       },
       toolCalls: [
         {
@@ -269,6 +297,13 @@ describe("FakePrimaryAiGateway", () => {
           toolName: "stage_canvas_changes",
           arguments: {
             summary: "Move the supporting object to the right.",
+            explanations: [
+              {
+                objectId: ids.object,
+                whatChanged: "Moved the supporting object to the right.",
+                why: "The added spacing separates it from the main idea.",
+              },
+            ],
             commands: [
               {
                 type: "object.move",

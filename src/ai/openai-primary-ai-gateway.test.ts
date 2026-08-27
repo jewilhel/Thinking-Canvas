@@ -16,6 +16,7 @@ import {
   OpenAiPrimaryAiGateway,
   type StreamingResponsesClient,
 } from "@/ai/openai-primary-ai-gateway";
+import { AI_CANVAS_DESIGN_TOKENS } from "@/ai/visual-grounding";
 import {
   createPrimaryAiGateway,
   parsePrimaryAiProviderEnvironment,
@@ -44,12 +45,12 @@ const invocation: AiInvocation = {
 };
 
 const projection: AiProjectionEnvelope = {
-  version: 1,
+  version: 2,
   canvasId: ids.canvas,
   objects: [
     {
       id: ids.object,
-      type: "sticky_note",
+      type: "shape",
       summary: "Customers will adopt the workflow without training.",
       geometry: {
         x: 0,
@@ -61,21 +62,51 @@ const projection: AiProjectionEnvelope = {
       groupId: null,
       orderIndex: 0,
       relationshipIds: [],
+      state: {
+        schemaVersion: 2,
+        id: ids.object,
+        canvasId: ids.canvas,
+        createdBy: ids.user,
+        createdAt: "2026-08-26T12:00:00.000Z",
+        updatedAt: "2026-08-26T12:00:00.000Z",
+        type: "shape",
+        shape: "rectangle",
+        text: "Customers will adopt the workflow without training.",
+        geometry: { x: 0, y: 0, width: 200, height: 120, rotation: 0 },
+        style: {
+          fill: "#ffffff",
+          outline: "#18181b",
+          outlineWidth: 2,
+          fontFamily: "Inter",
+          fontSize: 16,
+          textColor: "#18181b",
+        },
+      },
+      visual: {
+        rotatedBounds: { x: 0, y: 0, width: 200, height: 120 },
+        estimatedTextLines: 2,
+        estimatedTextClipped: false,
+        overlappingObjectIds: [],
+      },
     },
   ],
   commentThreads: [],
+  designTokens: AI_CANVAS_DESIGN_TOKENS,
   serializedBytes: 512,
   truncated: false,
 };
 
-function providerResponse(argumentsValue: unknown) {
+function providerResponse(
+  argumentsValue: unknown,
+  name = "submit_primary_ai_turn",
+) {
   return {
     id: "resp_123",
     model: "gpt-5.6-terra",
     output: [
       {
         type: "function_call",
-        name: "submit_primary_ai_turn",
+        name,
         arguments: JSON.stringify(argumentsValue),
         call_id: "call_123",
         id: "item_123",
@@ -215,6 +246,38 @@ describe("OpenAiPrimaryAiGateway", () => {
       }),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(client.stream).not.toHaveBeenCalled();
+  });
+
+  it("submits targeted before and after captures to a separate visual gate", async () => {
+    const client = clientReturning(
+      providerResponse({ status: "pass", issues: [] }, "submit_visual_review"),
+    );
+    const gateway = new OpenAiPrimaryAiGateway({
+      apiKey: "test-key",
+      model: "gpt-5.6-luna",
+      client,
+    });
+    const result = await gateway.reviewVisualChange({
+      instruction: "Improve spacing.",
+      targetObjectIds: [ids.object],
+      beforeImageDataUrl: "data:image/png;base64,before",
+      afterImageDataUrl: "data:image/png;base64,after",
+    });
+    expect(result).toMatchObject({
+      status: "pass",
+      issueCount: 0,
+      model: "gpt-5.6-terra",
+    });
+    const [body] = client.stream.mock.calls[0];
+    expect(body.tool_choice).toEqual({
+      type: "function",
+      name: "submit_visual_review",
+    });
+    expect(JSON.stringify(body.input)).toContain(
+      "data:image/png;base64,before",
+    );
+    expect(JSON.stringify(body.input)).toContain("data:image/png;base64,after");
+    expect(body.store).toBe(false);
   });
 });
 
