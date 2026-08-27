@@ -538,7 +538,7 @@ export async function completeAiRun(
               objects: sourceObjects,
               request: toolArguments.layout,
             });
-      const reviewStage = validateCanvasReviewStage({
+      let reviewStage = validateCanvasReviewStage({
         document: compacted.document,
         canvasId: run.canvas_id,
         actorId: run.requested_by,
@@ -548,7 +548,7 @@ export async function completeAiRun(
         scope: reviewScope,
         changes: reviewStage.objectChanges,
       });
-      const explainedChanges = validateReviewExplanations({
+      let explainedChanges = validateReviewExplanations({
         reviewStage,
         explanations: toolArguments.explanations,
       });
@@ -604,6 +604,10 @@ export async function completeAiRun(
           afterImageDataUrl: afterCapture.dataUrl,
           beforeOverviewImageDataUrl: beforeOverview.dataUrl,
           afterOverviewImageDataUrl: afterOverview.dataUrl,
+          proposedCommands: reviewStage.commands,
+          proposedObjectStates: reviewStage.objectChanges.map(
+            (change) => change.afterState,
+          ),
           signal: options.signal,
         });
         if (visualReview?.status === "fail") {
@@ -611,13 +615,92 @@ export async function completeAiRun(
             "The targeted visual quality check found a blocking layout defect.",
           );
         }
+        let captureCount = 4;
+        let feedbackPassCount = visualReview ? 1 : 0;
+        let finalVisualReview = visualReview;
+        if (
+          visualReview?.status === "refine" &&
+          !visualReview.replacementCommands
+        ) {
+          throw new Error("Visual refinement commands were unavailable.");
+        }
+        if (
+          visualReview?.status === "refine" &&
+          visualReview.replacementCommands
+        ) {
+          const refinedStage = validateCanvasReviewStage({
+            document: compacted.document,
+            canvasId: run.canvas_id,
+            actorId: run.requested_by,
+            commands: visualReview.replacementCommands,
+          });
+          assertReviewChangesWithinScope({
+            scope: reviewScope,
+            changes: refinedStage.objectChanges,
+          });
+          const originalIds = [...reviewStage.affectedObjectIds].sort();
+          const refinedIds = [...refinedStage.affectedObjectIds].sort();
+          if (JSON.stringify(originalIds) !== JSON.stringify(refinedIds)) {
+            throw new Error(
+              "Visual refinement must preserve the exact affected object set.",
+            );
+          }
+          const refinedExplanations = validateReviewExplanations({
+            reviewStage: refinedStage,
+            explanations: toolArguments.explanations,
+          });
+          assertNoNewDeterministicVisualDefects({
+            beforeObjects: sourceObjects,
+            afterObjects: refinedStage.visualObjects,
+            targetObjectIds: refinedStage.affectedObjectIds,
+          });
+          const [refinedAfterCapture, refinedAfterOverview] = await Promise.all(
+            [
+              renderTargetedCanvasCapture({
+                objects: refinedStage.visualObjects,
+                focusObjects: [...sourceObjects, ...refinedStage.visualObjects],
+                targetObjectIds: refinedStage.affectedObjectIds,
+                label: "after",
+              }),
+              renderTargetedCanvasCapture({
+                objects: refinedStage.visualObjects,
+                focusObjects: [...sourceObjects, ...refinedStage.visualObjects],
+                targetObjectIds: allObjectIds,
+                label: "after",
+              }),
+            ],
+          );
+          const confirmation = await gateway.reviewVisualChange?.({
+            instruction,
+            targetObjectIds: refinedStage.affectedObjectIds,
+            beforeImageDataUrl: beforeCapture.dataUrl,
+            afterImageDataUrl: refinedAfterCapture.dataUrl,
+            beforeOverviewImageDataUrl: beforeOverview.dataUrl,
+            afterOverviewImageDataUrl: refinedAfterOverview.dataUrl,
+            proposedCommands: refinedStage.commands,
+            proposedObjectStates: refinedStage.objectChanges.map(
+              (change) => change.afterState,
+            ),
+            signal: options.signal,
+          });
+          captureCount = 6;
+          feedbackPassCount = 2;
+          if (!confirmation || confirmation.status !== "pass") {
+            throw new AiRunConflictError(
+              "The bounded visual refinement did not resolve the layout defect.",
+            );
+          }
+          reviewStage = refinedStage;
+          explainedChanges = refinedExplanations;
+          finalVisualReview = confirmation;
+        }
         visualFeedbackMetadata = {
           projectionVersion: projection.version,
           rendererVersion: TARGETED_CAPTURE_RENDERER_VERSION,
-          captureCount: 4,
-          feedbackPassCount: visualReview ? 1 : 0,
-          feedbackStatus: visualReview?.status ?? "not_available",
-          feedbackIssueCount: visualReview?.issueCount ?? 0,
+          captureCount,
+          feedbackPassCount,
+          feedbackStatus: finalVisualReview?.status ?? "not_available",
+          feedbackIssueCount: finalVisualReview?.issueCount ?? 0,
           captureWidth: Math.max(beforeCapture.width, afterCapture.width),
           captureHeight: Math.max(beforeCapture.height, afterCapture.height),
           contextObjectCount: new Set([

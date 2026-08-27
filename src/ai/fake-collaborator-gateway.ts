@@ -15,7 +15,48 @@ import { allowedAiToolNames, type AiToolName } from "@/ai/tool-registry";
 export type { FakeAiScenario } from "@/ai/primary-ai-gateway";
 
 export class FakePrimaryAiGateway implements PrimaryAiGateway {
-  async reviewVisualChange() {
+  private visualReviewCount = 0;
+
+  async reviewVisualChange(
+    input: Parameters<NonNullable<PrimaryAiGateway["reviewVisualChange"]>>[0],
+  ) {
+    this.visualReviewCount += 1;
+    if (
+      input.instruction.toLowerCase().includes("vision refinement") &&
+      this.visualReviewCount === 1
+    ) {
+      const objects = input.proposedObjectStates.flatMap((state) => {
+        const object = (
+          state as {
+            object?: {
+              id?: string;
+              geometry?: { x?: number; y?: number };
+            };
+          }
+        ).object;
+        return object?.id &&
+          typeof object.geometry?.x === "number" &&
+          typeof object.geometry.y === "number"
+          ? [object as { id: string; geometry: { x: number; y: number } }]
+          : [];
+      });
+      if (objects.length === input.targetObjectIds.length) {
+        return {
+          status: "refine" as const,
+          issueCount: 1,
+          replacementCommands: objects.map((object) => ({
+            type: "object.move",
+            payload: {
+              objectId: object.id,
+              x: object.geometry.x + 24,
+              y: object.geometry.y,
+            },
+          })),
+          requestId: "fake-visual-refinement",
+          model: "deterministic-fake",
+        };
+      }
+    }
     return {
       status: "pass" as const,
       issueCount: 0,
@@ -59,6 +100,7 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       };
     }
 
+    const instruction = invocation.instruction.toLowerCase();
     const objectsById = new Map(
       projection.objects.map((object) => [object.id, object]),
     );
@@ -71,20 +113,19 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       (thread) => thread.id === invocation.commentId,
     );
     const shouldCreateContextualComment =
-      invocation.instruction.toLowerCase().includes("contextual comment") &&
+      instruction.includes("contextual comment") &&
       firstObject !== undefined &&
       sourceThread?.targetObjectIds.length === 0;
     const shouldProposeChanges =
-      invocation.instruction.toLowerCase().includes("propose") &&
+      instruction.includes("propose") &&
       firstObject !== undefined &&
       input.allowedToolNames.includes("propose_canvas_commands");
     const shouldStageReview =
-      invocation.instruction.toLowerCase().includes("review") &&
+      instruction.includes("review") &&
       firstObject !== undefined &&
       input.allowedToolNames.includes("stage_canvas_changes");
     const reviewObjects =
-      shouldStageReview &&
-      invocation.instruction.toLowerCase().includes("multiple")
+      shouldStageReview && instruction.includes("multiple")
         ? projection.objects
             .filter(
               (object) =>
@@ -94,8 +135,12 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
         : firstObject
           ? [firstObject]
           : [];
+    const shouldReviewLabel =
+      reviewObjects.length === 1 &&
+      instruction.includes("label") &&
+      (reviewObjects[0]?.type === "shape" || reviewObjects[0]?.type === "text");
     const shouldExecuteChanges =
-      invocation.instruction.toLowerCase().includes("apply") &&
+      instruction.includes("apply") &&
       firstObject !== undefined &&
       input.allowedToolNames.includes("execute_canvas_commands");
     const reply = aiReplySchema.parse({
@@ -143,25 +188,41 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
               callKey: "review-stage-1",
               toolName: "stage_canvas_changes",
               arguments: {
-                summary: "Move the supporting object to the right.",
+                summary: shouldReviewLabel
+                  ? "Clarify the supporting object's label."
+                  : "Move the supporting object to the right.",
                 explanations: [
                   ...reviewObjects.map((object, index) => ({
                     objectId: object.id,
-                    whatChanged:
-                      reviewObjects.length === 1
+                    whatChanged: shouldReviewLabel
+                      ? `Changed the label from “${"text" in object.state ? object.state.text : ""}” to “Supporting evidence”.`
+                      : reviewObjects.length === 1
                         ? "Moved the supporting object to the right."
                         : `Moved supporting object ${index + 1} to the right.`,
-                    why: "The added spacing separates it from the main idea.",
+                    why: shouldReviewLabel
+                      ? "The revised label states the object's purpose more clearly."
+                      : "The added spacing separates it from the main idea.",
                   })),
                 ],
-                commands: reviewObjects.map((object) => ({
-                  type: "object.move",
-                  payload: {
-                    objectId: object.id,
-                    x: object.geometry.x + 40,
-                    y: object.geometry.y,
-                  },
-                })),
+                commands: reviewObjects.map((object) =>
+                  shouldReviewLabel
+                    ? {
+                        type: "object.patch",
+                        payload: {
+                          objectId: object.id,
+                          objectType: object.type as "shape" | "text",
+                          text: "Supporting evidence",
+                        },
+                      }
+                    : {
+                        type: "object.move",
+                        payload: {
+                          objectId: object.id,
+                          x: object.geometry.x + 40,
+                          y: object.geometry.y,
+                        },
+                      },
+                ),
               },
             },
           ]

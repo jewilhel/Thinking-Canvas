@@ -276,6 +276,7 @@ export function ProductCanvas({
   const [sharedPanel, setSharedPanel] = useState<SharedPanel | null>(null);
   const [sharedPanelInvoker, setSharedPanelInvoker] =
     useState<HTMLButtonElement | null>(null);
+  const [reviewGuidancePaused, setReviewGuidancePaused] = useState(false);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [dragPreviewPositions, setDragPreviewPositions] = useState<
     Record<string, Point>
@@ -1316,6 +1317,7 @@ export function ProductCanvas({
     const scale = Math.min(1.5, Math.max(0.75, viewport.scale));
     setSelectedIds([objectId]);
     setTool("select");
+    setReviewGuidancePaused(false);
     setViewport({
       scale,
       x: size.width / 2 - (bounds.x + bounds.width / 2) * scale,
@@ -1331,11 +1333,13 @@ export function ProductCanvas({
     }
     setSharedPanelInvoker(invoker);
     setContextPanel(null);
+    if (panel === "review") setReviewGuidancePaused(false);
     setSharedPanel(panel);
   }
 
   function onWheel(event: Konva.KonvaEventObject<WheelEvent>) {
     event.evt.preventDefault();
+    if (sharedPanel === "review") setReviewGuidancePaused(true);
     const now = performance.now();
     const previousGesture = wheelGestureRef.current;
     const inferredIntent = canvasWheelIntent(event.evt);
@@ -1365,6 +1369,7 @@ export function ProductCanvas({
   function onStagePointerDown(
     event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
   ) {
+    if (sharedPanel === "review") setReviewGuidancePaused(true);
     if (event.target !== stageRef.current) return;
     setContextPanel(null);
     const point = worldPointer();
@@ -2445,6 +2450,7 @@ export function ProductCanvas({
             <CanvasAiReviews
               canvasId={canvasId}
               canvasRole={canvasRole}
+              guidancePaused={reviewGuidancePaused}
               onFocusObject={focusReviewObject}
             />
           ) : (

@@ -316,6 +316,49 @@ describe("FakePrimaryAiGateway", () => {
     });
   });
 
+  it("stages a grounded label edit for the single-object acceptance story", async () => {
+    const gateway = new FakePrimaryAiGateway();
+    const reviewInvocation = {
+      ...invocation,
+      authority: "edit_with_review" as const,
+      instruction: "Review changing this object's label.",
+    };
+    const result = await gateway.request({
+      invocation: reviewInvocation,
+      projection,
+      allowedToolNames: allowedAiToolNames(reviewInvocation.authority),
+    });
+    expect(result).toMatchObject({
+      status: "completed",
+      toolCalls: [
+        {
+          toolName: "stage_canvas_changes",
+          arguments: {
+            summary: "Clarify the supporting object's label.",
+            explanations: [
+              {
+                objectId: ids.object,
+                whatChanged:
+                  "Changed the label from “Main idea” to “Supporting evidence”.",
+                why: "The revised label states the object's purpose more clearly.",
+              },
+            ],
+            commands: [
+              {
+                type: "object.patch",
+                payload: {
+                  objectId: ids.object,
+                  objectType: "shape",
+                  text: "Supporting evidence",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+  });
+
   it("returns a strict canonical command only for trusted-editor authority", async () => {
     const gateway = new FakePrimaryAiGateway();
     const trustedInvocation = {

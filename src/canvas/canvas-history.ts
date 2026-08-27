@@ -168,11 +168,19 @@ export function applyCanvasHistoryEntry(
 
     if (!equal(expectedOrder, desiredOrder)) {
       const currentOrder = readCanvasOrderV2(document);
+      const currentObjectIds = listCanvasObjectsV2(document)
+        .map((object) => object.id)
+        .sort();
+      const desiredObjectIds = [...desiredOrder].sort();
+      const canApplyDesiredOrder = equal(currentObjectIds, desiredObjectIds);
       if (equal(currentOrder, desiredOrder)) {
         // Object creation or deletion already produced the desired order.
-      } else if (equal(currentOrder, expectedOrder)) {
+      } else if (equal(currentOrder, expectedOrder) && canApplyDesiredOrder) {
         setCanvasOrderV2(document, desiredOrder);
-      } else if (equal([...currentOrder].sort(), [...desiredOrder].sort())) {
+      } else if (
+        equal([...currentOrder].sort(), desiredObjectIds) &&
+        canApplyDesiredOrder
+      ) {
         setCanvasOrderV2(document, desiredOrder);
       } else {
         conflicts.push("canvas:order");

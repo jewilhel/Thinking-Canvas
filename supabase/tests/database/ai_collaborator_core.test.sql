@@ -1260,6 +1260,97 @@ select results_eq(
 set local role service_role;
 select set_config('request.jwt.claim.role', 'service_role', true);
 
+reset role;
+savepoint review_closed_source;
+update public.comments
+set status = 'resolved'
+where id = (
+  select source_comment_id
+  from public.ai_change_sets
+  where id = current_setting('test.review_change_set_id')::uuid
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+select throws_ok(
+  $$select * from public.activate_ai_review_stage(
+      current_setting('test.review_change_set_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      decode('0102', 'hex'),
+      current_setting('test.review_sequence')::bigint
+    )$$,
+  '42501',
+  'Review activation no longer matches its source comment scope.',
+  'tentative activation fails closed when the source thread is no longer open'
+);
+
+reset role;
+rollback to savepoint review_closed_source;
+release savepoint review_closed_source;
+
+savepoint review_deleted_source;
+delete from public.comments
+where id = (
+  select source_comment_id
+  from public.ai_change_sets
+  where id = current_setting('test.review_change_set_id')::uuid
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+select throws_ok(
+  $$select * from public.activate_ai_review_stage(
+      current_setting('test.review_change_set_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      decode('0102', 'hex'),
+      current_setting('test.review_sequence')::bigint
+    )$$,
+  '42501',
+  'AI review stage is not accessible.',
+  'tentative activation fails closed when the source thread is deleted'
+);
+
+reset role;
+rollback to savepoint review_deleted_source;
+release savepoint review_deleted_source;
+
+savepoint review_authority_downgrade;
+update public.canvas_ai_settings
+set enabled = false
+where canvas_id = '20000000-0000-4000-8000-000000000001';
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+select throws_ok(
+  $$select * from public.activate_ai_review_stage(
+      current_setting('test.review_change_set_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      decode('0102', 'hex'),
+      current_setting('test.review_sequence')::bigint
+    )$$,
+  '42501',
+  'Current AI authority no longer allows review activation.',
+  'tentative activation rechecks the current AI authority'
+);
+
+reset role;
+rollback to savepoint review_authority_downgrade;
+release savepoint review_authority_downgrade;
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+select throws_ok(
+  $$select * from public.activate_ai_review_stage(
+      current_setting('test.review_change_set_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      decode('0102', 'hex'),
+      current_setting('test.review_sequence')::bigint + 1
+    )$$,
+  '40001',
+  'The canvas changed before tentative review activation.',
+  'tentative activation rejects a stale projected sequence'
+);
+
 select results_eq(
   $$select created
     from public.activate_ai_review_stage(
@@ -1284,6 +1375,62 @@ select results_eq(
   'an exact tentative activation retry returns the original durable update'
 );
 
+select throws_ok(
+  $$select * from public.decide_ai_review_object(
+      current_setting('test.review_object_change_id')::uuid,
+      '10000000-0000-4000-8000-000000000003',
+      'keep', null,
+      '85000000-0000-4000-8000-000000000010',
+      null, null, '[]'::jsonb
+    )$$,
+  '42501',
+  'Only a current owner or editor may decide AI changes.',
+  'a commenter cannot decide a review object through the trusted transaction'
+);
+
+select throws_ok(
+  $$select * from public.decide_ai_review_object(
+      current_setting('test.review_object_change_id')::uuid,
+      '10000000-0000-4000-8000-000000000004',
+      'keep', null,
+      '85000000-0000-4000-8000-000000000011',
+      null, null, '[]'::jsonb
+    )$$,
+  '42501',
+  'Only a current owner or editor may decide AI changes.',
+  'a viewer cannot decide a review object through the trusted transaction'
+);
+
+reset role;
+delete from public.canvas_members
+where canvas_id = '20000000-0000-4000-8000-000000000001'
+  and user_id = '10000000-0000-4000-8000-000000000002';
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+select throws_ok(
+  $$select * from public.decide_ai_review_object(
+      current_setting('test.review_object_change_id')::uuid,
+      '10000000-0000-4000-8000-000000000002',
+      'keep', null,
+      '85000000-0000-4000-8000-000000000012',
+      null, null, '[]'::jsonb
+    )$$,
+  '42501',
+  'Only a current owner or editor may decide AI changes.',
+  'a removed editor immediately loses review-decision authority'
+);
+
+reset role;
+insert into public.canvas_members (canvas_id, user_id, role)
+values (
+  '20000000-0000-4000-8000-000000000001',
+  '10000000-0000-4000-8000-000000000002',
+  'editor'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
 select results_eq(
   $$select review_status, created
     from public.decide_ai_review_object(
@@ -1298,6 +1445,38 @@ select results_eq(
     )$$,
   $$values ('kept'::text, true)$$,
   'the first owner or editor decision globally keeps one tentative object change'
+);
+
+select results_eq(
+  $$select review_status, created
+    from public.decide_ai_review_object(
+      current_setting('test.review_object_change_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'keep',
+      null,
+      '85000000-0000-4000-8000-000000000001',
+      null,
+      null,
+      '[]'::jsonb
+    )$$,
+  $$values ('kept'::text, false)$$,
+  'an exact review decision retry returns the original global outcome'
+);
+
+select throws_ok(
+  $$select * from public.decide_ai_review_object(
+      current_setting('test.review_object_change_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      'discard',
+      null,
+      '85000000-0000-4000-8000-000000000001',
+      decode('0304', 'hex'),
+      null,
+      '[]'::jsonb
+    )$$,
+  '23505',
+  'Review decision identity was reused with different content.',
+  'a review idempotency key cannot be reused with different content'
 );
 
 select throws_ok(

@@ -12,14 +12,18 @@ import {
 const canvasId = "20000000-0000-4000-8000-000000000001";
 const objectId = "61000000-0000-4000-8000-000000000001";
 
-function object(x: number, text = "Evidence") {
+function object(
+  x: number,
+  text = "Evidence",
+  updatedAt = "2026-08-26T00:00:00.000Z",
+) {
   return {
     schemaVersion: 2 as const,
     id: objectId,
     canvasId,
     createdBy: "10000000-0000-4000-8000-000000000001",
     createdAt: "2026-08-26T00:00:00.000Z",
-    updatedAt: "2026-08-26T00:00:00.000Z",
+    updatedAt,
     type: "shape" as const,
     shape: "rectangle" as const,
     text,
@@ -45,6 +49,7 @@ describe("review decision state", () => {
       objectId,
       beforeState: { object: object(0), orderIndex: 0 },
       afterState: { object: object(240), orderIndex: 0 },
+      affectedFields: ["object.geometry.x"],
     });
     Y.applyUpdate(document, decision.update);
     expect(readCanvasObjectV2(document, objectId)).toMatchObject({
@@ -63,8 +68,86 @@ describe("review decision state", () => {
       objectId,
       beforeState: { object: object(0), orderIndex: 0 },
       afterState: { object: object(240), orderIndex: 0 },
+      affectedFields: ["object.geometry.x"],
     });
     expect(decision.status).toBe("partial");
     expect(decision.conflicts).toContain(`${objectId}:geometry.x`);
+  });
+
+  it("ignores unrelated geometry and updated metadata when discarding an AI label", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(
+      document,
+      object(241, "Supporting evidence", "2026-08-26T00:02:00.000Z"),
+    );
+    const decision = buildDiscardReviewUpdate({
+      document,
+      objectChangeId: "71000000-0000-4000-8000-000000000002",
+      objectId,
+      beforeState: { object: object(240, "New idea"), orderIndex: 0 },
+      afterState: {
+        object: object(240, "Supporting evidence", "2026-08-26T00:01:00.000Z"),
+        orderIndex: 0,
+      },
+      affectedFields: ["object.text"],
+    });
+    Y.applyUpdate(document, decision.update);
+    expect(readCanvasObjectV2(document, objectId)).toMatchObject({
+      text: "New idea",
+      geometry: { x: 241 },
+      updatedAt: "2026-08-26T00:02:00.000Z",
+    });
+    expect(decision).toMatchObject({ status: "applied", conflicts: [] });
+  });
+
+  it("removes an unchanged AI-created object and restores its prior order", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, object(240));
+    const decision = buildDiscardReviewUpdate({
+      document,
+      objectChangeId: "71000000-0000-4000-8000-000000000003",
+      objectId,
+      beforeState: { object: null, orderIndex: null },
+      afterState: { object: object(240), orderIndex: 0 },
+      affectedFields: ["object", "orderIndex"],
+    });
+    Y.applyUpdate(document, decision.update);
+    expect(readCanvasObjectV2(document, objectId)).toBeUndefined();
+    expect(decision).toMatchObject({ status: "applied", conflicts: [] });
+  });
+
+  it("restores an AI-deleted object at its prior order position", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const decision = buildDiscardReviewUpdate({
+      document,
+      objectChangeId: "71000000-0000-4000-8000-000000000004",
+      objectId,
+      beforeState: { object: object(240), orderIndex: 0 },
+      afterState: { object: null, orderIndex: null },
+      affectedFields: ["object", "orderIndex"],
+    });
+    Y.applyUpdate(document, decision.update);
+    expect(readCanvasObjectV2(document, objectId)).toMatchObject({
+      id: objectId,
+      text: "Evidence",
+    });
+    expect(decision).toMatchObject({ status: "applied", conflicts: [] });
+  });
+
+  it("preserves a human-modified AI-created object and reports the collision", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, object(240, "Human adopted this object"));
+    const decision = buildDiscardReviewUpdate({
+      document,
+      objectChangeId: "71000000-0000-4000-8000-000000000005",
+      objectId,
+      beforeState: { object: null, orderIndex: null },
+      afterState: { object: object(240), orderIndex: 0 },
+      affectedFields: ["object", "orderIndex"],
+    });
+    expect(decision.conflicts).toContain(`${objectId}:changed`);
+    expect(readCanvasObjectV2(document, objectId)).toMatchObject({
+      text: "Human adopted this object",
+    });
   });
 });

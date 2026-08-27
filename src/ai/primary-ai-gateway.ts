@@ -42,10 +42,13 @@ export interface PrimaryAiGateway {
     afterImageDataUrl: string;
     beforeOverviewImageDataUrl?: string;
     afterOverviewImageDataUrl?: string;
+    proposedCommands: unknown[];
+    proposedObjectStates: unknown[];
     signal?: AbortSignal;
   }): Promise<{
-    status: "pass" | "fail";
+    status: "pass" | "refine" | "fail";
     issueCount: number;
+    replacementCommands?: unknown[];
     requestId: string;
     model: string;
   }>;

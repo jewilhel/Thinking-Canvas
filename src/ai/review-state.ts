@@ -28,12 +28,63 @@ function placeObject(
   return next;
 }
 
+function readObjectPath(value: unknown, path: string[]) {
+  let current = value;
+  for (const segment of path) {
+    if (
+      typeof current !== "object" ||
+      current === null ||
+      Array.isArray(current)
+    )
+      return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+function writeObjectPath(
+  value: Record<string, unknown>,
+  path: string[],
+  replacement: unknown,
+) {
+  let current = value;
+  for (const segment of path.slice(0, -1)) {
+    const child = current[segment];
+    if (typeof child !== "object" || child === null || Array.isArray(child)) {
+      throw new Error("A review affected-field path is invalid.");
+    }
+    current = child as Record<string, unknown>;
+  }
+  const leaf = path.at(-1);
+  if (!leaf) throw new Error("A review affected-field path is empty.");
+  current[leaf] = structuredClone(replacement);
+}
+
+function isolateAffectedObjectState(
+  beforeState: StagedCanvasObjectState,
+  afterState: StagedCanvasObjectState,
+  affectedFields: string[],
+) {
+  if (!beforeState.object || !afterState.object) return beforeState.object;
+  const desired = structuredClone(afterState.object) as unknown as Record<
+    string,
+    unknown
+  >;
+  for (const field of affectedFields) {
+    if (!field.startsWith("object.")) continue;
+    const path = field.slice("object.".length).split(".");
+    writeObjectPath(desired, path, readObjectPath(beforeState.object, path));
+  }
+  return canvasObjectV2Schema.parse(desired);
+}
+
 export function buildDiscardReviewUpdate(input: {
   document: Y.Doc;
   objectChangeId: string;
   objectId: string;
   beforeState: unknown;
   afterState: unknown;
+  affectedFields: string[];
 }) {
   const beforeState = stagedStateSchema.parse(input.beforeState);
   const afterState = stagedStateSchema.parse(input.afterState);
@@ -46,7 +97,13 @@ export function buildDiscardReviewUpdate(input: {
   const entry: CanvasHistoryEntry = {
     commandId: input.objectChangeId,
     actorId: "primary-ai",
-    beforeObjects: { [input.objectId]: beforeState.object },
+    beforeObjects: {
+      [input.objectId]: isolateAffectedObjectState(
+        beforeState,
+        afterState,
+        input.affectedFields,
+      ),
+    },
     afterObjects: { [input.objectId]: afterState.object },
     beforeOrder: placeObject(currentOrder, input.objectId, beforeState),
     afterOrder: placeObject(currentOrder, input.objectId, afterState),

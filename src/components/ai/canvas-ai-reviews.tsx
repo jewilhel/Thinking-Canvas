@@ -48,10 +48,12 @@ function scopeLabel(review: Review) {
 export function CanvasAiReviews({
   canvasId,
   canvasRole,
+  guidancePaused,
   onFocusObject,
 }: {
   canvasId: string;
   canvasRole: CanvasRole;
+  guidancePaused: boolean;
   onFocusObject: (objectId: string) => boolean;
 }) {
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -63,7 +65,13 @@ export function CanvasAiReviews({
   const [sceneIndices, setSceneIndices] = useState<Record<string, number>>({});
   const [unavailableId, setUnavailableId] = useState<string | null>(null);
   const decisionKeys = useRef(new Map<string, string>());
+  const focusedSceneKey = useRef<string | null>(null);
+  const onFocusObjectRef = useRef(onFocusObject);
   const canDecide = canvasRole === "owner" || canvasRole === "editor";
+
+  useEffect(() => {
+    onFocusObjectRef.current = onFocusObject;
+  }, [onFocusObject]);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/canvases/${canvasId}/reviews`, {
@@ -103,6 +111,38 @@ export function CanvasAiReviews({
       window.clearInterval(interval);
     };
   }, [load]);
+
+  useEffect(() => {
+    if (guidancePaused) return;
+    const review = reviews.find((candidate) =>
+      candidate.ai_object_changes.some(
+        (change) =>
+          change.review_status === "activated" ||
+          change.review_status === "pending",
+      ),
+    );
+    if (!review) return;
+    const fallbackIndex = Math.max(
+      0,
+      review.ai_object_changes.findIndex(
+        (change) =>
+          change.review_status === "activated" ||
+          change.review_status === "pending",
+      ),
+    );
+    const index = Math.min(
+      sceneIndices[review.id] ?? fallbackIndex,
+      review.ai_object_changes.length - 1,
+    );
+    const change = review.ai_object_changes[index];
+    if (!change) return;
+    const sceneKey = `${review.id}:${change.id}`;
+    if (focusedSceneKey.current === sceneKey) return;
+    focusedSceneKey.current = sceneKey;
+    setUnavailableId(
+      onFocusObjectRef.current(change.object_id) ? null : change.id,
+    );
+  }, [guidancePaused, reviews, sceneIndices]);
 
   async function decide(
     review: Review,
@@ -233,7 +273,11 @@ export function CanvasAiReviews({
                   className="rounded-lg border border-zinc-200 bg-zinc-50 p-3"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+                    <span
+                      role="status"
+                      aria-live="polite"
+                      className="text-xs font-semibold tracking-wide text-zinc-500 uppercase"
+                    >
                       Change {index + 1} of {review.ai_object_changes.length}
                     </span>
                     <Button
@@ -262,6 +306,27 @@ export function CanvasAiReviews({
                       Target unavailable. Its before/after review evidence is
                       still preserved.
                     </p>
+                  ) : null}
+                  {guidancePaused ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-violet-50 p-2 text-xs text-violet-900">
+                      <span role="status">
+                        Guided framing paused while you explore the canvas.
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 bg-white"
+                        onClick={() => {
+                          focusedSceneKey.current = `${review.id}:${change.id}`;
+                          setUnavailableId(
+                            onFocusObject(change.object_id) ? null : change.id,
+                          );
+                        }}
+                      >
+                        Resume guided review
+                      </Button>
+                    </div>
                   ) : null}
                   {pending && canDecide ? (
                     <div className="mt-3 space-y-2">

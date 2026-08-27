@@ -100,7 +100,7 @@ export async function decideAiReviewObject(canvasId: string, input: unknown) {
   const { data: objectChange, error } = await supabase
     .from("ai_object_changes")
     .select(
-      "id,object_id,before_state,after_state,ai_change_sets!inner(id,canvas_id,source_comment_id)",
+      "id,object_id,affected_fields,before_state,after_state,ai_change_sets!inner(id,canvas_id,source_comment_id)",
     )
     .eq("id", parsed.objectChangeId)
     .eq("ai_change_sets.canvas_id", canvasId)
@@ -120,6 +120,7 @@ export async function decideAiReviewObject(canvasId: string, input: unknown) {
       objectId: objectChange.object_id,
       beforeState: objectChange.before_state,
       afterState: objectChange.after_state,
+      affectedFields: objectChange.affected_fields,
     });
     update = result.update.length > 2 ? result.update : null;
     conflicts = result.conflicts;

@@ -250,7 +250,10 @@ describe("OpenAiPrimaryAiGateway", () => {
 
   it("submits targeted before and after captures to a separate visual gate", async () => {
     const client = clientReturning(
-      providerResponse({ status: "pass", issues: [] }, "submit_visual_review"),
+      providerResponse(
+        { status: "pass", issues: [], replacementCommandsJson: "" },
+        "submit_visual_review",
+      ),
     );
     const gateway = new OpenAiPrimaryAiGateway({
       apiKey: "test-key",
@@ -262,6 +265,8 @@ describe("OpenAiPrimaryAiGateway", () => {
       targetObjectIds: [ids.object],
       beforeImageDataUrl: "data:image/png;base64,before",
       afterImageDataUrl: "data:image/png;base64,after",
+      proposedCommands: [],
+      proposedObjectStates: [projection.objects[0]!.state],
     });
     expect(result).toMatchObject({
       status: "pass",
@@ -278,6 +283,45 @@ describe("OpenAiPrimaryAiGateway", () => {
     );
     expect(JSON.stringify(body.input)).toContain("data:image/png;base64,after");
     expect(body.store).toBe(false);
+  });
+
+  it("parses one bounded visual refinement through the canonical command schema", async () => {
+    const replacementCommands = [
+      {
+        type: "object.move",
+        payload: { objectId: ids.object, x: 32, y: 0 },
+      },
+    ];
+    const client = clientReturning(
+      providerResponse(
+        {
+          status: "refine",
+          issues: ["The supporting object needs more spacing."],
+          replacementCommandsJson: JSON.stringify({
+            commands: replacementCommands,
+          }),
+        },
+        "submit_visual_review",
+      ),
+    );
+    const gateway = new OpenAiPrimaryAiGateway({
+      apiKey: "test-key",
+      client,
+    });
+    await expect(
+      gateway.reviewVisualChange({
+        instruction: "Improve spacing.",
+        targetObjectIds: [ids.object],
+        beforeImageDataUrl: "data:image/png;base64,before",
+        afterImageDataUrl: "data:image/png;base64,after",
+        proposedCommands: [],
+        proposedObjectStates: [projection.objects[0]!.state],
+      }),
+    ).resolves.toMatchObject({
+      status: "refine",
+      issueCount: 1,
+      replacementCommands,
+    });
   });
 });
 

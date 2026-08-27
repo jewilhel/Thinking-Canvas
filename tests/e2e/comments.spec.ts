@@ -539,7 +539,9 @@ test("applies tentative AI changes and discards them through the review panel", 
   await composer
     .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
     .click();
-  await comment.fill("Stage moving this object to the right for review.");
+  await comment.fill(
+    "Stage moving this object to the right for review with vision refinement.",
+  );
   await composer.getByRole("button", { name: "Submit comment" }).click();
 
   const thread = page.getByRole("dialog", { name: "Comment thread" });
@@ -570,6 +572,15 @@ test("applies tentative AI changes and discards them through the review panel", 
   await expect(
     reviewPanel.getByText("Moved the supporting object to the right."),
   ).toBeVisible();
+  await reviewPanel
+    .getByRole("button", { name: "Close Review AI changes" })
+    .click();
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await page.locator('[data-testid^="object-list-item-"]').first().click();
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    String(Number(positionBefore) + 64),
+  );
+  await page.getByRole("button", { name: "Review AI changes" }).click();
   await reviewPanel.getByRole("button", { name: "Discard" }).click();
   await expect(reviewPanel.getByText("discarded")).toBeVisible();
   await reviewPanel
@@ -594,6 +605,133 @@ test("applies tentative AI changes and discards them through the review panel", 
       .getByRole("dialog", { name: "Comment thread" })
       .getByText(/1 object change will remain reviewable as one change set/),
   ).toBeVisible();
+});
+
+test("restores an AI label edit while preserving a later human move", async ({
+  page,
+  browser,
+}) => {
+  await openFreshCanvas(page);
+  await addRectangle(page);
+  const canvasId = page.url().split("/").at(-1);
+  if (!canvasId) throw new Error("The current canvas ID is unavailable.");
+  await addEditorMembership(canvasId);
+  const editorContext = await browser.newContext();
+  const editor = await editorContext.newPage();
+  await signIn(editor, "editor@thinking-canvas.local");
+  await editor.goto(`/app/canvases/${canvasId}`);
+  await expect(editor.getByTestId("product-object-count")).toHaveText("1");
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await page.locator('[data-testid^="object-list-item-"]').first().click();
+  const positionBefore = Number(
+    await page.getByTestId("selected-position-x").textContent(),
+  );
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page.getByLabel("AI authority").selectOption("edit_with_review");
+  await page.getByRole("checkbox", { name: "Enabled" }).click();
+  await placeArmedComment(page);
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Review changing this object's label.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await thread.getByRole("button", { name: "Review changes" }).click();
+  const review = page.getByRole("dialog", { name: "Review AI changes" });
+  await expect(
+    review.getByText(
+      "Changed the label from “New idea” to “Supporting evidence”.",
+    ),
+  ).toBeVisible();
+  await expect(
+    review.getByText(
+      "The revised label states the object's purpose more clearly.",
+    ),
+  ).toBeVisible();
+  await expect(review.getByRole("button", { name: "Keep" })).toBeVisible();
+  await expect(
+    review.getByRole("button", { name: "Request revision" }),
+  ).toBeVisible();
+  await expect(review.getByRole("button", { name: "Discard" })).toBeVisible();
+
+  const reviewsResponse = await page.request.get(
+    `/api/canvases/${canvasId}/reviews`,
+  );
+  expect(reviewsResponse.ok()).toBeTruthy();
+  const reviewsPayload = (await reviewsResponse.json()) as {
+    reviews: Array<{
+      ai_object_changes: Array<{ id: string }>;
+    }>;
+  };
+  const objectChangeId = reviewsPayload.reviews[0]?.ai_object_changes[0]?.id;
+  if (!objectChangeId)
+    throw new Error("The review object identity is unavailable.");
+  const crossCanvasDecision = await page.request.patch(
+    `/api/canvases/${seedCanvasId}/reviews`,
+    {
+      data: {
+        objectChangeId,
+        decision: "keep",
+        note: null,
+        idempotencyKey: crypto.randomUUID(),
+      },
+    },
+  );
+  expect(crossCanvasDecision.status()).toBe(403);
+
+  await review.getByRole("button", { name: "Close Review AI changes" }).click();
+  await expect(page.getByTestId("selection-status")).toContainText(
+    "Supporting evidence",
+  );
+  const surface = page.getByTestId("product-canvas-surface");
+  await surface.focus();
+  await surface.press("ArrowRight");
+
+  await page.getByRole("button", { name: "Review AI changes" }).click();
+  await review.getByRole("button", { name: "Discard" }).click();
+  await expect(review.getByText("discarded")).toBeVisible();
+  await review.getByRole("button", { name: "Close Review AI changes" }).click();
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await expect(
+    page.getByRole("button", { name: /New idea/ }).first(),
+  ).toBeVisible();
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    String(positionBefore + 1),
+  );
+
+  await page.reload();
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await page.locator('[data-testid^="object-list-item-"]').first().click();
+  await expect(
+    page.getByRole("button", { name: /New idea/ }).first(),
+  ).toBeVisible();
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    String(positionBefore + 1),
+  );
+
+  await editor.getByRole("button", { name: "Open Object navigator" }).click();
+  await editor.locator('[data-testid^="object-list-item-"]').first().click();
+  await expect(
+    editor.getByRole("button", { name: /New idea/ }).first(),
+  ).toBeVisible();
+  await expect(editor.getByTestId("selected-position-x")).toHaveText(
+    String(positionBefore + 1),
+  );
+  await editor.reload();
+  await editor.getByRole("button", { name: "Open Object navigator" }).click();
+  await editor.locator('[data-testid^="object-list-item-"]').first().click();
+  await expect(editor.getByTestId("selected-position-x")).toHaveText(
+    String(positionBefore + 1),
+  );
+  await editorContext.close();
 });
 
 test("converges a review-staged AI reply in two authenticated contexts", async ({
@@ -657,13 +795,34 @@ test("converges a review-staged AI reply in two authenticated contexts", async (
   const editorReview = editor.getByRole("dialog", {
     name: "Review AI changes",
   });
-  await editorReview.getByRole("button", { name: "Keep" }).click();
-  await expect(editorReview.getByText("kept")).toBeVisible();
+  const ownerThread = owner.getByRole("dialog", { name: "Comment thread" });
+  await ownerThread.getByRole("button", { name: "Review changes" }).click();
+  const ownerReview = owner.getByRole("dialog", {
+    name: "Review AI changes",
+  });
+  await Promise.all([
+    editorReview.getByRole("button", { name: "Keep" }).click(),
+    ownerReview.getByRole("button", { name: "Discard" }).click(),
+  ]);
 
-  await owner.getByRole("button", { name: "Review AI changes" }).click();
-  await expect(
-    owner.getByRole("dialog", { name: "Review AI changes" }).getByText("kept"),
-  ).toBeVisible({ timeout: 8_000 });
+  const ownerOutcome = ownerReview.getByText(/^(kept|discarded)$/);
+  await expect(ownerOutcome).toBeVisible({ timeout: 8_000 });
+  const outcome = await ownerOutcome.textContent();
+  if (!outcome) throw new Error("The global review outcome is unavailable.");
+  await expect(editorReview.getByText(outcome, { exact: true })).toBeVisible({
+    timeout: 8_000,
+  });
+  const reviewsResponse = await owner.request.get(
+    `/api/canvases/${canvasId}/reviews`,
+  );
+  const reviewsPayload = (await reviewsResponse.json()) as {
+    reviews: Array<{
+      ai_object_changes: Array<{ review_decisions: unknown[] }>;
+    }>;
+  };
+  expect(
+    reviewsPayload.reviews[0]?.ai_object_changes[0]?.review_decisions,
+  ).toHaveLength(1);
 
   await editorContext.close();
   await ownerContext.close();
@@ -672,6 +831,8 @@ test("converges a review-staged AI reply in two authenticated contexts", async (
 test("guides a world-space multi-object review through mixed decisions", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await openFreshCanvas(page);
   await addRectangle(page, { x: 360, y: 260 });
   await addRectangle(page, { x: 640, y: 260 }, 2);
@@ -694,7 +855,9 @@ test("guides a world-space multi-object review through mixed decisions", async (
   await composer
     .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
     .click();
-  await comment.fill("Review multiple nearby objects with better spacing.");
+  await comment.fill(
+    "Review multiple nearby objects with better spacing and vision refinement.",
+  );
   await composer.getByRole("button", { name: "Submit comment" }).click();
 
   const thread = page.getByRole("dialog", { name: "Comment thread" });
@@ -702,6 +865,18 @@ test("guides a world-space multi-object review through mixed decisions", async (
   const review = page.getByRole("dialog", { name: "Review AI changes" });
   await expect(review.getByText("Nearby canvas area")).toBeVisible();
   await expect(review.getByText("Change 1 of 2")).toBeVisible();
+  await expect(page.getByTestId("selection-status")).toContainText("rectangle");
+  await page
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 900, y: 640 } });
+  await expect(
+    review.getByText("Guided framing paused while you explore the canvas."),
+  ).toBeVisible();
+  await review.getByRole("button", { name: "Resume guided review" }).click();
+  await expect(
+    review.getByText("Guided framing paused while you explore the canvas."),
+  ).not.toBeVisible();
+  await expect(page.getByTestId("selection-status")).toContainText("rectangle");
   await review.getByRole("button", { name: "Keep" }).click();
   await expect(review.getByText("Change 2 of 2")).toBeVisible();
   await review.getByRole("button", { name: "Discard" }).click();
@@ -718,15 +893,46 @@ test("guides a world-space multi-object review through mixed decisions", async (
   await expect(reloadedReview.getByText("complete")).toBeVisible();
   await expect(reloadedReview.getByText("Change 1 of 2")).toBeVisible();
   await expect(reloadedReview.getByText("kept")).toBeVisible();
-  await reloadedReview.getByRole("button", { name: "Next" }).click();
+  const nextScene = reloadedReview.getByRole("button", { name: "Next" });
+  await nextScene.focus();
+  await nextScene.press("Enter");
   await expect(reloadedReview.getByText("discarded")).toBeVisible();
+
+  for (const viewport of [
+    { width: 1024, height: 768 },
+    { width: 768, height: 1024 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const panelBounds = await reloadedReview.boundingBox();
+    expect(panelBounds).not.toBeNull();
+    expect(panelBounds!.x).toBeGreaterThanOrEqual(0);
+    expect(panelBounds!.y).toBeGreaterThanOrEqual(0);
+    expect(panelBounds!.x + panelBounds!.width).toBeLessThanOrEqual(
+      viewport.width,
+    );
+    expect(panelBounds!.y + panelBounds!.height).toBeLessThanOrEqual(
+      viewport.height,
+    );
+  }
+  const accessibility = await new AxeBuilder({ page })
+    .include("#workspace-shared-panel")
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
 });
 
 test("requests a revision as a child AI run in the originating thread", async ({
   page,
+  browser,
 }) => {
   await openFreshCanvas(page);
   await addRectangle(page);
+  const canvasId = page.url().split("/").at(-1);
+  if (!canvasId) throw new Error("The fresh canvas ID is unavailable.");
+  await addEditorMembership(canvasId);
+  const editorContext = await browser.newContext();
+  const editor = await editorContext.newPage();
+  await signIn(editor, "editor@thinking-canvas.local");
+  await editor.goto(`/app/canvases/${canvasId}`);
   await page.getByRole("button", { name: "Comments", exact: true }).click();
   await page.getByLabel("AI authority").selectOption("edit_with_review");
   await page.getByRole("checkbox", { name: "Enabled" }).click();
@@ -750,6 +956,20 @@ test("requests a revision as a child AI run in the originating thread", async ({
   await review
     .getByLabel("What should the AI revise?")
     .fill("Review moving this object to the right again with clearer spacing.");
+  let failRevisionRun = true;
+  await page.route("**/api/canvases/*/ai/runs", async (route) => {
+    if (route.request().method() === "POST" && failRevisionRun) {
+      failRevisionRun = false;
+      await route.continue({
+        headers: {
+          ...route.request().headers(),
+          "x-thinking-canvas-test-scenario": "failed",
+        },
+      });
+      return;
+    }
+    await route.continue();
+  });
   const revisionResponsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === "PATCH" &&
@@ -760,19 +980,31 @@ test("requests a revision as a child AI run in the originating thread", async ({
   expect(revisionResponse.ok(), await revisionResponse.text()).toBeTruthy();
 
   await expect(review.getByText("revision requested")).toBeVisible();
-  await expect(review.getByText("Single object")).toHaveCount(2);
-  await expect(review.getByRole("button", { name: "Keep" })).toHaveCount(1);
   await review.getByRole("button", { name: "Close Review AI changes" }).click();
   await page.getByRole("button", { name: "Comments", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Comments" })
     .getByRole("button", { name: /Review moving this object to the right\./ })
     .click();
+  const revisionThread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(revisionThread.getByText("AI response failed")).toBeVisible();
+  await revisionThread.getByRole("button", { name: "Retry" }).click();
   await expect(
-    page
-      .getByRole("dialog", { name: "Comment thread" })
-      .getByRole("button", { name: "Review changes" }),
+    revisionThread.getByRole("button", { name: "Review changes" }),
   ).toHaveCount(2);
+
+  await editor.getByRole("button", { name: "Review AI changes" }).click();
+  const editorReview = editor.getByRole("dialog", {
+    name: "Review AI changes",
+  });
+  await expect(editorReview.getByText("revision requested")).toBeVisible({
+    timeout: 8_000,
+  });
+  await expect(editorReview.getByText("Single object")).toHaveCount(2);
+  await expect(editorReview.getByRole("button", { name: "Keep" })).toHaveCount(
+    1,
+  );
+  await editorContext.close();
 });
 
 test("applies a trusted AI canvas command and converges it in two authenticated contexts", async ({
