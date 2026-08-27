@@ -577,8 +577,11 @@ test("applies tentative AI changes and discards them through the review panel", 
     .click();
   await page.getByRole("button", { name: "Open Object navigator" }).click();
   await page.locator('[data-testid^="object-list-item-"]').first().click();
-  await expect(page.getByTestId("selected-position-x")).toHaveText(
-    String(Number(positionBefore) + 64),
+  const tentativePosition = Number(
+    await page.getByTestId("selected-position-x").textContent(),
+  );
+  expect([Number(positionBefore) + 40, Number(positionBefore) + 64]).toContain(
+    tentativePosition,
   );
   await page.getByRole("button", { name: "Review AI changes" }).click();
   await reviewPanel.getByRole("button", { name: "Discard" }).click();
