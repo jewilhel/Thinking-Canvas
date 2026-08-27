@@ -15,16 +15,21 @@ import { allowedAiToolNames, type AiToolName } from "@/ai/tool-registry";
 export type { FakeAiScenario } from "@/ai/primary-ai-gateway";
 
 export class FakePrimaryAiGateway implements PrimaryAiGateway {
-  private visualReviewCount = 0;
+  private readonly visuallyReviewedScopes = new Set<string>();
 
   async reviewVisualChange(
     input: Parameters<NonNullable<PrimaryAiGateway["reviewVisualChange"]>>[0],
   ) {
-    this.visualReviewCount += 1;
+    const reviewScopeKey = `${input.instruction}\u0000${[
+      ...input.targetObjectIds,
+    ]
+      .sort()
+      .join(",")}`;
     if (
       input.instruction.toLowerCase().includes("vision refinement") &&
-      this.visualReviewCount === 1
+      !this.visuallyReviewedScopes.has(reviewScopeKey)
     ) {
+      this.visuallyReviewedScopes.add(reviewScopeKey);
       const objects = input.proposedObjectStates.flatMap((state) => {
         const object = (
           state as {

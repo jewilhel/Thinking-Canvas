@@ -433,6 +433,48 @@ describe("FakePrimaryAiGateway", () => {
     ).rejects.toThrow("does not match current authority");
   });
 
+  it("keeps bounded visual refinement state independent per review scope", async () => {
+    const gateway = new FakePrimaryAiGateway();
+    const review = (objectId: string, x: number) =>
+      gateway.reviewVisualChange({
+        instruction: "Apply vision refinement.",
+        targetObjectIds: [objectId],
+        beforeImageDataUrl: "data:image/png;base64,AA==",
+        afterImageDataUrl: "data:image/png;base64,AA==",
+        proposedCommands: [],
+        proposedObjectStates: [
+          { object: { id: objectId, geometry: { x, y: 20 } } },
+        ],
+      });
+
+    await expect(review(ids.object, 40)).resolves.toMatchObject({
+      status: "refine",
+      replacementCommands: [
+        {
+          type: "object.move",
+          payload: { objectId: ids.object, x: 64, y: 20 },
+        },
+      ],
+    });
+    await expect(review(ids.object, 64)).resolves.toMatchObject({
+      status: "pass",
+    });
+
+    const secondObjectId = "61000000-0000-4000-8000-000000000002";
+    await expect(review(secondObjectId, 80)).resolves.toMatchObject({
+      status: "refine",
+      replacementCommands: [
+        {
+          type: "object.move",
+          payload: { objectId: secondObjectId, x: 104, y: 20 },
+        },
+      ],
+    });
+    await expect(review(secondObjectId, 104)).resolves.toMatchObject({
+      status: "pass",
+    });
+  });
+
   it.each([
     ["comment_only", []],
     ["propose_changes", ["propose_canvas_commands"]],
