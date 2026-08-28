@@ -84,6 +84,64 @@ function intersects(
   );
 }
 
+function boundsContainedByBackground(
+  background: CanvasObjectV2,
+  candidate: CanvasObjectV2,
+) {
+  if (
+    background.type !== "shape" ||
+    background.text.trim() ||
+    !["rectangle", "ellipse"].includes(background.shape)
+  ) {
+    return false;
+  }
+  const outer = rotatedObjectBounds(background);
+  const inner = rotatedObjectBounds(candidate);
+  const corners = [
+    [inner.x, inner.y],
+    [inner.x + inner.width, inner.y],
+    [inner.x, inner.y + inner.height],
+    [inner.x + inner.width, inner.y + inner.height],
+  ];
+  if (background.shape === "rectangle") {
+    return corners.every(
+      ([x, y]) =>
+        x! >= outer.x &&
+        x! <= outer.x + outer.width &&
+        y! >= outer.y &&
+        y! <= outer.y + outer.height,
+    );
+  }
+  const radiusX = outer.width / 2;
+  const radiusY = outer.height / 2;
+  if (radiusX <= 0 || radiusY <= 0) return false;
+  const centerX = outer.x + radiusX;
+  const centerY = outer.y + radiusY;
+  return corners.every(([x, y]) => {
+    const normalizedX = (x! - centerX) / radiusX;
+    const normalizedY = (y! - centerY) / radiusY;
+    return normalizedX ** 2 + normalizedY ** 2 <= 1 + Number.EPSILON;
+  });
+}
+
+function isIntentionalBackgroundOverlap(input: {
+  background: CanvasObjectV2;
+  candidate: CanvasObjectV2;
+  objects: CanvasObjectV2[];
+}) {
+  const backgroundIndex = input.objects.findIndex(
+    (object) => object.id === input.background.id,
+  );
+  const candidateIndex = input.objects.findIndex(
+    (object) => object.id === input.candidate.id,
+  );
+  return (
+    backgroundIndex >= 0 &&
+    candidateIndex > backgroundIndex &&
+    boundsContainedByBackground(input.background, input.candidate)
+  );
+}
+
 export function estimateTextLayout(object: CanvasObjectV2) {
   const text = textForObject(object);
   if (!text) return { estimatedTextLines: 0, estimatedTextClipped: false };
@@ -179,6 +237,19 @@ export function deterministicVisualIssueKeys(input: {
     }
     if (facts.estimatedTextClipped) issues.add(`${object.id}:text_clipped`);
     for (const overlapId of facts.overlappingObjectIds) {
+      const overlap = input.objects.find(
+        (candidate) => candidate.id === overlapId,
+      );
+      if (
+        overlap &&
+        isIntentionalBackgroundOverlap({
+          background: object,
+          candidate: overlap,
+          objects: input.objects,
+        })
+      ) {
+        continue;
+      }
       issues.add(`${object.id}:overlap:${overlapId}`);
     }
     const objectBounds = rotatedObjectBounds(object);

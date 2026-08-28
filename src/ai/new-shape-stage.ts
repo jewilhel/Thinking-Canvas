@@ -80,40 +80,52 @@ export async function materializeReviewNewShapes(input: {
     ),
   );
   return {
-    commands: toolArguments.shapes.map((shape) => ({
-      type: "object.create",
-      payload: {
-        object: {
-          schemaVersion: 2,
-          id: objectIds.get(shape.key)!,
-          canvasId: input.canvasId,
-          createdBy: input.actorId,
-          createdAt: issuedAt,
-          updatedAt: issuedAt,
-          type: "shape",
-          shape: shape.shape,
-          text: shape.text,
-          geometry: {
-            x: shape.x,
-            y: shape.y,
-            width: shape.width,
-            height: shape.height,
-            rotation: 0,
-          },
-          style: {
-            fill: shape.fill,
-            outline: shape.outline,
-            outlineWidth: shape.outlineWidth,
-            fontFamily: shape.fontFamily,
-            fontSize: shape.fontSize,
-            fontWeight: shape.fontWeight,
-            textAlign: shape.textAlign,
-            listStyle: "none",
-            textColor: shape.textColor,
+    commands: toolArguments.shapes.flatMap((shape) => {
+      const objectId = objectIds.get(shape.key)!;
+      const createCommand = {
+        type: "object.create" as const,
+        payload: {
+          object: {
+            schemaVersion: 2 as const,
+            id: objectId,
+            canvasId: input.canvasId,
+            createdBy: input.actorId,
+            createdAt: issuedAt,
+            updatedAt: issuedAt,
+            type: "shape" as const,
+            shape: shape.shape,
+            text: shape.text,
+            geometry: {
+              x: shape.x,
+              y: shape.y,
+              width: shape.width,
+              height: shape.height,
+              rotation: 0,
+            },
+            style: {
+              fill: shape.fill,
+              outline: shape.outline,
+              outlineWidth: shape.outlineWidth,
+              fontFamily: shape.fontFamily,
+              fontSize: shape.fontSize,
+              fontWeight: shape.fontWeight,
+              textAlign: shape.textAlign,
+              listStyle: "none" as const,
+              textColor: shape.textColor,
+            },
           },
         },
-      },
-    })),
+      };
+      return shape.layer === "back"
+        ? [
+            createCommand,
+            {
+              type: "object.reorder" as const,
+              payload: { objectId, direction: "back" as const },
+            },
+          ]
+        : [createCommand];
+    }),
     explanations: toolArguments.explanations.map((explanation) => ({
       objectId: objectIds.get(explanation.key)!,
       whatChanged: explanation.whatChanged,

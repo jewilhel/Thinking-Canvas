@@ -1209,6 +1209,7 @@ export function CanvasComments({
   }
 
   function focusThread(threadId: string) {
+    if (panelOpen) onDismissPanel();
     onSelectTargets([]);
     setSelectedThreadId(threadId);
   }

@@ -127,4 +127,34 @@ describe("AI visual grounding", () => {
       }),
     ).not.toThrow();
   });
+
+  it("allows an empty background shape behind fully contained objects", () => {
+    const background = {
+      ...shape(
+        "61000000-0000-4000-8000-000000000003",
+        { x: 0, y: 0, width: 400, height: 400, rotation: 0 },
+        "",
+      ),
+      shape: "ellipse" as const,
+    };
+    const foreground = shape(
+      "61000000-0000-4000-8000-000000000004",
+      { x: 150, y: 150, width: 100, height: 100, rotation: 0 },
+      "Foreground",
+    );
+    expect(() =>
+      assertNoNewDeterministicVisualDefects({
+        beforeObjects: [foreground],
+        afterObjects: [background, foreground],
+        targetObjectIds: [background.id],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertNoNewDeterministicVisualDefects({
+        beforeObjects: [foreground],
+        afterObjects: [foreground, background],
+        targetObjectIds: [background.id],
+      }),
+    ).toThrow("overlap");
+  });
 });

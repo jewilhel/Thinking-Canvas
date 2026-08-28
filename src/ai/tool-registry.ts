@@ -46,6 +46,7 @@ export const reviewLayoutArgumentsSchema = z.strictObject({
 const newShapeSpecSchema = z.strictObject({
   key: z.string().trim().min(1).max(120),
   shape: z.enum(["rectangle", "ellipse", "diamond"]),
+  layer: z.enum(["front", "back"]).default("front"),
   text: z.string().max(10_000),
   x: z.number().finite(),
   y: z.number().finite(),
@@ -176,7 +177,7 @@ export const AI_TOOL_REGISTRY = {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
-      "Create every new shape requested in this turn as one tentative reviewable change set and one tool call. Use rectangle shapes for sticky notes. Supply local keys rather than object IDs; the server creates durable identities and metadata.",
+      "Create every new shape requested in this turn as one tentative reviewable change set and one tool call. Use rectangle shapes for sticky notes. Use layer back only when the user explicitly requests a background or asks for the new shape behind existing content. Supply local keys rather than object IDs; the server creates durable identities and metadata.",
     argumentsSchema: reviewNewShapesArgumentsSchema,
   },
   execute_canvas_commands: {

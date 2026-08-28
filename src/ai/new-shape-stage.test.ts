@@ -71,6 +71,7 @@ describe("reviewable new shape materialization", () => {
       shapes: ["red", "blue"].map((key, index) => ({
         key,
         shape: "rectangle" as const,
+        layer: "front" as const,
         text: key[0]!.toUpperCase() + key.slice(1),
         x: 100 + index * 224,
         y: 200,
@@ -149,5 +150,61 @@ describe("reviewable new shape materialization", () => {
         explanations: first.explanations,
       }),
     ).toHaveLength(2);
+  });
+
+  it("creates an explicitly requested background shape at the back", async () => {
+    const result = await materializeReviewNewShapes({
+      arguments: {
+        summary: "Create a background circle.",
+        shapes: [
+          {
+            key: "background",
+            shape: "ellipse",
+            layer: "back",
+            text: "",
+            x: 0,
+            y: 0,
+            width: 400,
+            height: 400,
+            fill: "#d4d4d8",
+            outline: "#71717a",
+            outlineWidth: 2,
+            fontFamily: "Inter",
+            fontSize: 16,
+            fontWeight: "normal",
+            textAlign: "center",
+            textColor: "#18181b",
+          },
+        ],
+        explanations: [
+          {
+            key: "background",
+            whatChanged: "Created a background circle.",
+            why: "The user requested a visual container.",
+          },
+        ],
+      },
+      runId: ids.run,
+      callKey: "create-background",
+      canvasId: ids.canvas,
+      actorId: ids.actor,
+      issuedAt: "2026-08-26T23:00:00.000Z",
+    });
+
+    expect(result.commands).toMatchObject([
+      { type: "object.create" },
+      {
+        type: "object.reorder",
+        payload: { direction: "back" },
+      },
+    ]);
+    expect(result.commands[1]).toMatchObject({
+      payload: {
+        objectId:
+          result.commands[0]?.type === "object.create"
+            ? result.commands[0].payload.object.id
+            : "",
+      },
+    });
   });
 });
