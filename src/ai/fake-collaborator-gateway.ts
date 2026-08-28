@@ -130,7 +130,7 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       firstObject !== undefined &&
       input.allowedToolNames.includes("propose_canvas_commands");
     const shouldStageReview =
-      instruction.includes("review") &&
+      (instruction.includes("review") || instruction.includes("revise")) &&
       firstObject !== undefined &&
       input.allowedToolNames.includes("stage_canvas_changes");
     const reviewObjects =

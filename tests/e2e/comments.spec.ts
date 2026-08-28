@@ -1008,6 +1008,204 @@ test("canvas undo reverses the latest AI transaction", async ({ page }) => {
   await expect(page.getByTestId("product-object-count")).toHaveText("0");
 });
 
+test("uses an ordinary inherited reply for an AI revision", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await addRectangle(page);
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await page.locator('[data-testid^="object-list-item-"]').first().click();
+  const positionBefore = Number(
+    await page.getByTestId("selected-position-x").textContent(),
+  );
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page.getByLabel("AI authority").selectOption("edit_with_review");
+  await page.getByRole("checkbox", { name: "Enabled" }).click();
+  await placeArmedComment(page);
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Review moving this object to the right.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  const aiReply = thread.getByText(
+    "I made the requested change on the canvas.",
+  );
+  await expect(aiReply).toHaveCount(1);
+  await thread
+    .getByRole("textbox", { name: "Reply", exact: true })
+    .fill("Please revise it by moving it to the right again.");
+  await thread.getByRole("button", { name: "Send reply" }).click();
+  await expect(aiReply).toHaveCount(2);
+  await expect(
+    thread.getByRole("button", { name: "Undo AI change" }),
+  ).toHaveCount(2);
+  await expect(
+    thread.getByRole("button", { name: "Request revision" }),
+  ).toHaveCount(0);
+  await thread.getByRole("button", { name: "Close comment thread" }).click();
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await page.locator('[data-testid^="object-list-item-"]').first().click();
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    String(positionBefore + 80),
+  );
+});
+
+test("AI undo preserves a later same-field collaborator edit", async ({
+  browser,
+}) => {
+  const ownerContext = await browser.newContext();
+  const editorContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const editor = await editorContext.newPage();
+
+  await openFreshCanvas(owner);
+  await addRectangle(owner);
+  const canvasId = owner.url().split("/").at(-1);
+  if (!canvasId) throw new Error("The fresh canvas ID is unavailable.");
+  await addEditorMembership(canvasId);
+  await signIn(editor, "editor@thinking-canvas.local");
+  await editor.goto(`/app/canvases/${canvasId}`);
+  await expect(editor.getByTestId("product-object-count")).toHaveText("1");
+
+  await owner.getByRole("button", { name: "Open Object navigator" }).click();
+  await owner.locator('[data-testid^="object-list-item-"]').first().click();
+  await owner.getByRole("button", { name: "Comments", exact: true }).click();
+  await owner.getByLabel("AI authority").selectOption("edit_with_review");
+  await owner.getByRole("checkbox", { name: "Enabled" }).click();
+  await placeArmedComment(owner);
+  const composer = owner.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Review moving this object to the right.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+  const ownerThread = owner.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    ownerThread.getByRole("button", { name: "Undo AI change" }),
+  ).toBeVisible();
+
+  await editor.getByRole("button", { name: "Open Object navigator" }).click();
+  await editor.locator('[data-testid^="object-list-item-"]').first().click();
+  const aiPosition = Number(
+    await editor.getByTestId("selected-position-x").textContent(),
+  );
+  await editor.getByTestId("product-canvas-surface").focus();
+  await editor.getByTestId("product-canvas-surface").press("ArrowRight");
+
+  await ownerThread.getByRole("button", { name: "Undo AI change" }).click();
+  await expect(
+    ownerThread.getByText(
+      "Change undone where safe; 1 later edit was preserved.",
+    ),
+  ).toBeVisible();
+  await ownerThread
+    .getByRole("button", { name: "Close comment thread" })
+    .click();
+  await owner.getByRole("button", { name: "Open Object navigator" }).click();
+  await owner.locator('[data-testid^="object-list-item-"]').first().click();
+  await expect(owner.getByTestId("selected-position-x")).toHaveText(
+    String(aiPosition + 1),
+  );
+  await expect(editor.getByTestId("selected-position-x")).toHaveText(
+    String(aiPosition + 1),
+  );
+
+  await ownerContext.close();
+  await editorContext.close();
+});
+
+test("AI undo restores its label while preserving a collaborator move", async ({
+  browser,
+}) => {
+  const ownerContext = await browser.newContext();
+  const editorContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const editor = await editorContext.newPage();
+
+  await openFreshCanvas(owner);
+  await addRectangle(owner);
+  const canvasId = owner.url().split("/").at(-1);
+  if (!canvasId) throw new Error("The fresh canvas ID is unavailable.");
+  await addEditorMembership(canvasId);
+  await signIn(editor, "editor@thinking-canvas.local");
+  await editor.goto(`/app/canvases/${canvasId}`);
+  await expect(editor.getByTestId("product-object-count")).toHaveText("1");
+
+  await owner.getByRole("button", { name: "Open Object navigator" }).click();
+  await owner.locator('[data-testid^="object-list-item-"]').first().click();
+  await owner.getByRole("button", { name: "Comments", exact: true }).click();
+  await owner.getByLabel("AI authority").selectOption("edit_with_review");
+  await owner.getByRole("checkbox", { name: "Enabled" }).click();
+  await placeArmedComment(owner);
+  const composer = owner.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Review changing this object's label.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+  const ownerThread = owner.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    ownerThread.getByRole("button", { name: "Undo AI change" }),
+  ).toBeVisible();
+
+  await editor.getByRole("button", { name: "Open Object navigator" }).click();
+  await editor.locator('[data-testid^="object-list-item-"]').first().click();
+  const positionBeforeMove = Number(
+    await editor.getByTestId("selected-position-x").textContent(),
+  );
+  await expect(
+    editor.getByRole("button", { name: /Supporting evidence/ }).first(),
+  ).toBeVisible();
+  await editor.getByTestId("product-canvas-surface").focus();
+  await editor.getByTestId("product-canvas-surface").press("ArrowRight");
+
+  await ownerThread.getByRole("button", { name: "Undo AI change" }).click();
+  await expect(ownerThread.getByText("Change undone")).toBeVisible();
+  await ownerThread
+    .getByRole("button", { name: "Close comment thread" })
+    .click();
+  await owner.getByRole("button", { name: "Open Object navigator" }).click();
+  await owner.locator('[data-testid^="object-list-item-"]').first().click();
+  await expect(
+    owner.getByRole("button", { name: /New idea/ }).first(),
+  ).toBeVisible();
+  await expect(owner.getByTestId("selected-position-x")).toHaveText(
+    String(positionBeforeMove + 1),
+  );
+
+  await editor.reload();
+  await editor.getByRole("button", { name: "Open Object navigator" }).click();
+  await editor.locator('[data-testid^="object-list-item-"]').first().click();
+  await expect(
+    editor.getByRole("button", { name: /New idea/ }).first(),
+  ).toBeVisible();
+  await expect(editor.getByTestId("selected-position-x")).toHaveText(
+    String(positionBeforeMove + 1),
+  );
+
+  await ownerContext.close();
+  await editorContext.close();
+});
+
 test.skip("legacy guided review requests a revision", async ({
   page,
   browser,

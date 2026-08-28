@@ -66,7 +66,7 @@ type Props = {
   onDismissPanel: () => void;
   onSelectTargets: (targetIds: string[]) => void;
   onAiTransactionApplied: (changeSetId: string) => void;
-  onUndoAiTransaction: (changeSetId: string) => Promise<void>;
+  onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
 };
 
 function initials(name: string) {
@@ -689,7 +689,7 @@ function ThreadBody({
   onStatus: (status: "resolved" | "dismissed") => Promise<void>;
   onDelete: () => Promise<void>;
   onNavigateEvidence: (objectId: string) => void;
-  onUndoAiTransaction: (changeSetId: string) => Promise<void>;
+  onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
   onCancelAiRun: (runId: string) => Promise<void>;
   onRetryAiRun: (runId: string) => Promise<void>;
 }) {
@@ -709,6 +709,7 @@ function ThreadBody({
     null,
   );
   const [undoError, setUndoError] = useState("");
+  const [undoNotice, setUndoNotice] = useState("");
   const canComment = role !== "viewer";
   const canResolve =
     role === "owner" || role === "editor" || thread.authorId === userId;
@@ -857,8 +858,16 @@ function ThreadBody({
                     onClick={() => {
                       const changeSetId = item.aiTransaction!.changeSetId;
                       setUndoError("");
+                      setUndoNotice("");
                       setUndoingChangeSetId(changeSetId);
                       void onUndoAiTransaction(changeSetId)
+                        .then(({ conflicts }) => {
+                          if (conflicts) {
+                            setUndoNotice(
+                              `Change undone where safe; ${conflicts} later edit${conflicts === 1 ? " was" : "s were"} preserved.`,
+                            );
+                          }
+                        })
                         .catch((error) =>
                           setUndoError(
                             error instanceof Error
@@ -901,6 +910,11 @@ function ThreadBody({
       {undoError ? (
         <p role="alert" className="mt-3 text-sm text-red-700">
           {undoError}
+        </p>
+      ) : null}
+      {undoNotice ? (
+        <p role="status" className="mt-3 text-sm text-amber-800">
+          {undoNotice}
         </p>
       ) : null}
       {latestRuns
@@ -1592,8 +1606,9 @@ export function CanvasComments({
             onDelete={() => deleteThread(selectedThread)}
             onNavigateEvidence={(objectId) => onSelectTargets([objectId])}
             onUndoAiTransaction={async (changeSetId) => {
-              await onUndoAiTransaction(changeSetId);
+              const result = await onUndoAiTransaction(changeSetId);
               await refresh();
+              return result;
             }}
             onCancelAiRun={cancelAiRun}
             onRetryAiRun={retryAiRun}

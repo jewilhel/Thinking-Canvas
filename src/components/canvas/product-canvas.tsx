@@ -1276,6 +1276,7 @@ export function ProductCanvas({
         ? `AI change undone; ${conflicts} conflicting field${conflicts === 1 ? " was" : "s were"} preserved.`
         : "AI change undone.",
     );
+    return { conflicts };
   }
 
   async function undo() {
