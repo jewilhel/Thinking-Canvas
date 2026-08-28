@@ -110,7 +110,47 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   await expect(
     page.getByRole("dialog", { name: "Comments" }),
   ).not.toBeVisible();
-  const composer = page.getByRole("dialog", { name: "New comment" });
+  let composer = page.getByRole("dialog", { name: "New comment" });
+  await composer
+    .getByRole("textbox", { name: "Comment", exact: true })
+    .fill("Discard this unsent draft.");
+  await page
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 760, y: 560 } });
+  await expect(composer).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Open comment by/ }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Select", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await placeArmedComment(page);
+  composer = page.getByRole("dialog", { name: "New comment" });
+  await expect(
+    composer.getByRole("textbox", { name: "Comment", exact: true }),
+  ).toHaveValue("");
+  await composer
+    .getByRole("textbox", { name: "Comment", exact: true })
+    .fill("Discard this draft with the close button.");
+  await composer
+    .getByRole("button", { name: "Close comment composer" })
+    .click();
+  await expect(composer).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Open comment by/ }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Select", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await placeArmedComment(page);
+  composer = page.getByRole("dialog", { name: "New comment" });
+  await expect(
+    composer.getByRole("textbox", { name: "Comment", exact: true }),
+  ).toHaveValue("");
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
     .fill("Does this direction feel clear?");

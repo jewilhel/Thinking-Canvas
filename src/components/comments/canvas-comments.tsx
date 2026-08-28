@@ -1195,11 +1195,41 @@ export function CanvasComments({
     return () =>
       document.removeEventListener("pointerdown", dismissThreadOutside);
   }, [selectedThreadId]);
+  useEffect(() => {
+    if (!composerOpen) return;
+
+    function cancelComposerOutside(event: PointerEvent) {
+      const target = event.target;
+      if (
+        !(target instanceof Node) ||
+        composerCardRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setDraft("");
+      setPromptKind(null);
+      setComposerOpen(false);
+      setComposerTarget(null);
+      setDraftRecipients([]);
+      onSelectTargets([]);
+    }
+
+    document.addEventListener("pointerdown", cancelComposerOutside);
+    return () =>
+      document.removeEventListener("pointerdown", cancelComposerOutside);
+  }, [composerOpen, onSelectTargets]);
 
   function closeComposer() {
     setComposerOpen(false);
     setComposerTarget(null);
     setDraftRecipients([]);
+  }
+
+  function cancelComposer() {
+    setDraft("");
+    setPromptKind(null);
+    closeComposer();
+    onSelectTargets([]);
   }
 
   function beginComment() {
@@ -1564,7 +1594,7 @@ export function CanvasComments({
               size="icon-sm"
               variant="ghost"
               aria-label="Close comment composer"
-              onClick={closeComposer}
+              onClick={cancelComposer}
             >
               <X aria-hidden="true" />
             </Button>
