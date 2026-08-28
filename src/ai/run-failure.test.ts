@@ -8,6 +8,7 @@ import {
 } from "@/ai/collaborator-run-service";
 import { ConnectedPathError } from "@/ai/grounding";
 import { AiProviderOutputError } from "@/ai/primary-ai-gateway";
+import { AiRunTimeoutError } from "@/ai/run-deadline";
 import { privacySafeAiRunErrorCode } from "@/ai/run-failure";
 import { AiVisualQualityError } from "@/ai/visual-grounding";
 
@@ -18,6 +19,8 @@ describe("privacy-safe AI run failure classification", () => {
       "connected_path_not_connected",
     ],
     [new AiRunLimitError("private detail"), "rate_or_budget_limit"],
+    [new AiRunTimeoutError(), "provider_timeout"],
+    [new DOMException("private detail", "AbortError"), "run_interrupted"],
     [new AiProviderOutputError(), "provider_output_invalid"],
     [new AiVisualQualityError("private detail"), "visual_quality_blocked"],
     [new AiRunConflictError("private detail"), "review_stage_failed"],

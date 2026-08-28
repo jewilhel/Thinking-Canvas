@@ -10,6 +10,9 @@ import {
 } from "@/ai/collaborator-run-service";
 import { resolveDeterministicTestScenario } from "@/ai/fake-scenario";
 import { privacySafeAiRunErrorCode } from "@/ai/run-failure";
+import { createAiRunDeadlineSignal } from "@/ai/run-deadline";
+
+export const maxDuration = 120;
 
 const bodySchema = z.strictObject({ runId: z.uuid() });
 
@@ -35,36 +38,37 @@ export async function POST(
   });
   const stream = new ReadableStream({
     async start(controller) {
+      const deadline = createAiRunDeadlineSignal(request.signal);
       const send = (event: Record<string, unknown>) =>
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       try {
         const result = await completeAiRun(
           { ...parsed.data, canvasId },
           {
-            signal: request.signal,
+            signal: deadline.signal,
             scenario,
             onStatus: (status) => send({ status, runId: parsed.data.runId }),
           },
         );
         send(result);
       } catch (error) {
-        const aborted =
-          error instanceof DOMException && error.name === "AbortError";
-        if (!aborted) {
-          const errorCode = privacySafeAiRunErrorCode(error);
-          console.error("AI collaborator run failed.", { errorCode });
-          await failAiRun(parsed.data.runId, errorCode).catch(() => undefined);
-        }
+        const errorCode = privacySafeAiRunErrorCode(error);
+        console.error("AI collaborator run failed.", { errorCode });
+        const failure = await failAiRun(parsed.data.runId, errorCode).catch(
+          () => undefined,
+        );
+        const cancelled = failure?.status === "cancelled";
         send({
-          status: aborted ? "cancelled" : "failed",
+          status: cancelled ? "cancelled" : "failed",
           runId: parsed.data.runId,
-          error: aborted
+          error: cancelled
             ? "The AI run was cancelled."
-            : error instanceof Error
-              ? error.message
+            : errorCode === "provider_timeout"
+              ? "The AI took too long to complete this request. Retry or simplify the instruction."
               : "The AI run failed.",
         });
       } finally {
+        deadline.dispose();
         controller.close();
       }
     },

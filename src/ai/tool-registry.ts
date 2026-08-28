@@ -105,6 +105,46 @@ export const reviewNewShapesArgumentsSchema = z
 export type ReviewNewShapesArguments = z.infer<
   typeof reviewNewShapesArgumentsSchema
 >;
+const newConnectorSpecSchema = z.strictObject({
+  key: z.string().trim().min(1).max(120),
+  fromObjectId: uuid,
+  toObjectId: uuid,
+  outline: z.string().min(1).max(100),
+  outlineWidth: z.number().finite().min(1).max(20),
+});
+export const reviewNewConnectorsArgumentsSchema = z
+  .strictObject({
+    summary: z.string().trim().min(1).max(10_000),
+    connectors: z.array(newConnectorSpecSchema).min(1).max(50),
+    explanations: z.array(newShapeExplanationSchema).min(1).max(50),
+  })
+  .superRefine((value, context) => {
+    const connectorKeys = value.connectors.map((connector) => connector.key);
+    const explanationKeys = value.explanations.map(
+      (explanation) => explanation.key,
+    );
+    if (new Set(connectorKeys).size !== connectorKeys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "New connector keys must be unique.",
+      });
+    }
+    if (
+      connectorKeys.length !== explanationKeys.length ||
+      [...connectorKeys]
+        .sort()
+        .some((key, index) => key !== [...explanationKeys].sort()[index])
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "New connector explanations must exactly match the connector keys.",
+      });
+    }
+  });
+export type ReviewNewConnectorsArguments = z.infer<
+  typeof reviewNewConnectorsArgumentsSchema
+>;
 export const executeArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
 });
@@ -179,6 +219,13 @@ export const AI_TOOL_REGISTRY = {
     description:
       "Create every new shape requested in this turn as one tentative reviewable change set and one tool call. Use rectangle shapes for sticky notes. Use layer back only when the user explicitly requests a background or asks for the new shape behind existing content. Supply local keys rather than object IDs; the server creates durable identities and metadata.",
     argumentsSchema: reviewNewShapesArgumentsSchema,
+  },
+  stage_new_connectors: {
+    effect: "review" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Create one or more directional connectors between existing shape objects as one reviewable change set. List connections in the requested direction; the server assigns connector identities and chooses safe edge anchors.",
+    argumentsSchema: reviewNewConnectorsArgumentsSchema,
   },
   execute_canvas_commands: {
     effect: "mutation" as const,

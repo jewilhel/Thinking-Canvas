@@ -356,6 +356,10 @@ function aiRunFailureMessage(errorCode: string | null) {
     return "The selected path includes an object from another canvas.";
   if (errorCode === "rate_or_budget_limit")
     return "The AI request limit is reached. Retry after the current five-minute window.";
+  if (errorCode === "provider_timeout")
+    return "The AI took too long to finish. Retry or break the request into a smaller step.";
+  if (errorCode === "run_interrupted")
+    return "The AI connection was interrupted. Retry the request.";
   if (errorCode === "provider_output_invalid")
     return "The AI returned an invalid structured response. Retry the request.";
   if (errorCode === "visual_quality_blocked")
@@ -947,7 +951,7 @@ function ThreadBody({
                   ? run.status === "queued"
                     ? "Thinking Canvas AI is queued…"
                     : run.status === "projecting"
-                      ? "Thinking Canvas AI is reading the canvas…"
+                      ? "Thinking Canvas AI is working on the canvas…"
                       : "Thinking Canvas AI is responding…"
                   : run.status === "cancelled"
                     ? "AI response cancelled"
@@ -1122,6 +1126,7 @@ export function CanvasComments({
     retryAiRun,
   } = useCanvasComments(
     canvasId,
+    userId,
     supabaseUrl,
     supabasePublishableKey,
     onAiTransactionApplied,

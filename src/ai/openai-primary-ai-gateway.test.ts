@@ -206,6 +206,7 @@ describe("OpenAiPrimaryAiGateway", () => {
     const serialized = JSON.stringify(tool.parameters);
 
     expect(serialized).toContain("stage_new_shapes");
+    expect(serialized).toContain("stage_new_connectors");
     expect(serialized).toContain('\\"shapes\\"');
     expect(serialized).toContain('\\"key\\"');
     expect(serialized).not.toContain("new-shape:${shape.key}");

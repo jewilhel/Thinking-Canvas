@@ -20,6 +20,7 @@ import {
 } from "@/ai/primary-ai-gateway-factory";
 import { AiProviderOutputError } from "@/ai/primary-ai-gateway";
 import { estimateAiInputTokens } from "@/ai/run-budgets";
+import { throwIfAiRunAborted } from "@/ai/run-deadline";
 import { listCanvasObjectsV2 } from "@/canvas/canvas-document";
 import {
   buildCanvasObjectDetails,
@@ -38,6 +39,7 @@ import {
   executeArgumentsSchema,
   proposalArgumentsSchema,
   reviewLayoutArgumentsSchema,
+  reviewNewConnectorsArgumentsSchema,
   reviewNewShapesArgumentsSchema,
   reviewStageArgumentsSchema,
   validateAiToolRequest,
@@ -58,6 +60,7 @@ import {
   coalesceReviewNewShapeToolCalls,
   materializeReviewNewShapes,
 } from "@/ai/new-shape-stage";
+import { materializeReviewNewConnectors } from "@/ai/new-connector-stage";
 import {
   renderTargetedCanvasCapture,
   TARGETED_CAPTURE_RENDERER_VERSION,
@@ -342,9 +345,7 @@ export async function completeAiRun(
       { once: true },
     );
   });
-  if (options.signal?.aborted) {
-    throw new DOMException("The AI run was cancelled.", "AbortError");
-  }
+  throwIfAiRunAborted(options.signal);
   const gateway = createPrimaryAiGateway();
   const gatewayResult = await gateway.request({
     invocation: {
@@ -385,8 +386,10 @@ export async function completeAiRun(
   } catch {
     throw new AiProviderOutputError();
   }
-  const isNewShapeReview = toolCalls.some(
-    (toolCall) => toolCall.toolName === "stage_new_shapes",
+  const isNewObjectReview = toolCalls.some(
+    (toolCall) =>
+      toolCall.toolName === "stage_new_shapes" ||
+      toolCall.toolName === "stage_new_connectors",
   );
   const groundedEvidence = gatewayResult.reply.evidence.filter((reference) =>
     objectIds.has(reference.objectId),
@@ -396,7 +399,7 @@ export async function completeAiRun(
       objectIds.has(objectId),
     );
   if (
-    !isNewShapeReview &&
+    !isNewObjectReview &&
     (groundedEvidence.length !== gatewayResult.reply.evidence.length ||
       groundedContextualTargetObjectIds.length !==
         gatewayResult.reply.contextualTargetObjectIds.length)
@@ -562,7 +565,8 @@ export async function completeAiRun(
     if (
       validatedTool.toolName === "stage_canvas_changes" ||
       validatedTool.toolName === "stage_layout_changes" ||
-      validatedTool.toolName === "stage_new_shapes"
+      validatedTool.toolName === "stage_new_shapes" ||
+      validatedTool.toolName === "stage_new_connectors"
     ) {
       if (reviewStageToolResults.length > 0) {
         throw new AiRunConflictError(
@@ -574,11 +578,26 @@ export async function completeAiRun(
           ? reviewStageArgumentsSchema.parse(validatedTool.arguments)
           : validatedTool.toolName === "stage_layout_changes"
             ? reviewLayoutArgumentsSchema.parse(validatedTool.arguments)
-            : reviewNewShapesArgumentsSchema.parse(validatedTool.arguments);
+            : validatedTool.toolName === "stage_new_shapes"
+              ? reviewNewShapesArgumentsSchema.parse(validatedTool.arguments)
+              : reviewNewConnectorsArgumentsSchema.parse(
+                  validatedTool.arguments,
+                );
       const newShapeStage =
         "shapes" in toolArguments
           ? await materializeReviewNewShapes({
               arguments: toolArguments,
+              runId: run.id,
+              callKey: toolCall.callKey,
+              canvasId: run.canvas_id,
+              actorId: run.requested_by,
+            })
+          : null;
+      const newConnectorStage =
+        "connectors" in toolArguments
+          ? await materializeReviewNewConnectors({
+              arguments: toolArguments,
+              sourceObjects,
               runId: run.id,
               callKey: toolCall.callKey,
               canvasId: run.canvas_id,
@@ -593,7 +612,7 @@ export async function completeAiRun(
                 objects: sourceObjects,
                 request: toolArguments.layout,
               })
-            : newShapeStage!.commands;
+            : (newShapeStage?.commands ?? newConnectorStage!.commands);
       let reviewStage = validateCanvasReviewStage({
         document: compacted.document,
         canvasId: run.canvas_id,
@@ -607,7 +626,9 @@ export async function completeAiRun(
       const explanations =
         "shapes" in toolArguments
           ? newShapeStage!.explanations
-          : toolArguments.explanations;
+          : "connectors" in toolArguments
+            ? newConnectorStage!.explanations
+            : toolArguments.explanations;
       let explainedChanges = validateReviewExplanations({
         reviewStage,
         explanations,
@@ -1001,6 +1022,7 @@ export async function failAiRun(runId: string, errorCode: string) {
     target_error_code: errorCode,
   });
   if (result.error) throw new AiRunConflictError(result.error.message);
+  return result.data?.[0];
 }
 
 export class AiRunAccessError extends Error {}

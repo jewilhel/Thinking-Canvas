@@ -675,6 +675,60 @@ test("adds an intentional background circle behind unchanged sticky notes", asyn
   await expect(page.getByTestId("product-object-count")).toHaveText("5");
 });
 
+test("connects five sticky notes clockwise as one undoable loop", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page.getByLabel("AI authority").selectOption("edit_with_review");
+  await page.getByRole("checkbox", { name: "Enabled" }).click();
+  await placeArmedComment(page, { x: 420, y: 280 });
+
+  let composer = page.getByRole("dialog", { name: "New comment" });
+  let comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill(
+    "Create five sticky notes labeled Red, Yellow, Orange, Green, and Blue.",
+  );
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+  let thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(page.getByTestId("product-object-count")).toHaveText("5");
+  await thread.getByRole("button", { name: "Close comment thread" }).click();
+
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await placeArmedComment(page, { x: 760, y: 560 });
+  composer = page.getByRole("dialog", { name: "New comment" });
+  comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill(
+    "Please connect each sticky together in a clockwise direction that forms a circle.",
+  );
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    thread.getByText(
+      "I connected the sticky notes in a clockwise closed loop.",
+    ),
+  ).toBeVisible();
+  await expect(thread.getByText("AI response failed")).toHaveCount(0);
+  await expect(page.getByTestId("product-object-count")).toHaveText("10");
+  await thread.getByRole("button", { name: "Undo AI change" }).click();
+  await expect(page.getByTestId("product-object-count")).toHaveText("5");
+});
+
 test("canvas undo reverses the latest AI transaction", async ({ page }) => {
   await openFreshCanvas(page);
   await page.getByRole("button", { name: "Comments", exact: true }).click();

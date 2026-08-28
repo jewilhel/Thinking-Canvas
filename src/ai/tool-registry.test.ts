@@ -39,6 +39,7 @@ describe("AI authority tool registry", () => {
       "stage_canvas_changes",
       "stage_layout_changes",
       "stage_new_shapes",
+      "stage_new_connectors",
       "execute_canvas_commands",
     ]);
   });
@@ -112,6 +113,34 @@ describe("AI authority tool registry", () => {
         },
       }),
     ).toMatchObject({ toolName: "stage_new_shapes", effect: "review" });
+  });
+
+  it("accepts server-identified directional connector creation", () => {
+    expect(
+      validateAiToolRequest({
+        authority: "edit_with_review",
+        toolName: "stage_new_connectors",
+        arguments: {
+          summary: "Connect the notes clockwise.",
+          connectors: [
+            {
+              key: "first-to-second",
+              fromObjectId: objectId,
+              toObjectId: "61000000-0000-4000-8000-000000000002",
+              outline: "#475569",
+              outlineWidth: 2,
+            },
+          ],
+          explanations: [
+            {
+              key: "first-to-second",
+              whatChanged: "Connected the first note to the second.",
+              why: "The user requested a clockwise path.",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ toolName: "stage_new_connectors", effect: "review" });
   });
 
   it("rejects malformed arguments and client-supplied trusted metadata", () => {
