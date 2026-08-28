@@ -49,6 +49,17 @@ The existing change-set and per-object before/after records remain internal safe
 3. **Conversational revision and implicit acceptance:** remove explicit decision controls, prove inherited-thread revision, and verify that abandoned or topic-shifted threads need no cleanup action.
 4. **Regression and hosted acceptance:** retain the complete semantic/layout/vision, scope, permission, RLS, and collaboration matrix; replace the superseded per-object/guided-review scenarios with `AS-006`; validate the exact five-note request and undo/revision flows in the Netlify preview.
 
+### Approved 2026-08-28 prompt-robustness hardening
+
+Hands-on preview testing repeatedly found defects with plausible prompts that were not represented by the deterministic fake-provider browser suite. The product owner approved one additional Milestone 5 hardening pass before closure. It does not broaden the canvas feature set or imply arbitrary AI manipulation; it makes the current supported capability boundary measurable and requires unsupported requests to fail safely.
+
+1. **Semantic prompt corpus:** define 30 synthetic edit prompts across ten supported or deliberately unsupported intents, with three materially different phrasings per intent. Keep expected tools, scope, object counts, layout operations, and safe-refusal behavior machine-readable.
+2. **Live-provider evaluation:** run the corpus through the same strict OpenAI gateway and authority-derived tool schema used by the product. Use synthetic canvas content only, `store: false`, one request at a time, a 75-second deadline, privacy-safe incremental observations, bounded token output, and three repetitions by default.
+3. **Reliability and safety gates:** require 100% of critical creation, connector, direct-scope, unsupported-request, and timeout cases; at least 95% overall; no response beyond the deadline; no unknown or out-of-scope tool; no technical identifiers in visible reply copy; and no duplicate fixture/repetition observation.
+4. **Regression conversion and exploratory acceptance:** retain deterministic browser coverage for every hosted defect, add structural evaluator tests for paraphrase coverage and threshold enforcement, and reserve product-owner testing for fresh prompts not copied from the corpus. A safe, explicit refusal is acceptable for unsupported work; a hang, false success claim, unsafe partial mutation, duplicate effect, or scope violation is not.
+
+Live-provider evaluation is evidence for model/tool selection, not proof that canvas persistence, vision refinement, or undo completed. Exact-head CI, immutable-preview application testing, visual inspection, reload, collaboration, and atomic undo remain separate required evidence.
+
 ### Revised exit criteria
 
 - [x] Product owner approved `PD-012` and this replacement model on 2026-08-27.
@@ -61,6 +72,7 @@ The existing change-set and per-object before/after records remain internal safe
 - [x] Review panel, guided-story, per-object Keep/Discard, and Request revision controls are absent from the first-version interaction.
 - [ ] Direct-object and world-space scope, semantic/style projection, deterministic layout, targeted visual feedback, permission/RLS, prompt-injection, cancellation, idempotency, collaboration, accessibility, and closed-milestone regressions remain passing.
 - [ ] `AS-006`, the exact five-note request, full automated checks, exact-head protected CI, and an authenticated immutable Netlify preview pass before closure approval is requested.
+- [ ] The 30-prompt edit corpus passes three live Luna repetitions at 100% critical and at least 95% overall, with no deadline breach, unsafe tool selection, scope violation, technical reply leakage, or duplicate observation.
 
 ## Historical 2026-08-26 plan — superseded interaction model
 
