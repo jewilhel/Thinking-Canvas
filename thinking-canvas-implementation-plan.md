@@ -236,15 +236,25 @@ Evidence: [Milestone 3 implementation and verification record](docs/implementati
 
 Evidence: [Milestone 4 implementation and verification record](docs/implementation/milestone-04-ai-collaborator-permissions-and-typed-interaction.md), pull request [#9](https://github.com/jewilhel/Thinking-Canvas/pull/9), exact-head protected CI [run `32938748793`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/32938748793) for commit `1f9234c`, ready Git-backed Netlify deploy preview `6a8e88fa3512c700083c983b`, the Luna evaluation trace, and product-owner hosted acceptance and closure approval on 2026-08-26. The pull request was squash-merged to `main` as `f965395`; production was not changed.
 
-## Milestone 5 — Reviewable AI changes
+## Milestone 5 — Conversational AI edits with undo
 
-### Product requirements
+### Superseded sourced requirements retained for traceability
+
+The following original requirements remain verbatim for source traceability but are no longer first-version release requirements. Product-owner decision `PD-012` replaces their guided, per-object approval model with the simpler conversational transaction model in `FR-067` through `FR-071` and `AS-006`.
 
 - [ ] **FR-031 — Explanation per reviewed object.** In edit-with-review mode, every added or edited object receives an attached explanation of what changed and why.
 - [ ] **FR-032 — Review actions.** The user can keep, request revision of, or discard each reviewed AI change independently.
 - [ ] **FR-033 — Immediate restoration.** Discard restores the affected content to its prior state immediately without reverting unrelated later work.
 - [ ] **FR-034 — Guided review story.** The product can generate and play a review story that visits AI changes one at a time.
 - [ ] **FR-035 — Contextual review step.** Each step frames the relevant change and exposes its explanation and currently valid actions.
+
+### Approved replacement requirements
+
+- [ ] **FR-067 — Plain-language AI change summary.** After changing the canvas, the AI replies in ordinary product language describing the visible result without exposing object UUIDs, command names, staging terminology, or other implementation details.
+- [ ] **FR-068 — Atomic AI-turn undo.** Every AI edit turn is one undoable canvas transaction; Undo restores the prior state without reverting unrelated later work or requiring per-object decisions.
+- [ ] **FR-069 — Conversational revision.** A user can request revisions or modifications by replying naturally in the originating comment thread, and the AI applies a new validated transaction against current authorized canvas state.
+- [ ] **FR-070 — Implicit acceptance.** AI edits require no explicit Keep action; leaving the result in place, closing the thread, continuing work, or changing the topic leaves the durable change intact and available through normal history.
+- [ ] **FR-071 — Optional affected-object inspection.** The product may highlight the objects affected by one AI turn as a single set without starting a guided story or requiring object-by-object approval.
 
 ### Supporting work
 
@@ -255,7 +265,7 @@ Evidence: [Milestone 4 implementation and verification record](docs/implementati
 
 ### Exit gate
 
-- [ ] Complete the sourced **Reviewable AI edit** and **Guided review** acceptance scenarios, including a mixed keep/discard change set and a concurrent unrelated human edit.
+- [ ] Complete the approved **Conversational AI edit with undo** acceptance scenario: a plain-language multi-object change is immediately durable, contains no technical identifiers, can be revised through a normal reply, and can be rolled back as one conflict-safe transaction while preserving an unrelated later human edit.
 - [ ] On the same immutable preview, a visually sensitive single-object change and a world-space multi-object arrangement prove complete semantic style/layout grounding, deterministic layout-tool execution, targeted before/after visual feedback, scope preservation, and human-reviewable results without clipping, unsafe overlap, invalid contrast, or retention of provider capture payloads.
 
 ## Milestone 6 — Vector annotations
@@ -409,15 +419,16 @@ Evidence: [Milestone 4 implementation and verification record](docs/implementati
 - [ ] No unresolved release-blocking security, accessibility, data-loss, permission, or cross-browser defect remains.
 - [ ] Product owner explicitly approves the first-version release.
 
-## Sourced acceptance scenarios
+## Acceptance scenarios
 
 These are retained as cross-feature release tests rather than substitutes for the individual requirement checks.
 
 - [ ] **AS-001 — Live co-thinking.** While a user draws connected ideas in live voice, the AI can leave a relevant contextual comment without ending the conversation and defers non-urgent observations while the user speaks.
-- [ ] **AS-002 — Reviewable AI edit.** In edit-with-review mode, an AI label change receives an explanation; keep, revise, and discard are available; discard immediately restores the prior label.
+- [ ] **AS-002 — Reviewable AI edit.** In edit-with-review mode, an AI label change receives an explanation; keep, revise, and discard are available; discard immediately restores the prior label. **Superseded for the first version by `PD-012` and `AS-006`; retained verbatim for source traceability.**
 - [x] **AS-003 — Comment prompt.** A collaborator attaches a yes/no prompt, the recipient answers without typing, and the response appears in the thread.
 - [ ] **AS-004 — Document collaboration.** Rich text, a shape, and an annotation remain inside a document and support comments and AI review without connecting to the parent canvas.
-- [ ] **AS-005 — Guided review.** A multi-change AI review story visits one affected area at a time and provides the correct review controls at each scene.
+- [ ] **AS-005 — Guided review.** A multi-change AI review story visits one affected area at a time and provides the correct review controls at each scene. **Superseded for the first version by `PD-012` and `AS-006`; retained verbatim for source traceability.**
+- [ ] **AS-006 — Conversational AI edit with undo.** In the user-facing **Edit with undo** authority mode, an AI applies one plain-language canvas change without exposing technical identifiers; the user can revise it through a normal thread reply or undo the complete AI turn while unrelated later human work remains intact; otherwise no explicit acceptance action is required.
 
 ## Product decisions required before their milestones
 
@@ -432,12 +443,14 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [x] **PD-009 — Offline behavior:** decide whether the first version supports deliberate offline editing or only temporary disconnect recovery. **Decision:** the first version supports temporary disconnect recovery only; a fully loaded canvas may retain and retry pending edits through a transient connection loss, while deliberate offline entry and opening an uncached canvas offline remain unsupported.
 - [ ] **PD-010 — Export and portability:** decide whether a user-facing export is a launch requirement; it is prudent for recovery but not stated in the source brief.
 - [x] **PD-011 — AI visual grounding and layout assistance:** keep the complete semantic canvas projection and stable object IDs authoritative; add validated deterministic layout tools for manipulation; use bounded targeted before-and-after render captures only as supplementary vision context and never as mutation authority. The bounded core is Milestone 5 scope, with broader starter-structure composition deferred to Milestone 10. Approved by the product owner on 2026-08-26.
+- [x] **PD-012 — Conversational AI edits with undo:** replace the first-version guided per-object Keep/Discard/Request revision workflow with one immediately durable, conflict-safe AI transaction per turn. Show only a plain-language summary; expose the existing internal `edit_with_review` authority as **Edit with undo**; use normal comment replies for revisions; make acceptance implicit; and keep guided review only as deferred optional exploration. Approved by the product owner on 2026-08-27 after hosted Milestone 5 testing.
 
 ## Explicitly deferred
 
 - [ ] Do not implement specialist AI agents spawned by the primary AI.
 - [ ] Do not implement branching guided stories.
 - [ ] Do not preserve versioned canvas snapshots inside stories.
+- [ ] Do not restore the superseded per-object AI approval or guided-review workflow unless a later product decision explicitly promotes it as an optional advanced mode.
 - [ ] Do not allow connectors between document-internal and parent-canvas objects.
 - [ ] Do not add specialized document types.
 - [ ] Do not add a canvas-insertable icon or illustration library.

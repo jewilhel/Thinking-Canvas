@@ -1,6 +1,6 @@
-# Milestone 5 — Reviewable AI changes
+# Milestone 5 — Conversational AI edits with undo
 
-Status: Approved for implementation
+Status: Approved redesign in implementation
 
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 
@@ -8,7 +8,63 @@ Plan owner: Product owner
 
 Last updated: 2026-08-27
 
-## Goal and user-visible outcome
+## Approved 2026-08-27 redesign — authoritative
+
+Hosted testing proved the multi-object AI edit path but also showed that the original per-object approval and guided-story workflow exposed implementation detail and required too much ceremony for normal canvas work. The product owner approved replacing that first-version interaction with a conversational, transaction-based model. This section and master-plan decision `PD-012` supersede the conflicting interaction, review-panel, story, decision, and exit-criteria language retained later in this document as implementation history.
+
+### Revised goal and user-visible outcome
+
+An owner or editor using the user-facing **Edit with undo** authority can ask the primary AI for a change from a normal canvas comment. The AI applies the validated result immediately as one durable canvas transaction and replies with a concise description of what visibly changed. The reply never exposes UUIDs, domain command names, staging terminology, provider structure, or database state.
+
+The AI turn participates in ordinary canvas history as one unit. When it is the latest undoable action, the canvas Undo command and `Cmd/Ctrl+Z` roll back the whole turn. The AI reply also exposes one unobtrusive **Undo AI change** action so the user can deliberately roll back that transaction later; the server restores only the AI-owned fields that still match its recorded after-state and preserves unrelated later human changes. A same-field conflict fails visibly instead of overwriting the later human value.
+
+Revision is conversational. A user replies naturally in the same thread—for example, “make them smaller” or “arrange them vertically”—and inherited AI recipient context starts another bounded run against current authorized canvas state. There is no Request revision mode, per-object Keep or Discard, guided framing, Previous/Next workflow, or explicit acceptance step. Leaving the result in place, closing the thread, continuing work, or changing the topic simply leaves the durable transaction intact.
+
+The existing change-set and per-object before/after records remain internal safety, audit, idempotency, and rollback metadata. They are not rendered as product copy. The internal `edit_with_review` identifier remains stable for compatibility while its user-facing label becomes **Edit with undo**.
+
+### Revised requirements and acceptance
+
+- **FR-067 — Plain-language AI change summary.** Describe visible outcomes only; never render object UUIDs, command names, staging status, or raw tool output.
+- **FR-068 — Atomic AI-turn undo.** Apply and roll back one AI turn as one conflict-safe transaction while preserving unrelated later work.
+- **FR-069 — Conversational revision.** Use ordinary replies in the originating comment thread for modifications; preserve server-derived scope and current authorization.
+- **FR-070 — Implicit acceptance.** Require no Keep action and no pending-review cleanup decision.
+- **FR-071 — Optional affected-object inspection.** If exposed, highlight the complete affected set without guided navigation or required decisions.
+- **AS-006 — Conversational AI edit with undo.** On one authenticated immutable preview, a multi-object AI edit produces plain-language copy and an immediately durable result; a normal reply revises it; Undo restores the prior state as one operation while an unrelated later human edit remains; leaving another result alone requires no acceptance action.
+- The original `FR-031` through `FR-035` and `AS-002` / `AS-005` remain verbatim in the master ledger only for source traceability and are not first-version exit requirements after `PD-012`.
+- Semantic projection, deterministic layout, transient visual feedback, scope enforcement, authorization, idempotency, collaboration, and deterministic visual-quality boundaries remain unchanged.
+
+### Revised technical approach
+
+- Keep provider and server tool contracts structured, but construct the persisted user-facing reply from the provider's plain-language body plus a bounded product summary. Do not append `ValidatedCanvasReviewStage.summary`, command lines, affected IDs, or activation instructions.
+- Continue validating and activating the entire change set through the trusted server path. Treat activation as the durable completion of the user-visible AI transaction rather than the start of a pending approval session.
+- Add one authorized change-set undo operation that builds a single compensating Yjs update from the complete affected set, records an idempotent terminal undo outcome, appends one durable sequence, and broadcasts it once. Preserve affected-field conflict checks and full-state guards for created/deleted objects.
+- Make the latest AI transaction available to the invoking actor's normal canvas Undo stack as one entry. Keep the reply-level Undo action for discoverability and selective later rollback; both paths call the same server-authorized transaction undo boundary.
+- Remove Review changes entry points, review-panel rendering, guided story generation/playback, Keep/Discard/Request revision controls, and pause/resume framing from the first-version UI. Retain dormant historical schema only where removing it would create migration risk; do not create new review stories or per-object human decisions.
+- Reuse inherited comment recipient context for conversational revisions. A normal reply addressed to the AI starts a new run; it does not first restore the prior transaction unless the user explicitly asks to undo it.
+
+### Revised implementation slices
+
+1. **Product copy and surface simplification:** remove technical command/UUID output, rename the authority label, hide guided review entry points, and prove plain-language response rendering.
+2. **Atomic AI transaction undo:** add the server/database transaction boundary, canvas history integration, reply-level Undo action, idempotency, conflict behavior, collaboration broadcast, and reload persistence.
+3. **Conversational revision and implicit acceptance:** remove explicit decision controls, prove inherited-thread revision, and verify that abandoned or topic-shifted threads need no cleanup action.
+4. **Regression and hosted acceptance:** retain the complete semantic/layout/vision, scope, permission, RLS, and collaboration matrix; replace the superseded per-object/guided-review scenarios with `AS-006`; validate the exact five-note request and undo/revision flows in the Netlify preview.
+
+### Revised exit criteria
+
+- [x] Product owner approved `PD-012` and this replacement model on 2026-08-27.
+- [ ] AI replies contain plain-language visible outcomes and no UUIDs, command names, raw tool output, or staging terminology.
+- [ ] One multi-object AI turn is immediately durable and appears as one undoable transaction in canvas history.
+- [ ] Canvas Undo and the reply-level Undo action use the same authorized, idempotent, conflict-safe rollback boundary.
+- [ ] Undo restores the complete AI turn while preserving an unrelated later human edit in two authenticated sessions and after reload; same-field conflicts fail visibly.
+- [ ] A normal inherited-context reply revises the current canvas through another bounded AI transaction without a special revision mode.
+- [ ] Closing the thread, continuing work, or changing topic requires no Keep action and leaves no user-facing pending-review state.
+- [ ] Review panel, guided-story, per-object Keep/Discard, and Request revision controls are absent from the first-version interaction.
+- [ ] Direct-object and world-space scope, semantic/style projection, deterministic layout, targeted visual feedback, permission/RLS, prompt-injection, cancellation, idempotency, collaboration, accessibility, and closed-milestone regressions remain passing.
+- [ ] `AS-006`, the exact five-note request, full automated checks, exact-head protected CI, and an authenticated immutable Netlify preview pass before closure approval is requested.
+
+## Historical 2026-08-26 plan — superseded interaction model
+
+### Goal and user-visible outcome
 
 Turn Milestone 4's protected `edit_with_review` staging records into a complete, object-by-object review workflow without adding another AI conversation surface or weakening the shared canvas command, persistence, and permission boundaries.
 
@@ -285,7 +341,7 @@ Retain the deploy ID and URL, exact SHA, CI run, browsers/viewports, identities/
 | Review playback can disorient motion-sensitive users or fight manual pan/zoom.                                    | Medium / high       | Pause on manual exploration, provide Resume, make motion interruptible, and use immediate/non-sweeping reduced-motion behavior.                                              | Engineering                   | Planned Slice 4 coverage.                     |
 | Local `pnpm db:test` may repeat the known macOS mount-path failure.                                               | Confirmed / medium  | Keep Linux protected CI canonical and use the documented direct local PostgreSQL pgTAP fallback without claiming the wrapper passed.                                         | Engineering                   | Known and mitigated.                          |
 
-## Exit criteria
+## Historical exit criteria — superseded by the approved redesign
 
 - [x] The product owner approved this plan on 2026-08-26 and explicitly selected the recommended tentative-application, reviewer-authority, and revision-lifecycle decisions before implementation.
 - [x] The stale Milestone 4 PR delivery sentence is corrected without altering its closed requirement or exit-gate state.
@@ -388,6 +444,7 @@ Local implementation evidence is current through the uncommitted worktree. Live 
 | 2026-08-26 | Layered visual refinement after validated creation and classified hosted run failures.                                                                                          | The first creation fix reached the targeted render loop, but visual adjustments were replayed against the empty pre-change canvas while the reviewer was forbidden to create the proposed targets.                                                                              | Composes bounded move/resize/style/patch adjustments after the original commands, preserves the exact affected IDs, adds a new-object refinement regression, and persists only privacy-safe provider-output, visual-quality, or staging failure categories.                               | Approved delivery/fix scope |
 | 2026-08-27 | Normalized multi-shape provider output and added the exact empty-canvas acceptance path.                                                                                        | The replacement preview still reached `review_stage_failed` without leaving a tentative review set. A multi-object creation request must remain one review set even if the provider decomposes it, and provider-local shape keys cannot be treated as existing canvas evidence. | Requires and defensively coalesces all `stage_new_shapes` work into one server-identified review call, filters ungrounded new-shape reply references, and adds a five-label/five-color full-stack browser regression. The milestone remains open pending replacement hosted verification. | Approved delivery/fix scope |
 | 2026-08-27 | Applied the approved Milestone 5 migration to the linked preview database after hosted staging continued to fail.                                                               | Repository and remote migration histories showed `20260826170000_reviewable_ai_changes.sql` was the only pending migration; the deployed app therefore lacked the review finalization and activation functions required by the already-approved schema.                         | Aligns the non-production preview database with PR #10, restores hosted five-object tentative staging and review creation, and records the successful same-thread Retry. No master-plan checkbox is closed; hands-on visual and decision verification still remains.                      | Approved delivery/fix scope |
+| 2026-08-27 | Replaced guided per-object approval with conversational AI transactions and undo.                                                                                               | Hosted product-owner testing showed technical UUID/command output and one-object-at-a-time Keep/Discard/Request revision controls were too cumbersome for real canvas work.                                                                                                     | Adds `PD-012`, `FR-067`–`FR-071`, and `AS-006`; makes plain-language summaries, atomic undo, normal thread replies, and implicit acceptance authoritative; preserves the prior sourced requirements verbatim as superseded traceability; begins a new implementation pass on PR #10.      | Product owner               |
 
 ## Closure
 
