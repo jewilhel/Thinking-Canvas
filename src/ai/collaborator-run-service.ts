@@ -43,6 +43,7 @@ import {
   validateAiToolRequest,
 } from "@/ai/tool-registry";
 import { broadcastAiCanvasUpdate } from "@/ai/realtime-broadcast";
+import { plainLanguageAiReply } from "@/ai/reply-copy";
 import {
   buildTrustedCanvasUpdate,
   stableAiToolCommandId,
@@ -433,7 +434,7 @@ export async function completeAiRun(
     sequence: number;
     created: boolean;
   }> = [];
-  const replySections = [gatewayResult.reply.body];
+  const replySections = [plainLanguageAiReply(gatewayResult.reply.body)];
   for (const toolCall of toolCalls) {
     let validatedTool: ReturnType<typeof validateAiToolRequest>;
     try {
@@ -469,13 +470,11 @@ export async function completeAiRun(
       let affectedObjectIds: string[];
       let sequence: number;
       let created: boolean;
-      let summary: string;
       if (retryResult.data?.[0]) {
         update = postgresByteaToBytes(retryResult.data[0].update_data);
         affectedObjectIds = retryResult.data[0].affected_object_ids;
         sequence = retryResult.data[0].sequence;
         created = false;
-        summary = "Resumed delivery of the already-applied canvas changes.";
       } else {
         const execution = await buildTrustedCanvasUpdate({
           document: compacted.document,
@@ -504,7 +503,6 @@ export async function completeAiRun(
         affectedObjectIds = execution.affectedObjectIds;
         sequence = toolResult.data[0].sequence;
         created = toolResult.data[0].created;
-        summary = execution.summary;
       }
 
       await broadcastAiCanvasUpdate({
@@ -520,7 +518,9 @@ export async function completeAiRun(
         sequence,
         created,
       });
-      replySections.push(summary);
+      replySections.push(
+        "The change is on the canvas. You can undo it if needed.",
+      );
       continue;
     }
     if (validatedTool.toolName === "propose_canvas_commands") {
@@ -554,7 +554,9 @@ export async function completeAiRun(
         affectedObjectIds: proposal.affectedObjectIds,
         created: toolResult.data[0].created,
       });
-      replySections.push(proposal.summary);
+      replySections.push(
+        "The proposal did not change the canvas. Reply if you want me to apply or adjust it.",
+      );
       continue;
     }
     if (
@@ -851,7 +853,7 @@ export async function completeAiRun(
         created: toolResult.data[0].created,
       });
       replySections.push(
-        `${reviewStage.summary}\nThe changes are now visible tentatively on the shared canvas. Open Review changes to keep, discard, or request a revision for each object.`,
+        "The change is on the canvas. You can undo it or reply with adjustments.",
       );
       continue;
     }
@@ -929,6 +931,7 @@ export async function completeAiRun(
     runId: completionResult.data[0].run_id,
     replyId: completionResult.data[0].reply_id,
     status: completionResult.data[0].status,
+    changeSetId: reviewStageToolResults.at(-1)?.changeSetId ?? null,
   };
 }
 

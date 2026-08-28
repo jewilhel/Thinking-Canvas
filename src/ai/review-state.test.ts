@@ -1,7 +1,10 @@
 import * as Y from "yjs";
 import { describe, expect, it } from "vitest";
 
-import { buildDiscardReviewUpdate } from "@/ai/review-state";
+import {
+  buildDiscardReviewUpdate,
+  buildUndoAiChangeSetUpdate,
+} from "@/ai/review-state";
 import {
   createProductCanvasDocument,
   putCanvasObjectV2,
@@ -39,6 +42,40 @@ function object(
 }
 
 describe("review decision state", () => {
+  it("undoes a multi-object AI turn as one update", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const secondObjectId = "61000000-0000-4000-8000-000000000002";
+    const first = object(240);
+    const second = { ...object(480), id: secondObjectId, text: "Second" };
+    putCanvasObjectV2(document, first);
+    putCanvasObjectV2(document, second);
+
+    const undo = buildUndoAiChangeSetUpdate({
+      document,
+      objectChanges: [
+        {
+          id: "71000000-0000-4000-8000-000000000010",
+          objectId,
+          beforeState: { object: null, orderIndex: null },
+          afterState: { object: first, orderIndex: 0 },
+          affectedFields: ["object", "orderIndex"],
+        },
+        {
+          id: "71000000-0000-4000-8000-000000000011",
+          objectId: secondObjectId,
+          beforeState: { object: null, orderIndex: null },
+          afterState: { object: second, orderIndex: 1 },
+          affectedFields: ["object", "orderIndex"],
+        },
+      ],
+    });
+
+    Y.applyUpdate(document, undo.update);
+    expect(readCanvasObjectV2(document, objectId)).toBeUndefined();
+    expect(readCanvasObjectV2(document, secondObjectId)).toBeUndefined();
+    expect(undo.conflicts).toEqual([]);
+  });
+
   it("discards the AI field while preserving a later collaborator field", () => {
     const document = createProductCanvasDocument(canvasId);
     putCanvasObjectV2(document, object(240));

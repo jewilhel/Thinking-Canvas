@@ -65,7 +65,8 @@ type Props = {
   simulatedAiEnabled: boolean;
   onDismissPanel: () => void;
   onSelectTargets: (targetIds: string[]) => void;
-  onOpenReviews: () => void;
+  onAiTransactionApplied: (changeSetId: string) => void;
+  onUndoAiTransaction: (changeSetId: string) => Promise<void>;
 };
 
 function initials(name: string) {
@@ -666,7 +667,7 @@ function ThreadBody({
   onStatus,
   onDelete,
   onNavigateEvidence,
-  onOpenReviews,
+  onUndoAiTransaction,
   onCancelAiRun,
   onRetryAiRun,
 }: {
@@ -688,7 +689,7 @@ function ThreadBody({
   onStatus: (status: "resolved" | "dismissed") => Promise<void>;
   onDelete: () => Promise<void>;
   onNavigateEvidence: (objectId: string) => void;
-  onOpenReviews: () => void;
+  onUndoAiTransaction: (changeSetId: string) => Promise<void>;
   onCancelAiRun: (runId: string) => Promise<void>;
   onRetryAiRun: (runId: string) => Promise<void>;
 }) {
@@ -704,6 +705,10 @@ function ThreadBody({
     : inheritedRecipients;
   const [editingBody, setEditingBody] = useState(false);
   const [bodyDraft, setBodyDraft] = useState(thread.body);
+  const [undoingChangeSetId, setUndoingChangeSetId] = useState<string | null>(
+    null,
+  );
+  const [undoError, setUndoError] = useState("");
   const canComment = role !== "viewer";
   const canResolve =
     role === "owner" || role === "editor" || thread.authorId === userId;
@@ -839,16 +844,36 @@ function ThreadBody({
                   {item.body}
                 </p>
                 {item.authorKind === "ai" &&
-                item.body.includes("Open Review changes") ? (
+                item.aiTransaction?.status === "active" ? (
                   <Button
                     type="button"
                     size="sm"
-                    variant="outline"
+                    variant="ghost"
                     className="mt-2"
-                    onClick={onOpenReviews}
+                    disabled={
+                      pending ||
+                      undoingChangeSetId === item.aiTransaction.changeSetId
+                    }
+                    onClick={() => {
+                      const changeSetId = item.aiTransaction!.changeSetId;
+                      setUndoError("");
+                      setUndoingChangeSetId(changeSetId);
+                      void onUndoAiTransaction(changeSetId)
+                        .catch((error) =>
+                          setUndoError(
+                            error instanceof Error
+                              ? error.message
+                              : "The AI change could not be undone.",
+                          ),
+                        )
+                        .finally(() => setUndoingChangeSetId(null));
+                    }}
                   >
-                    Review changes
+                    <RotateCcw aria-hidden="true" /> Undo AI change
                   </Button>
+                ) : item.authorKind === "ai" &&
+                  item.aiTransaction?.status === "undone" ? (
+                  <p className="mt-2 text-xs text-zinc-500">Change undone</p>
                 ) : null}
                 {item.evidence.length ? (
                   <div
@@ -872,6 +897,11 @@ function ThreadBody({
             </div>
           ))}
         </div>
+      ) : null}
+      {undoError ? (
+        <p role="alert" className="mt-3 text-sm text-red-700">
+          {undoError}
+        </p>
       ) : null}
       {latestRuns
         .filter((run) => run.status !== "completed")
@@ -1062,7 +1092,8 @@ export function CanvasComments({
   panelInvoker,
   onDismissPanel,
   onSelectTargets,
-  onOpenReviews,
+  onAiTransactionApplied,
+  onUndoAiTransaction,
 }: Props) {
   const {
     threads,
@@ -1075,7 +1106,12 @@ export function CanvasComments({
     setAiSettings,
     cancelAiRun,
     retryAiRun,
-  } = useCanvasComments(canvasId, supabaseUrl, supabasePublishableKey);
+  } = useCanvasComments(
+    canvasId,
+    supabaseUrl,
+    supabasePublishableKey,
+    onAiTransactionApplied,
+  );
   const visibilityKey = `thinking-canvas:comments-visible:${userId}:${canvasId}`;
   const [visible, setVisible] = useState(
     () => window.localStorage.getItem(visibilityKey) !== "false",
@@ -1555,9 +1591,9 @@ export function CanvasComments({
             onStatus={(next) => status(selectedThread, next)}
             onDelete={() => deleteThread(selectedThread)}
             onNavigateEvidence={(objectId) => onSelectTargets([objectId])}
-            onOpenReviews={() => {
-              setSelectedThreadId(null);
-              onOpenReviews();
+            onUndoAiTransaction={async (changeSetId) => {
+              await onUndoAiTransaction(changeSetId);
+              await refresh();
             }}
             onCancelAiRun={cancelAiRun}
             onRetryAiRun={retryAiRun}
@@ -1641,7 +1677,7 @@ export function CanvasComments({
                   >
                     <option value="comment_only">Comment only</option>
                     <option value="propose_changes">Propose changes</option>
-                    <option value="edit_with_review">Edit with review</option>
+                    <option value="edit_with_review">Edit with undo</option>
                     <option value="trusted_editor">Trusted editor</option>
                   </select>
                 </label>

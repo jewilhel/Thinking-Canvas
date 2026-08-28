@@ -130,6 +130,10 @@ export type CommentReply = {
   updatedAt: string;
   recipients: CommentRecipient[];
   evidence: Array<{ objectId: string; label: string }>;
+  aiTransaction: {
+    changeSetId: string;
+    status: "active" | "undone" | "unavailable";
+  } | null;
 };
 
 export type CommentRecipient = {

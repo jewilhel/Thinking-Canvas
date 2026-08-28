@@ -154,11 +154,11 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       input.allowedToolNames.includes("execute_canvas_commands");
     const reply = aiReplySchema.parse({
       body: shouldCreateNewShapes
-        ? "I created five labeled sticky notes tentatively for review."
+        ? "I created five labeled sticky notes in the requested colors."
         : shouldExecuteChanges
           ? "I applied validated canvas changes as the primary AI collaborator."
           : shouldStageReview
-            ? "I applied validated changes tentatively for review."
+            ? "I made the requested change on the canvas."
             : shouldProposeChanges
               ? "I prepared a validated proposal without changing the canvas."
               : selectedPath.length > 1

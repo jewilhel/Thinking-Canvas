@@ -112,3 +112,52 @@ export function buildDiscardReviewUpdate(input: {
   const update = Y.encodeStateAsUpdate(nextDocument, stateVector);
   return { ...result, update };
 }
+
+export function buildUndoAiChangeSetUpdate(input: {
+  document: Y.Doc;
+  objectChanges: Array<{
+    id: string;
+    objectId: string;
+    beforeState: unknown;
+    afterState: unknown;
+    affectedFields: string[];
+  }>;
+}) {
+  const stateVector = Y.encodeStateVector(input.document);
+  const canvasId = input.objectChanges
+    .map(
+      (change) => stagedStateSchema.parse(change.afterState).object?.canvasId,
+    )
+    .find(Boolean);
+  const fallbackCanvasId = input.objectChanges
+    .map(
+      (change) => stagedStateSchema.parse(change.beforeState).object?.canvasId,
+    )
+    .find(Boolean);
+  if (!canvasId && !fallbackCanvasId) {
+    throw new Error("An AI change set must belong to a canvas.");
+  }
+  const nextDocument = createProductCanvasDocument(
+    canvasId ?? fallbackCanvasId!,
+  );
+  Y.applyUpdate(nextDocument, Y.encodeStateAsUpdate(input.document));
+  const conflicts: string[] = [];
+
+  for (const change of [...input.objectChanges].reverse()) {
+    const result = buildDiscardReviewUpdate({
+      document: nextDocument,
+      objectChangeId: change.id,
+      objectId: change.objectId,
+      beforeState: change.beforeState,
+      afterState: change.afterState,
+      affectedFields: change.affectedFields,
+    });
+    Y.applyUpdate(nextDocument, result.update);
+    conflicts.push(...result.conflicts);
+  }
+
+  return {
+    update: Y.encodeStateAsUpdate(nextDocument, stateVector),
+    conflicts: [...new Set(conflicts)],
+  };
+}

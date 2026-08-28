@@ -289,7 +289,7 @@ describe("FakePrimaryAiGateway", () => {
     expect(result).toMatchObject({
       status: "completed",
       reply: {
-        body: "I applied validated changes tentatively for review.",
+        body: "I made the requested change on the canvas.",
       },
       toolCalls: [
         {

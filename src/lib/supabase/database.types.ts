@@ -53,6 +53,11 @@ export type Database = {
           status: Database["public"]["Enums"]["ai_change_status"]
           summary: string | null
           tool_call_key: string | null
+          transaction_undo_conflicts: Json
+          transaction_undo_idempotency_key: string | null
+          transaction_undo_sequence: number | null
+          transaction_undone_at: string | null
+          transaction_undone_by: string | null
           updated_at: string
           visual_feedback_metadata: Json
         }
@@ -74,6 +79,11 @@ export type Database = {
           status?: Database["public"]["Enums"]["ai_change_status"]
           summary?: string | null
           tool_call_key?: string | null
+          transaction_undo_conflicts?: Json
+          transaction_undo_idempotency_key?: string | null
+          transaction_undo_sequence?: number | null
+          transaction_undone_at?: string | null
+          transaction_undone_by?: string | null
           updated_at?: string
           visual_feedback_metadata?: Json
         }
@@ -95,6 +105,11 @@ export type Database = {
           status?: Database["public"]["Enums"]["ai_change_status"]
           summary?: string | null
           tool_call_key?: string | null
+          transaction_undo_conflicts?: Json
+          transaction_undo_idempotency_key?: string | null
+          transaction_undo_sequence?: number | null
+          transaction_undone_at?: string | null
+          transaction_undone_by?: string | null
           updated_at?: string
           visual_feedback_metadata?: Json
         }
@@ -125,6 +140,13 @@ export type Database = {
             columns: ["source_comment_id"]
             isOneToOne: false
             referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_change_sets_transaction_undone_by_fkey"
+            columns: ["transaction_undone_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1444,6 +1466,22 @@ export type Database = {
           object_change_count: number
         }[]
       }
+      finalize_ai_review_stage_legacy: {
+        Args: {
+          target_change_set_id: string
+          target_explanations: Json
+          target_requester_id: string
+          target_scope_kind: string
+          target_scope_object_ids: string[]
+          target_summary: string
+          target_visual_feedback_metadata?: Json
+        }
+        Returns: {
+          change_set_id: string
+          created: boolean
+          object_change_count: number
+        }[]
+      }
       get_ai_canvas_execution_retry: {
         Args: {
           target_call_key: string
@@ -1587,6 +1625,22 @@ export type Database = {
           target_status: Database["public"]["Enums"]["comment_status"]
         }
         Returns: Database["public"]["Enums"]["comment_status"]
+      }
+      undo_ai_change_set: {
+        Args: {
+          target_actor_id: string
+          target_change_set_id: string
+          target_conflicts?: Json
+          target_expected_sequence: number
+          target_idempotency_key: string
+          target_update_data: string
+        }
+        Returns: {
+          change_set_id: string
+          conflict_count: number
+          created: boolean
+          result_sequence: number
+        }[]
       }
       update_comment_body: {
         Args: { target_body: string; target_comment_id: string }

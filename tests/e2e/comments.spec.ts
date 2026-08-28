@@ -477,11 +477,11 @@ test("returns an ordered AI proposal in comments without changing the canvas", a
     ),
   ).toBeVisible();
   await expect(
-    thread.getByText(/Proposed changes \(not applied\):/),
+    thread.getByText(
+      "The proposal did not change the canvas. Reply if you want me to apply or adjust it.",
+    ),
   ).toBeVisible();
-  await expect(
-    thread.getByText(/1\. object\.move — affected [0-9a-f-]+/),
-  ).toBeVisible();
+  await expect(thread.getByText(/[0-9a-f]{8}-[0-9a-f-]{27}/)).toHaveCount(0);
   await expect(saveStatus).toHaveAttribute(
     "title",
     durableSequenceBefore ?? "",
@@ -503,11 +503,13 @@ test("returns an ordered AI proposal in comments without changing the canvas", a
   await expect(
     page
       .getByRole("dialog", { name: "Comment thread" })
-      .getByText(/1\. object\.move — affected [0-9a-f-]+/),
+      .getByText(
+        "The proposal did not change the canvas. Reply if you want me to apply or adjust it.",
+      ),
   ).toBeVisible();
 });
 
-test("applies tentative AI changes and discards them through the review panel", async ({
+test.skip("legacy guided review applies tentative AI changes", async ({
   page,
 }) => {
   await openFreshCanvas(page);
@@ -610,7 +612,7 @@ test("applies tentative AI changes and discards them through the review panel", 
   ).toBeVisible();
 });
 
-test("restores an AI label edit while preserving a later human move", async ({
+test.skip("legacy guided review preserves a later human move", async ({
   page,
   browser,
 }) => {
@@ -737,7 +739,7 @@ test("restores an AI label edit while preserving a later human move", async ({
   await editorContext.close();
 });
 
-test("converges a review-staged AI reply in two authenticated contexts", async ({
+test.skip("legacy guided review converges in two contexts", async ({
   browser,
 }) => {
   const ownerContext = await browser.newContext();
@@ -831,9 +833,7 @@ test("converges a review-staged AI reply in two authenticated contexts", async (
   await ownerContext.close();
 });
 
-test("guides a world-space multi-object review through mixed decisions", async ({
-  page,
-}) => {
+test.skip("legacy guided multi-object review", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openFreshCanvas(page);
@@ -923,7 +923,7 @@ test("guides a world-space multi-object review through mixed decisions", async (
   expect(accessibility.violations).toEqual([]);
 });
 
-test("stages five labeled sticky notes from an empty world-space comment", async ({
+test("creates and atomically undoes five labeled sticky notes", async ({
   page,
 }) => {
   await openFreshCanvas(page);
@@ -949,37 +949,66 @@ test("stages five labeled sticky notes from an empty world-space comment", async
   const thread = page.getByRole("dialog", { name: "Comment thread" });
   await expect(
     thread.getByText(
-      "I created five labeled sticky notes tentatively for review.",
+      "I created five labeled sticky notes in the requested colors.",
     ),
   ).toBeVisible();
+  await expect(
+    thread.getByText(
+      "The change is on the canvas. You can undo it or reply with adjustments.",
+    ),
+  ).toBeVisible();
+  await expect(thread.getByText(/[0-9a-f]{8}-[0-9a-f-]{27}/)).toHaveCount(0);
   await expect(page.getByTestId("product-object-count")).toHaveText("5");
-  await thread.getByRole("button", { name: "Review changes" }).click();
-  const review = page.getByRole("dialog", { name: "Review AI changes" });
-  await expect(review.getByText("Nearby canvas area")).toBeVisible();
-  await expect(review.getByText("Change 1 of 5")).toBeVisible();
-
-  const reviewedColors: string[] = [];
-  for (let index = 0; index < 5; index += 1) {
-    await expect(review.getByText(`Change ${index + 1} of 5`)).toBeVisible();
-    const explanation = review.getByText(
-      /^Created the (red|yellow|orange|green|blue) sticky note\.$/,
-    );
-    reviewedColors.push(await explanation.innerText());
-    await review.getByRole("button", { name: "Keep" }).click();
-  }
-  expect(new Set(reviewedColors)).toEqual(
-    new Set([
-      "Created the red sticky note.",
-      "Created the yellow sticky note.",
-      "Created the orange sticky note.",
-      "Created the green sticky note.",
-      "Created the blue sticky note.",
-    ]),
+  await expect(
+    page.getByRole("button", { name: "Review AI changes" }),
+  ).toHaveCount(0);
+  const undoResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/ai/transactions/undo"),
   );
-  await expect(review.getByText("complete")).toBeVisible();
+  await thread.getByRole("button", { name: "Undo AI change" }).click();
+  const undoResponse = await undoResponsePromise;
+  expect(undoResponse.ok(), await undoResponse.text()).toBeTruthy();
+  await expect(page.getByTestId("product-object-count")).toHaveText("0");
+  await expect(thread.getByText("Change undone")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByTestId("product-object-count")).toHaveText("0");
 });
 
-test("requests a revision as a child AI run in the originating thread", async ({
+test("canvas undo reverses the latest AI transaction", async ({ page }) => {
+  await openFreshCanvas(page);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await page.getByLabel("AI authority").selectOption("edit_with_review");
+  await page.getByRole("checkbox", { name: "Enabled" }).click();
+  await placeArmedComment(page, { x: 420, y: 280 });
+
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill(
+    "Create five sticky notes labeled Red, Yellow, Orange, Green, and Blue.",
+  );
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    thread.getByRole("button", { name: "Undo AI change" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("product-object-count")).toHaveText("5");
+  await thread.getByRole("button", { name: "Close comment thread" }).click();
+  const surface = page.getByTestId("product-canvas-surface");
+  await surface.focus();
+  await surface.press("Meta+z");
+  await expect(page.getByTestId("product-object-count")).toHaveText("0");
+});
+
+test.skip("legacy guided review requests a revision", async ({
   page,
   browser,
 }) => {
@@ -1125,7 +1154,9 @@ test("applies a trusted AI canvas command and converges it in two authenticated 
     ),
   ).toBeVisible();
   await expect(
-    ownerThread.getByText("Applied 1 canvas command: object.move."),
+    ownerThread.getByText(
+      "The change is on the canvas. You can undo it if needed.",
+    ),
   ).toBeVisible();
   await ownerThread
     .getByRole("button", { name: "Close comment thread" })

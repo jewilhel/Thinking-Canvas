@@ -10,7 +10,6 @@ import {
   Ellipsis,
   ExternalLink,
   Link2,
-  ListChecks,
   ListTree,
   LogOut,
   Maximize2,
@@ -23,7 +22,14 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Arrow,
   Circle,
@@ -89,7 +95,6 @@ import {
   type CanvasTool,
 } from "@/components/canvas/workspace-primary-dock";
 import { WorkspacePanel } from "@/components/canvas/workspace-panel";
-import { CanvasAiReviews } from "@/components/ai/canvas-ai-reviews";
 import { CanvasComments } from "@/components/comments/canvas-comments";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { CanvasRole } from "@/domain/command";
@@ -120,7 +125,10 @@ type InlineTextEditor = {
 };
 type ContextPanel =
   "fill" | "outline" | "text" | "table" | "connector" | "more";
-type SharedPanel = "objects" | "comments" | "review" | "help";
+type SharedPanel = "objects" | "comments" | "help";
+type CanvasUndoEntry =
+  | { kind: "canvas"; history: CanvasHistoryEntry }
+  | { kind: "ai"; changeSetId: string };
 type ObjectContextMenuPosition = { x: number; y: number; maxHeight: number };
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
@@ -276,7 +284,6 @@ export function ProductCanvas({
   const [sharedPanel, setSharedPanel] = useState<SharedPanel | null>(null);
   const [sharedPanelInvoker, setSharedPanelInvoker] =
     useState<HTMLButtonElement | null>(null);
-  const [reviewGuidancePaused, setReviewGuidancePaused] = useState(false);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [dragPreviewPositions, setDragPreviewPositions] = useState<
     Record<string, Point>
@@ -285,8 +292,9 @@ export function ProductCanvas({
     Record<string, CanvasObjectV2["geometry"]>
   >({});
   const [clipboardText, setClipboardText] = useState("");
-  const [undoStack, setUndoStack] = useState<CanvasHistoryEntry[]>([]);
+  const [undoStack, setUndoStack] = useState<CanvasUndoEntry[]>([]);
   const [redoStack, setRedoStack] = useState<CanvasHistoryEntry[]>([]);
+  const aiUndoKeys = useRef(new Map<string, string>());
   const [historyNotice, setHistoryNotice] = useState("");
   const [shareNotice, setShareNotice] = useState("");
   const [viewport, setViewport] = useState<Viewport>(() => {
@@ -530,7 +538,7 @@ export function ProductCanvas({
       beforeOrder: first.beforeOrder,
       afterOrder: last.afterOrder,
     };
-    setUndoStack((current) => [...current, history]);
+    setUndoStack((current) => [...current, { kind: "canvas", history }]);
     setRedoStack([]);
     setHistoryNotice("");
   }
@@ -1220,16 +1228,78 @@ export function ProductCanvas({
     }
   }
 
-  function undo() {
+  const registerAiTransaction = useCallback((changeSetId: string) => {
+    setUndoStack((current) => [
+      ...current.filter(
+        (entry) => entry.kind !== "ai" || entry.changeSetId !== changeSetId,
+      ),
+      { kind: "ai", changeSetId },
+    ]);
+    setRedoStack([]);
+    setHistoryNotice("");
+  }, []);
+
+  async function undoAiTransaction(changeSetId: string) {
+    const idempotencyKey =
+      aiUndoKeys.current.get(changeSetId) ?? crypto.randomUUID();
+    aiUndoKeys.current.set(changeSetId, idempotencyKey);
+    const response = await fetch(
+      `/api/canvases/${canvasId}/ai/transactions/undo`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ changeSetId, idempotencyKey }),
+      },
+    );
+    const body = (await response.json().catch(() => null)) as {
+      error?: unknown;
+      conflicts?: unknown;
+    } | null;
+    if (!response.ok) {
+      throw new Error(
+        typeof body?.error === "string"
+          ? body.error
+          : "The AI change could not be undone.",
+      );
+    }
+    const conflicts = Array.isArray(body?.conflicts)
+      ? body.conflicts.length
+      : 0;
+    setUndoStack((current) =>
+      current.filter(
+        (entry) => entry.kind !== "ai" || entry.changeSetId !== changeSetId,
+      ),
+    );
+    setRedoStack([]);
+    setHistoryNotice(
+      conflicts
+        ? `AI change undone; ${conflicts} conflicting field${conflicts === 1 ? " was" : "s were"} preserved.`
+        : "AI change undone.",
+    );
+  }
+
+  async function undo() {
     const entry = undoStack.at(-1);
     if (!entry) return;
-    const result = applyCanvasHistoryEntry(document, entry, "undo");
+    if (entry.kind === "ai") {
+      try {
+        await undoAiTransaction(entry.changeSetId);
+      } catch (error) {
+        setHistoryNotice(
+          error instanceof Error
+            ? error.message
+            : "The AI change could not be undone.",
+        );
+      }
+      return;
+    }
+    const result = applyCanvasHistoryEntry(document, entry.history, "undo");
     const existingIds = new Set(
       listCanvasObjectsV2(document).map((object) => object.id),
     );
     setSelectedIds((current) => current.filter((id) => existingIds.has(id)));
     setUndoStack((current) => current.slice(0, -1));
-    setRedoStack((current) => [...current, entry]);
+    setRedoStack((current) => [...current, entry.history]);
     setHistoryNotice(
       result.conflicts.length
         ? `Undo preserved ${result.conflicts.length} conflicting field${result.conflicts.length === 1 ? "" : "s"}.`
@@ -1246,7 +1316,7 @@ export function ProductCanvas({
     );
     setSelectedIds((current) => current.filter((id) => existingIds.has(id)));
     setRedoStack((current) => current.slice(0, -1));
-    setUndoStack((current) => [...current, entry]);
+    setUndoStack((current) => [...current, { kind: "canvas", history: entry }]);
     setHistoryNotice(
       result.conflicts.length
         ? `Redo preserved ${result.conflicts.length} conflicting field${result.conflicts.length === 1 ? "" : "s"}.`
@@ -1310,22 +1380,6 @@ export function ProductCanvas({
     });
   }
 
-  function focusReviewObject(objectId: string) {
-    const object = objectsById.get(objectId);
-    if (!object) return false;
-    const bounds = objectBounds(object);
-    const scale = Math.min(1.5, Math.max(0.75, viewport.scale));
-    setSelectedIds([objectId]);
-    setTool("select");
-    setReviewGuidancePaused(false);
-    setViewport({
-      scale,
-      x: size.width / 2 - (bounds.x + bounds.width / 2) * scale,
-      y: size.height / 2 - (bounds.y + bounds.height / 2) * scale,
-    });
-    return true;
-  }
-
   function toggleSharedPanel(panel: SharedPanel, invoker: HTMLButtonElement) {
     if (sharedPanel === panel) {
       setSharedPanel(null);
@@ -1333,13 +1387,11 @@ export function ProductCanvas({
     }
     setSharedPanelInvoker(invoker);
     setContextPanel(null);
-    if (panel === "review") setReviewGuidancePaused(false);
     setSharedPanel(panel);
   }
 
   function onWheel(event: Konva.KonvaEventObject<WheelEvent>) {
     event.evt.preventDefault();
-    if (sharedPanel === "review") setReviewGuidancePaused(true);
     const now = performance.now();
     const previousGesture = wheelGestureRef.current;
     const inferredIntent = canvasWheelIntent(event.evt);
@@ -1369,7 +1421,6 @@ export function ProductCanvas({
   function onStagePointerDown(
     event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
   ) {
-    if (sharedPanel === "review") setReviewGuidancePaused(true);
     if (event.target !== stageRef.current) return;
     setContextPanel(null);
     const point = worldPointer();
@@ -2312,21 +2363,6 @@ export function ProductCanvas({
           >
             <Share2 aria-hidden="true" />
           </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            aria-label="Review AI changes"
-            aria-expanded={sharedPanel === "review"}
-            aria-controls="workspace-shared-panel"
-            title="Review AI changes"
-            className="border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50"
-            onClick={(event) =>
-              toggleSharedPanel("review", event.currentTarget)
-            }
-          >
-            <ListChecks aria-hidden="true" />
-          </Button>
           <span
             className="hidden max-w-48 truncate px-1 text-xs text-zinc-500 xl:block"
             title={userIdentity}
@@ -2418,19 +2454,11 @@ export function ProductCanvas({
 
       {sharedPanel && sharedPanel !== "comments" ? (
         <WorkspacePanel
-          title={
-            sharedPanel === "objects"
-              ? "Object navigator"
-              : sharedPanel === "review"
-                ? "Review AI changes"
-                : "Canvas help"
-          }
+          title={sharedPanel === "objects" ? "Object navigator" : "Canvas help"}
           description={
             sharedPanel === "objects"
               ? "Browse objects and inspect detailed selection geometry."
-              : sharedPanel === "review"
-                ? "Inspect one coordinated change set and decide each object once."
-                : "Keyboard shortcuts for moving around and editing this canvas."
+              : "Keyboard shortcuts for moving around and editing this canvas."
           }
           invoker={sharedPanelInvoker}
           onDismiss={() => setSharedPanel(null)}
@@ -2445,13 +2473,6 @@ export function ProductCanvas({
                 updateSelectionForObject(object, modifier);
                 setTool("select");
               }}
-            />
-          ) : sharedPanel === "review" ? (
-            <CanvasAiReviews
-              canvasId={canvasId}
-              canvasRole={canvasRole}
-              guidancePaused={reviewGuidancePaused}
-              onFocusObject={focusReviewObject}
             />
           ) : (
             <ShortcutHelp />
@@ -2473,10 +2494,8 @@ export function ProductCanvas({
         panelInvoker={sharedPanelInvoker}
         simulatedAiEnabled={simulatedAiEnabled}
         onDismissPanel={() => setSharedPanel(null)}
-        onOpenReviews={() => {
-          setSharedPanelInvoker(null);
-          setSharedPanel("review");
-        }}
+        onAiTransactionApplied={registerAiTransaction}
+        onUndoAiTransaction={undoAiTransaction}
         onSelectTargets={(targetIds) => {
           if (!targetIds.length) {
             closeContextPanel(false);

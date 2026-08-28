@@ -1247,14 +1247,12 @@ select ok(
   'authenticated clients cannot bypass review activation or decision transactions'
 );
 
-select results_eq(
-  $$select story.kind, count(scene.id)::bigint
+select is(
+  (select count(*)::bigint
     from public.stories story
-    join public.story_scenes scene on scene.story_id = story.id
-    where story.review_change_set_id = current_setting('test.review_change_set_id')::uuid
-    group by story.kind$$,
-  $$values ('review'::text, 1::bigint)$$,
-  'finalization creates one guided review story scene per changed object'
+    where story.review_change_set_id = current_setting('test.review_change_set_id')::uuid),
+  0::bigint,
+  'conversational AI transactions do not create guided review stories'
 );
 
 set local role service_role;
@@ -1374,6 +1372,67 @@ select results_eq(
   $$values (false)$$,
   'an exact tentative activation retry returns the original durable update'
 );
+
+savepoint conversational_ai_undo;
+
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.undo_ai_change_set(uuid,uuid,uuid,bytea,bigint,jsonb)',
+    'EXECUTE'
+  ),
+  'authenticated clients cannot bypass the server-authorized AI transaction undo'
+);
+
+select results_eq(
+  $$select created, conflict_count
+    from public.undo_ai_change_set(
+      current_setting('test.review_change_set_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      '85000000-0000-4000-8000-000000000020',
+      decode('0304', 'hex'),
+      current_setting('test.review_sequence')::bigint + 1,
+      '[]'::jsonb
+    )$$,
+  $$values (true, 0)$$,
+  'one server transaction durably undoes an active AI change set'
+);
+
+select results_eq(
+  $$select created, conflict_count
+    from public.undo_ai_change_set(
+      current_setting('test.review_change_set_id')::uuid,
+      '10000000-0000-4000-8000-000000000001',
+      '85000000-0000-4000-8000-000000000020',
+      decode('0304', 'hex'),
+      current_setting('test.review_sequence')::bigint + 1,
+      '[]'::jsonb
+    )$$,
+  $$values (false, 0)$$,
+  'an exact AI transaction undo retry is idempotent'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+
+select results_eq(
+  $$select status::text, transaction_undone_by, transaction_undo_sequence is not null
+    from public.ai_change_sets
+    where id = current_setting('test.review_change_set_id')::uuid$$,
+  $$values (
+    'complete'::text,
+    '10000000-0000-4000-8000-000000000001'::uuid,
+    true
+  )$$,
+  'AI undo records accountable durable transaction metadata'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+rollback to savepoint conversational_ai_undo;
+release savepoint conversational_ai_undo;
 
 select throws_ok(
   $$select * from public.decide_ai_review_object(
