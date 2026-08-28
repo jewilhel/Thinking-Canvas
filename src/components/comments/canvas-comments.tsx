@@ -1239,6 +1239,7 @@ export function CanvasComments({
       ),
       canvasAnchor: object ? null : canvasPoint,
     });
+    if (panelOpen) onDismissPanel();
     setPlacementMode(false);
     setComposerOpen(true);
   }

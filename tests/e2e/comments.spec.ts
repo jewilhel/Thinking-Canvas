@@ -107,6 +107,9 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   await page.getByRole("button", { name: "Comments", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Comments" })).toBeVisible();
   await placeArmedComment(page);
+  await expect(
+    page.getByRole("dialog", { name: "Comments" }),
+  ).not.toBeVisible();
   const composer = page.getByRole("dialog", { name: "New comment" });
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
