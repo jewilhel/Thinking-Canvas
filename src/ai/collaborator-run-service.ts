@@ -20,7 +20,7 @@ import {
 } from "@/ai/primary-ai-gateway-factory";
 import { AiProviderOutputError } from "@/ai/primary-ai-gateway";
 import { estimateAiInputTokens } from "@/ai/run-budgets";
-import { throwIfAiRunAborted } from "@/ai/run-deadline";
+import { AI_RUN_STALE_AFTER_MS, throwIfAiRunAborted } from "@/ai/run-deadline";
 import { listCanvasObjectsV2 } from "@/canvas/canvas-document";
 import {
   buildCanvasObjectDetails,
@@ -992,7 +992,7 @@ export async function retryAiRun(input: unknown) {
   const supabase = await createClient();
   const sourceResult = await supabase
     .from("ai_runs")
-    .select("canvas_id,requested_by")
+    .select("canvas_id,requested_by,status,updated_at")
     .eq("id", runId)
     .maybeSingle();
   if (
@@ -1002,6 +1002,28 @@ export async function retryAiRun(input: unknown) {
     sourceResult.data.requested_by !== user.id
   ) {
     throw new AiRunAccessError("AI run is not accessible.");
+  }
+  const active = [
+    "queued",
+    "projecting",
+    "thinking",
+    "tool_pending",
+    "applying",
+  ].includes(sourceResult.data.status);
+  if (active) {
+    if (
+      Date.parse(sourceResult.data.updated_at) >
+      Date.now() - AI_RUN_STALE_AFTER_MS
+    ) {
+      throw new AiRunConflictError("The AI run is still in progress.");
+    }
+    const expired = await supabase.rpc("fail_ai_run", {
+      target_run_id: runId,
+      target_error_code: "provider_timeout",
+    });
+    if (expired.error) {
+      throw new AiRunConflictError(expired.error.message);
+    }
   }
   const result = await supabase.rpc("retry_ai_run", {
     target_run_id: runId,

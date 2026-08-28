@@ -23,6 +23,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
+import { AI_RUN_STALE_AFTER_MS } from "@/ai/run-deadline";
 import {
   commentOrderedContextIds,
   commentTargetObjectIds,
@@ -714,6 +715,14 @@ function ThreadBody({
   );
   const [undoError, setUndoError] = useState("");
   const [undoNotice, setUndoNotice] = useState("");
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = window.setInterval(
+      () => setCurrentTime(Date.now()),
+      1_500,
+    );
+    return () => window.clearInterval(interval);
+  }, []);
   const canComment = role !== "viewer";
   const canResolve =
     role === "owner" || role === "editor" || thread.authorId === userId;
@@ -931,6 +940,10 @@ function ThreadBody({
             "tool_pending",
             "applying",
           ].includes(run.status);
+          const stale =
+            active &&
+            Date.parse(run.updatedAt) <= currentTime - AI_RUN_STALE_AFTER_MS;
+          const inProgress = active && !stale;
           return (
             <div
               key={run.id}
@@ -939,7 +952,7 @@ function ThreadBody({
               className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-950"
             >
               <div className="flex items-center gap-2 font-semibold">
-                {active ? (
+                {inProgress ? (
                   <LoaderCircle
                     aria-hidden="true"
                     className="size-4 animate-spin motion-reduce:animate-none"
@@ -947,24 +960,28 @@ function ThreadBody({
                 ) : (
                   <Bot aria-hidden="true" className="size-4" />
                 )}
-                {active
+                {inProgress
                   ? run.status === "queued"
                     ? "Thinking Canvas AI is queued…"
                     : run.status === "projecting"
                       ? "Thinking Canvas AI is working on the canvas…"
                       : "Thinking Canvas AI is responding…"
-                  : run.status === "cancelled"
-                    ? "AI response cancelled"
-                    : "AI response failed"}
+                  : stale
+                    ? "AI response timed out"
+                    : run.status === "cancelled"
+                      ? "AI response cancelled"
+                      : "AI response failed"}
               </div>
-              {run.status === "failed" ? (
+              {run.status === "failed" || stale ? (
                 <p className="mt-1 text-xs text-violet-800">
-                  {aiRunFailureMessage(run.errorCode)}
+                  {stale
+                    ? aiRunFailureMessage("provider_timeout")
+                    : aiRunFailureMessage(run.errorCode)}
                 </p>
               ) : null}
               {run.requestedBy === userId ? (
                 <div className="mt-2 flex justify-end">
-                  {active ? (
+                  {inProgress ? (
                     <Button
                       type="button"
                       size="sm"
@@ -1126,7 +1143,6 @@ export function CanvasComments({
     retryAiRun,
   } = useCanvasComments(
     canvasId,
-    userId,
     supabaseUrl,
     supabasePublishableKey,
     onAiTransactionApplied,

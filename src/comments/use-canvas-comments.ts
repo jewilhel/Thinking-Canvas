@@ -12,7 +12,6 @@ import { createClient } from "@/lib/supabase/client";
 
 export function useCanvasComments(
   canvasId: string,
-  userId: string,
   supabaseUrl: string,
   supabasePublishableKey: string,
   onAiTransactionApplied?: (changeSetId: string) => void,
@@ -34,7 +33,6 @@ export function useCanvasComments(
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const runControllers = useRef(new Map<string, AbortController>());
-  const recoveredRunIds = useRef(new Set<string>());
 
   const refresh = useCallback(async () => {
     try {
@@ -152,29 +150,6 @@ export function useCanvasComments(
     },
     [canvasId, onAiTransactionApplied, refresh, repository],
   );
-
-  useEffect(() => {
-    const staleBefore = Date.now() - 90_000;
-    for (const run of threads.flatMap((thread) => thread.aiRuns)) {
-      const active = [
-        "queued",
-        "projecting",
-        "thinking",
-        "tool_pending",
-        "applying",
-      ].includes(run.status);
-      if (
-        active &&
-        run.requestedBy === userId &&
-        Date.parse(run.updatedAt) <= staleBefore &&
-        !runControllers.current.has(run.id) &&
-        !recoveredRunIds.current.has(run.id)
-      ) {
-        recoveredRunIds.current.add(run.id);
-        void processAiRun(run.id);
-      }
-    }
-  }, [processAiRun, threads, userId]);
 
   const execute = useCallback(
     async (command: CommentCommand) => {

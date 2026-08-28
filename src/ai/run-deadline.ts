@@ -1,4 +1,5 @@
 export const AI_RUN_DEADLINE_MS = 75_000;
+export const AI_RUN_STALE_AFTER_MS = 90_000;
 
 export class AiRunTimeoutError extends Error {
   constructor() {
