@@ -203,28 +203,28 @@ export const AI_TOOL_REGISTRY = {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
-      "Apply one validated change set tentatively to shared canonical canvas state, preserving per-object review decisions.",
+      "Apply one validated canvas edit immediately as a single durable, undoable AI transaction. Use for direct content, geometry, style, order, group, or deletion changes that are not better represented by a deterministic layout or creation action.",
     argumentsSchema: reviewStageArgumentsSchema,
   },
   stage_layout_changes: {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
-      "Compute and tentatively apply a deterministic alignment, distribution, spacing, or resize-to-content operation for review.",
+      "Compute and immediately apply one deterministic alignment, distribution, spacing, or resize-to-content operation as a single undoable AI transaction.",
     argumentsSchema: reviewLayoutArgumentsSchema,
   },
   stage_new_shapes: {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
-      "Create every new shape requested in this turn as one tentative reviewable change set and one tool call. Use rectangle shapes for sticky notes. Use layer back only when the user explicitly requests a background or asks for the new shape behind existing content. Supply local keys rather than object IDs; the server creates durable identities and metadata.",
+      "Create every new shape requested in this turn immediately as one undoable AI transaction and one tool call. Use rectangle shapes for sticky notes. Use layer back only when the user explicitly requests a background or asks for the new shape behind existing content. Supply local keys rather than object IDs; the server creates durable identities and metadata.",
     argumentsSchema: reviewNewShapesArgumentsSchema,
   },
   stage_new_connectors: {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
-      "Create one or more directional connectors between existing shape objects as one reviewable change set. List connections in the requested direction; the server assigns connector identities and chooses safe edge anchors.",
+      "Create one or more directional connectors between existing shape objects immediately as one undoable AI transaction. List connections in the requested direction; the server assigns connector identities and chooses safe edge anchors.",
     argumentsSchema: reviewNewConnectorsArgumentsSchema,
   },
   execute_canvas_commands: {
