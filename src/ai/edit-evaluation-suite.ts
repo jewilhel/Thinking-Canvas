@@ -458,6 +458,13 @@ export function summarizeEditPromptEvaluation(input: {
   const deadlineBreaches = observations.filter((observation) =>
     observation.failureCodes.includes("deadline"),
   ).length;
+  const sortedLatencies = observations
+    .map((observation) => observation.latencyMs)
+    .sort((left, right) => left - right);
+  const totalLatencyMs = sortedLatencies.reduce(
+    (total, latency) => total + latency,
+    0,
+  );
   return {
     fixtureCount: EDIT_PROMPT_FIXTURES.length,
     repetitions,
@@ -469,10 +476,20 @@ export function summarizeEditPromptEvaluation(input: {
       overallPassRate >= EDIT_PROMPT_OVERALL_PASS_THRESHOLD &&
       criticalPassRate >= EDIT_PROMPT_CRITICAL_PASS_THRESHOLD &&
       deadlineBreaches === 0,
-    totalLatencyMs: observations.reduce(
-      (total, observation) => total + observation.latencyMs,
-      0,
-    ),
+    totalLatencyMs,
+    averageLatencyMs: Math.round(totalLatencyMs / observations.length),
+    p95LatencyMs:
+      sortedLatencies[Math.ceil(sortedLatencies.length * 0.95) - 1] ?? 0,
+    maximumLatencyMs: sortedLatencies.at(-1) ?? 0,
+    failedObservations: observations
+      .filter((observation) => !observation.passed)
+      .map((observation) => ({
+        fixtureId: observation.fixtureId,
+        repetition: observation.repetition,
+        failureCodes: observation.failureCodes,
+        observedToolNames: observation.observedToolNames,
+        providerRequestId: observation.providerRequestId,
+      })),
     totalInputTokens: observations.reduce(
       (total, observation) => total + observation.inputTokens,
       0,

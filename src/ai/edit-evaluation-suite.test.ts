@@ -187,6 +187,9 @@ describe("edit prompt evaluation suite", () => {
       overallPassRate: 1,
       criticalPassRate: 1,
       deadlineBreaches: 0,
+      averageLatencyMs: 115,
+      maximumLatencyMs: 129,
+      failedObservations: [],
       passed: true,
     });
     const noncritical = fixture("single_shape").id;
