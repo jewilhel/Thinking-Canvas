@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { AiAuthorityLevel } from "@/ai/collaborator-contract";
+import { deterministicLayoutRequestSchema } from "@/ai/deterministic-layout";
 import { productCanvasMutationSchema } from "@/domain/canvas-command";
 
 const uuid = z.uuid();
@@ -9,13 +10,141 @@ const pagingFields = {
   limit: z.number().int().min(1).max(100).default(25),
 };
 const mutationListSchema = z.array(productCanvasMutationSchema).min(1).max(50);
+export const reviewExplanationSchema = z.strictObject({
+  objectId: uuid,
+  whatChanged: z.string().trim().min(1).max(2_000),
+  why: z.string().trim().min(1).max(4_000),
+});
+const reviewExplanationsSchema = z
+  .array(reviewExplanationSchema)
+  .min(1)
+  .max(1_000)
+  .superRefine((explanations, context) => {
+    if (
+      new Set(explanations.map((explanation) => explanation.objectId)).size !==
+      explanations.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Review explanation object IDs must be unique.",
+      });
+    }
+  });
 export const proposalArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
 });
 export const reviewStageArgumentsSchema = z.strictObject({
   summary: z.string().trim().min(1).max(10_000),
   commands: mutationListSchema,
+  explanations: reviewExplanationsSchema,
 });
+export const reviewLayoutArgumentsSchema = z.strictObject({
+  summary: z.string().trim().min(1).max(10_000),
+  layout: deterministicLayoutRequestSchema,
+  explanations: reviewExplanationsSchema,
+});
+const newShapeSpecSchema = z.strictObject({
+  key: z.string().trim().min(1).max(120),
+  shape: z.enum(["rectangle", "ellipse", "diamond"]),
+  layer: z.enum(["front", "back"]).default("front"),
+  text: z.string().max(10_000),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  width: z.number().finite().min(24),
+  height: z.number().finite().min(24),
+  fill: z.string().min(1).max(100),
+  outline: z.string().min(1).max(100),
+  outlineWidth: z.number().finite().min(0).max(20),
+  fontFamily: z.string().min(1).max(200),
+  fontSize: z.number().finite().min(8).max(400),
+  fontWeight: z.enum(["normal", "bold"]),
+  textAlign: z.enum(["left", "center", "right"]),
+  textColor: z.string().min(1).max(100),
+});
+const newShapeExplanationSchema = z.strictObject({
+  key: z.string().trim().min(1).max(120),
+  whatChanged: z.string().trim().min(1).max(2_000),
+  why: z.string().trim().min(1).max(4_000),
+});
+export const reviewNewShapesArgumentsSchema = z
+  .strictObject({
+    summary: z.string().trim().min(1).max(10_000),
+    shapes: z.array(newShapeSpecSchema).min(1).max(50),
+    explanations: z.array(newShapeExplanationSchema).min(1).max(50),
+  })
+  .superRefine((value, context) => {
+    const shapeKeys = value.shapes.map((shape) => shape.key);
+    const explanationKeys = value.explanations.map(
+      (explanation) => explanation.key,
+    );
+    if (new Set(shapeKeys).size !== shapeKeys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "New shape keys must be unique.",
+      });
+    }
+    if (new Set(explanationKeys).size !== explanationKeys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "New shape explanation keys must be unique.",
+      });
+    }
+    if (
+      shapeKeys.length !== explanationKeys.length ||
+      [...shapeKeys]
+        .sort()
+        .some((key, index) => key !== [...explanationKeys].sort()[index])
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "New shape explanations must exactly match the new shape keys.",
+      });
+    }
+  });
+export type ReviewNewShapesArguments = z.infer<
+  typeof reviewNewShapesArgumentsSchema
+>;
+const newConnectorSpecSchema = z.strictObject({
+  key: z.string().trim().min(1).max(120),
+  fromObjectId: uuid,
+  toObjectId: uuid,
+  outline: z.string().min(1).max(100),
+  outlineWidth: z.number().finite().min(1).max(20),
+});
+export const reviewNewConnectorsArgumentsSchema = z
+  .strictObject({
+    summary: z.string().trim().min(1).max(10_000),
+    connectors: z.array(newConnectorSpecSchema).min(1).max(50),
+    explanations: z.array(newShapeExplanationSchema).min(1).max(50),
+  })
+  .superRefine((value, context) => {
+    const connectorKeys = value.connectors.map((connector) => connector.key);
+    const explanationKeys = value.explanations.map(
+      (explanation) => explanation.key,
+    );
+    if (new Set(connectorKeys).size !== connectorKeys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "New connector keys must be unique.",
+      });
+    }
+    if (
+      connectorKeys.length !== explanationKeys.length ||
+      [...connectorKeys]
+        .sort()
+        .some((key, index) => key !== [...explanationKeys].sort()[index])
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "New connector explanations must exactly match the connector keys.",
+      });
+    }
+  });
+export type ReviewNewConnectorsArguments = z.infer<
+  typeof reviewNewConnectorsArgumentsSchema
+>;
 export const executeArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
 });
@@ -74,8 +203,29 @@ export const AI_TOOL_REGISTRY = {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
-      "Stage validated pending changes for later Milestone 5 review without changing canonical canvas state.",
+      "Apply one validated canvas edit immediately as a single durable, undoable AI transaction. Use for direct content, geometry, style, order, group, or deletion changes that are not better represented by a deterministic layout or creation action.",
     argumentsSchema: reviewStageArgumentsSchema,
+  },
+  stage_layout_changes: {
+    effect: "review" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Compute and immediately apply one deterministic alignment, distribution, spacing, compound align-and-space, or resize-to-content operation as a single undoable AI transaction.",
+    argumentsSchema: reviewLayoutArgumentsSchema,
+  },
+  stage_new_shapes: {
+    effect: "review" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Create every new shape requested in this turn immediately as one undoable AI transaction and one tool call. Use rectangle shapes for sticky notes. Use layer back only when the user explicitly requests a background or asks for the new shape behind existing content. Supply local keys rather than object IDs; the server creates durable identities and metadata.",
+    argumentsSchema: reviewNewShapesArgumentsSchema,
+  },
+  stage_new_connectors: {
+    effect: "review" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Create one or more directional connectors between existing shape objects immediately as one undoable AI transaction. List connections in the requested direction; the server assigns connector identities and chooses safe edge anchors.",
+    argumentsSchema: reviewNewConnectorsArgumentsSchema,
   },
   execute_canvas_commands: {
     effect: "mutation" as const,

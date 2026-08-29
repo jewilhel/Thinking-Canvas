@@ -44,8 +44,8 @@ type Props = {
   onChooseTool: (tool: CanvasTool) => void;
   onChooseShape: (shape: CanvasShapeTool) => void;
   onAddSimulatedAiIdea: () => void;
-  commentsPanelOpen: boolean;
-  onToggleComments: (invoker: HTMLButtonElement) => void;
+  commentPlacementActive: boolean;
+  onChooseComments: () => void;
 };
 
 const shapeOptions = [
@@ -94,14 +94,14 @@ export function WorkspacePrimaryDock({
   onChooseTool,
   onChooseShape,
   onAddSimulatedAiIdea,
-  commentsPanelOpen,
-  onToggleComments,
+  commentPlacementActive,
+  onChooseComments,
 }: Props) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const paletteInvokerRef = useRef<HTMLButtonElement | null>(null);
   const [openPalette, setOpenPalette] = useState<Palette>(null);
   const toolIsPressed = (tool: CanvasTool) =>
-    openPalette === null && !commentsPanelOpen && activeTool === tool;
+    openPalette === null && !commentPlacementActive && activeTool === tool;
 
   function chooseTool(tool: CanvasTool) {
     onChooseTool(activeTool === tool && tool !== "select" ? "select" : tool);
@@ -303,7 +303,7 @@ export function WorkspacePrimaryDock({
           aria-pressed={
             openPalette === "shape" ||
             (openPalette === null &&
-              !commentsPanelOpen &&
+              !commentPlacementActive &&
               shapeOptions.some((option) => option.value === activeTool))
           }
           aria-expanded={openPalette === "shape"}
@@ -340,14 +340,12 @@ export function WorkspacePrimaryDock({
           size="icon"
           variant="outline"
           aria-label="Comments"
-          aria-pressed={commentsPanelOpen}
-          aria-expanded={commentsPanelOpen}
-          aria-controls="workspace-shared-panel"
-          title="Comments (Milestone 3)"
+          aria-pressed={commentPlacementActive}
+          title="Add comment"
           className={iconButtonClass}
-          onClick={(event) => {
+          onClick={() => {
             setOpenPalette(null);
-            onToggleComments(event.currentTarget);
+            onChooseComments();
           }}
         >
           <MessageCircle aria-hidden="true" />

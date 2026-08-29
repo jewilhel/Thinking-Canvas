@@ -36,40 +36,82 @@ export type Database = {
     Tables: {
       ai_change_sets: {
         Row: {
+          activated_at: string | null
+          activation_sequence: number | null
           ai_run_id: string | null
           canvas_id: string
+          completed_at: string | null
           created_at: string
+          finalization_fingerprint: string | null
           id: string
           request_id: string | null
           requested_by: string
+          scope_kind: string | null
+          scope_object_ids: string[]
+          source_comment_id: string | null
           stage_fingerprint: string | null
           status: Database["public"]["Enums"]["ai_change_status"]
+          summary: string | null
           tool_call_key: string | null
+          transaction_undo_conflicts: Json
+          transaction_undo_idempotency_key: string | null
+          transaction_undo_sequence: number | null
+          transaction_undone_at: string | null
+          transaction_undone_by: string | null
           updated_at: string
+          visual_feedback_metadata: Json
         }
         Insert: {
+          activated_at?: string | null
+          activation_sequence?: number | null
           ai_run_id?: string | null
           canvas_id: string
+          completed_at?: string | null
           created_at?: string
+          finalization_fingerprint?: string | null
           id?: string
           request_id?: string | null
           requested_by: string
+          scope_kind?: string | null
+          scope_object_ids?: string[]
+          source_comment_id?: string | null
           stage_fingerprint?: string | null
           status?: Database["public"]["Enums"]["ai_change_status"]
+          summary?: string | null
           tool_call_key?: string | null
+          transaction_undo_conflicts?: Json
+          transaction_undo_idempotency_key?: string | null
+          transaction_undo_sequence?: number | null
+          transaction_undone_at?: string | null
+          transaction_undone_by?: string | null
           updated_at?: string
+          visual_feedback_metadata?: Json
         }
         Update: {
+          activated_at?: string | null
+          activation_sequence?: number | null
           ai_run_id?: string | null
           canvas_id?: string
+          completed_at?: string | null
           created_at?: string
+          finalization_fingerprint?: string | null
           id?: string
           request_id?: string | null
           requested_by?: string
+          scope_kind?: string | null
+          scope_object_ids?: string[]
+          source_comment_id?: string | null
           stage_fingerprint?: string | null
           status?: Database["public"]["Enums"]["ai_change_status"]
+          summary?: string | null
           tool_call_key?: string | null
+          transaction_undo_conflicts?: Json
+          transaction_undo_idempotency_key?: string | null
+          transaction_undo_sequence?: number | null
+          transaction_undone_at?: string | null
+          transaction_undone_by?: string | null
           updated_at?: string
+          visual_feedback_metadata?: Json
         }
         Relationships: [
           {
@@ -93,6 +135,20 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "ai_change_sets_source_comment_id_fkey"
+            columns: ["source_comment_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_change_sets_transaction_undone_by_fkey"
+            columns: ["transaction_undone_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
         ]
       }
       ai_object_changes: {
@@ -101,30 +157,45 @@ export type Database = {
           after_state: Json | null
           before_state: Json | null
           change_set_id: string
+          conflict_metadata: Json
           created_at: string
           explanation: string
           id: string
           object_id: string
+          result_sequence: number | null
+          review_status: string
+          what_changed: string | null
+          why: string | null
         }
         Insert: {
           affected_fields: string[]
           after_state?: Json | null
           before_state?: Json | null
           change_set_id: string
+          conflict_metadata?: Json
           created_at?: string
           explanation?: string
           id?: string
           object_id: string
+          result_sequence?: number | null
+          review_status?: string
+          what_changed?: string | null
+          why?: string | null
         }
         Update: {
           affected_fields?: string[]
           after_state?: Json | null
           before_state?: Json | null
           change_set_id?: string
+          conflict_metadata?: Json
           created_at?: string
           explanation?: string
           id?: string
           object_id?: string
+          result_sequence?: number | null
+          review_status?: string
+          what_changed?: string | null
+          why?: string | null
         }
         Relationships: [
           {
@@ -1006,33 +1077,49 @@ export type Database = {
       }
       review_decisions: {
         Row: {
+          child_run_id: string | null
           created_at: string
           decision: Database["public"]["Enums"]["review_decision_kind"]
           id: string
+          idempotency_key: string | null
           note: string | null
           object_change_id: string
+          result_sequence: number | null
           reviewer_id: string
           updated_at: string
         }
         Insert: {
+          child_run_id?: string | null
           created_at?: string
           decision: Database["public"]["Enums"]["review_decision_kind"]
           id?: string
+          idempotency_key?: string | null
           note?: string | null
           object_change_id: string
+          result_sequence?: number | null
           reviewer_id: string
           updated_at?: string
         }
         Update: {
+          child_run_id?: string | null
           created_at?: string
           decision?: Database["public"]["Enums"]["review_decision_kind"]
           id?: string
+          idempotency_key?: string | null
           note?: string | null
           object_change_id?: string
+          result_sequence?: number | null
           reviewer_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "review_decisions_child_run_id_fkey"
+            columns: ["child_run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_runs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "review_decisions_object_change_id_fkey"
             columns: ["object_change_id"]
@@ -1090,6 +1177,8 @@ export type Database = {
           canvas_id: string
           created_at: string
           id: string
+          kind: string
+          review_change_set_id: string | null
           title: string
           updated_at: string
         }
@@ -1098,6 +1187,8 @@ export type Database = {
           canvas_id: string
           created_at?: string
           id?: string
+          kind?: string
+          review_change_set_id?: string | null
           title: string
           updated_at?: string
         }
@@ -1106,6 +1197,8 @@ export type Database = {
           canvas_id?: string
           created_at?: string
           id?: string
+          kind?: string
+          review_change_set_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -1124,6 +1217,13 @@ export type Database = {
             referencedRelation: "canvases"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "stories_review_change_set_id_fkey"
+            columns: ["review_change_set_id"]
+            isOneToOne: false
+            referencedRelation: "ai_change_sets"
+            referencedColumns: ["id"]
+          },
         ]
       }
       story_scenes: {
@@ -1132,6 +1232,7 @@ export type Database = {
           created_at: string
           id: string
           narration: string | null
+          object_change_id: string | null
           position: number
           story_id: string
           target: Json
@@ -1142,6 +1243,7 @@ export type Database = {
           created_at?: string
           id?: string
           narration?: string | null
+          object_change_id?: string | null
           position: number
           story_id: string
           target: Json
@@ -1152,12 +1254,20 @@ export type Database = {
           created_at?: string
           id?: string
           narration?: string | null
+          object_change_id?: string | null
           position?: number
           story_id?: string
           target?: Json
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "story_scenes_object_change_id_fkey"
+            columns: ["object_change_id"]
+            isOneToOne: false
+            referencedRelation: "ai_object_changes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "story_scenes_story_id_fkey"
             columns: ["story_id"]
@@ -1172,6 +1282,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      activate_ai_review_stage: {
+        Args: {
+          target_change_set_id: string
+          target_expected_sequence: number
+          target_requester_id: string
+          target_update_data: string
+        }
+        Returns: {
+          created: boolean
+          sequence: number
+        }[]
+      }
       append_canvas_update:
         | {
             Args: {
@@ -1267,6 +1389,24 @@ export type Database = {
           created: boolean
         }[]
       }
+      decide_ai_review_object: {
+        Args: {
+          target_conflicts?: Json
+          target_decision: Database["public"]["Enums"]["review_decision_kind"]
+          target_expected_sequence: number
+          target_idempotency_key: string
+          target_note: string
+          target_object_change_id: string
+          target_reviewer_id: string
+          target_update_data: string
+        }
+        Returns: {
+          created: boolean
+          decision_id: string
+          result_sequence: number
+          review_status: string
+        }[]
+      }
       delete_comment_thread: {
         Args: { target_comment_id: string }
         Returns: string
@@ -1310,6 +1450,38 @@ export type Database = {
           status: Database["public"]["Enums"]["ai_run_status"]
         }[]
       }
+      finalize_ai_review_stage: {
+        Args: {
+          target_change_set_id: string
+          target_explanations: Json
+          target_requester_id: string
+          target_scope_kind: string
+          target_scope_object_ids: string[]
+          target_summary: string
+          target_visual_feedback_metadata?: Json
+        }
+        Returns: {
+          change_set_id: string
+          created: boolean
+          object_change_count: number
+        }[]
+      }
+      finalize_ai_review_stage_legacy: {
+        Args: {
+          target_change_set_id: string
+          target_explanations: Json
+          target_requester_id: string
+          target_scope_kind: string
+          target_scope_object_ids: string[]
+          target_summary: string
+          target_visual_feedback_metadata?: Json
+        }
+        Returns: {
+          change_set_id: string
+          created: boolean
+          object_change_count: number
+        }[]
+      }
       get_ai_canvas_execution_retry: {
         Args: {
           target_call_key: string
@@ -1332,6 +1504,14 @@ export type Database = {
           enabled: boolean
           version: number
         }[]
+      }
+      link_ai_review_revision: {
+        Args: {
+          target_child_run_id: string
+          target_decision_id: string
+          target_reviewer_id: string
+        }
+        Returns: undefined
       }
       publish_canvas_compaction: {
         Args: {
@@ -1445,6 +1625,22 @@ export type Database = {
           target_status: Database["public"]["Enums"]["comment_status"]
         }
         Returns: Database["public"]["Enums"]["comment_status"]
+      }
+      undo_ai_change_set: {
+        Args: {
+          target_actor_id: string
+          target_change_set_id: string
+          target_conflicts?: Json
+          target_expected_sequence: number
+          target_idempotency_key: string
+          target_update_data: string
+        }
+        Returns: {
+          change_set_id: string
+          conflict_count: number
+          created: boolean
+          result_sequence: number
+        }[]
       }
       update_comment_body: {
         Args: { target_body: string; target_comment_id: string }

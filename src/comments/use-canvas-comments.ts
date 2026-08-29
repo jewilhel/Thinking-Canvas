@@ -14,6 +14,7 @@ export function useCanvasComments(
   canvasId: string,
   supabaseUrl: string,
   supabasePublishableKey: string,
+  onAiTransactionApplied?: (changeSetId: string) => void,
 ) {
   const repository = useMemo(
     () =>
@@ -119,9 +120,16 @@ export function useCanvasComments(
             const event = JSON.parse(line) as {
               status?: unknown;
               error?: unknown;
+              changeSetId?: unknown;
             };
             if (event.status === "failed" && typeof event.error === "string") {
               setError(event.error);
+            }
+            if (
+              event.status === "completed" &&
+              typeof event.changeSetId === "string"
+            ) {
+              onAiTransactionApplied?.(event.changeSetId);
             }
             await refresh();
           }
@@ -140,7 +148,7 @@ export function useCanvasComments(
         runControllers.current.delete(runId);
       }
     },
-    [canvasId, refresh, repository],
+    [canvasId, onAiTransactionApplied, refresh, repository],
   );
 
   const execute = useCallback(
@@ -178,7 +186,6 @@ export function useCanvasComments(
 
   const cancelAiRun = useCallback(
     async (runId: string) => {
-      runControllers.current.get(runId)?.abort();
       const response = await fetch(`/api/canvases/${canvasId}/ai/runs`, {
         method: "DELETE",
         headers: { "content-type": "application/json" },
@@ -194,6 +201,7 @@ export function useCanvasComments(
             : "AI run could not be cancelled.",
         );
       }
+      runControllers.current.get(runId)?.abort();
       await refresh();
       await repository.broadcastInvalidated();
     },

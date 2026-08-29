@@ -7,12 +7,28 @@ import {
   type AiProjectionEnvelope,
   aiProjectionEnvelopeSchema,
 } from "@/ai/collaborator-contract";
+import {
+  AI_CANVAS_DESIGN_TOKENS,
+  AiVisualQualityError,
+  assertNoNewDeterministicVisualDefects,
+} from "@/ai/visual-grounding";
 import type { FakeAiScenario } from "@/ai/fake-collaborator-gateway";
+import { planDeterministicLayout } from "@/ai/deterministic-layout";
 import {
   createPrimaryAiGateway,
   parsePrimaryAiProviderEnvironment,
 } from "@/ai/primary-ai-gateway-factory";
+import {
+  AI_PROVIDER_ATTEMPT_LIMIT,
+  AiProviderOutputError,
+  requestPrimaryAiWithRetry,
+} from "@/ai/primary-ai-gateway";
 import { estimateAiInputTokens } from "@/ai/run-budgets";
+import { AI_RUN_STALE_AFTER_MS, throwIfAiRunAborted } from "@/ai/run-deadline";
+import {
+  buildRepeatedLayoutResult,
+  isRepeatedStraightenAndSpaceRequest,
+} from "@/ai/repeat-layout-continuity";
 import { listCanvasObjectsV2 } from "@/canvas/canvas-document";
 import {
   buildCanvasObjectDetails,
@@ -22,22 +38,41 @@ import {
   validateConnectedPath,
 } from "@/ai/grounding";
 import {
+  assertReviewChangesWithinScope,
+  deriveAiReviewScope,
+} from "@/ai/review-scope";
+import {
   allowedAiToolNames,
   contextualCommentArgumentsSchema,
   executeArgumentsSchema,
   proposalArgumentsSchema,
+  reviewLayoutArgumentsSchema,
+  reviewNewConnectorsArgumentsSchema,
+  reviewNewShapesArgumentsSchema,
   reviewStageArgumentsSchema,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
 import { broadcastAiCanvasUpdate } from "@/ai/realtime-broadcast";
+import { plainLanguageAiReply } from "@/ai/reply-copy";
 import {
   buildTrustedCanvasUpdate,
   stableAiToolCommandId,
 } from "@/ai/trusted-execution";
 import {
   validateCanvasProposal,
+  validateCanvasReviewRefinement,
   validateCanvasReviewStage,
+  validateReviewExplanations,
 } from "@/ai/proposals";
+import {
+  coalesceReviewNewShapeToolCalls,
+  materializeReviewNewShapes,
+} from "@/ai/new-shape-stage";
+import { materializeReviewNewConnectors } from "@/ai/new-connector-stage";
+import {
+  renderTargetedCanvasCapture,
+  TARGETED_CAPTURE_RENDERER_VERSION,
+} from "@/ai/render-capture";
 import {
   bytesToPostgresBytea,
   postgresByteaToBytes,
@@ -51,6 +86,63 @@ const runRequestSchema = z.strictObject({
   runId: z.uuid(),
   canvasId: z.uuid(),
 });
+
+async function repeatedLayoutContinuity(input: {
+  runId: string;
+  commentId: string;
+  invokingReplyId: string | null;
+  instruction: string;
+  sourceInstruction: string;
+  sourceObjects: ReturnType<typeof listCanvasObjectsV2>;
+}) {
+  if (
+    !input.invokingReplyId ||
+    !isRepeatedStraightenAndSpaceRequest({
+      instruction: input.instruction,
+      sourceInstruction: input.sourceInstruction,
+    })
+  ) {
+    return null;
+  }
+
+  const service = createServiceClient();
+  const priorRun = await service
+    .from("ai_runs")
+    .select("id")
+    .eq("invoking_comment_id", input.commentId)
+    .is("invoking_reply_id", null)
+    .eq("status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (priorRun.error || !priorRun.data) return null;
+
+  const priorChangeSet = await service
+    .from("ai_change_sets")
+    .select("id")
+    .eq("ai_run_id", priorRun.data.id)
+    .not("transaction_undone_at", "is", null)
+    .order("transaction_undone_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (priorChangeSet.error || !priorChangeSet.data) return null;
+
+  const priorChanges = await service
+    .from("ai_object_changes")
+    .select("object_id")
+    .eq("change_set_id", priorChangeSet.data.id)
+    .order("created_at", { ascending: true });
+  if (priorChanges.error) return null;
+  const objectsById = new Map(
+    input.sourceObjects.map((object) => [object.id, object]),
+  );
+  const objects = (priorChanges.data ?? []).flatMap((change) => {
+    const object = objectsById.get(change.object_id);
+    return object ? [object] : [];
+  });
+  if (objects.length !== (priorChanges.data ?? []).length) return null;
+  return buildRepeatedLayoutResult({ runId: input.runId, objects });
+}
 
 export async function completeAiRun(
   input: unknown,
@@ -114,7 +206,9 @@ export async function completeAiRun(
   ] = await Promise.all([
     supabase
       .from("comments")
-      .select("id,body,status")
+      .select(
+        "id,body,status,anchor_x,anchor_y,comment_targets(target_object_id,target_order)",
+      )
       .eq("id", run.invoking_comment_id)
       .maybeSingle(),
     run.invoking_reply_id
@@ -172,6 +266,16 @@ export async function completeAiRun(
     })),
   );
   const sourceObjects = listCanvasObjectsV2(compacted.document);
+  const sourceTargetObjectIds = [...commentResult.data.comment_targets]
+    .sort((left, right) => left.target_order - right.target_order)
+    .map((target) => target.target_object_id);
+  const reviewScope = deriveAiReviewScope({
+    targetObjectIds: sourceTargetObjectIds,
+    orderedContextIds: run.ordered_context_ids,
+    hasCanvasAnchor:
+      commentResult.data.anchor_x !== null &&
+      commentResult.data.anchor_y !== null,
+  });
   if (run.ordered_context_ids.length > 1) {
     validateConnectedPath({
       canvasId: run.canvas_id,
@@ -188,6 +292,8 @@ export async function completeAiRun(
     groupId: object.groupId,
     orderIndex: object.orderIndex,
     relationshipIds: object.relationshipIds,
+    state: object.state,
+    visual: object.visual,
   }));
   const threadDetails = (threadsResult.data ?? []).map((thread) => {
     const prompt = thread.comment_prompts?.[0];
@@ -250,10 +356,11 @@ export async function completeAiRun(
     limit: 25,
   });
   const projectionBase = {
-    version: 1 as const,
+    version: 2 as const,
     canvasId: run.canvas_id,
     objects,
     commentThreads,
+    designTokens: AI_CANVAS_DESIGN_TOKENS,
     truncated: false,
   };
   const serializedBytes = new TextEncoder().encode(
@@ -269,44 +376,22 @@ export async function completeAiRun(
     ...projectionBase,
     serializedBytes,
   });
-  const providerConfig = parsePrimaryAiProviderEnvironment(process.env);
-  const reservationResult = await createServiceClient().rpc(
-    "reserve_ai_run_budget",
-    {
-      target_run_id: run.id,
-      target_requester_id: run.requested_by,
-      target_input_tokens: estimateAiInputTokens({
-        instruction,
-        projectionSerializedBytes: projection.serializedBytes,
-      }),
-      target_output_tokens: providerConfig.OPENAI_RESPONSES_MAX_OUTPUT_TOKENS,
-    },
-  );
-  if (reservationResult.error || !reservationResult.data?.[0]) {
-    const message =
-      reservationResult.error?.message ??
-      "The AI request budget is unavailable.";
-    if (reservationResult.error?.code === "P0001") {
-      throw new AiRunLimitError(message);
-    }
-    throw new AiRunConflictError(message);
-  }
-  options.onStatus?.("thinking");
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(resolve, 1_200);
-    options.signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timeout);
-        reject(new DOMException("The AI run was cancelled.", "AbortError"));
-      },
-      { once: true },
-    );
+  const continuityResult = await repeatedLayoutContinuity({
+    runId: run.id,
+    commentId: run.invoking_comment_id,
+    invokingReplyId: run.invoking_reply_id,
+    instruction,
+    sourceInstruction: commentResult.data.body,
+    sourceObjects,
   });
-  if (options.signal?.aborted) {
-    throw new DOMException("The AI run was cancelled.", "AbortError");
-  }
-  const gatewayResult = await createPrimaryAiGateway().request({
+  options.onStatus?.("thinking");
+  let gatewayResult = continuityResult;
+  let providerAttemptCount = 0;
+  const gateway = createPrimaryAiGateway();
+  const reviewVisualChange = continuityResult
+    ? undefined
+    : gateway.reviewVisualChange?.bind(gateway);
+  const gatewayInput = {
     invocation: {
       runId: run.id,
       canvasId: run.canvas_id,
@@ -317,23 +402,98 @@ export async function completeAiRun(
       authority: currentAuthority,
       instruction,
       selectedPathIds: run.ordered_context_ids,
+      reviewContext: {
+        kind: reviewScope.kind,
+        objectIds: reviewScope.objectIds,
+        canvasAnchor:
+          commentResult.data.anchor_x !== null &&
+          commentResult.data.anchor_y !== null
+            ? {
+                x: commentResult.data.anchor_x,
+                y: commentResult.data.anchor_y,
+              }
+            : null,
+      },
     },
     projection,
     allowedToolNames,
     scenario: options.scenario,
     signal: options.signal,
-  });
+  };
+  if (!gatewayResult) {
+    const providerConfig = parsePrimaryAiProviderEnvironment(process.env);
+    const estimatedInputTokens = estimateAiInputTokens({
+      instruction,
+      projectionSerializedBytes: projection.serializedBytes,
+    });
+    const reservationResult = await createServiceClient().rpc(
+      "reserve_ai_run_budget",
+      {
+        target_run_id: run.id,
+        target_requester_id: run.requested_by,
+        target_input_tokens: Math.min(
+          1_000_000,
+          estimatedInputTokens * AI_PROVIDER_ATTEMPT_LIMIT,
+        ),
+        target_output_tokens: Math.min(
+          16_000,
+          providerConfig.OPENAI_RESPONSES_MAX_OUTPUT_TOKENS *
+            AI_PROVIDER_ATTEMPT_LIMIT,
+        ),
+      },
+    );
+    if (reservationResult.error || !reservationResult.data?.[0]) {
+      const message =
+        reservationResult.error?.message ??
+        "The AI request budget is unavailable.";
+      if (reservationResult.error?.code === "P0001") {
+        throw new AiRunLimitError(message);
+      }
+      throw new AiRunConflictError(message);
+    }
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(resolve, 1_200);
+      options.signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timeout);
+          reject(new DOMException("The AI run was cancelled.", "AbortError"));
+        },
+        { once: true },
+      );
+    });
+    throwIfAiRunAborted(options.signal);
+    const requested = await requestPrimaryAiWithRetry(gateway, gatewayInput);
+    gatewayResult = requested.result;
+    providerAttemptCount = requested.attemptCount;
+  }
   if (gatewayResult.status !== "completed") {
     throw new AiRunConflictError("The AI collaborator run did not complete.");
   }
   const objectIds = new Set(projection.objects.map((object) => object.id));
+  let toolCalls: typeof gatewayResult.toolCalls;
+  try {
+    toolCalls = coalesceReviewNewShapeToolCalls(gatewayResult.toolCalls);
+  } catch {
+    throw new AiProviderOutputError();
+  }
+  const isNewObjectReview = toolCalls.some(
+    (toolCall) =>
+      toolCall.toolName === "stage_new_shapes" ||
+      toolCall.toolName === "stage_new_connectors",
+  );
+  const groundedEvidence = gatewayResult.reply.evidence.filter((reference) =>
+    objectIds.has(reference.objectId),
+  );
+  const groundedContextualTargetObjectIds =
+    gatewayResult.reply.contextualTargetObjectIds.filter((objectId) =>
+      objectIds.has(objectId),
+    );
   if (
-    gatewayResult.reply.evidence.some(
-      (reference) => !objectIds.has(reference.objectId),
-    ) ||
-    gatewayResult.reply.contextualTargetObjectIds.some(
-      (objectId) => !objectIds.has(objectId),
-    )
+    !isNewObjectReview &&
+    (groundedEvidence.length !== gatewayResult.reply.evidence.length ||
+      groundedContextualTargetObjectIds.length !==
+        gatewayResult.reply.contextualTargetObjectIds.length)
   ) {
     throw new AiRunConflictError(
       "The AI response referenced an unavailable object.",
@@ -357,6 +517,7 @@ export async function completeAiRun(
     objectChangeCount: number;
     commandTypes: string[];
     affectedObjectIds: string[];
+    activationSequence: number;
     created: boolean;
   }> = [];
   const trustedExecutionResults: Array<{
@@ -367,13 +528,18 @@ export async function completeAiRun(
     sequence: number;
     created: boolean;
   }> = [];
-  const replySections = [gatewayResult.reply.body];
-  for (const toolCall of gatewayResult.toolCalls) {
-    const validatedTool = validateAiToolRequest({
-      authority: currentAuthority,
-      toolName: toolCall.toolName,
-      arguments: toolCall.arguments,
-    });
+  const replySections = [plainLanguageAiReply(gatewayResult.reply.body)];
+  for (const toolCall of toolCalls) {
+    let validatedTool: ReturnType<typeof validateAiToolRequest>;
+    try {
+      validatedTool = validateAiToolRequest({
+        authority: currentAuthority,
+        toolName: toolCall.toolName,
+        arguments: toolCall.arguments,
+      });
+    } catch {
+      throw new AiProviderOutputError();
+    }
     if (validatedTool.toolName === "execute_canvas_commands") {
       options.onStatus?.("applying");
       const toolArguments = executeArgumentsSchema.parse(
@@ -398,13 +564,11 @@ export async function completeAiRun(
       let affectedObjectIds: string[];
       let sequence: number;
       let created: boolean;
-      let summary: string;
       if (retryResult.data?.[0]) {
         update = postgresByteaToBytes(retryResult.data[0].update_data);
         affectedObjectIds = retryResult.data[0].affected_object_ids;
         sequence = retryResult.data[0].sequence;
         created = false;
-        summary = "Resumed delivery of the already-applied canvas changes.";
       } else {
         const execution = await buildTrustedCanvasUpdate({
           document: compacted.document,
@@ -433,7 +597,6 @@ export async function completeAiRun(
         affectedObjectIds = execution.affectedObjectIds;
         sequence = toolResult.data[0].sequence;
         created = toolResult.data[0].created;
-        summary = execution.summary;
       }
 
       await broadcastAiCanvasUpdate({
@@ -449,7 +612,9 @@ export async function completeAiRun(
         sequence,
         created,
       });
-      replySections.push(summary);
+      replySections.push(
+        "The change is on the canvas. You can undo it if needed.",
+      );
       continue;
     }
     if (validatedTool.toolName === "propose_canvas_commands") {
@@ -483,19 +648,254 @@ export async function completeAiRun(
         affectedObjectIds: proposal.affectedObjectIds,
         created: toolResult.data[0].created,
       });
-      replySections.push(proposal.summary);
+      replySections.push(
+        "The proposal did not change the canvas. Reply if you want me to apply or adjust it.",
+      );
       continue;
     }
-    if (validatedTool.toolName === "stage_canvas_changes") {
-      const toolArguments = reviewStageArgumentsSchema.parse(
-        validatedTool.arguments,
-      );
-      const reviewStage = validateCanvasReviewStage({
+    if (
+      validatedTool.toolName === "stage_canvas_changes" ||
+      validatedTool.toolName === "stage_layout_changes" ||
+      validatedTool.toolName === "stage_new_shapes" ||
+      validatedTool.toolName === "stage_new_connectors"
+    ) {
+      if (reviewStageToolResults.length > 0) {
+        throw new AiRunConflictError(
+          "One AI run may create only one reviewable change set.",
+        );
+      }
+      const toolArguments =
+        validatedTool.toolName === "stage_canvas_changes"
+          ? reviewStageArgumentsSchema.parse(validatedTool.arguments)
+          : validatedTool.toolName === "stage_layout_changes"
+            ? reviewLayoutArgumentsSchema.parse(validatedTool.arguments)
+            : validatedTool.toolName === "stage_new_shapes"
+              ? reviewNewShapesArgumentsSchema.parse(validatedTool.arguments)
+              : reviewNewConnectorsArgumentsSchema.parse(
+                  validatedTool.arguments,
+                );
+      const newShapeStage =
+        "shapes" in toolArguments
+          ? await materializeReviewNewShapes({
+              arguments: toolArguments,
+              runId: run.id,
+              callKey: toolCall.callKey,
+              canvasId: run.canvas_id,
+              actorId: run.requested_by,
+            })
+          : null;
+      const newConnectorStage =
+        "connectors" in toolArguments
+          ? await materializeReviewNewConnectors({
+              arguments: toolArguments,
+              sourceObjects,
+              runId: run.id,
+              callKey: toolCall.callKey,
+              canvasId: run.canvas_id,
+              actorId: run.requested_by,
+            })
+          : null;
+      const commands =
+        "commands" in toolArguments
+          ? toolArguments.commands
+          : "layout" in toolArguments
+            ? planDeterministicLayout({
+                objects: sourceObjects,
+                request: toolArguments.layout,
+              })
+            : (newShapeStage?.commands ?? newConnectorStage!.commands);
+      let reviewStage = validateCanvasReviewStage({
         document: compacted.document,
         canvasId: run.canvas_id,
         actorId: run.requested_by,
-        commands: toolArguments.commands,
+        commands,
       });
+      assertReviewChangesWithinScope({
+        scope: reviewScope,
+        changes: reviewStage.objectChanges,
+      });
+      const requestedExplanations =
+        "shapes" in toolArguments
+          ? newShapeStage!.explanations
+          : "connectors" in toolArguments
+            ? newConnectorStage!.explanations
+            : toolArguments.explanations;
+      const explanations =
+        "layout" in toolArguments
+          ? requestedExplanations.filter((explanation) =>
+              reviewStage.affectedObjectIds.includes(explanation.objectId),
+            )
+          : requestedExplanations;
+      let explainedChanges = validateReviewExplanations({
+        reviewStage,
+        explanations,
+      });
+      assertNoNewDeterministicVisualDefects({
+        beforeObjects: sourceObjects,
+        afterObjects: reviewStage.visualObjects,
+        targetObjectIds: reviewStage.affectedObjectIds,
+      });
+      const allFocusObjects = [...sourceObjects, ...reviewStage.visualObjects];
+      const allObjectIds = [
+        ...new Set(allFocusObjects.map((object) => object.id)),
+      ];
+      let visualFeedbackMetadata: Record<string, string | number> = {
+        projectionVersion: projection.version,
+        rendererVersion: TARGETED_CAPTURE_RENDERER_VERSION,
+        captureCount: 0,
+        feedbackPassCount: 0,
+        feedbackStatus: "unavailable",
+        feedbackIssueCount: 0,
+      };
+      try {
+        const [beforeCapture, afterCapture, beforeOverview, afterOverview] =
+          await Promise.all([
+            renderTargetedCanvasCapture({
+              objects: sourceObjects,
+              focusObjects: allFocusObjects,
+              targetObjectIds: reviewStage.affectedObjectIds,
+              label: "before",
+            }),
+            renderTargetedCanvasCapture({
+              objects: reviewStage.visualObjects,
+              focusObjects: allFocusObjects,
+              targetObjectIds: reviewStage.affectedObjectIds,
+              label: "after",
+            }),
+            renderTargetedCanvasCapture({
+              objects: sourceObjects,
+              focusObjects: allFocusObjects,
+              targetObjectIds: allObjectIds,
+              label: "before",
+            }),
+            renderTargetedCanvasCapture({
+              objects: reviewStage.visualObjects,
+              focusObjects: allFocusObjects,
+              targetObjectIds: allObjectIds,
+              label: "after",
+            }),
+          ]);
+        const visualReview = await reviewVisualChange?.({
+          instruction,
+          targetObjectIds: reviewStage.affectedObjectIds,
+          beforeImageDataUrl: beforeCapture.dataUrl,
+          afterImageDataUrl: afterCapture.dataUrl,
+          beforeOverviewImageDataUrl: beforeOverview.dataUrl,
+          afterOverviewImageDataUrl: afterOverview.dataUrl,
+          proposedCommands: reviewStage.commands,
+          proposedObjectStates: reviewStage.objectChanges.map(
+            (change) => change.afterState,
+          ),
+          signal: options.signal,
+        });
+        if (visualReview?.status === "fail") {
+          throw new AiVisualQualityError(
+            "The targeted visual quality check found a blocking layout defect.",
+          );
+        }
+        let captureCount = 4;
+        let feedbackPassCount = visualReview ? 1 : 0;
+        let finalVisualReview = visualReview;
+        if (
+          visualReview?.status === "refine" &&
+          !visualReview.replacementCommands
+        ) {
+          throw new Error("Visual refinement commands were unavailable.");
+        }
+        if (
+          visualReview?.status === "refine" &&
+          visualReview.replacementCommands
+        ) {
+          const refinedStage = validateCanvasReviewRefinement({
+            document: compacted.document,
+            canvasId: run.canvas_id,
+            actorId: run.requested_by,
+            proposedCommands: commands,
+            refinementCommands: visualReview.replacementCommands,
+          });
+          assertReviewChangesWithinScope({
+            scope: reviewScope,
+            changes: refinedStage.objectChanges,
+          });
+          const originalIds = [...reviewStage.affectedObjectIds].sort();
+          const refinedIds = [...refinedStage.affectedObjectIds].sort();
+          if (JSON.stringify(originalIds) !== JSON.stringify(refinedIds)) {
+            throw new Error(
+              "Visual refinement must preserve the exact affected object set.",
+            );
+          }
+          const refinedExplanations = validateReviewExplanations({
+            reviewStage: refinedStage,
+            explanations,
+          });
+          assertNoNewDeterministicVisualDefects({
+            beforeObjects: sourceObjects,
+            afterObjects: refinedStage.visualObjects,
+            targetObjectIds: refinedStage.affectedObjectIds,
+          });
+          const [refinedAfterCapture, refinedAfterOverview] = await Promise.all(
+            [
+              renderTargetedCanvasCapture({
+                objects: refinedStage.visualObjects,
+                focusObjects: [...sourceObjects, ...refinedStage.visualObjects],
+                targetObjectIds: refinedStage.affectedObjectIds,
+                label: "after",
+              }),
+              renderTargetedCanvasCapture({
+                objects: refinedStage.visualObjects,
+                focusObjects: [...sourceObjects, ...refinedStage.visualObjects],
+                targetObjectIds: allObjectIds,
+                label: "after",
+              }),
+            ],
+          );
+          const confirmation = await reviewVisualChange?.({
+            instruction,
+            targetObjectIds: refinedStage.affectedObjectIds,
+            beforeImageDataUrl: beforeCapture.dataUrl,
+            afterImageDataUrl: refinedAfterCapture.dataUrl,
+            beforeOverviewImageDataUrl: beforeOverview.dataUrl,
+            afterOverviewImageDataUrl: refinedAfterOverview.dataUrl,
+            proposedCommands: refinedStage.commands,
+            proposedObjectStates: refinedStage.objectChanges.map(
+              (change) => change.afterState,
+            ),
+            signal: options.signal,
+          });
+          captureCount = 6;
+          feedbackPassCount = 2;
+          if (!confirmation || confirmation.status !== "pass") {
+            throw new AiVisualQualityError(
+              "The bounded visual refinement did not resolve the layout defect.",
+            );
+          }
+          reviewStage = refinedStage;
+          explainedChanges = refinedExplanations;
+          finalVisualReview = confirmation;
+        }
+        visualFeedbackMetadata = {
+          projectionVersion: projection.version,
+          rendererVersion: TARGETED_CAPTURE_RENDERER_VERSION,
+          captureCount,
+          feedbackPassCount,
+          feedbackStatus: finalVisualReview?.status ?? "not_available",
+          feedbackIssueCount: finalVisualReview?.issueCount ?? 0,
+          captureWidth: Math.max(beforeCapture.width, afterCapture.width),
+          captureHeight: Math.max(beforeCapture.height, afterCapture.height),
+          contextObjectCount: new Set([
+            ...beforeCapture.contextObjectIds,
+            ...afterCapture.contextObjectIds,
+          ]).size,
+        };
+      } catch (error) {
+        if (
+          error instanceof AiRunConflictError ||
+          error instanceof AiVisualQualityError ||
+          (error instanceof DOMException && error.name === "AbortError")
+        ) {
+          throw error;
+        }
+      }
       const toolResult = await createServiceClient().rpc(
         "stage_ai_canvas_changes",
         {
@@ -515,15 +915,64 @@ export async function completeAiRun(
             "The review-stage changes could not be saved.",
         );
       }
+      const finalizationResult = await createServiceClient().rpc(
+        "finalize_ai_review_stage",
+        {
+          target_change_set_id: toolResult.data[0].change_set_id,
+          target_requester_id: run.requested_by,
+          target_summary: toolArguments.summary,
+          target_explanations: JSON.parse(
+            JSON.stringify(
+              explainedChanges.map(({ objectId, whatChanged, why }) => ({
+                objectId,
+                whatChanged,
+                why,
+              })),
+            ),
+          ) as Json,
+          target_scope_kind: reviewScope.kind,
+          target_scope_object_ids: reviewScope.objectIds,
+          target_visual_feedback_metadata: visualFeedbackMetadata,
+        },
+      );
+      if (finalizationResult.error || !finalizationResult.data?.[0]) {
+        throw new AiRunConflictError(
+          finalizationResult.error?.message ??
+            "The review-stage contract could not be finalized.",
+        );
+      }
+      const activationResult = await createServiceClient().rpc(
+        "activate_ai_review_stage",
+        {
+          target_change_set_id: toolResult.data[0].change_set_id,
+          target_requester_id: run.requested_by,
+          target_update_data: bytesToPostgresBytea(reviewStage.tentativeUpdate),
+          target_expected_sequence: compacted.lastSequence,
+        },
+      );
+      if (activationResult.error || !activationResult.data?.[0]) {
+        throw new AiRunConflictError(
+          activationResult.error?.message ??
+            "The review changes could not be activated tentatively.",
+        );
+      }
+      await broadcastAiCanvasUpdate({
+        canvasId: run.canvas_id,
+        sequence: activationResult.data[0].sequence,
+        update: reviewStage.tentativeUpdate,
+      });
       reviewStageToolResults.push({
         callKey: toolCall.callKey,
         changeSetId: toolResult.data[0].change_set_id,
         objectChangeCount: toolResult.data[0].object_change_count,
         commandTypes: reviewStage.commandTypes,
         affectedObjectIds: reviewStage.affectedObjectIds,
+        activationSequence: activationResult.data[0].sequence,
         created: toolResult.data[0].created,
       });
-      replySections.push(reviewStage.summary);
+      replySections.push(
+        "The change is on the canvas. You can undo it or reply with adjustments.",
+      );
       continue;
     }
     if (validatedTool.toolName !== "create_contextual_comment") {
@@ -577,10 +1026,11 @@ export async function completeAiRun(
       commentThreadCount: projection.commentThreads.length,
       serializedBytes: projection.serializedBytes,
       lastSequence: compacted.lastSequence,
-      evidence: gatewayResult.reply.evidence,
+      evidence: groundedEvidence,
       inspectionTools: ["inspect_canvas_objects", "inspect_comment_threads"],
       allowedTools: allowedToolNames,
       providerTelemetry: gatewayResult.telemetry ?? null,
+      providerAttemptCount,
       contextualTools: contextualToolResults,
       proposalTools: proposalToolResults,
       reviewStageTools: reviewStageToolResults,
@@ -600,6 +1050,7 @@ export async function completeAiRun(
     runId: completionResult.data[0].run_id,
     replyId: completionResult.data[0].reply_id,
     status: completionResult.data[0].status,
+    changeSetId: reviewStageToolResults.at(-1)?.changeSetId ?? null,
   };
 }
 
@@ -639,7 +1090,7 @@ export async function retryAiRun(input: unknown) {
   const supabase = await createClient();
   const sourceResult = await supabase
     .from("ai_runs")
-    .select("canvas_id,requested_by")
+    .select("canvas_id,requested_by,status,updated_at")
     .eq("id", runId)
     .maybeSingle();
   if (
@@ -649,6 +1100,28 @@ export async function retryAiRun(input: unknown) {
     sourceResult.data.requested_by !== user.id
   ) {
     throw new AiRunAccessError("AI run is not accessible.");
+  }
+  const active = [
+    "queued",
+    "projecting",
+    "thinking",
+    "tool_pending",
+    "applying",
+  ].includes(sourceResult.data.status);
+  if (active) {
+    if (
+      Date.parse(sourceResult.data.updated_at) >
+      Date.now() - AI_RUN_STALE_AFTER_MS
+    ) {
+      throw new AiRunConflictError("The AI run is still in progress.");
+    }
+    const expired = await supabase.rpc("fail_ai_run", {
+      target_run_id: runId,
+      target_error_code: "provider_timeout",
+    });
+    if (expired.error) {
+      throw new AiRunConflictError(expired.error.message);
+    }
   }
   const result = await supabase.rpc("retry_ai_run", {
     target_run_id: runId,
@@ -669,6 +1142,7 @@ export async function failAiRun(runId: string, errorCode: string) {
     target_error_code: errorCode,
   });
   if (result.error) throw new AiRunConflictError(result.error.message);
+  return result.data?.[0];
 }
 
 export class AiRunAccessError extends Error {}

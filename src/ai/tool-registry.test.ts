@@ -37,6 +37,9 @@ describe("AI authority tool registry", () => {
       "create_contextual_comment",
       "propose_canvas_commands",
       "stage_canvas_changes",
+      "stage_layout_changes",
+      "stage_new_shapes",
+      "stage_new_connectors",
       "execute_canvas_commands",
     ]);
   });
@@ -76,6 +79,68 @@ describe("AI authority tool registry", () => {
       toolName: "propose_canvas_commands",
       effect: "proposal",
     });
+  });
+
+  it("accepts server-identified multi-shape review creation", () => {
+    expect(
+      validateAiToolRequest({
+        authority: "edit_with_review",
+        toolName: "stage_new_shapes",
+        arguments: {
+          summary: "Create two reviewable sticky notes.",
+          shapes: ["red", "blue"].map((key, index) => ({
+            key,
+            shape: "rectangle",
+            text: key,
+            x: index * 224,
+            y: 0,
+            width: 200,
+            height: 120,
+            fill: key,
+            outline: "#18181b",
+            outlineWidth: 2,
+            fontFamily: "Inter",
+            fontSize: 16,
+            fontWeight: "bold",
+            textAlign: "center",
+            textColor: "#18181b",
+          })),
+          explanations: ["red", "blue"].map((key) => ({
+            key,
+            whatChanged: `Created the ${key} sticky note.`,
+            why: "The comment requested a labeled color set.",
+          })),
+        },
+      }),
+    ).toMatchObject({ toolName: "stage_new_shapes", effect: "review" });
+  });
+
+  it("accepts server-identified directional connector creation", () => {
+    expect(
+      validateAiToolRequest({
+        authority: "edit_with_review",
+        toolName: "stage_new_connectors",
+        arguments: {
+          summary: "Connect the notes clockwise.",
+          connectors: [
+            {
+              key: "first-to-second",
+              fromObjectId: objectId,
+              toObjectId: "61000000-0000-4000-8000-000000000002",
+              outline: "#475569",
+              outlineWidth: 2,
+            },
+          ],
+          explanations: [
+            {
+              key: "first-to-second",
+              whatChanged: "Connected the first note to the second.",
+              why: "The user requested a clockwise path.",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ toolName: "stage_new_connectors", effect: "review" });
   });
 
   it("rejects malformed arguments and client-supplied trusted metadata", () => {

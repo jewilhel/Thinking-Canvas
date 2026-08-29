@@ -13,6 +13,7 @@ import {
   ListTree,
   LogOut,
   Maximize2,
+  MessageSquareText,
   Minus,
   Plus,
   Share2,
@@ -22,7 +23,14 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Arrow,
   Circle,
@@ -119,6 +127,9 @@ type InlineTextEditor = {
 type ContextPanel =
   "fill" | "outline" | "text" | "table" | "connector" | "more";
 type SharedPanel = "objects" | "comments" | "help";
+type CanvasUndoEntry =
+  | { kind: "canvas"; history: CanvasHistoryEntry }
+  | { kind: "ai"; changeSetId: string };
 type ObjectContextMenuPosition = { x: number; y: number; maxHeight: number };
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
@@ -274,6 +285,7 @@ export function ProductCanvas({
   const [sharedPanel, setSharedPanel] = useState<SharedPanel | null>(null);
   const [sharedPanelInvoker, setSharedPanelInvoker] =
     useState<HTMLButtonElement | null>(null);
+  const [commentPlacementActive, setCommentPlacementActive] = useState(false);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [dragPreviewPositions, setDragPreviewPositions] = useState<
     Record<string, Point>
@@ -282,8 +294,9 @@ export function ProductCanvas({
     Record<string, CanvasObjectV2["geometry"]>
   >({});
   const [clipboardText, setClipboardText] = useState("");
-  const [undoStack, setUndoStack] = useState<CanvasHistoryEntry[]>([]);
+  const [undoStack, setUndoStack] = useState<CanvasUndoEntry[]>([]);
   const [redoStack, setRedoStack] = useState<CanvasHistoryEntry[]>([]);
+  const aiUndoKeys = useRef(new Map<string, string>());
   const [historyNotice, setHistoryNotice] = useState("");
   const [shareNotice, setShareNotice] = useState("");
   const [viewport, setViewport] = useState<Viewport>(() => {
@@ -527,7 +540,7 @@ export function ProductCanvas({
       beforeOrder: first.beforeOrder,
       afterOrder: last.afterOrder,
     };
-    setUndoStack((current) => [...current, history]);
+    setUndoStack((current) => [...current, { kind: "canvas", history }]);
     setRedoStack([]);
     setHistoryNotice("");
   }
@@ -630,6 +643,7 @@ export function ProductCanvas({
   }
 
   function chooseTool(nextTool: CanvasTool) {
+    setCommentPlacementActive(false);
     setContextPanel(null);
     setObjectContextMenu(null);
     setTool(nextTool);
@@ -1217,16 +1231,79 @@ export function ProductCanvas({
     }
   }
 
-  function undo() {
+  const registerAiTransaction = useCallback((changeSetId: string) => {
+    setUndoStack((current) => [
+      ...current.filter(
+        (entry) => entry.kind !== "ai" || entry.changeSetId !== changeSetId,
+      ),
+      { kind: "ai", changeSetId },
+    ]);
+    setRedoStack([]);
+    setHistoryNotice("");
+  }, []);
+
+  async function undoAiTransaction(changeSetId: string) {
+    const idempotencyKey =
+      aiUndoKeys.current.get(changeSetId) ?? crypto.randomUUID();
+    aiUndoKeys.current.set(changeSetId, idempotencyKey);
+    const response = await fetch(
+      `/api/canvases/${canvasId}/ai/transactions/undo`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ changeSetId, idempotencyKey }),
+      },
+    );
+    const body = (await response.json().catch(() => null)) as {
+      error?: unknown;
+      conflicts?: unknown;
+    } | null;
+    if (!response.ok) {
+      throw new Error(
+        typeof body?.error === "string"
+          ? body.error
+          : "The AI change could not be undone.",
+      );
+    }
+    const conflicts = Array.isArray(body?.conflicts)
+      ? body.conflicts.length
+      : 0;
+    setUndoStack((current) =>
+      current.filter(
+        (entry) => entry.kind !== "ai" || entry.changeSetId !== changeSetId,
+      ),
+    );
+    setRedoStack([]);
+    setHistoryNotice(
+      conflicts
+        ? `AI change undone; ${conflicts} conflicting field${conflicts === 1 ? " was" : "s were"} preserved.`
+        : "AI change undone.",
+    );
+    return { conflicts };
+  }
+
+  async function undo() {
     const entry = undoStack.at(-1);
     if (!entry) return;
-    const result = applyCanvasHistoryEntry(document, entry, "undo");
+    if (entry.kind === "ai") {
+      try {
+        await undoAiTransaction(entry.changeSetId);
+      } catch (error) {
+        setHistoryNotice(
+          error instanceof Error
+            ? error.message
+            : "The AI change could not be undone.",
+        );
+      }
+      return;
+    }
+    const result = applyCanvasHistoryEntry(document, entry.history, "undo");
     const existingIds = new Set(
       listCanvasObjectsV2(document).map((object) => object.id),
     );
     setSelectedIds((current) => current.filter((id) => existingIds.has(id)));
     setUndoStack((current) => current.slice(0, -1));
-    setRedoStack((current) => [...current, entry]);
+    setRedoStack((current) => [...current, entry.history]);
     setHistoryNotice(
       result.conflicts.length
         ? `Undo preserved ${result.conflicts.length} conflicting field${result.conflicts.length === 1 ? "" : "s"}.`
@@ -1243,7 +1320,7 @@ export function ProductCanvas({
     );
     setSelectedIds((current) => current.filter((id) => existingIds.has(id)));
     setRedoStack((current) => current.slice(0, -1));
-    setUndoStack((current) => [...current, entry]);
+    setUndoStack((current) => [...current, { kind: "canvas", history: entry }]);
     setHistoryNotice(
       result.conflicts.length
         ? `Redo preserved ${result.conflicts.length} conflicting field${result.conflicts.length === 1 ? "" : "s"}.`
@@ -1313,8 +1390,17 @@ export function ProductCanvas({
       return;
     }
     setSharedPanelInvoker(invoker);
+    setCommentPlacementActive(false);
     setContextPanel(null);
     setSharedPanel(panel);
+  }
+
+  function chooseComments() {
+    setContextPanel(null);
+    setObjectContextMenu(null);
+    setSharedPanel(null);
+    setTool("select");
+    setCommentPlacementActive((active) => !active);
   }
 
   function onWheel(event: Konva.KonvaEventObject<WheelEvent>) {
@@ -2230,6 +2316,21 @@ export function ProductCanvas({
           >
             <ListTree aria-hidden="true" />
           </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            aria-label="Open comment history and AI settings"
+            aria-expanded={sharedPanel === "comments"}
+            aria-controls="workspace-shared-panel"
+            title="Comment history and AI settings"
+            className="size-11 border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700"
+            onClick={(event) =>
+              toggleSharedPanel("comments", event.currentTarget)
+            }
+          >
+            <MessageSquareText aria-hidden="true" />
+          </Button>
         </div>
 
         <div className="pointer-events-auto flex max-w-[min(58vw,48rem)] flex-wrap items-center justify-end gap-2 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-2 shadow-[var(--workspace-shadow)] backdrop-blur-xl">
@@ -2327,8 +2428,8 @@ export function ProductCanvas({
         onChooseTool={chooseTool}
         onChooseShape={chooseShape}
         onAddSimulatedAiIdea={addSimulatedAiIdea}
-        commentsPanelOpen={sharedPanel === "comments"}
-        onToggleComments={(invoker) => toggleSharedPanel("comments", invoker)}
+        commentPlacementActive={commentPlacementActive}
+        onChooseComments={chooseComments}
       />
 
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
@@ -2419,8 +2520,11 @@ export function ProductCanvas({
         size={size}
         panelOpen={sharedPanel === "comments"}
         panelInvoker={sharedPanelInvoker}
-        simulatedAiEnabled={simulatedAiEnabled}
+        placementActive={commentPlacementActive}
         onDismissPanel={() => setSharedPanel(null)}
+        onPlacementModeChange={setCommentPlacementActive}
+        onAiTransactionApplied={registerAiTransaction}
+        onUndoAiTransaction={undoAiTransaction}
         onSelectTargets={(targetIds) => {
           if (!targetIds.length) {
             closeContextPanel(false);

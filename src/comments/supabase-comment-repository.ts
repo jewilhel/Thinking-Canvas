@@ -120,6 +120,19 @@ export class SupabaseCommentRepository {
       recipientsResult.error,
     ) as RecipientRow[];
     const runs = requireData(runsResult.data, runsResult.error);
+    const completedRunIds = runs
+      .filter((run) => run.output_reply_id)
+      .map((run) => run.id);
+    const changeSetsResult = completedRunIds.length
+      ? await this.supabase
+          .from("ai_change_sets")
+          .select("id,ai_run_id,status,transaction_undone_at")
+          .in("ai_run_id", completedRunIds)
+      : { data: [], error: null };
+    const changeSets = requireData(
+      changeSetsResult.data,
+      changeSetsResult.error,
+    );
     const promptIds = prompts.map((prompt) => prompt.id);
     const responsesResult = promptIds.length
       ? await this.supabase
@@ -198,8 +211,28 @@ export class SupabaseCommentRepository {
       string,
       Array<{ objectId: string; label: string }>
     >();
+    const transactionByReply = new Map<
+      string,
+      {
+        changeSetId: string;
+        status: "active" | "undone" | "unavailable";
+      }
+    >();
     for (const run of runs) {
       if (!run.output_reply_id) continue;
+      const changeSet = changeSets.find(
+        (candidate) => candidate.ai_run_id === run.id,
+      );
+      if (changeSet) {
+        transactionByReply.set(run.output_reply_id, {
+          changeSetId: changeSet.id,
+          status: changeSet.transaction_undone_at
+            ? "undone"
+            : changeSet.status === "applied"
+              ? "active"
+              : "unavailable",
+        });
+      }
       const metadata = run.projection_metadata;
       if (!metadata || typeof metadata !== "object" || Array.isArray(metadata))
         continue;
@@ -276,6 +309,7 @@ export class SupabaseCommentRepository {
               .filter((recipient) => recipient.reply_id === reply.id)
               .map(toRecipient),
             evidence: evidenceByReply.get(reply.id) ?? [],
+            aiTransaction: transactionByReply.get(reply.id) ?? null,
           }))
           .sort(compareChronologically),
         recipients: recipients

@@ -32,6 +32,14 @@ export type ValidatedCanvasProposal = {
 
 export type ValidatedCanvasReviewStage = ValidatedCanvasProposal & {
   objectChanges: StagedCanvasObjectChange[];
+  tentativeUpdate: Uint8Array;
+  visualObjects: CanvasObjectV2[];
+};
+
+export type ReviewObjectExplanation = {
+  objectId: string;
+  whatChanged: string;
+  why: string;
 };
 
 function stateByObjectId(document: Y.Doc) {
@@ -79,6 +87,7 @@ function simulateCanvasCommands(input: {
   actorId: string;
   commands: unknown[];
 }) {
+  const stateVector = Y.encodeStateVector(input.document);
   const beforeById = stateByObjectId(input.document);
   const proposalDocument = new Y.Doc();
   Y.applyUpdate(proposalDocument, Y.encodeStateAsUpdate(input.document));
@@ -124,6 +133,8 @@ function simulateCanvasCommands(input: {
     commandTypes: commands.map((command) => command.type),
     lines,
     objectChanges,
+    tentativeUpdate: Y.encodeStateAsUpdate(proposalDocument, stateVector),
+    visualObjects: listCanvasObjectsV2(proposalDocument),
   };
 }
 
@@ -155,6 +166,51 @@ export function validateCanvasReviewStage(input: {
     affectedObjectIds: plan.affectedObjectIds,
     commandTypes: plan.commandTypes,
     objectChanges: plan.objectChanges,
-    summary: `Staged for review (canvas unchanged):\n${plan.lines.join("\n")}\n${plan.objectChanges.length} object change${plan.objectChanges.length === 1 ? "" : "s"} staged for later review.`,
+    tentativeUpdate: plan.tentativeUpdate,
+    visualObjects: plan.visualObjects,
+    summary: `Prepared for tentative review:\n${plan.lines.join("\n")}\n${plan.objectChanges.length} object change${plan.objectChanges.length === 1 ? "" : "s"} will remain reviewable as one change set.`,
   };
+}
+
+export function validateCanvasReviewRefinement(input: {
+  document: Y.Doc;
+  canvasId: string;
+  actorId: string;
+  proposedCommands: unknown[];
+  refinementCommands: unknown[];
+}) {
+  return validateCanvasReviewStage({
+    document: input.document,
+    canvasId: input.canvasId,
+    actorId: input.actorId,
+    commands: [...input.proposedCommands, ...input.refinementCommands],
+  });
+}
+
+export function validateReviewExplanations(input: {
+  reviewStage: ValidatedCanvasReviewStage;
+  explanations: ReviewObjectExplanation[];
+}) {
+  const affectedIds = [...input.reviewStage.affectedObjectIds].sort();
+  const explanationIds = input.explanations
+    .map((explanation) => explanation.objectId)
+    .sort();
+  if (
+    affectedIds.length !== explanationIds.length ||
+    affectedIds.some((id, index) => id !== explanationIds[index])
+  ) {
+    throw new Error(
+      "Review explanations must exactly match the affected canvas objects.",
+    );
+  }
+  const byId = new Map(
+    input.explanations.map((explanation) => [
+      explanation.objectId,
+      explanation,
+    ]),
+  );
+  return input.reviewStage.objectChanges.map((change) => ({
+    ...change,
+    ...byId.get(change.objectId)!,
+  }));
 }

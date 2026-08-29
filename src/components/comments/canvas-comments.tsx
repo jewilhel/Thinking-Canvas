@@ -23,6 +23,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
+import { AI_RUN_STALE_AFTER_MS } from "@/ai/run-deadline";
 import {
   commentOrderedContextIds,
   commentTargetObjectIds,
@@ -62,9 +63,12 @@ type Props = {
   size: { width: number; height: number };
   panelOpen: boolean;
   panelInvoker: HTMLButtonElement | null;
-  simulatedAiEnabled: boolean;
+  placementActive: boolean;
   onDismissPanel: () => void;
+  onPlacementModeChange: (active: boolean) => void;
   onSelectTargets: (targetIds: string[]) => void;
+  onAiTransactionApplied: (changeSetId: string) => void;
+  onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
 };
 
 function initials(name: string) {
@@ -354,6 +358,16 @@ function aiRunFailureMessage(errorCode: string | null) {
     return "The selected path includes an object from another canvas.";
   if (errorCode === "rate_or_budget_limit")
     return "The AI request limit is reached. Retry after the current five-minute window.";
+  if (errorCode === "provider_timeout")
+    return "The AI took too long to finish. Retry or break the request into a smaller step.";
+  if (errorCode === "run_interrupted")
+    return "The AI connection was interrupted. Retry the request.";
+  if (errorCode === "provider_output_invalid")
+    return "The AI returned an invalid structured response. Retry the request.";
+  if (errorCode === "visual_quality_blocked")
+    return "The visual quality check could not produce a safe reviewable result.";
+  if (errorCode === "review_stage_failed")
+    return "The review changes could not be staged against the current canvas. Refresh and retry.";
   return "The response could not be completed. Your comment remains saved.";
 }
 
@@ -659,6 +673,7 @@ function ThreadBody({
   onStatus,
   onDelete,
   onNavigateEvidence,
+  onUndoAiTransaction,
   onCancelAiRun,
   onRetryAiRun,
 }: {
@@ -680,6 +695,7 @@ function ThreadBody({
   onStatus: (status: "resolved" | "dismissed") => Promise<void>;
   onDelete: () => Promise<void>;
   onNavigateEvidence: (objectId: string) => void;
+  onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
   onCancelAiRun: (runId: string) => Promise<void>;
   onRetryAiRun: (runId: string) => Promise<void>;
 }) {
@@ -695,6 +711,19 @@ function ThreadBody({
     : inheritedRecipients;
   const [editingBody, setEditingBody] = useState(false);
   const [bodyDraft, setBodyDraft] = useState(thread.body);
+  const [undoingChangeSetId, setUndoingChangeSetId] = useState<string | null>(
+    null,
+  );
+  const [undoError, setUndoError] = useState("");
+  const [undoNotice, setUndoNotice] = useState("");
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = window.setInterval(
+      () => setCurrentTime(Date.now()),
+      1_500,
+    );
+    return () => window.clearInterval(interval);
+  }, []);
   const canComment = role !== "viewer";
   const canResolve =
     role === "owner" || role === "editor" || thread.authorId === userId;
@@ -710,6 +739,8 @@ function ThreadBody({
         ) === index,
     )
     .reverse();
+  const latestRun = latestRuns.at(-1);
+  const replyReady = !latestRun || latestRun.status === "completed";
   return (
     <>
       <div className="flex items-start gap-3">
@@ -829,6 +860,46 @@ function ThreadBody({
                 <p className="mt-1 text-sm leading-6 whitespace-pre-wrap text-zinc-700">
                   {item.body}
                 </p>
+                {item.authorKind === "ai" &&
+                item.aiTransaction?.status === "active" ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="mt-2"
+                    disabled={
+                      pending ||
+                      undoingChangeSetId === item.aiTransaction.changeSetId
+                    }
+                    onClick={() => {
+                      const changeSetId = item.aiTransaction!.changeSetId;
+                      setUndoError("");
+                      setUndoNotice("");
+                      setUndoingChangeSetId(changeSetId);
+                      void onUndoAiTransaction(changeSetId)
+                        .then(({ conflicts }) => {
+                          if (conflicts) {
+                            setUndoNotice(
+                              `Change undone where safe; ${conflicts} later edit${conflicts === 1 ? " was" : "s were"} preserved.`,
+                            );
+                          }
+                        })
+                        .catch((error) =>
+                          setUndoError(
+                            error instanceof Error
+                              ? error.message
+                              : "The AI change could not be undone.",
+                          ),
+                        )
+                        .finally(() => setUndoingChangeSetId(null));
+                    }}
+                  >
+                    <RotateCcw aria-hidden="true" /> Undo AI change
+                  </Button>
+                ) : item.authorKind === "ai" &&
+                  item.aiTransaction?.status === "undone" ? (
+                  <p className="mt-2 text-xs text-zinc-500">Change undone</p>
+                ) : null}
                 {item.evidence.length ? (
                   <div
                     className="mt-2 flex flex-wrap gap-2"
@@ -852,6 +923,16 @@ function ThreadBody({
           ))}
         </div>
       ) : null}
+      {undoError ? (
+        <p role="alert" className="mt-3 text-sm text-red-700">
+          {undoError}
+        </p>
+      ) : null}
+      {undoNotice ? (
+        <p role="status" className="mt-3 text-sm text-amber-800">
+          {undoNotice}
+        </p>
+      ) : null}
       {latestRuns
         .filter((run) => run.status !== "completed")
         .map((run) => {
@@ -862,6 +943,10 @@ function ThreadBody({
             "tool_pending",
             "applying",
           ].includes(run.status);
+          const stale =
+            active &&
+            Date.parse(run.updatedAt) <= currentTime - AI_RUN_STALE_AFTER_MS;
+          const inProgress = active && !stale;
           return (
             <div
               key={run.id}
@@ -870,7 +955,7 @@ function ThreadBody({
               className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-950"
             >
               <div className="flex items-center gap-2 font-semibold">
-                {active ? (
+                {inProgress ? (
                   <LoaderCircle
                     aria-hidden="true"
                     className="size-4 animate-spin motion-reduce:animate-none"
@@ -878,24 +963,28 @@ function ThreadBody({
                 ) : (
                   <Bot aria-hidden="true" className="size-4" />
                 )}
-                {active
+                {inProgress
                   ? run.status === "queued"
                     ? "Thinking Canvas AI is queued…"
                     : run.status === "projecting"
-                      ? "Thinking Canvas AI is reading the canvas…"
+                      ? "Thinking Canvas AI is working on the canvas…"
                       : "Thinking Canvas AI is responding…"
-                  : run.status === "cancelled"
-                    ? "AI response cancelled"
-                    : "AI response failed"}
+                  : stale
+                    ? "AI response timed out"
+                    : run.status === "cancelled"
+                      ? "AI response cancelled"
+                      : "AI response failed"}
               </div>
-              {run.status === "failed" ? (
+              {run.status === "failed" || stale ? (
                 <p className="mt-1 text-xs text-violet-800">
-                  {aiRunFailureMessage(run.errorCode)}
+                  {stale
+                    ? aiRunFailureMessage("provider_timeout")
+                    : aiRunFailureMessage(run.errorCode)}
                 </p>
               ) : null}
               {run.requestedBy === userId ? (
                 <div className="mt-2 flex justify-end">
-                  {active ? (
+                  {inProgress ? (
                     <Button
                       type="button"
                       size="sm"
@@ -920,7 +1009,10 @@ function ThreadBody({
             </div>
           );
         })}
-      {thread.status === "open" && canComment && !thread.prompt ? (
+      {thread.status === "open" &&
+      canComment &&
+      !thread.prompt &&
+      replyReady ? (
         <form
           className="group mt-4 w-full rounded-2xl bg-zinc-100 p-3"
           onSubmit={(event) => {
@@ -1039,8 +1131,12 @@ export function CanvasComments({
   size,
   panelOpen,
   panelInvoker,
+  placementActive,
   onDismissPanel,
+  onPlacementModeChange,
   onSelectTargets,
+  onAiTransactionApplied,
+  onUndoAiTransaction,
 }: Props) {
   const {
     threads,
@@ -1053,14 +1149,18 @@ export function CanvasComments({
     setAiSettings,
     cancelAiRun,
     retryAiRun,
-  } = useCanvasComments(canvasId, supabaseUrl, supabasePublishableKey);
+  } = useCanvasComments(
+    canvasId,
+    supabaseUrl,
+    supabasePublishableKey,
+    onAiTransactionApplied,
+  );
   const visibilityKey = `thinking-canvas:comments-visible:${userId}:${canvasId}`;
   const [visible, setVisible] = useState(
     () => window.localStorage.getItem(visibilityKey) !== "false",
   );
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [placementMode, setPlacementMode] = useState(false);
   const [composerTarget, setComposerTarget] = useState<CommentTarget | null>(
     null,
   );
@@ -1073,7 +1173,6 @@ export function CanvasComments({
   const placementRef = useRef<HTMLButtonElement>(null);
   const composerCardRef = useRef<HTMLDivElement>(null);
   const threadCardRef = useRef<HTMLDivElement>(null);
-  const panelWasOpenRef = useRef(panelOpen);
   const objectsById = useMemo(
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
@@ -1092,19 +1191,9 @@ export function CanvasComments({
     if (composerOpen) requestAnimationFrame(() => composerRef.current?.focus());
   }, [composerOpen]);
   useEffect(() => {
-    if (placementMode)
+    if (placementActive)
       requestAnimationFrame(() => placementRef.current?.focus());
-  }, [placementMode]);
-  useEffect(() => {
-    if (panelOpen && !panelWasOpenRef.current && canComment) {
-      setSelectedThreadId(null);
-      closeComposer();
-      setPlacementMode(true);
-    } else if (!panelOpen && panelWasOpenRef.current) {
-      setPlacementMode(false);
-    }
-    panelWasOpenRef.current = panelOpen;
-  }, [canComment, panelOpen]);
+  }, [placementActive]);
   useEffect(() => {
     if (!selectedThreadId) return;
 
@@ -1123,6 +1212,29 @@ export function CanvasComments({
     return () =>
       document.removeEventListener("pointerdown", dismissThreadOutside);
   }, [selectedThreadId]);
+  useEffect(() => {
+    if (!composerOpen) return;
+
+    function cancelComposerOutside(event: PointerEvent) {
+      const target = event.target;
+      if (
+        !(target instanceof Node) ||
+        composerCardRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setDraft("");
+      setPromptKind(null);
+      setComposerOpen(false);
+      setComposerTarget(null);
+      setDraftRecipients([]);
+      onSelectTargets([]);
+    }
+
+    document.addEventListener("pointerdown", cancelComposerOutside);
+    return () =>
+      document.removeEventListener("pointerdown", cancelComposerOutside);
+  }, [composerOpen, onSelectTargets]);
 
   function closeComposer() {
     setComposerOpen(false);
@@ -1130,13 +1242,23 @@ export function CanvasComments({
     setDraftRecipients([]);
   }
 
+  function cancelComposer() {
+    setDraft("");
+    setPromptKind(null);
+    closeComposer();
+    onSelectTargets([]);
+  }
+
   function beginComment() {
     setSelectedThreadId(null);
     closeComposer();
-    setPlacementMode(true);
+    onDismissPanel();
+    onPlacementModeChange(true);
   }
 
   function focusThread(threadId: string) {
+    if (panelOpen) onDismissPanel();
+    onPlacementModeChange(false);
     onSelectTargets([]);
     setSelectedThreadId(threadId);
   }
@@ -1166,7 +1288,8 @@ export function CanvasComments({
       ),
       canvasAnchor: object ? null : canvasPoint,
     });
-    setPlacementMode(false);
+    if (panelOpen) onDismissPanel();
+    onPlacementModeChange(false);
     setComposerOpen(true);
   }
 
@@ -1330,7 +1453,7 @@ export function CanvasComments({
 
   return (
     <>
-      {placementMode ? (
+      {placementActive ? (
         <button
           ref={placementRef}
           type="button"
@@ -1340,7 +1463,7 @@ export function CanvasComments({
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();
-              setPlacementMode(false);
+              onPlacementModeChange(false);
             }
           }}
         >
@@ -1350,7 +1473,7 @@ export function CanvasComments({
         </button>
       ) : null}
 
-      {selectedThread ? (
+      {!placementActive && selectedThread ? (
         <div
           aria-hidden="true"
           data-testid="comment-focus-shield"
@@ -1375,7 +1498,7 @@ export function CanvasComments({
                   className={`group absolute z-30 flex h-[3.25rem] w-[3.25rem] items-center gap-3 overflow-hidden rounded-[999px_999px_999px_0.55rem] border border-transparent bg-transparent p-2 text-left text-violet-500 shadow-md transition-[width,height,border-color,background-color,border-radius,box-shadow] duration-200 ease-out focus-visible:ring-3 focus-visible:ring-violet-500 focus-visible:outline-none motion-reduce:transition-none ${previewEnabled ? "hover:h-24 hover:w-80 hover:rounded-[1.5rem_1.5rem_1.5rem_0.55rem] hover:border-zinc-200 hover:bg-white hover:shadow-xl focus-visible:h-24 focus-visible:w-80 focus-visible:rounded-[1.5rem_1.5rem_1.5rem_0.55rem] focus-visible:border-zinc-200 focus-visible:bg-white" : ""}`}
                   style={markerStyle}
                   onClick={() => {
-                    setPlacementMode(false);
+                    onPlacementModeChange(false);
                     closeComposer();
                     focusThread(thread.id);
                   }}
@@ -1413,7 +1536,8 @@ export function CanvasComments({
             })
         : null}
 
-      {composerOpen &&
+      {!placementActive &&
+      composerOpen &&
       composerTarget &&
       composerPosition &&
       composerCardPosition ? (
@@ -1490,7 +1614,7 @@ export function CanvasComments({
               size="icon-sm"
               variant="ghost"
               aria-label="Close comment composer"
-              onClick={closeComposer}
+              onClick={cancelComposer}
             >
               <X aria-hidden="true" />
             </Button>
@@ -1498,7 +1622,10 @@ export function CanvasComments({
         </div>
       ) : null}
 
-      {selectedThread && threadPosition && threadCardPosition ? (
+      {!placementActive &&
+      selectedThread &&
+      threadPosition &&
+      threadCardPosition ? (
         <div
           ref={threadCardRef}
           role="dialog"
@@ -1533,6 +1660,11 @@ export function CanvasComments({
             onStatus={(next) => status(selectedThread, next)}
             onDelete={() => deleteThread(selectedThread)}
             onNavigateEvidence={(objectId) => onSelectTargets([objectId])}
+            onUndoAiTransaction={async (changeSetId) => {
+              const result = await onUndoAiTransaction(changeSetId);
+              await refresh();
+              return result;
+            }}
             onCancelAiRun={cancelAiRun}
             onRetryAiRun={retryAiRun}
           />
@@ -1549,7 +1681,7 @@ export function CanvasComments({
           <div className="flex flex-wrap gap-2">
             <Button type="button" disabled={!canComment} onClick={beginComment}>
               <MessageCircle aria-hidden="true" />
-              {placementMode ? "Click canvas…" : "New comment"}
+              {placementActive ? "Click canvas…" : "New comment"}
             </Button>
             <Button
               type="button"
@@ -1615,7 +1747,7 @@ export function CanvasComments({
                   >
                     <option value="comment_only">Comment only</option>
                     <option value="propose_changes">Propose changes</option>
-                    <option value="edit_with_review">Edit with review</option>
+                    <option value="edit_with_review">Edit with undo</option>
                     <option value="trusted_editor">Trusted editor</option>
                   </select>
                 </label>
@@ -1654,7 +1786,7 @@ export function CanvasComments({
                   className="flex w-full items-start gap-3 rounded-xl border border-zinc-200 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50"
                   onClick={() => {
                     setVisible(true);
-                    setPlacementMode(false);
+                    onPlacementModeChange(false);
                     closeComposer();
                     focusThread(thread.id);
                   }}

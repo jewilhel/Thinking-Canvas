@@ -12,6 +12,7 @@ import {
 } from "@/ai/collaborator-contract";
 import { FakePrimaryAiGateway } from "@/ai/fake-collaborator-gateway";
 import { allowedAiToolNames } from "@/ai/tool-registry";
+import { AI_CANVAS_DESIGN_TOKENS } from "@/ai/visual-grounding";
 
 const ids = {
   run: "80000000-0000-4000-8000-000000000001",
@@ -35,7 +36,7 @@ const invocation = aiInvocationSchema.parse({
 });
 
 const projection = aiProjectionEnvelopeSchema.parse({
-  version: 1,
+  version: 2,
   canvasId: ids.canvas,
   objects: [
     {
@@ -46,6 +47,32 @@ const projection = aiProjectionEnvelopeSchema.parse({
       groupId: null,
       orderIndex: 0,
       relationshipIds: [],
+      state: {
+        schemaVersion: 2,
+        id: ids.object,
+        canvasId: ids.canvas,
+        createdBy: ids.user,
+        createdAt: "2026-08-24T12:00:00.000Z",
+        updatedAt: "2026-08-24T12:00:00.000Z",
+        type: "shape",
+        shape: "rectangle",
+        text: "Main idea",
+        geometry: { x: 0, y: 0, width: 100, height: 80, rotation: 0 },
+        style: {
+          fill: "#ffffff",
+          outline: "#18181b",
+          outlineWidth: 2,
+          fontFamily: "Inter",
+          fontSize: 16,
+          textColor: "#18181b",
+        },
+      },
+      visual: {
+        rotatedBounds: { x: 0, y: 0, width: 100, height: 80 },
+        estimatedTextLines: 1,
+        estimatedTextClipped: false,
+        overlappingObjectIds: [],
+      },
     },
   ],
   commentThreads: [
@@ -59,6 +86,7 @@ const projection = aiProjectionEnvelopeSchema.parse({
       updatedAt: "2026-08-24T12:00:00.000Z",
     },
   ],
+  designTokens: AI_CANVAS_DESIGN_TOKENS,
   serializedBytes: 512,
   truncated: false,
 });
@@ -261,7 +289,7 @@ describe("FakePrimaryAiGateway", () => {
     expect(result).toMatchObject({
       status: "completed",
       reply: {
-        body: "I staged validated changes for later review without changing the canvas.",
+        body: "I made the requested change on the canvas.",
       },
       toolCalls: [
         {
@@ -269,10 +297,60 @@ describe("FakePrimaryAiGateway", () => {
           toolName: "stage_canvas_changes",
           arguments: {
             summary: "Move the supporting object to the right.",
+            explanations: [
+              {
+                objectId: ids.object,
+                whatChanged: "Moved the supporting object to the right.",
+                why: "The added spacing separates it from the main idea.",
+              },
+            ],
             commands: [
               {
                 type: "object.move",
                 payload: { objectId: ids.object, x: 40, y: 0 },
+              },
+            ],
+          },
+        },
+      ],
+    });
+  });
+
+  it("stages a grounded label edit for the single-object acceptance story", async () => {
+    const gateway = new FakePrimaryAiGateway();
+    const reviewInvocation = {
+      ...invocation,
+      authority: "edit_with_review" as const,
+      instruction: "Review changing this object's label.",
+    };
+    const result = await gateway.request({
+      invocation: reviewInvocation,
+      projection,
+      allowedToolNames: allowedAiToolNames(reviewInvocation.authority),
+    });
+    expect(result).toMatchObject({
+      status: "completed",
+      toolCalls: [
+        {
+          toolName: "stage_canvas_changes",
+          arguments: {
+            summary: "Clarify the supporting object's label.",
+            explanations: [
+              {
+                objectId: ids.object,
+                whatChanged:
+                  "Changed the label from “Main idea” to “Supporting evidence”.",
+                why: "The revised label states the object's purpose more clearly.",
+              },
+            ],
+            commands: [
+              {
+                type: "object.patch",
+                payload: {
+                  objectId: ids.object,
+                  objectType: "shape",
+                  text: "Supporting evidence",
+                },
               },
             ],
           },
@@ -353,6 +431,48 @@ describe("FakePrimaryAiGateway", () => {
         ],
       }),
     ).rejects.toThrow("does not match current authority");
+  });
+
+  it("keeps bounded visual refinement state independent per review scope", async () => {
+    const gateway = new FakePrimaryAiGateway();
+    const review = (objectId: string, x: number) =>
+      gateway.reviewVisualChange({
+        instruction: "Apply vision refinement.",
+        targetObjectIds: [objectId],
+        beforeImageDataUrl: "data:image/png;base64,AA==",
+        afterImageDataUrl: "data:image/png;base64,AA==",
+        proposedCommands: [],
+        proposedObjectStates: [
+          { object: { id: objectId, geometry: { x, y: 20 } } },
+        ],
+      });
+
+    await expect(review(ids.object, 40)).resolves.toMatchObject({
+      status: "refine",
+      replacementCommands: [
+        {
+          type: "object.move",
+          payload: { objectId: ids.object, x: 64, y: 20 },
+        },
+      ],
+    });
+    await expect(review(ids.object, 64)).resolves.toMatchObject({
+      status: "pass",
+    });
+
+    const secondObjectId = "61000000-0000-4000-8000-000000000002";
+    await expect(review(secondObjectId, 80)).resolves.toMatchObject({
+      status: "refine",
+      replacementCommands: [
+        {
+          type: "object.move",
+          payload: { objectId: secondObjectId, x: 104, y: 20 },
+        },
+      ],
+    });
+    await expect(review(secondObjectId, 104)).resolves.toMatchObject({
+      status: "pass",
+    });
   });
 
   it.each([

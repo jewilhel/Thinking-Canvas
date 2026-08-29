@@ -18,6 +18,7 @@ import {
   type StreamingResponsesClient,
 } from "../src/ai/openai-primary-ai-gateway";
 import { allowedAiToolNames } from "../src/ai/tool-registry";
+import { AI_CANVAS_DESIGN_TOKENS } from "../src/ai/visual-grounding";
 
 const ids = {
   canvas: "00000000-0000-4000-8000-000000000100",
@@ -100,33 +101,63 @@ function buildProjection(fixtureId: string): AiProjectionEnvelope {
   const includedIds = new Set(objectIdsFor(fixtureId));
   const objects = summaries
     .filter(([id]) => includedIds.has(id))
-    .map(([id, summary], index) => ({
-      id,
-      type: index % 2 === 0 ? "sticky_note" : "text",
-      summary,
-      geometry: {
+    .map(([id, summary], index) => {
+      const geometry = {
         x: id === ids.offscreen ? 5_000 : 100 + (index % 4) * 320,
         y: 100 + Math.floor(index / 4) * 220,
         width: 260,
         height: 140,
         rotation: 0,
-      },
-      groupId: null,
-      orderIndex: index,
-      relationshipIds:
-        id === ids.pathA
-          ? [ids.pathB]
-          : id === ids.pathB
-            ? [ids.pathA, ids.pathC]
-            : id === ids.pathC
-              ? [ids.pathB]
-              : [],
-    }));
+      };
+      return {
+        id,
+        type: "shape",
+        summary,
+        geometry,
+        groupId: null,
+        orderIndex: index,
+        relationshipIds:
+          id === ids.pathA
+            ? [ids.pathB]
+            : id === ids.pathB
+              ? [ids.pathA, ids.pathC]
+              : id === ids.pathC
+                ? [ids.pathB]
+                : [],
+        state: {
+          schemaVersion: 2 as const,
+          id,
+          canvasId: ids.canvas,
+          createdBy: ids.user,
+          createdAt: "2026-08-26T12:00:00.000Z",
+          updatedAt: "2026-08-26T12:00:00.000Z",
+          type: "shape" as const,
+          shape: "rectangle" as const,
+          text: summary,
+          geometry,
+          style: {
+            fill: "#ffffff",
+            outline: "#18181b",
+            outlineWidth: 2,
+            fontFamily: "Inter",
+            fontSize: 16,
+            textColor: "#18181b",
+          },
+        },
+        visual: {
+          rotatedBounds: geometry,
+          estimatedTextLines: 2,
+          estimatedTextClipped: false,
+          overlappingObjectIds: [],
+        },
+      };
+    });
   const base = {
-    version: 1 as const,
+    version: 2 as const,
     canvasId: ids.canvas,
     objects,
     commentThreads: [],
+    designTokens: AI_CANVAS_DESIGN_TOKENS,
     truncated: false,
   };
   return {
