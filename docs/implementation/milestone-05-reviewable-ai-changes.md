@@ -1,6 +1,6 @@
 # Milestone 5 — Conversational AI edits with undo
 
-Status: Verification complete — awaiting closure approval
+Status: Closed
 
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 
@@ -505,11 +505,12 @@ Implementation, automated verification, exact-head delivery, and product-owner h
 | 2026-08-28 | Approved and implemented the acceptance-reliability slices discovered during exploratory testing.                                                                               | A successful layout followed by Undo and the same ordinary reply lost part of its ordered context; the reply field and automatically opened history also competed with the active task.                                                                                         | Inherits exact ordered context across replies/retries, filters deterministic layout explanations to actual changes, adds one budgeted pre-mutation provider retry, hides reply composition until completion, separates comment placement from history/settings, and adds exact regression coverage. | Product owner approval        |
 | 2026-08-28 | Repaired repeated world-space layout after Undo and permanent deletion of AI-backed threads.                                                                                    | Hosted acceptance confirmed that the second identical layout turn could still exhaust/fail the provider path, while deleting a thread with paired AI reply references violated an intermediate database constraint.                                                             | Reuses the exact affected set of the completed, undone source turn for one provider-free deterministic `align_and_space` transaction; atomically detaches paired AI audit references before thread deletion while retaining completed audit state; adds unit, pgTAP, and browser regressions.       | Approved delivery/fix scope   |
 | 2026-08-28 | Completed technical verification and product-owner hosted acceptance.                                                                                                           | Exact-head CI, migration delivery, immutable preview readiness, and the remaining authenticated procedures all passed after the final repairs.                                                                                                                                  | Changes the milestone to `Verification complete — awaiting closure approval`; master-plan completion boxes and merge remain unchanged pending their separate approvals.                                                                                                                             | Product owner and engineering |
+| 2026-08-28 | Approved and closed Milestone 5.                                                                                                                                                | After completing the remaining hosted procedures, the product owner authorized merging PR #10 in direct response to the closure request.                                                                                                                                        | Marks the proven replacement requirements, supporting work, exit gates, and `AS-006` complete in the master ledger; superseded guided-review requirements remain unchecked for source traceability.                                                                                                 | Product owner                 |
 
 ## Closure
 
-Closure status: Verification complete — awaiting closure approval
+Closure status: Closed
 
-Closure approval: Pending
+Closure approval: Product owner approved 2026-08-28
 
-Closed on: —
+Closed on: 2026-08-28

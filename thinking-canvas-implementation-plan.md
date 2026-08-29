@@ -1,10 +1,10 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–4 closed; later milestones remain draft
+Status: Milestones 0–5 closed; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-08-26
+Last updated: 2026-08-28
 
 ## Purpose
 
@@ -250,25 +250,27 @@ The following original requirements remain verbatim for source traceability but 
 
 ### Approved replacement requirements
 
-- [ ] **FR-067 — Plain-language AI change summary.** After changing the canvas, the AI replies in ordinary product language describing the visible result without exposing object UUIDs, command names, staging terminology, or other implementation details.
-- [ ] **FR-068 — Atomic AI-turn undo.** Every AI edit turn is one undoable canvas transaction; Undo restores the prior state without reverting unrelated later work or requiring per-object decisions.
-- [ ] **FR-069 — Conversational revision.** A user can request revisions or modifications by replying naturally in the originating comment thread, and the AI applies a new validated transaction against current authorized canvas state.
-- [ ] **FR-070 — Implicit acceptance.** AI edits require no explicit Keep action; leaving the result in place, closing the thread, continuing work, or changing the topic leaves the durable change intact and available through normal history.
-- [ ] **FR-071 — Optional affected-object inspection.** The product may highlight the objects affected by one AI turn as a single set without starting a guided story or requiring object-by-object approval.
+- [x] **FR-067 — Plain-language AI change summary.** After changing the canvas, the AI replies in ordinary product language describing the visible result without exposing object UUIDs, command names, staging terminology, or other implementation details.
+- [x] **FR-068 — Atomic AI-turn undo.** Every AI edit turn is one undoable canvas transaction; Undo restores the prior state without reverting unrelated later work or requiring per-object decisions.
+- [x] **FR-069 — Conversational revision.** A user can request revisions or modifications by replying naturally in the originating comment thread, and the AI applies a new validated transaction against current authorized canvas state.
+- [x] **FR-070 — Implicit acceptance.** AI edits require no explicit Keep action; leaving the result in place, closing the thread, continuing work, or changing the topic leaves the durable change intact and available through normal history.
+- [x] **FR-071 — Optional affected-object inspection.** The product may highlight the objects affected by one AI turn as a single set without starting a guided story or requiring object-by-object approval.
 
 ### Supporting work
 
-- [ ] Expand the versioned semantic canvas projection to include every render-affecting style and layout property required to understand the current composition, including fill, outline, typography, text alignment, object geometry, group/order, connector relationships, computed bounds, and applicable canvas design tokens; keep stable object IDs and server-derived state authoritative.
-- [ ] Add a bounded initial set of deterministic higher-level layout tools for reviewable AI edits—at minimum alignment, distribution, spacing normalization, and resize-to-content—implemented through the same validated domain-command, authorization, idempotency, collaboration, and reversal boundaries as lower-level commands. Defer template-specific composition and broader layout expansion to Milestone 10.
-- [ ] Add targeted before-and-after render captures for visually sensitive AI changes: use an object-plus-context region for direct-object comments and a grounded affected region plus full-canvas orientation image for world-space multi-object comments. Send captures only to an approved vision-capable Responses API model, keep them supplementary to the semantic projection, bound resolution/count/cost, use `store: false`, and do not persist image content in operational logs.
-- [ ] Validate each visually sensitive staged result with deterministic checks for clipping, overlap, contrast, spacing, bounds, and connector integrity, plus a bounded visual-feedback pass before presenting it for human review; never let screenshot interpretation create object IDs, widen comment-defined scope, or bypass server simulation.
+- [x] Expand the versioned semantic canvas projection to include every render-affecting style and layout property required to understand the current composition, including fill, outline, typography, text alignment, object geometry, group/order, connector relationships, computed bounds, and applicable canvas design tokens; keep stable object IDs and server-derived state authoritative.
+- [x] Add a bounded initial set of deterministic higher-level layout tools for reviewable AI edits—at minimum alignment, distribution, spacing normalization, and resize-to-content—implemented through the same validated domain-command, authorization, idempotency, collaboration, and reversal boundaries as lower-level commands. Defer template-specific composition and broader layout expansion to Milestone 10.
+- [x] Add targeted before-and-after render captures for visually sensitive AI changes: use an object-plus-context region for direct-object comments and a grounded affected region plus full-canvas orientation image for world-space multi-object comments. Send captures only to an approved vision-capable Responses API model, keep them supplementary to the semantic projection, bound resolution/count/cost, use `store: false`, and do not persist image content in operational logs.
+- [x] Validate each visually sensitive staged result with deterministic checks for clipping, overlap, contrast, spacing, bounds, and connector integrity, plus a bounded visual-feedback pass before presenting it for human review; never let screenshot interpretation create object IDs, widen comment-defined scope, or bypass server simulation.
 
-Current acceptance hardening also preserves ordered multi-object context across ordinary replies and retries, permits one budgeted provider retry only before canvas mutation, hides reply composition during active AI work, and separates contextual comment placement from the history/settings surface. These behaviors are tracked and verified in the Milestone 5 implementation record; they do not close the milestone until exact-head CI and replacement-preview acceptance pass.
+Current acceptance hardening also preserves ordered multi-object context across ordinary replies and retries, permits one budgeted provider retry only before canvas mutation, hides reply composition during active AI work, and separates contextual comment placement from the history/settings surface. These behaviors and their exact-head CI and replacement-preview acceptance evidence are tracked in the Milestone 5 implementation record.
 
 ### Exit gate
 
-- [ ] Complete the approved **Conversational AI edit with undo** acceptance scenario: a plain-language multi-object change is immediately durable, contains no technical identifiers, can be revised through a normal reply, and can be rolled back as one conflict-safe transaction while preserving an unrelated later human edit.
-- [ ] On the same immutable preview, a visually sensitive single-object change and a world-space multi-object arrangement prove complete semantic style/layout grounding, deterministic layout-tool execution, targeted before/after visual feedback, scope preservation, and human-reviewable results without clipping, unsafe overlap, invalid contrast, or retention of provider capture payloads.
+- [x] Complete the approved **Conversational AI edit with undo** acceptance scenario: a plain-language multi-object change is immediately durable, contains no technical identifiers, can be revised through a normal reply, and can be rolled back as one conflict-safe transaction while preserving an unrelated later human edit.
+- [x] On the same immutable preview, a visually sensitive single-object change and a world-space multi-object arrangement prove complete semantic style/layout grounding, deterministic layout-tool execution, targeted before/after visual feedback, scope preservation, and human-reviewable results without clipping, unsafe overlap, invalid contrast, or retention of provider capture payloads.
+
+Evidence: [Milestone 5 implementation and verification record](docs/implementation/milestone-05-reviewable-ai-changes.md), pull request [#10](https://github.com/jewilhel/Thinking-Canvas/pull/10), protected CI [run `33227548477`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/33227548477) for commit `e23a527`, ready Git-backed Netlify deploy preview `6a923b70e60aa80008b2999c`, the 30-prompt Luna evaluation trace, and product-owner hosted acceptance and closure approval on 2026-08-28.
 
 ## Milestone 6 — Vector annotations
 
@@ -430,7 +432,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [x] **AS-003 — Comment prompt.** A collaborator attaches a yes/no prompt, the recipient answers without typing, and the response appears in the thread.
 - [ ] **AS-004 — Document collaboration.** Rich text, a shape, and an annotation remain inside a document and support comments and AI review without connecting to the parent canvas.
 - [ ] **AS-005 — Guided review.** A multi-change AI review story visits one affected area at a time and provides the correct review controls at each scene. **Superseded for the first version by `PD-012` and `AS-006`; retained verbatim for source traceability.**
-- [ ] **AS-006 — Conversational AI edit with undo.** In the user-facing **Edit with undo** authority mode, an AI applies one plain-language canvas change without exposing technical identifiers; the user can revise it through a normal thread reply or undo the complete AI turn while unrelated later human work remains intact; otherwise no explicit acceptance action is required.
+- [x] **AS-006 — Conversational AI edit with undo.** In the user-facing **Edit with undo** authority mode, an AI applies one plain-language canvas change without exposing technical identifiers; the user can revise it through a normal thread reply or undo the complete AI turn while unrelated later human work remains intact; otherwise no explicit acceptance action is required.
 
 ## Product decisions required before their milestones
 
