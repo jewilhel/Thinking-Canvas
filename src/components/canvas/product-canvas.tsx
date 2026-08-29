@@ -13,6 +13,7 @@ import {
   ListTree,
   LogOut,
   Maximize2,
+  MessageSquareText,
   Minus,
   Plus,
   Share2,
@@ -284,6 +285,7 @@ export function ProductCanvas({
   const [sharedPanel, setSharedPanel] = useState<SharedPanel | null>(null);
   const [sharedPanelInvoker, setSharedPanelInvoker] =
     useState<HTMLButtonElement | null>(null);
+  const [commentPlacementActive, setCommentPlacementActive] = useState(false);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [dragPreviewPositions, setDragPreviewPositions] = useState<
     Record<string, Point>
@@ -641,6 +643,7 @@ export function ProductCanvas({
   }
 
   function chooseTool(nextTool: CanvasTool) {
+    setCommentPlacementActive(false);
     setContextPanel(null);
     setObjectContextMenu(null);
     setTool(nextTool);
@@ -1387,8 +1390,17 @@ export function ProductCanvas({
       return;
     }
     setSharedPanelInvoker(invoker);
+    setCommentPlacementActive(false);
     setContextPanel(null);
     setSharedPanel(panel);
+  }
+
+  function chooseComments() {
+    setContextPanel(null);
+    setObjectContextMenu(null);
+    setSharedPanel(null);
+    setTool("select");
+    setCommentPlacementActive((active) => !active);
   }
 
   function onWheel(event: Konva.KonvaEventObject<WheelEvent>) {
@@ -2304,6 +2316,21 @@ export function ProductCanvas({
           >
             <ListTree aria-hidden="true" />
           </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            aria-label="Open comment history and AI settings"
+            aria-expanded={sharedPanel === "comments"}
+            aria-controls="workspace-shared-panel"
+            title="Comment history and AI settings"
+            className="size-11 border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700"
+            onClick={(event) =>
+              toggleSharedPanel("comments", event.currentTarget)
+            }
+          >
+            <MessageSquareText aria-hidden="true" />
+          </Button>
         </div>
 
         <div className="pointer-events-auto flex max-w-[min(58vw,48rem)] flex-wrap items-center justify-end gap-2 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-2 shadow-[var(--workspace-shadow)] backdrop-blur-xl">
@@ -2401,8 +2428,8 @@ export function ProductCanvas({
         onChooseTool={chooseTool}
         onChooseShape={chooseShape}
         onAddSimulatedAiIdea={addSimulatedAiIdea}
-        commentsPanelOpen={sharedPanel === "comments"}
-        onToggleComments={(invoker) => toggleSharedPanel("comments", invoker)}
+        commentPlacementActive={commentPlacementActive}
+        onChooseComments={chooseComments}
       />
 
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
@@ -2493,8 +2520,9 @@ export function ProductCanvas({
         size={size}
         panelOpen={sharedPanel === "comments"}
         panelInvoker={sharedPanelInvoker}
-        simulatedAiEnabled={simulatedAiEnabled}
+        placementActive={commentPlacementActive}
         onDismissPanel={() => setSharedPanel(null)}
+        onPlacementModeChange={setCommentPlacementActive}
         onAiTransactionApplied={registerAiTransaction}
         onUndoAiTransaction={undoAiTransaction}
         onSelectTargets={(targetIds) => {

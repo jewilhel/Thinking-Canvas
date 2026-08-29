@@ -63,8 +63,9 @@ type Props = {
   size: { width: number; height: number };
   panelOpen: boolean;
   panelInvoker: HTMLButtonElement | null;
-  simulatedAiEnabled: boolean;
+  placementActive: boolean;
   onDismissPanel: () => void;
+  onPlacementModeChange: (active: boolean) => void;
   onSelectTargets: (targetIds: string[]) => void;
   onAiTransactionApplied: (changeSetId: string) => void;
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
@@ -738,6 +739,8 @@ function ThreadBody({
         ) === index,
     )
     .reverse();
+  const latestRun = latestRuns.at(-1);
+  const replyReady = !latestRun || latestRun.status === "completed";
   return (
     <>
       <div className="flex items-start gap-3">
@@ -1006,7 +1009,10 @@ function ThreadBody({
             </div>
           );
         })}
-      {thread.status === "open" && canComment && !thread.prompt ? (
+      {thread.status === "open" &&
+      canComment &&
+      !thread.prompt &&
+      replyReady ? (
         <form
           className="group mt-4 w-full rounded-2xl bg-zinc-100 p-3"
           onSubmit={(event) => {
@@ -1125,7 +1131,9 @@ export function CanvasComments({
   size,
   panelOpen,
   panelInvoker,
+  placementActive,
   onDismissPanel,
+  onPlacementModeChange,
   onSelectTargets,
   onAiTransactionApplied,
   onUndoAiTransaction,
@@ -1153,7 +1161,6 @@ export function CanvasComments({
   );
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [placementMode, setPlacementMode] = useState(false);
   const [composerTarget, setComposerTarget] = useState<CommentTarget | null>(
     null,
   );
@@ -1166,7 +1173,6 @@ export function CanvasComments({
   const placementRef = useRef<HTMLButtonElement>(null);
   const composerCardRef = useRef<HTMLDivElement>(null);
   const threadCardRef = useRef<HTMLDivElement>(null);
-  const panelWasOpenRef = useRef(panelOpen);
   const objectsById = useMemo(
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
@@ -1185,19 +1191,9 @@ export function CanvasComments({
     if (composerOpen) requestAnimationFrame(() => composerRef.current?.focus());
   }, [composerOpen]);
   useEffect(() => {
-    if (placementMode)
+    if (placementActive)
       requestAnimationFrame(() => placementRef.current?.focus());
-  }, [placementMode]);
-  useEffect(() => {
-    if (panelOpen && !panelWasOpenRef.current && canComment) {
-      setSelectedThreadId(null);
-      closeComposer();
-      setPlacementMode(true);
-    } else if (!panelOpen && panelWasOpenRef.current) {
-      setPlacementMode(false);
-    }
-    panelWasOpenRef.current = panelOpen;
-  }, [canComment, panelOpen]);
+  }, [placementActive]);
   useEffect(() => {
     if (!selectedThreadId) return;
 
@@ -1256,11 +1252,13 @@ export function CanvasComments({
   function beginComment() {
     setSelectedThreadId(null);
     closeComposer();
-    setPlacementMode(true);
+    onDismissPanel();
+    onPlacementModeChange(true);
   }
 
   function focusThread(threadId: string) {
     if (panelOpen) onDismissPanel();
+    onPlacementModeChange(false);
     onSelectTargets([]);
     setSelectedThreadId(threadId);
   }
@@ -1291,7 +1289,7 @@ export function CanvasComments({
       canvasAnchor: object ? null : canvasPoint,
     });
     if (panelOpen) onDismissPanel();
-    setPlacementMode(false);
+    onPlacementModeChange(false);
     setComposerOpen(true);
   }
 
@@ -1455,7 +1453,7 @@ export function CanvasComments({
 
   return (
     <>
-      {placementMode ? (
+      {placementActive ? (
         <button
           ref={placementRef}
           type="button"
@@ -1465,7 +1463,7 @@ export function CanvasComments({
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();
-              setPlacementMode(false);
+              onPlacementModeChange(false);
             }
           }}
         >
@@ -1475,7 +1473,7 @@ export function CanvasComments({
         </button>
       ) : null}
 
-      {selectedThread ? (
+      {!placementActive && selectedThread ? (
         <div
           aria-hidden="true"
           data-testid="comment-focus-shield"
@@ -1500,7 +1498,7 @@ export function CanvasComments({
                   className={`group absolute z-30 flex h-[3.25rem] w-[3.25rem] items-center gap-3 overflow-hidden rounded-[999px_999px_999px_0.55rem] border border-transparent bg-transparent p-2 text-left text-violet-500 shadow-md transition-[width,height,border-color,background-color,border-radius,box-shadow] duration-200 ease-out focus-visible:ring-3 focus-visible:ring-violet-500 focus-visible:outline-none motion-reduce:transition-none ${previewEnabled ? "hover:h-24 hover:w-80 hover:rounded-[1.5rem_1.5rem_1.5rem_0.55rem] hover:border-zinc-200 hover:bg-white hover:shadow-xl focus-visible:h-24 focus-visible:w-80 focus-visible:rounded-[1.5rem_1.5rem_1.5rem_0.55rem] focus-visible:border-zinc-200 focus-visible:bg-white" : ""}`}
                   style={markerStyle}
                   onClick={() => {
-                    setPlacementMode(false);
+                    onPlacementModeChange(false);
                     closeComposer();
                     focusThread(thread.id);
                   }}
@@ -1538,7 +1536,8 @@ export function CanvasComments({
             })
         : null}
 
-      {composerOpen &&
+      {!placementActive &&
+      composerOpen &&
       composerTarget &&
       composerPosition &&
       composerCardPosition ? (
@@ -1623,7 +1622,10 @@ export function CanvasComments({
         </div>
       ) : null}
 
-      {selectedThread && threadPosition && threadCardPosition ? (
+      {!placementActive &&
+      selectedThread &&
+      threadPosition &&
+      threadCardPosition ? (
         <div
           ref={threadCardRef}
           role="dialog"
@@ -1679,7 +1681,7 @@ export function CanvasComments({
           <div className="flex flex-wrap gap-2">
             <Button type="button" disabled={!canComment} onClick={beginComment}>
               <MessageCircle aria-hidden="true" />
-              {placementMode ? "Click canvas…" : "New comment"}
+              {placementActive ? "Click canvas…" : "New comment"}
             </Button>
             <Button
               type="button"
@@ -1784,7 +1786,7 @@ export function CanvasComments({
                   className="flex w-full items-start gap-3 rounded-xl border border-zinc-200 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50"
                   onClick={() => {
                     setVisible(true);
-                    setPlacementMode(false);
+                    onPlacementModeChange(false);
                     closeComposer();
                     focusThread(thread.id);
                   }}

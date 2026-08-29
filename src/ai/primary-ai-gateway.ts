@@ -60,3 +60,38 @@ export interface PrimaryAiGateway {
     model: string;
   }>;
 }
+
+export const AI_PROVIDER_ATTEMPT_LIMIT = 2;
+
+export async function requestPrimaryAiWithRetry(
+  gateway: PrimaryAiGateway,
+  input: Parameters<PrimaryAiGateway["request"]>[0],
+) {
+  let result: PrimaryAiGatewayResult | null = null;
+  let lastError: unknown;
+
+  for (
+    let attemptCount = 1;
+    attemptCount <= AI_PROVIDER_ATTEMPT_LIMIT;
+    attemptCount += 1
+  ) {
+    try {
+      result = await gateway.request(input);
+      if (
+        result.status !== "failed" ||
+        attemptCount === AI_PROVIDER_ATTEMPT_LIMIT
+      ) {
+        return { result, attemptCount };
+      }
+    } catch (error) {
+      if (input.signal?.aborted || attemptCount === AI_PROVIDER_ATTEMPT_LIMIT) {
+        throw error;
+      }
+      lastError = error;
+    }
+  }
+
+  if (lastError) throw lastError;
+  if (!result) throw new Error("The AI provider did not return a result.");
+  return { result, attemptCount: AI_PROVIDER_ATTEMPT_LIMIT };
+}

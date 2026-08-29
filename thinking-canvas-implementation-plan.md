@@ -263,6 +263,8 @@ The following original requirements remain verbatim for source traceability but 
 - [ ] Add targeted before-and-after render captures for visually sensitive AI changes: use an object-plus-context region for direct-object comments and a grounded affected region plus full-canvas orientation image for world-space multi-object comments. Send captures only to an approved vision-capable Responses API model, keep them supplementary to the semantic projection, bound resolution/count/cost, use `store: false`, and do not persist image content in operational logs.
 - [ ] Validate each visually sensitive staged result with deterministic checks for clipping, overlap, contrast, spacing, bounds, and connector integrity, plus a bounded visual-feedback pass before presenting it for human review; never let screenshot interpretation create object IDs, widen comment-defined scope, or bypass server simulation.
 
+Current acceptance hardening also preserves ordered multi-object context across ordinary replies and retries, permits one budgeted provider retry only before canvas mutation, hides reply composition during active AI work, and separates contextual comment placement from the history/settings surface. These behaviors are tracked and verified in the Milestone 5 implementation record; they do not close the milestone until exact-head CI and replacement-preview acceptance pass.
+
 ### Exit gate
 
 - [ ] Complete the approved **Conversational AI edit with undo** acceptance scenario: a plain-language multi-object change is immediately durable, contains no technical identifiers, can be revised through a normal reply, and can be rolled back as one conflict-safe transaction while preserving an unrelated later human edit.

@@ -18,7 +18,11 @@ import {
   createPrimaryAiGateway,
   parsePrimaryAiProviderEnvironment,
 } from "@/ai/primary-ai-gateway-factory";
-import { AiProviderOutputError } from "@/ai/primary-ai-gateway";
+import {
+  AI_PROVIDER_ATTEMPT_LIMIT,
+  AiProviderOutputError,
+  requestPrimaryAiWithRetry,
+} from "@/ai/primary-ai-gateway";
 import { estimateAiInputTokens } from "@/ai/run-budgets";
 import { AI_RUN_STALE_AFTER_MS, throwIfAiRunAborted } from "@/ai/run-deadline";
 import { listCanvasObjectsV2 } from "@/canvas/canvas-document";
@@ -312,16 +316,24 @@ export async function completeAiRun(
     serializedBytes,
   });
   const providerConfig = parsePrimaryAiProviderEnvironment(process.env);
+  const estimatedInputTokens = estimateAiInputTokens({
+    instruction,
+    projectionSerializedBytes: projection.serializedBytes,
+  });
   const reservationResult = await createServiceClient().rpc(
     "reserve_ai_run_budget",
     {
       target_run_id: run.id,
       target_requester_id: run.requested_by,
-      target_input_tokens: estimateAiInputTokens({
-        instruction,
-        projectionSerializedBytes: projection.serializedBytes,
-      }),
-      target_output_tokens: providerConfig.OPENAI_RESPONSES_MAX_OUTPUT_TOKENS,
+      target_input_tokens: Math.min(
+        1_000_000,
+        estimatedInputTokens * AI_PROVIDER_ATTEMPT_LIMIT,
+      ),
+      target_output_tokens: Math.min(
+        16_000,
+        providerConfig.OPENAI_RESPONSES_MAX_OUTPUT_TOKENS *
+          AI_PROVIDER_ATTEMPT_LIMIT,
+      ),
     },
   );
   if (reservationResult.error || !reservationResult.data?.[0]) {
@@ -347,35 +359,36 @@ export async function completeAiRun(
   });
   throwIfAiRunAborted(options.signal);
   const gateway = createPrimaryAiGateway();
-  const gatewayResult = await gateway.request({
-    invocation: {
-      runId: run.id,
-      canvasId: run.canvas_id,
-      commentId: run.invoking_comment_id,
-      replyId: run.invoking_reply_id,
-      requestedBy: run.requested_by,
-      idempotencyKey: run.idempotency_key,
-      authority: currentAuthority,
-      instruction,
-      selectedPathIds: run.ordered_context_ids,
-      reviewContext: {
-        kind: reviewScope.kind,
-        objectIds: reviewScope.objectIds,
-        canvasAnchor:
-          commentResult.data.anchor_x !== null &&
-          commentResult.data.anchor_y !== null
-            ? {
-                x: commentResult.data.anchor_x,
-                y: commentResult.data.anchor_y,
-              }
-            : null,
+  const { result: gatewayResult, attemptCount: providerAttemptCount } =
+    await requestPrimaryAiWithRetry(gateway, {
+      invocation: {
+        runId: run.id,
+        canvasId: run.canvas_id,
+        commentId: run.invoking_comment_id,
+        replyId: run.invoking_reply_id,
+        requestedBy: run.requested_by,
+        idempotencyKey: run.idempotency_key,
+        authority: currentAuthority,
+        instruction,
+        selectedPathIds: run.ordered_context_ids,
+        reviewContext: {
+          kind: reviewScope.kind,
+          objectIds: reviewScope.objectIds,
+          canvasAnchor:
+            commentResult.data.anchor_x !== null &&
+            commentResult.data.anchor_y !== null
+              ? {
+                  x: commentResult.data.anchor_x,
+                  y: commentResult.data.anchor_y,
+                }
+              : null,
+        },
       },
-    },
-    projection,
-    allowedToolNames,
-    scenario: options.scenario,
-    signal: options.signal,
-  });
+      projection,
+      allowedToolNames,
+      scenario: options.scenario,
+      signal: options.signal,
+    });
   if (gatewayResult.status !== "completed") {
     throw new AiRunConflictError("The AI collaborator run did not complete.");
   }
@@ -623,12 +636,18 @@ export async function completeAiRun(
         scope: reviewScope,
         changes: reviewStage.objectChanges,
       });
-      const explanations =
+      const requestedExplanations =
         "shapes" in toolArguments
           ? newShapeStage!.explanations
           : "connectors" in toolArguments
             ? newConnectorStage!.explanations
             : toolArguments.explanations;
+      const explanations =
+        "layout" in toolArguments
+          ? requestedExplanations.filter((explanation) =>
+              reviewStage.affectedObjectIds.includes(explanation.objectId),
+            )
+          : requestedExplanations;
       let explainedChanges = validateReviewExplanations({
         reviewStage,
         explanations,
@@ -933,6 +952,7 @@ export async function completeAiRun(
       inspectionTools: ["inspect_canvas_objects", "inspect_comment_threads"],
       allowedTools: allowedToolNames,
       providerTelemetry: gatewayResult.telemetry ?? null,
+      providerAttemptCount,
       contextualTools: contextualToolResults,
       proposalTools: proposalToolResults,
       reviewStageTools: reviewStageToolResults,

@@ -269,13 +269,11 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
 
   await page.getByRole("button", { name: "Comments", exact: true }).click();
   await expect(
-    page.getByText(
-      "Attach feedback to a selection, an object, or anywhere on the canvas.",
-    ),
-  ).toBeVisible();
-  await expect(
     page.getByRole("button", { name: "Place comment on canvas" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "Comments" }),
+  ).not.toBeVisible();
   await expect(
     page.getByRole("button", { name: "Comments", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -323,8 +321,7 @@ test("uses dismissible responsive panels with focus containment, help, and true 
   await expect(objectInvoker).toBeFocused();
 
   const commentsInvoker = page.getByRole("button", {
-    name: "Comments",
-    exact: true,
+    name: "Open comment history and AI settings",
   });
   const pendingCountBeforeComments = await page
     .getByTestId("product-pending-count")
@@ -342,10 +339,6 @@ test("uses dismissible responsive panels with focus containment, help, and true 
   );
   const commentsAccessibility = await new AxeBuilder({ page }).analyze();
   expect(commentsAccessibility.violations).toEqual([]);
-  await page.keyboard.press("Escape");
-  await expect(
-    page.getByRole("button", { name: "Place comment on canvas" }),
-  ).not.toBeVisible();
   await page.getByRole("button", { name: "Close Comments" }).click();
   await expect(commentsPanel).not.toBeVisible();
   await expect(commentsInvoker).toBeFocused();
@@ -470,8 +463,7 @@ test("two product canvases converge after concurrent work and a disconnected edi
   await Promise.all(
     [owner, editor].map(async (page) => {
       const comments = page.getByRole("button", {
-        name: "Comments",
-        exact: true,
+        name: "Open comment history and AI settings",
       });
       await comments.click();
       const hideMarkers = page.getByRole("button", { name: "Hide markers" });

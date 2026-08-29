@@ -53,7 +53,13 @@ export async function POST(
         send(result);
       } catch (error) {
         const errorCode = privacySafeAiRunErrorCode(error);
-        console.error("AI collaborator run failed.", { errorCode });
+        console.error("AI collaborator run failed.", {
+          errorCode,
+          errorName: error instanceof Error ? error.name : "UnknownError",
+          ...(process.env.NODE_ENV !== "production" && error instanceof Error
+            ? { errorMessage: error.message }
+            : {}),
+        });
         const failure = await failAiRun(parsed.data.runId, errorCode).catch(
           () => undefined,
         );

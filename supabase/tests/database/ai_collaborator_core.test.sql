@@ -1780,6 +1780,81 @@ select results_eq(
 );
 
 select results_eq(
+  $$select created, ai_run_id is not null
+    from public.create_comment_thread(
+      '20000000-0000-4000-8000-000000000001',
+      '83000000-0000-4000-8000-000000000090',
+      'Straighten these up and give them even breathing room.',
+      array['61000000-0000-4000-8000-000000000001']::uuid[],
+      null,
+      'human',
+      null,
+      null,
+      null,
+      null,
+      true,
+      array[
+        '61000000-0000-4000-8000-000000000001',
+        '61000000-0000-4000-8000-000000000002'
+      ]::uuid[]
+    )$$,
+  $$values (true, true)$$,
+  'a multi-object AI turn stores its ordered selection context'
+);
+
+select results_eq(
+  $$select created, ai_run_id is not null
+    from public.create_comment_reply(
+      (select id from public.comments where client_command_id = '83000000-0000-4000-8000-000000000090'),
+      '83000000-0000-4000-8000-000000000091',
+      'Straighten these up and give them even breathing room again.'
+    )$$,
+  $$values (true, true)$$,
+  'an inherited reply enqueues another AI run in the multi-object thread'
+);
+
+select results_eq(
+  $$select ordered_context_ids
+    from public.ai_runs
+    where idempotency_key = '83000000-0000-4000-8000-000000000091'$$,
+  $$values (array[
+    '61000000-0000-4000-8000-000000000001',
+    '61000000-0000-4000-8000-000000000002'
+  ]::uuid[])$$,
+  'the inherited reply preserves the original ordered multi-object context'
+);
+
+select results_eq(
+  $$select status::text
+    from public.cancel_ai_run(
+      (select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000091')
+    )$$,
+  $$values ('cancelled'::text)$$,
+  'the inherited multi-object reply run can be cancelled before retry'
+);
+
+select results_eq(
+  $$select status::text, created
+    from public.retry_ai_run(
+      (select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000091'),
+      '83000000-0000-4000-8000-000000000092'
+    )$$,
+  $$values ('queued'::text, true)$$,
+  'a retry is queued for the inherited multi-object request'
+);
+
+select results_eq(
+  $$select ordered_context_ids
+    from public.ai_runs
+    where idempotency_key = '83000000-0000-4000-8000-000000000092'$$,
+  $$values (array[
+    '61000000-0000-4000-8000-000000000001',
+    '61000000-0000-4000-8000-000000000002'
+  ]::uuid[])$$,
+  'a retry repairs and preserves the inherited ordered multi-object context'
+);
+
+select results_eq(
   $$select status::text
     from public.start_ai_run(
       (select id from public.ai_runs where idempotency_key = '83000000-0000-4000-8000-000000000013')
