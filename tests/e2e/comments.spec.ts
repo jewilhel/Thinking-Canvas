@@ -1276,21 +1276,10 @@ test("repeats an inherited multi-object layout request after undo", async ({
   await surface.click({ position: { x: 730, y: 330 } });
   await expect(page.getByTestId("product-object-count")).toHaveText("3");
 
-  await page.getByRole("button", { name: "Select", exact: true }).click();
-  await surface.click({ position: { x: 500, y: 330 } });
-  await surface.click({
-    position: { x: 730, y: 330 },
-    modifiers: ["Shift"],
-  });
-  await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
-
   await configurePrimaryAi(page, "edit_with_review");
   await page.getByRole("button", { name: "Comments", exact: true }).click();
-  await placeArmedComment(page, { x: 500, y: 330 });
+  await placeArmedComment(page, { x: 820, y: 620 });
   const composer = page.getByRole("dialog", { name: "New comment" });
-  await expect(
-    composer.getByText("AI path context: 2 objects in selection order"),
-  ).toBeVisible();
   const comment = composer.getByRole("textbox", {
     name: "Comment",
     exact: true,
@@ -1331,6 +1320,13 @@ test("repeats an inherited multi-object layout request after undo", async ({
   await expect(
     thread.getByRole("button", { name: "Undo AI change" }),
   ).toHaveCount(1);
+
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("cannot be undone");
+    await dialog.accept();
+  });
+  await thread.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(thread).not.toBeVisible();
 });
 
 test("keeps an unconnected ordered-path request and reports the path error inline", async ({

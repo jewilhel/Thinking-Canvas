@@ -210,7 +210,7 @@ export const AI_TOOL_REGISTRY = {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
-      "Compute and immediately apply one deterministic alignment, distribution, spacing, or resize-to-content operation as a single undoable AI transaction.",
+      "Compute and immediately apply one deterministic alignment, distribution, spacing, compound align-and-space, or resize-to-content operation as a single undoable AI transaction.",
     argumentsSchema: reviewLayoutArgumentsSchema,
   },
   stage_new_shapes: {

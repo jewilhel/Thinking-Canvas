@@ -41,6 +41,12 @@ export const deterministicLayoutRequestSchema = z.discriminatedUnion(
       spacing: z.number().finite().min(0).max(2_000).optional(),
     }),
     z.strictObject({
+      operation: z.literal("align_and_space"),
+      objectIds: uniqueIds.min(2),
+      axis: z.enum(["horizontal", "vertical"]),
+      spacing: z.number().finite().min(0).max(2_000).optional(),
+    }),
+    z.strictObject({
       operation: z.literal("resize_to_content"),
       objectIds: uniqueIds,
     }),
@@ -198,6 +204,42 @@ function normalizeSpacing(
   });
 }
 
+function alignAndSpace(
+  objects: CanvasObjectV2[],
+  axis: "horizontal" | "vertical",
+  spacing: number,
+) {
+  const primaryPosition = (object: CanvasObjectV2) =>
+    axis === "horizontal" ? object.geometry.x : object.geometry.y;
+  const primarySize = (object: CanvasObjectV2) =>
+    axis === "horizontal" ? object.geometry.width : object.geometry.height;
+  const crossCenter =
+    objects.reduce(
+      (sum, object) =>
+        sum +
+        (axis === "horizontal"
+          ? object.geometry.y + object.geometry.height / 2
+          : object.geometry.x + object.geometry.width / 2),
+      0,
+    ) / objects.length;
+  const ordered = [...objects].sort(
+    (left, right) =>
+      primaryPosition(left) - primaryPosition(right) ||
+      left.id.localeCompare(right.id),
+  );
+  let cursor = primaryPosition(ordered[0]!);
+
+  return ordered.flatMap((object) => {
+    const x =
+      axis === "horizontal" ? cursor : crossCenter - object.geometry.width / 2;
+    const y =
+      axis === "vertical" ? cursor : crossCenter - object.geometry.height / 2;
+    const commands = moveCommand(object, x, y);
+    cursor += primarySize(object) + spacing;
+    return commands;
+  });
+}
+
 function contentText(object: CanvasObjectV2) {
   if (object.type === "shape" || object.type === "text") return object.text;
   if (object.type === "table")
@@ -262,7 +304,13 @@ export function planDeterministicLayout(input: {
               request.axis,
               request.spacing ?? AI_CANVAS_DESIGN_TOKENS.preferredSpacing,
             )
-          : resizeToContent(targets);
+          : request.operation === "align_and_space"
+            ? alignAndSpace(
+                targets,
+                request.axis,
+                request.spacing ?? AI_CANVAS_DESIGN_TOKENS.preferredSpacing,
+              )
+            : resizeToContent(targets);
   if (!commands.length) {
     throw new DeterministicLayoutError(
       "The requested layout already matches the deterministic result.",

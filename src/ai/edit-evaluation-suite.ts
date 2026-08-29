@@ -32,7 +32,13 @@ const expectedOutcomeSchema = z.discriminatedUnion("kind", [
     ]),
     exactItemCount: z.number().int().positive().optional(),
     layoutOperation: z
-      .enum(["align", "distribute", "normalize_spacing", "resize_to_content"])
+      .enum([
+        "align",
+        "distribute",
+        "normalize_spacing",
+        "align_and_space",
+        "resize_to_content",
+      ])
       .optional(),
     background: z.boolean().default(false),
     closedLoop: z.boolean().default(false),

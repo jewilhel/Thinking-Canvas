@@ -2086,6 +2086,49 @@ insert into public.ai_runs (
   '{"evidence":[{"objectId":"61000000-0000-4000-8000-000000000001","label":"Private label"}]}'::jsonb
 );
 
+insert into public.comment_replies (
+  id, comment_id, author_id, author_kind, author_key,
+  client_command_id, command_fingerprint, body
+) values
+  (
+    '84000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000003',
+    'human',
+    '10000000-0000-4000-8000-000000000003',
+    '84000000-0000-4000-8000-000000000011',
+    repeat('a', 64),
+    'Please repeat the change.'
+  ),
+  (
+    '84000000-0000-4000-8000-000000000002',
+    '30000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000003',
+    'ai',
+    'primary-ai',
+    '84000000-0000-4000-8000-000000000012',
+    repeat('b', 64),
+    'I repeated the change.'
+  );
+
+insert into public.ai_runs (
+  id, canvas_id, invoking_comment_id, invoking_reply_id,
+  output_comment_id, output_reply_id, requested_by, idempotency_key,
+  model, authority_snapshot, status
+) values (
+  '80000000-0000-4000-8000-000000000002',
+  '20000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000001',
+  '84000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000001',
+  '84000000-0000-4000-8000-000000000002',
+  '10000000-0000-4000-8000-000000000003',
+  '81000000-0000-4000-8000-000000000002',
+  'fake-deterministic',
+  'comment_only',
+  'completed'
+);
+
 insert into public.ai_tool_executions (
   id,
   run_id,
@@ -2181,6 +2224,21 @@ select results_eq(
     false
   )$$,
   'thread deletion cancels in-flight work and clears content-bearing linkage and evidence labels while retaining privacy-safe audit facts'
+);
+
+select results_eq(
+  $$select invoking_comment_id, invoking_reply_id, output_comment_id,
+      output_reply_id, status::text, error_code
+    from public.ai_runs where id = '80000000-0000-4000-8000-000000000002'$$,
+  $$values (
+    null::uuid,
+    null::uuid,
+    null::uuid,
+    null::uuid,
+    'completed'::text,
+    null::text
+  )$$,
+  'thread deletion safely detaches completed reply and output references while retaining the completed audit row'
 );
 
 select * from finish();

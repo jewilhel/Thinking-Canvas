@@ -25,6 +25,10 @@ import {
 } from "@/ai/primary-ai-gateway";
 import { estimateAiInputTokens } from "@/ai/run-budgets";
 import { AI_RUN_STALE_AFTER_MS, throwIfAiRunAborted } from "@/ai/run-deadline";
+import {
+  buildRepeatedLayoutResult,
+  isRepeatedStraightenAndSpaceRequest,
+} from "@/ai/repeat-layout-continuity";
 import { listCanvasObjectsV2 } from "@/canvas/canvas-document";
 import {
   buildCanvasObjectDetails,
@@ -82,6 +86,63 @@ const runRequestSchema = z.strictObject({
   runId: z.uuid(),
   canvasId: z.uuid(),
 });
+
+async function repeatedLayoutContinuity(input: {
+  runId: string;
+  commentId: string;
+  invokingReplyId: string | null;
+  instruction: string;
+  sourceInstruction: string;
+  sourceObjects: ReturnType<typeof listCanvasObjectsV2>;
+}) {
+  if (
+    !input.invokingReplyId ||
+    !isRepeatedStraightenAndSpaceRequest({
+      instruction: input.instruction,
+      sourceInstruction: input.sourceInstruction,
+    })
+  ) {
+    return null;
+  }
+
+  const service = createServiceClient();
+  const priorRun = await service
+    .from("ai_runs")
+    .select("id")
+    .eq("invoking_comment_id", input.commentId)
+    .is("invoking_reply_id", null)
+    .eq("status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (priorRun.error || !priorRun.data) return null;
+
+  const priorChangeSet = await service
+    .from("ai_change_sets")
+    .select("id")
+    .eq("ai_run_id", priorRun.data.id)
+    .not("transaction_undone_at", "is", null)
+    .order("transaction_undone_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (priorChangeSet.error || !priorChangeSet.data) return null;
+
+  const priorChanges = await service
+    .from("ai_object_changes")
+    .select("object_id")
+    .eq("change_set_id", priorChangeSet.data.id)
+    .order("created_at", { ascending: true });
+  if (priorChanges.error) return null;
+  const objectsById = new Map(
+    input.sourceObjects.map((object) => [object.id, object]),
+  );
+  const objects = (priorChanges.data ?? []).flatMap((change) => {
+    const object = objectsById.get(change.object_id);
+    return object ? [object] : [];
+  });
+  if (objects.length !== (priorChanges.data ?? []).length) return null;
+  return buildRepeatedLayoutResult({ runId: input.runId, objects });
+}
 
 export async function completeAiRun(
   input: unknown,
@@ -315,80 +376,97 @@ export async function completeAiRun(
     ...projectionBase,
     serializedBytes,
   });
-  const providerConfig = parsePrimaryAiProviderEnvironment(process.env);
-  const estimatedInputTokens = estimateAiInputTokens({
+  const continuityResult = await repeatedLayoutContinuity({
+    runId: run.id,
+    commentId: run.invoking_comment_id,
+    invokingReplyId: run.invoking_reply_id,
     instruction,
-    projectionSerializedBytes: projection.serializedBytes,
+    sourceInstruction: commentResult.data.body,
+    sourceObjects,
   });
-  const reservationResult = await createServiceClient().rpc(
-    "reserve_ai_run_budget",
-    {
-      target_run_id: run.id,
-      target_requester_id: run.requested_by,
-      target_input_tokens: Math.min(
-        1_000_000,
-        estimatedInputTokens * AI_PROVIDER_ATTEMPT_LIMIT,
-      ),
-      target_output_tokens: Math.min(
-        16_000,
-        providerConfig.OPENAI_RESPONSES_MAX_OUTPUT_TOKENS *
-          AI_PROVIDER_ATTEMPT_LIMIT,
-      ),
-    },
-  );
-  if (reservationResult.error || !reservationResult.data?.[0]) {
-    const message =
-      reservationResult.error?.message ??
-      "The AI request budget is unavailable.";
-    if (reservationResult.error?.code === "P0001") {
-      throw new AiRunLimitError(message);
-    }
-    throw new AiRunConflictError(message);
-  }
   options.onStatus?.("thinking");
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(resolve, 1_200);
-    options.signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timeout);
-        reject(new DOMException("The AI run was cancelled.", "AbortError"));
-      },
-      { once: true },
-    );
-  });
-  throwIfAiRunAborted(options.signal);
+  let gatewayResult = continuityResult;
+  let providerAttemptCount = 0;
   const gateway = createPrimaryAiGateway();
-  const { result: gatewayResult, attemptCount: providerAttemptCount } =
-    await requestPrimaryAiWithRetry(gateway, {
-      invocation: {
-        runId: run.id,
-        canvasId: run.canvas_id,
-        commentId: run.invoking_comment_id,
-        replyId: run.invoking_reply_id,
-        requestedBy: run.requested_by,
-        idempotencyKey: run.idempotency_key,
-        authority: currentAuthority,
-        instruction,
-        selectedPathIds: run.ordered_context_ids,
-        reviewContext: {
-          kind: reviewScope.kind,
-          objectIds: reviewScope.objectIds,
-          canvasAnchor:
-            commentResult.data.anchor_x !== null &&
-            commentResult.data.anchor_y !== null
-              ? {
-                  x: commentResult.data.anchor_x,
-                  y: commentResult.data.anchor_y,
-                }
-              : null,
-        },
+  const reviewVisualChange = continuityResult
+    ? undefined
+    : gateway.reviewVisualChange?.bind(gateway);
+  const gatewayInput = {
+    invocation: {
+      runId: run.id,
+      canvasId: run.canvas_id,
+      commentId: run.invoking_comment_id,
+      replyId: run.invoking_reply_id,
+      requestedBy: run.requested_by,
+      idempotencyKey: run.idempotency_key,
+      authority: currentAuthority,
+      instruction,
+      selectedPathIds: run.ordered_context_ids,
+      reviewContext: {
+        kind: reviewScope.kind,
+        objectIds: reviewScope.objectIds,
+        canvasAnchor:
+          commentResult.data.anchor_x !== null &&
+          commentResult.data.anchor_y !== null
+            ? {
+                x: commentResult.data.anchor_x,
+                y: commentResult.data.anchor_y,
+              }
+            : null,
       },
-      projection,
-      allowedToolNames,
-      scenario: options.scenario,
-      signal: options.signal,
+    },
+    projection,
+    allowedToolNames,
+    scenario: options.scenario,
+    signal: options.signal,
+  };
+  if (!gatewayResult) {
+    const providerConfig = parsePrimaryAiProviderEnvironment(process.env);
+    const estimatedInputTokens = estimateAiInputTokens({
+      instruction,
+      projectionSerializedBytes: projection.serializedBytes,
     });
+    const reservationResult = await createServiceClient().rpc(
+      "reserve_ai_run_budget",
+      {
+        target_run_id: run.id,
+        target_requester_id: run.requested_by,
+        target_input_tokens: Math.min(
+          1_000_000,
+          estimatedInputTokens * AI_PROVIDER_ATTEMPT_LIMIT,
+        ),
+        target_output_tokens: Math.min(
+          16_000,
+          providerConfig.OPENAI_RESPONSES_MAX_OUTPUT_TOKENS *
+            AI_PROVIDER_ATTEMPT_LIMIT,
+        ),
+      },
+    );
+    if (reservationResult.error || !reservationResult.data?.[0]) {
+      const message =
+        reservationResult.error?.message ??
+        "The AI request budget is unavailable.";
+      if (reservationResult.error?.code === "P0001") {
+        throw new AiRunLimitError(message);
+      }
+      throw new AiRunConflictError(message);
+    }
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(resolve, 1_200);
+      options.signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timeout);
+          reject(new DOMException("The AI run was cancelled.", "AbortError"));
+        },
+        { once: true },
+      );
+    });
+    throwIfAiRunAborted(options.signal);
+    const requested = await requestPrimaryAiWithRetry(gateway, gatewayInput);
+    gatewayResult = requested.result;
+    providerAttemptCount = requested.attemptCount;
+  }
   if (gatewayResult.status !== "completed") {
     throw new AiRunConflictError("The AI collaborator run did not complete.");
   }
@@ -697,7 +775,7 @@ export async function completeAiRun(
               label: "after",
             }),
           ]);
-        const visualReview = await gateway.reviewVisualChange?.({
+        const visualReview = await reviewVisualChange?.({
           instruction,
           targetObjectIds: reviewStage.affectedObjectIds,
           beforeImageDataUrl: beforeCapture.dataUrl,
@@ -771,7 +849,7 @@ export async function completeAiRun(
               }),
             ],
           );
-          const confirmation = await gateway.reviewVisualChange?.({
+          const confirmation = await reviewVisualChange?.({
             instruction,
             targetObjectIds: refinedStage.affectedObjectIds,
             beforeImageDataUrl: beforeCapture.dataUrl,

@@ -86,6 +86,38 @@ describe("deterministic AI layout tools", () => {
     ]);
   });
 
+  it("straightens and spaces targets in one deterministic operation", () => {
+    const objects = [
+      shape(ids[0], 0, 0),
+      shape(ids[1], 260, 80),
+      shape(ids[2], 520, 20),
+    ];
+    expect(
+      planDeterministicLayout({
+        objects,
+        request: {
+          operation: "align_and_space",
+          objectIds: [...ids],
+          axis: "horizontal",
+          spacing: 24,
+        },
+      }),
+    ).toEqual([
+      {
+        type: "object.move",
+        payload: { objectId: ids[0], x: 0, y: 100 / 3 },
+      },
+      {
+        type: "object.move",
+        payload: { objectId: ids[1], x: 124, y: 100 / 3 },
+      },
+      {
+        type: "object.move",
+        payload: { objectId: ids[2], x: 248, y: 100 / 3 },
+      },
+    ]);
+  });
+
   it("rejects missing targets instead of inventing geometry", () => {
     expect(() =>
       planDeterministicLayout({

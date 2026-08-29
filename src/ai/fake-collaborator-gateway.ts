@@ -213,10 +213,19 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       (instruction.includes("review") || instruction.includes("revise")) &&
       firstObject !== undefined &&
       input.allowedToolNames.includes("stage_canvas_changes");
+    const layoutObjects =
+      selectedPath.length > 1
+        ? selectedPath
+        : projection.objects
+            .filter(
+              (object) =>
+                object.type !== "connector" && object.type !== "annotation",
+            )
+            .slice(0, 3);
     const shouldStageLayout =
       instruction.includes("straighten") &&
       instruction.includes("breathing room") &&
-      selectedPath.length > 1 &&
+      layoutObjects.length > 1 &&
       input.allowedToolNames.includes("stage_layout_changes");
     const reviewObjects =
       shouldStageReview && instruction.includes("multiple")
@@ -415,10 +424,10 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
                         "Straighten the selected objects with even spacing.",
                       layout: {
                         operation: "normalize_spacing",
-                        objectIds: selectedPath.map((object) => object.id),
+                        objectIds: layoutObjects.map((object) => object.id),
                         axis: "horizontal",
                       },
-                      explanations: selectedPath.map((object) => ({
+                      explanations: layoutObjects.map((object) => ({
                         objectId: object.id,
                         whatChanged:
                           "Adjusted this object's horizontal position.",
