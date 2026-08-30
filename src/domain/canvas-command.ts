@@ -13,6 +13,7 @@ import {
   setCanvasOrderV2,
 } from "@/canvas/canvas-document";
 import { resolveConnectorEndpointV2 } from "@/canvas/geometry";
+import { isEligibleAnnotationTarget } from "@/canvas/annotation-attachment";
 
 const uuid = z.uuid();
 const finiteNumber = z.number().finite();
@@ -122,6 +123,14 @@ const promoteAnnotationCommand = commandBase.extend({
   type: z.literal("annotation.promote"),
   payload: z.strictObject({ objectId: uuid }),
 });
+const attachAnnotationCommand = commandBase.extend({
+  type: z.literal("annotation.attach"),
+  payload: z.strictObject({ objectId: uuid, targetObjectId: uuid }),
+});
+const disconnectAnnotationCommand = commandBase.extend({
+  type: z.literal("annotation.disconnect"),
+  payload: z.strictObject({ objectId: uuid }),
+});
 const reorderCommand = commandBase.extend({
   type: z.literal("object.reorder"),
   payload: z.strictObject({
@@ -165,6 +174,8 @@ export const productCanvasMutationSchema = z.discriminatedUnion("type", [
   styleCommand.omit(trustedCommandFields),
   endpointCommand.omit(trustedCommandFields),
   promoteAnnotationCommand.omit(trustedCommandFields),
+  attachAnnotationCommand.omit(trustedCommandFields),
+  disconnectAnnotationCommand.omit(trustedCommandFields),
   reorderCommand.omit(trustedCommandFields),
   groupCommand.omit(trustedCommandFields),
   ungroupCommand.omit(trustedCommandFields),
@@ -183,6 +194,8 @@ export const productCanvasCommandSchema = z
     styleCommand,
     endpointCommand,
     promoteAnnotationCommand,
+    attachAnnotationCommand,
+    disconnectAnnotationCommand,
     reorderCommand,
     groupCommand,
     ungroupCommand,
@@ -215,7 +228,9 @@ export const productCanvasCommandSchema = z
       command.payload.object.type === "annotation" &&
       (command.payload.object.strokeVersion !== 1 ||
         !command.payload.object.pressures ||
-        !command.payload.object.pointerType)
+        !command.payload.object.pointerType ||
+        (command.payload.object.attachedObjectId !== null &&
+          !command.payload.object.attachmentOffset))
     ) {
       context.addIssue({
         code: "custom",
@@ -269,6 +284,20 @@ function assertEligibleEndpoint(
   }
 }
 
+function requireEligibleAnnotationTarget(
+  document: Y.Doc,
+  annotationId: string,
+  targetObjectId: string,
+) {
+  const target = requireObject(document, targetObjectId);
+  if (target.id === annotationId || !isEligibleAnnotationTarget(target)) {
+    throw new ProductCanvasCommandConflictError(
+      "Annotations can attach only to an existing shape, text, or table.",
+    );
+  }
+  return target;
+}
+
 export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
   const command = productCanvasCommandSchema.parse(input);
   if (readCanvasDocumentMetadata(document).canvasId !== command.canvasId) {
@@ -295,6 +324,16 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           document,
           command.payload.object.id,
           command.payload.object.end,
+        );
+      }
+      if (
+        command.payload.object.type === "annotation" &&
+        command.payload.object.attachedObjectId
+      ) {
+        requireEligibleAnnotationTarget(
+          document,
+          command.payload.object.id,
+          command.payload.object.attachedObjectId,
         );
       }
       putCanvasObjectV2(document, command.payload.object);
@@ -331,6 +370,16 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
             object.end,
             pendingObjects,
           );
+        }
+        if (object.type === "annotation" && object.attachedObjectId) {
+          const target =
+            pendingObjects.get(object.attachedObjectId) ??
+            readCanvasObjectV2(document, object.attachedObjectId);
+          if (!target || !isEligibleAnnotationTarget(target)) {
+            throw new ProductCanvasCommandConflictError(
+              "Duplicated annotation attachments require an eligible target.",
+            );
+          }
         }
       }
       for (const object of command.payload.objects) {
@@ -411,6 +460,8 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
     affectedObjectIds.add(object.id);
 
     if (command.type === "object.move") {
+      const dx = command.payload.x - object.geometry.x;
+      const dy = command.payload.y - object.geometry.y;
       setCanvasObjectField(
         document,
         object.id,
@@ -423,6 +474,40 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         ["geometry", "y"],
         command.payload.y,
       );
+      if (object.type === "annotation" && object.attachedObjectId) {
+        const target = requireEligibleAnnotationTarget(
+          document,
+          object.id,
+          object.attachedObjectId,
+        );
+        setCanvasObjectField(document, object.id, ["attachmentOffset"], {
+          x: command.payload.x - target.geometry.x,
+          y: command.payload.y - target.geometry.y,
+        });
+      } else if (isEligibleAnnotationTarget(object) && (dx !== 0 || dy !== 0)) {
+        for (const candidate of listCanvasObjectsV2(document)) {
+          if (
+            candidate.type !== "annotation" ||
+            candidate.attachedObjectId !== object.id
+          ) {
+            continue;
+          }
+          setCanvasObjectField(
+            document,
+            candidate.id,
+            ["geometry", "x"],
+            candidate.geometry.x + dx,
+          );
+          setCanvasObjectField(
+            document,
+            candidate.id,
+            ["geometry", "y"],
+            candidate.geometry.y + dy,
+          );
+          touch(document, candidate.id, command.issuedAt);
+          affectedObjectIds.add(candidate.id);
+        }
+      }
     } else if (command.type === "object.resize") {
       if (object.type === "annotation" && !object.baseWidth) {
         setCanvasObjectField(
@@ -492,6 +577,36 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
       }
       if (!object.temporary) return;
       setCanvasObjectField(document, object.id, ["temporary"], false);
+    } else if (command.type === "annotation.attach") {
+      if (object.type !== "annotation") {
+        throw new ProductCanvasCommandConflictError(
+          "Only annotations can be attached.",
+        );
+      }
+      const target = requireEligibleAnnotationTarget(
+        document,
+        object.id,
+        command.payload.targetObjectId,
+      );
+      setCanvasObjectField(
+        document,
+        object.id,
+        ["attachedObjectId"],
+        target.id,
+      );
+      setCanvasObjectField(document, object.id, ["attachmentOffset"], {
+        x: object.geometry.x - target.geometry.x,
+        y: object.geometry.y - target.geometry.y,
+      });
+    } else if (command.type === "annotation.disconnect") {
+      if (object.type !== "annotation") {
+        throw new ProductCanvasCommandConflictError(
+          "Only annotations can be disconnected.",
+        );
+      }
+      if (!object.attachedObjectId) return;
+      setCanvasObjectField(document, object.id, ["attachedObjectId"], null);
+      setCanvasObjectField(document, object.id, ["attachmentOffset"], null);
     } else if (command.type === "connector.endpoint") {
       if (object.type !== "connector") {
         throw new ProductCanvasCommandConflictError(
@@ -513,18 +628,39 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         ]),
       );
       for (const candidate of objectsById.values()) {
-        if (candidate.type !== "connector") continue;
-        for (const endpoint of ["start", "end"] as const) {
-          const value = candidate[endpoint];
-          if (value.kind !== "attached" || value.objectId !== object.id)
-            continue;
-          const point = resolveConnectorEndpointV2(value, objectsById);
-          setCanvasObjectField(document, candidate.id, [endpoint], {
-            kind: "free",
-            ...point,
-          });
+        if (
+          candidate.type === "annotation" &&
+          candidate.attachedObjectId === object.id
+        ) {
+          setCanvasObjectField(
+            document,
+            candidate.id,
+            ["attachedObjectId"],
+            null,
+          );
+          setCanvasObjectField(
+            document,
+            candidate.id,
+            ["attachmentOffset"],
+            null,
+          );
           touch(document, candidate.id, command.issuedAt);
           affectedObjectIds.add(candidate.id);
+          continue;
+        }
+        if (candidate.type === "connector") {
+          for (const endpoint of ["start", "end"] as const) {
+            const value = candidate[endpoint];
+            if (value.kind !== "attached" || value.objectId !== object.id)
+              continue;
+            const point = resolveConnectorEndpointV2(value, objectsById);
+            setCanvasObjectField(document, candidate.id, [endpoint], {
+              kind: "free",
+              ...point,
+            });
+            touch(document, candidate.id, command.issuedAt);
+            affectedObjectIds.add(candidate.id);
+          }
         }
       }
       deleteCanvasObjectV2(document, object.id);

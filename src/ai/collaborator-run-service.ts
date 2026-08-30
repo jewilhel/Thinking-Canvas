@@ -47,6 +47,7 @@ import {
   executeArgumentsSchema,
   proposalArgumentsSchema,
   reviewLayoutArgumentsSchema,
+  reviewNewAnnotationsArgumentsSchema,
   reviewNewConnectorsArgumentsSchema,
   reviewNewShapesArgumentsSchema,
   reviewStageArgumentsSchema,
@@ -69,6 +70,7 @@ import {
   materializeReviewNewShapes,
 } from "@/ai/new-shape-stage";
 import { materializeReviewNewConnectors } from "@/ai/new-connector-stage";
+import { materializeReviewNewAnnotations } from "@/ai/new-annotation-stage";
 import {
   renderTargetedCanvasCapture,
   TARGETED_CAPTURE_RENDERER_VERSION,
@@ -480,7 +482,8 @@ export async function completeAiRun(
   const isNewObjectReview = toolCalls.some(
     (toolCall) =>
       toolCall.toolName === "stage_new_shapes" ||
-      toolCall.toolName === "stage_new_connectors",
+      toolCall.toolName === "stage_new_connectors" ||
+      toolCall.toolName === "stage_new_annotations",
   );
   const groundedEvidence = gatewayResult.reply.evidence.filter((reference) =>
     objectIds.has(reference.objectId),
@@ -657,7 +660,8 @@ export async function completeAiRun(
       validatedTool.toolName === "stage_canvas_changes" ||
       validatedTool.toolName === "stage_layout_changes" ||
       validatedTool.toolName === "stage_new_shapes" ||
-      validatedTool.toolName === "stage_new_connectors"
+      validatedTool.toolName === "stage_new_connectors" ||
+      validatedTool.toolName === "stage_new_annotations"
     ) {
       if (reviewStageToolResults.length > 0) {
         throw new AiRunConflictError(
@@ -671,9 +675,13 @@ export async function completeAiRun(
             ? reviewLayoutArgumentsSchema.parse(validatedTool.arguments)
             : validatedTool.toolName === "stage_new_shapes"
               ? reviewNewShapesArgumentsSchema.parse(validatedTool.arguments)
-              : reviewNewConnectorsArgumentsSchema.parse(
-                  validatedTool.arguments,
-                );
+              : validatedTool.toolName === "stage_new_connectors"
+                ? reviewNewConnectorsArgumentsSchema.parse(
+                    validatedTool.arguments,
+                  )
+                : reviewNewAnnotationsArgumentsSchema.parse(
+                    validatedTool.arguments,
+                  );
       const newShapeStage =
         "shapes" in toolArguments
           ? await materializeReviewNewShapes({
@@ -695,6 +703,16 @@ export async function completeAiRun(
               actorId: run.requested_by,
             })
           : null;
+      const newAnnotationStage =
+        "annotations" in toolArguments
+          ? await materializeReviewNewAnnotations({
+              arguments: toolArguments,
+              runId: run.id,
+              callKey: toolCall.callKey,
+              canvasId: run.canvas_id,
+              actorId: run.requested_by,
+            })
+          : null;
       const commands =
         "commands" in toolArguments
           ? toolArguments.commands
@@ -703,7 +721,9 @@ export async function completeAiRun(
                 objects: sourceObjects,
                 request: toolArguments.layout,
               })
-            : (newShapeStage?.commands ?? newConnectorStage!.commands);
+            : (newShapeStage?.commands ??
+              newConnectorStage?.commands ??
+              newAnnotationStage!.commands);
       let reviewStage = validateCanvasReviewStage({
         document: compacted.document,
         canvasId: run.canvas_id,
@@ -719,7 +739,9 @@ export async function completeAiRun(
           ? newShapeStage!.explanations
           : "connectors" in toolArguments
             ? newConnectorStage!.explanations
-            : toolArguments.explanations;
+            : "annotations" in toolArguments
+              ? newAnnotationStage!.explanations
+              : toolArguments.explanations;
       const explanations =
         "layout" in toolArguments
           ? requestedExplanations.filter((explanation) =>

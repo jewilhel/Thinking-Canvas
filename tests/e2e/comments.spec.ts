@@ -638,6 +638,50 @@ test("creates and atomically undoes five labeled sticky notes", async ({
   await expect(page.getByTestId("product-object-count")).toHaveText("0");
 });
 
+test("creates and atomically undoes a freeform AI annotation", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await configurePrimaryAi(page, "edit_with_review");
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await placeArmedComment(page, { x: 420, y: 280 });
+
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Please add one freeform annotation here.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    thread.getByText(
+      "I added the requested freeform annotation to the canvas.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByTestId("product-object-count")).toHaveText("1");
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("1");
+  await expect(thread.getByText(/[0-9a-f]{8}-[0-9a-f-]{27}/)).toHaveCount(0);
+
+  const undoResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/ai/transactions/undo"),
+  );
+  await thread.getByRole("button", { name: "Undo AI change" }).click();
+  const undoResponse = await undoResponsePromise;
+  expect(undoResponse.ok(), await undoResponse.text()).toBeTruthy();
+  await expect(page.getByTestId("product-object-count")).toHaveText("0");
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("0");
+  await expect(thread.getByText("Change undone")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("0");
+});
+
 test("adds an intentional background circle behind unchanged sticky notes", async ({
   page,
 }) => {

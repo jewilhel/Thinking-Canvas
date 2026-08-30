@@ -4,6 +4,7 @@ import {
   aiReplySchema,
   type AiInvocation,
   type AiProjectionEnvelope,
+  type AiToolCall,
 } from "@/ai/collaborator-contract";
 import type {
   FakeAiScenario,
@@ -125,6 +126,10 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       instruction.includes("five sticky notes") &&
       invocation.reviewContext?.kind === "world_space" &&
       input.allowedToolNames.includes("stage_new_shapes");
+    const shouldCreateNewAnnotation =
+      instruction.includes("freeform annotation") &&
+      invocation.reviewContext?.kind === "world_space" &&
+      input.allowedToolNames.includes("stage_new_annotations");
     const shouldCreateBackgroundCircle =
       instruction.includes("large grey circle") &&
       instruction.includes("behind") &&
@@ -247,23 +252,25 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       firstObject !== undefined &&
       input.allowedToolNames.includes("execute_canvas_commands");
     const reply = aiReplySchema.parse({
-      body: shouldCreateNewShapes
-        ? "I created five labeled sticky notes in the requested colors."
-        : shouldCreateBackgroundCircle
-          ? "I added a large grey circle behind the sticky notes without moving them."
-          : shouldCreateClockwiseConnectors
-            ? "I connected the sticky notes in a clockwise closed loop."
-            : shouldExecuteChanges
-              ? "I applied validated canvas changes as the primary AI collaborator."
-              : shouldStageLayout
-                ? "I straightened the selected objects and gave them even spacing."
-                : shouldStageReview
-                  ? "I made the requested change on the canvas."
-                  : shouldProposeChanges
-                    ? "I prepared a validated proposal without changing the canvas."
-                    : selectedPath.length > 1
-                      ? `I inspected ${selectedPath.length} selected path objects in order: ${selectedPath.map((object) => object.summary || object.type).join(" → ")}.`
-                      : `I inspected ${projection.objects.length} canvas objects and ${projection.commentThreads.length} comment conversations.`,
+      body: shouldCreateNewAnnotation
+        ? "I added the requested freeform annotation to the canvas."
+        : shouldCreateNewShapes
+          ? "I created five labeled sticky notes in the requested colors."
+          : shouldCreateBackgroundCircle
+            ? "I added a large grey circle behind the sticky notes without moving them."
+            : shouldCreateClockwiseConnectors
+              ? "I connected the sticky notes in a clockwise closed loop."
+              : shouldExecuteChanges
+                ? "I applied validated canvas changes as the primary AI collaborator."
+                : shouldStageLayout
+                  ? "I straightened the selected objects and gave them even spacing."
+                  : shouldStageReview
+                    ? "I made the requested change on the canvas."
+                    : shouldProposeChanges
+                      ? "I prepared a validated proposal without changing the canvas."
+                      : selectedPath.length > 1
+                        ? `I inspected ${selectedPath.length} selected path objects in order: ${selectedPath.map((object) => object.summary || object.type).join(" → ")}.`
+                        : `I inspected ${projection.objects.length} canvas objects and ${projection.commentThreads.length} comment conversations.`,
       evidence: firstObject
         ? [
             {
@@ -274,7 +281,7 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
         : [],
       contextualTargetObjectIds: firstObject ? [firstObject.id] : [],
     });
-    const toolCalls = shouldCreateBackgroundCircle
+    const fallbackToolCalls = shouldCreateBackgroundCircle
       ? [
           {
             callKey: "background-circle-1",
@@ -511,6 +518,52 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
                         },
                       ]
                     : [];
+    const toolCalls: AiToolCall[] = shouldCreateNewAnnotation
+      ? [
+          {
+            callKey: "new-annotation-1",
+            toolName: "stage_new_annotations",
+            arguments: {
+              summary: "Add one curved purple freeform annotation.",
+              annotations: [
+                {
+                  key: "purple-annotation",
+                  points: [
+                    {
+                      x: invocation.reviewContext?.canvasAnchor?.x ?? 400,
+                      y: invocation.reviewContext?.canvasAnchor?.y ?? 300,
+                      pressure: 0.3,
+                    },
+                    {
+                      x:
+                        (invocation.reviewContext?.canvasAnchor?.x ?? 400) + 60,
+                      y:
+                        (invocation.reviewContext?.canvasAnchor?.y ?? 300) + 36,
+                      pressure: 0.8,
+                    },
+                    {
+                      x:
+                        (invocation.reviewContext?.canvasAnchor?.x ?? 400) +
+                        120,
+                      y: invocation.reviewContext?.canvasAnchor?.y ?? 300,
+                      pressure: 0.4,
+                    },
+                  ],
+                  outline: "#7c3aed",
+                  outlineWidth: 5,
+                },
+              ],
+              explanations: [
+                {
+                  key: "purple-annotation",
+                  whatChanged: "Added one curved purple freeform annotation.",
+                  why: "The comment requested a visual annotation.",
+                },
+              ],
+            },
+          },
+        ]
+      : fallbackToolCalls;
     return { status: "completed", requestId, reply, toolCalls };
   }
 }

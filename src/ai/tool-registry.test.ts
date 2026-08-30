@@ -40,6 +40,7 @@ describe("AI authority tool registry", () => {
       "stage_layout_changes",
       "stage_new_shapes",
       "stage_new_connectors",
+      "stage_new_annotations",
       "execute_canvas_commands",
     ]);
   });
@@ -141,6 +142,36 @@ describe("AI authority tool registry", () => {
         },
       }),
     ).toMatchObject({ toolName: "stage_new_connectors", effect: "review" });
+  });
+
+  it("accepts bounded server-identified annotation creation", () => {
+    expect(
+      validateAiToolRequest({
+        authority: "edit_with_review",
+        toolName: "stage_new_annotations",
+        arguments: {
+          summary: "Create one freeform annotation.",
+          annotations: [
+            {
+              key: "stroke",
+              points: [
+                { x: 100, y: 100 },
+                { x: 180, y: 140, pressure: 0.8 },
+              ],
+              outline: "#7c3aed",
+              outlineWidth: 5,
+            },
+          ],
+          explanations: [
+            {
+              key: "stroke",
+              whatChanged: "Added a freeform annotation.",
+              why: "The user requested it.",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ toolName: "stage_new_annotations", effect: "review" });
   });
 
   it("rejects malformed arguments and client-supplied trusted metadata", () => {

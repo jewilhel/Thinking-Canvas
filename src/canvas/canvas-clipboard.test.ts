@@ -102,6 +102,56 @@ describe("canvas clipboard", () => {
     expect(duplicate?.id).not.toBe(source.id);
   });
 
+  it("remaps an internal annotation attachment and detaches an external one", () => {
+    const target = shape("88888888-8888-4888-8888-888888888888");
+    const attached: CanvasObjectV2 = {
+      schemaVersion: 2,
+      id: "99999999-9999-4999-8999-999999999999",
+      canvasId,
+      createdBy: actorId,
+      createdAt: now,
+      updatedAt: now,
+      groupId: null,
+      type: "annotation",
+      strokeVersion: 1,
+      pointerType: "pen",
+      points: [0, 0, 20, 10],
+      pressures: [0.5, 0.5],
+      temporary: true,
+      attachedObjectId: target.id,
+      attachmentOffset: { x: 4, y: 8 },
+      geometry: { x: 24, y: 48, width: 20, height: 10, rotation: 0 },
+      style: { ...target.style, fill: null },
+    };
+
+    const internal = remapCanvasClipboard(
+      createCanvasClipboardPayload(
+        [target, attached],
+        [target.id, attached.id],
+      ),
+      { canvasId, actorId, issuedAt: now },
+    );
+    const pastedTarget = internal.find((object) => object.type === "shape")!;
+    const pastedAnnotation = internal.find(
+      (object) => object.type === "annotation",
+    );
+    expect(pastedAnnotation).toMatchObject({
+      attachedObjectId: pastedTarget.id,
+      attachmentOffset: { x: 4, y: 8 },
+      geometry: { x: 56, y: 80 },
+    });
+
+    const external = createCanvasClipboardPayload(
+      [target, attached],
+      [attached.id],
+    );
+    expect(external.objects[0]).toMatchObject({
+      attachedObjectId: null,
+      attachmentOffset: null,
+      geometry: attached.geometry,
+    });
+  });
+
   it("remaps object, group, and internal connector references", () => {
     const firstId = "33333333-3333-4333-8333-333333333333";
     const secondId = "44444444-4444-4444-8444-444444444444";

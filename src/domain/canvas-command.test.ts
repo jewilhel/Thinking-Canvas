@@ -130,6 +130,86 @@ describe("product canvas command boundary", () => {
     ).toThrow("Only annotations can be promoted");
   });
 
+  it("attaches, follows, repositions, disconnects, and safely detaches annotations", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const target = shape();
+    putCanvasObjectV2(document, target);
+    putCanvasObjectV2(document, annotation());
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("annotation.attach", {
+        objectId: connectorId,
+        targetObjectId: shapeId,
+      }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      attachedObjectId: shapeId,
+      attachmentOffset: { x: -15, y: -25 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.move", { objectId: shapeId, x: 150, y: 260 }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      geometry: { x: 135, y: 235 },
+      attachmentOffset: { x: -15, y: -25 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.move", { objectId: connectorId, x: 90, y: 110 }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      geometry: { x: 90, y: 110 },
+      attachmentOffset: { x: -60, y: -150 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("annotation.disconnect", { objectId: connectorId }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      attachedObjectId: null,
+      attachmentOffset: null,
+      geometry: { x: 90, y: 110 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("annotation.attach", {
+        objectId: connectorId,
+        targetObjectId: shapeId,
+      }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.delete", { objectId: shapeId }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      attachedObjectId: null,
+      attachmentOffset: null,
+      geometry: { x: 90, y: 110 },
+    });
+  });
+
+  it("rejects ineligible annotation attachment targets", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, annotation());
+    const other = { ...annotation(), id: shapeId };
+    putCanvasObjectV2(document, other);
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("annotation.attach", {
+          objectId: connectorId,
+          targetObjectId: shapeId,
+        }),
+      ),
+    ).toThrow("shape, text, or table");
+  });
+
   it("captures a legacy annotation base before resize and persists object stroke patterns", () => {
     const document = createProductCanvasDocument(canvasId);
     putCanvasObjectV2(document, annotation());

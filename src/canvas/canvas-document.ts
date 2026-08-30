@@ -108,6 +108,10 @@ const legacyAnnotationObjectSchema = canvasObjectBaseSchema.extend({
   baseHeight: finiteNumber.positive().optional(),
   temporary: z.boolean(),
   attachedObjectId: uuid.nullable(),
+  attachmentOffset: z
+    .strictObject({ x: finiteNumber, y: finiteNumber })
+    .nullable()
+    .optional(),
 });
 
 export const canvasObjectV2Schema = z

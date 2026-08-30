@@ -709,6 +709,111 @@ test("converges edited and promoted ink while visibility stays per-user", async 
   await editorContext.close();
 });
 
+test("attaches overlapping ink, follows movement, disconnects, and detaches on delete", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page
+    .getByLabel("Canvas name")
+    .fill(`Milestone 6 attachment ${Date.now()}`);
+  await page.getByRole("button", { name: "Create canvas" }).click();
+  const surface = page.getByTestId("product-canvas-surface");
+  await chooseShape(page, "Rectangle");
+  await surface.click({ position: { x: 300, y: 280 } });
+  const bounds = await surface.boundingBox();
+  if (!bounds) throw new Error("Canvas bounds are unavailable.");
+
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Pen" }).click();
+  await page.mouse.move(bounds.x + 280, bounds.y + 330);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 360, bounds.y + 345, { steps: 8 });
+  await page.mouse.move(bounds.x + 430, bounds.y + 325, { steps: 8 });
+  await page.mouse.up();
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await expect(page.getByTestId("selected-annotation-attached")).toHaveText(
+    "true",
+  );
+  const initialX = Number(
+    await page.getByTestId("selected-position-x").innerText(),
+  );
+
+  await surface.focus();
+  await surface.press("Shift+ArrowRight");
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    String(initialX + 10),
+  );
+  await expect(page.getByTestId("selected-annotation-attached")).toHaveText(
+    "true",
+  );
+
+  const selectNavigatorItem = async (index: number) => {
+    if (
+      !(await page
+        .getByRole("dialog", { name: "Object navigator" })
+        .isVisible())
+    ) {
+      await page.getByRole("button", { name: "Open Object navigator" }).click();
+    }
+    await page.locator('[data-testid^="object-list-item-"]').nth(index).click();
+  };
+  await selectNavigatorItem(0);
+  await surface.focus();
+  await surface.press("Shift+ArrowRight");
+  await selectNavigatorItem(1);
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    String(initialX + 20),
+  );
+
+  const attachedX = Number(
+    await page.getByTestId("selected-position-x").innerText(),
+  );
+  await page
+    .getByRole("button", { name: "More selection actions", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Disconnect annotation", exact: true })
+    .click();
+  await expect(page.getByTestId("selected-annotation-attached")).toHaveText(
+    "false",
+  );
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    String(attachedX),
+  );
+
+  await selectNavigatorItem(0);
+  await surface.focus();
+  await surface.press("Shift+ArrowRight");
+  await selectNavigatorItem(1);
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    String(attachedX),
+  );
+
+  await surface.focus();
+  await surface.press("Control+z");
+  await surface.press("Control+z");
+  await expect(page.getByTestId("selected-annotation-attached")).toHaveText(
+    "true",
+  );
+  const beforeDeleteX = await page
+    .getByTestId("selected-position-x")
+    .innerText();
+  await selectNavigatorItem(0);
+  await surface.focus();
+  await surface.press("Delete");
+  await expect(page.getByTestId("product-object-count")).toHaveText("1");
+  await selectNavigatorItem(0);
+  await expect(page.getByTestId("selected-annotation-attached")).toHaveText(
+    "false",
+  );
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    beforeDeleteX,
+  );
+  await page.reload();
+  await expect(page.getByTestId("product-object-count")).toHaveText("1");
+});
+
 test("uses dismissible responsive panels with focus containment, help, and true zoom-to-fit", async ({
   page,
 }) => {

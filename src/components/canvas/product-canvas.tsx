@@ -20,6 +20,7 @@ import {
   AlignJustify,
   Trash2,
   Type,
+  Unlink,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -56,6 +57,7 @@ import {
   type AnnotationPointerType,
   type AnnotationSample,
 } from "@/canvas/annotation-stroke";
+import { findAnnotationAttachmentTarget } from "@/canvas/annotation-attachment";
 import {
   createCanvasClipboardPayload,
   parseCanvasClipboard,
@@ -263,6 +265,13 @@ function objectLabel(object: CanvasObjectV2) {
   if (object.type === "table") return `table — ${object.cells.length} rows`;
   if (object.type === "connector") return "connector";
   return object.type;
+}
+
+function referenceSafeSelectionOrder(objects: CanvasObjectV2[]) {
+  return [...objects].sort(
+    (left, right) =>
+      Number(left.type === "annotation") - Number(right.type === "annotation"),
+  );
 }
 
 function tableText(object: Extract<CanvasObjectV2, { type: "table" }>) {
@@ -1142,7 +1151,7 @@ export function ProductCanvas({
     const dx = x - object.geometry.x;
     const dy = y - object.geometry.y;
     const commands: CommandDefinition[] = [];
-    for (const selected of selectedObjects) {
+    for (const selected of referenceSafeSelectionOrder(selectedObjects)) {
       if (selected.type === "connector")
         commands.push(...moveConnectorCommands(selected, dx, dy, true));
       else
@@ -1166,11 +1175,26 @@ export function ProductCanvas({
     const durableObject = objectsById.get(object.id) ?? object;
     const dx = x - durableObject.geometry.x;
     const dy = y - durableObject.geometry.y;
-    const targets = selectedIds.includes(object.id)
+    const selectedTargets = selectedIds.includes(object.id)
       ? selectedObjects
       : object.groupId
         ? objects.filter((candidate) => candidate.groupId === object.groupId)
         : [durableObject];
+    const movingTargetIds = new Set(
+      selectedTargets
+        .filter((candidate) => candidate.type !== "annotation")
+        .map((candidate) => candidate.id),
+    );
+    const targets = [
+      ...selectedTargets,
+      ...objects.filter(
+        (candidate) =>
+          candidate.type === "annotation" &&
+          candidate.attachedObjectId !== null &&
+          movingTargetIds.has(candidate.attachedObjectId) &&
+          !selectedTargets.some((selected) => selected.id === candidate.id),
+      ),
+    ];
     setDragPreviewPositions(
       Object.fromEntries(
         targets.flatMap((target) =>
@@ -1236,6 +1260,19 @@ export function ProductCanvas({
     runCommandBatch(
       temporaryAnnotations.map((object) => ({
         type: "annotation.promote",
+        payload: { objectId: object.id },
+      })),
+    );
+  }
+
+  function disconnectSelectedAnnotations() {
+    const attachedAnnotations = selectedObjects.filter(
+      (object) => object.type === "annotation" && object.attachedObjectId,
+    );
+    if (!attachedAnnotations.length) return;
+    runCommandBatch(
+      attachedAnnotations.map((object) => ({
+        type: "annotation.disconnect",
         payload: { objectId: object.id },
       })),
     );
@@ -1790,7 +1827,7 @@ export function ProductCanvas({
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const object: CanvasObjectV2 = {
+    let object: Extract<CanvasObjectV2, { type: "annotation" }> = {
       schemaVersion: 2,
       id,
       canvasId,
@@ -1813,6 +1850,17 @@ export function ProductCanvas({
         outlineWidth: penThickness,
       },
     };
+    const attachmentTarget = findAnnotationAttachmentTarget(object, objects);
+    if (attachmentTarget) {
+      object = {
+        ...object,
+        attachedObjectId: attachmentTarget.id,
+        attachmentOffset: {
+          x: object.geometry.x - attachmentTarget.geometry.x,
+          y: object.geometry.y - attachmentTarget.geometry.y,
+        },
+      };
+    }
     runCommand("object.create", { object });
     setSelectedIds([id]);
     event.preventDefault();
@@ -1871,7 +1919,7 @@ export function ProductCanvas({
       target,
     );
     const commands: CommandDefinition[] = [];
-    for (const object of transformed) {
+    for (const object of referenceSafeSelectionOrder(transformed)) {
       if (object.type === "connector") {
         const original = objectsById.get(object.id);
         if (original?.type !== "connector") continue;
@@ -2059,7 +2107,7 @@ export function ProductCanvas({
             ? amount
             : 0;
       const commands: CommandDefinition[] = [];
-      for (const object of selectedObjects) {
+      for (const object of referenceSafeSelectionOrder(selectedObjects)) {
         if (event.altKey && object.type !== "connector") {
           commands.push({
             type: "object.resize",
@@ -3439,6 +3487,22 @@ export function ProductCanvas({
                   <div className="grid grid-cols-2 gap-2">
                     {selectedObjects.some(
                       (object) =>
+                        object.type === "annotation" && object.attachedObjectId,
+                    ) ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="col-span-2"
+                        onClick={() =>
+                          completeContextAction(disconnectSelectedAnnotations)
+                        }
+                      >
+                        <Unlink aria-hidden="true" /> Disconnect annotation
+                      </Button>
+                    ) : null}
+                    {selectedObjects.some(
+                      (object) =>
                         object.type === "annotation" && object.temporary,
                     ) ? (
                       <Button
@@ -3972,12 +4036,20 @@ function ObjectNavigatorContent({
               </dd>
             </div>
             {selectedObject.type === "annotation" ? (
-              <div>
-                <dt>Temporary</dt>
-                <dd data-testid="selected-annotation-temporary">
-                  {String(selectedObject.temporary)}
-                </dd>
-              </div>
+              <>
+                <div>
+                  <dt>Temporary</dt>
+                  <dd data-testid="selected-annotation-temporary">
+                    {String(selectedObject.temporary)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Attached</dt>
+                  <dd data-testid="selected-annotation-attached">
+                    {String(selectedObject.attachedObjectId !== null)}
+                  </dd>
+                </div>
+              </>
             ) : null}
           </dl>
           {selectedObject.type === "connector" ? (
