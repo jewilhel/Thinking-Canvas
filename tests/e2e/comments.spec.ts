@@ -1552,11 +1552,15 @@ test("broadcasts comment changes between canvas members", async ({
   const owner = await ownerContext.newPage();
   const editor = await editorContext.newPage();
   await signIn(owner, "owner@thinking-canvas.local");
+  await owner
+    .getByLabel("Canvas name")
+    .fill(`Realtime comment flow ${Date.now()}`);
+  await owner.getByRole("button", { name: "Create canvas" }).click();
+  await expect(owner).toHaveURL(/\/app\/canvases\/[0-9a-f-]+$/);
+  const canvasId = owner.url().split("/").at(-1)!;
+  await addEditorMembership(canvasId);
   await signIn(editor, "editor@thinking-canvas.local");
-  await Promise.all([
-    owner.goto(`/app/canvases/${seedCanvasId}`),
-    editor.goto(`/app/canvases/${seedCanvasId}`),
-  ]);
+  await editor.goto(`/app/canvases/${canvasId}`);
 
   await expect(owner.getByTestId("canvas-save-status")).toHaveText("Saved");
   await expect(editor.getByTestId("canvas-save-status")).toHaveText("Saved");
