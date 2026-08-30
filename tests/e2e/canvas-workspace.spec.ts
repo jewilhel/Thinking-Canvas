@@ -398,7 +398,10 @@ test("draws mouse, touch, and pen strokes that converge and reload", async ({
     ),
   ).toBeVisible();
   const baseline = Number(
-    await owner.getByTestId("product-annotation-count").innerText(),
+    await editor.getByTestId("product-annotation-count").innerText(),
+  );
+  await expect(owner.getByTestId("product-annotation-count")).toHaveText(
+    String(baseline),
   );
   await expect(editor.getByTestId("product-annotation-count")).toHaveText(
     String(baseline),
@@ -458,6 +461,252 @@ test("draws mouse, touch, and pen strokes that converge and reload", async ({
   await ownerContext.close();
   await editorContext.close();
   await commenterContext.close();
+});
+
+test("styles, groups, transforms, hides, and promotes selected annotations", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await signIn(page);
+  const title = `Milestone 6 annotation editing ${Date.now()}`;
+  await page.getByLabel("Canvas name").fill(title);
+  await page.getByRole("button", { name: "Create canvas" }).click();
+  const surface = page.getByTestId("product-canvas-surface");
+  const bounds = await surface.boundingBox();
+  if (!bounds) throw new Error("Canvas bounds are unavailable.");
+
+  const drawStroke = async (points: Array<{ x: number; y: number }>) => {
+    await page.getByRole("button", { name: "Drawing", exact: true }).click();
+    await page.getByRole("menuitemradio", { name: "Pen" }).click();
+    await page.mouse.move(bounds.x + points[0]!.x, bounds.y + points[0]!.y);
+    await page.mouse.down();
+    for (const point of points.slice(1)) {
+      await page.mouse.move(bounds.x + point.x, bounds.y + point.y, {
+        steps: 5,
+      });
+    }
+    await page.mouse.up();
+  };
+
+  await drawStroke([
+    { x: 260, y: 260 },
+    { x: 300, y: 290 },
+    { x: 340, y: 265 },
+  ]);
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("1");
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await page.getByRole("button", { name: "Stroke", exact: true }).click();
+  await page.getByRole("button", { name: "8 pixel stroke" }).click();
+  await expect(page.getByText("Style", { exact: true })).not.toBeVisible();
+  await page.getByRole("button", { name: "Stroke", exact: true }).click();
+
+  await drawStroke([
+    { x: 470, y: 350 },
+    { x: 510, y: 380 },
+    { x: 550, y: 350 },
+  ]);
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("2");
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await surface.click({ position: { x: 300, y: 280 }, modifiers: ["Shift"] });
+  await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
+  const frameBefore = await page
+    .getByTestId("product-selection-frame")
+    .innerText();
+  const [frameX, frameY, frameWidth, frameHeight] = frameBefore
+    .split(",")
+    .map(Number);
+
+  await page.getByRole("button", { name: "Stroke", exact: true }).click();
+  await expect(page.getByText("Thickness — Mixed")).toBeVisible();
+  await page.getByRole("button", { name: "5 pixel stroke" }).click();
+  await expect(page.getByText("Style", { exact: true })).not.toBeVisible();
+  await page.getByRole("button", { name: "Stroke", exact: true }).click();
+
+  await page.mouse.move(
+    bounds.x + 80 + frameX + frameWidth / 2,
+    bounds.y + 80 + frameY + frameHeight / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    bounds.x + 120 + frameX + frameWidth / 2,
+    bounds.y + 105 + frameY + frameHeight / 2,
+    { steps: 6 },
+  );
+  await page.mouse.up();
+  await expect(page.getByTestId("product-selection-frame")).toHaveText(
+    `${frameX + 40},${frameY + 25},${frameWidth},${frameHeight}`,
+  );
+  await surface.focus();
+  await surface.press("Control+z");
+  await expect(page.getByTestId("product-selection-frame")).toHaveText(
+    frameBefore,
+  );
+
+  await page
+    .getByRole("button", { name: "Open comment history and AI settings" })
+    .click();
+  await page
+    .getByRole("button", { name: "Hide comments and annotations" })
+    .click();
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("2");
+  await expect(page.getByTestId("product-visible-annotation-count")).toHaveText(
+    "0",
+  );
+  await page
+    .getByRole("button", { name: "Show comments and annotations" })
+    .click();
+  await page.getByRole("button", { name: "Close Comments" }).click();
+
+  await surface.click({ position: { x: 300, y: 280 } });
+  await surface.click({ position: { x: 510, y: 370 }, modifiers: ["Shift"] });
+  await page
+    .getByRole("button", { name: "More selection actions", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Promote annotation" }).click();
+  await page
+    .getByRole("button", { name: "Open comment history and AI settings" })
+    .click();
+  await page
+    .getByRole("button", { name: "Hide comments and annotations" })
+    .click();
+  await expect(page.getByTestId("product-visible-annotation-count")).toHaveText(
+    "2",
+  );
+
+  await page.reload();
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("2");
+  await expect(page.getByTestId("product-visible-annotation-count")).toHaveText(
+    "2",
+  );
+
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  const items = page.locator('[data-testid^="object-list-item-"]');
+  await items.nth(0).click();
+  await items.nth(1).click({ modifiers: ["Shift"] });
+  await page.getByRole("button", { name: "Close Object navigator" }).click();
+  await surface.focus();
+  await surface.press("Control+d");
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("4");
+  await surface.press("Delete");
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("2");
+  await surface.press("Control+z");
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("4");
+  await surface.press("Control+Shift+z");
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("2");
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("converges edited and promoted ink while visibility stays per-user", async ({
+  browser,
+}) => {
+  const ownerContext = await browser.newContext();
+  const editorContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const editor = await editorContext.newPage();
+  await signIn(owner);
+  await signIn(editor, "editor@thinking-canvas.local");
+  await owner.goto(`/app/canvases/${seedCanvasId}`);
+  await editor.goto(`/app/canvases/${seedCanvasId}`);
+  const ownerSurface = owner.getByTestId("product-canvas-surface");
+  const bounds = await ownerSurface.boundingBox();
+  if (!bounds) throw new Error("Canvas bounds are unavailable.");
+  await expect(owner.getByTestId("product-object-count")).not.toHaveText("0");
+  await expect(editor.getByTestId("product-object-count")).not.toHaveText("0");
+  const baseline = Number(
+    await editor.getByTestId("product-annotation-count").innerText(),
+  );
+  await expect(owner.getByTestId("product-annotation-count")).toHaveText(
+    String(baseline),
+  );
+
+  const draw = async (offset: number) => {
+    await owner.getByRole("button", { name: "Drawing", exact: true }).click();
+    await owner.getByRole("menuitemradio", { name: "Pen" }).click();
+    await owner.mouse.move(bounds.x + 700, bounds.y + 250 + offset);
+    await owner.mouse.down();
+    await owner.mouse.move(bounds.x + 750, bounds.y + 285 + offset, {
+      steps: 6,
+    });
+    await owner.mouse.move(bounds.x + 800, bounds.y + 255 + offset, {
+      steps: 6,
+    });
+    await owner.mouse.up();
+    await owner.getByRole("button", { name: "Select", exact: true }).click();
+  };
+
+  await draw(0);
+  await expect(owner.getByTestId("product-annotation-count")).toHaveText(
+    String(baseline + 1),
+  );
+  await expect(editor.getByTestId("product-annotation-count")).toHaveText(
+    String(baseline + 1),
+  );
+  await owner.getByRole("button", { name: "Stroke", exact: true }).click();
+  await owner.getByRole("button", { name: "8 pixel stroke" }).click();
+  await owner.getByRole("button", { name: "Stroke", exact: true }).click();
+  await owner
+    .getByRole("button", { name: "More selection actions", exact: true })
+    .click();
+  await owner.getByRole("button", { name: "Promote annotation" }).click();
+  await owner.getByRole("button", { name: "Drawing", exact: true }).click();
+  await owner.getByRole("menuitemradio", { name: "Pen" }).click();
+  await dispatchPointerStroke(owner, "pen", 93, 0.6);
+  await owner.getByRole("button", { name: "Select", exact: true }).click();
+
+  await expect(owner.getByTestId("product-annotation-count")).toHaveText(
+    String(baseline + 2),
+  );
+
+  await expect(editor.getByTestId("product-annotation-count")).toHaveText(
+    String(baseline + 2),
+  );
+  await editor.getByRole("button", { name: "Open Object navigator" }).click();
+  const editorItems = editor.locator('[data-testid^="object-list-item-"]');
+  const itemCount = await editorItems.count();
+  await editorItems.nth(itemCount - 2).click();
+  await expect(editor.getByTestId("selected-stroke-width")).toHaveText("8");
+  await expect(editor.getByTestId("selected-annotation-temporary")).toHaveText(
+    "false",
+  );
+  await editorItems.nth(itemCount - 1).click();
+  await expect(editor.getByTestId("selected-annotation-temporary")).toHaveText(
+    "true",
+  );
+
+  const editorVisible = await editor
+    .getByTestId("product-visible-annotation-count")
+    .innerText();
+  await owner
+    .getByRole("button", { name: "Open comment history and AI settings" })
+    .click();
+  await owner
+    .getByRole("button", { name: "Hide comments and annotations" })
+    .click();
+  await expect
+    .poll(async () =>
+      Number(
+        await owner.getByTestId("product-visible-annotation-count").innerText(),
+      ),
+    )
+    .toBeLessThan(Number(editorVisible));
+  expect(
+    Number(
+      await owner.getByTestId("product-visible-annotation-count").innerText(),
+    ),
+  ).toBeGreaterThan(0);
+  await expect(
+    editor.getByTestId("product-visible-annotation-count"),
+  ).toHaveText(editorVisible);
+  await expect(owner.getByTestId("product-annotation-count")).toHaveText(
+    String(baseline + 2),
+  );
+
+  await ownerContext.close();
+  await editorContext.close();
 });
 
 test("uses dismissible responsive panels with focus containment, help, and true zoom-to-fit", async ({
@@ -628,7 +877,9 @@ test("two product canvases converge after concurrent work and a disconnected edi
         name: "Open comment history and AI settings",
       });
       await comments.click();
-      const hideMarkers = page.getByRole("button", { name: "Hide markers" });
+      const hideMarkers = page.getByRole("button", {
+        name: "Hide comments and annotations",
+      });
       if (await hideMarkers.isVisible()) await hideMarkers.click();
       await page.getByRole("button", { name: "Close Comments" }).click();
       await expect(

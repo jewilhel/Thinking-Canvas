@@ -105,6 +105,71 @@ describe("product canvas command boundary", () => {
     ).toThrow("canonical pressure samples");
   });
 
+  it("promotes annotations idempotently and rejects other object types", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, annotation());
+    executeProductCanvasCommand(
+      document,
+      baseCommand("annotation.promote", { objectId: connectorId }),
+    );
+    const promoted = readCanvasObjectV2(document, connectorId);
+    expect(promoted).toMatchObject({ type: "annotation", temporary: false });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("annotation.promote", { objectId: connectorId }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toEqual(promoted);
+
+    putCanvasObjectV2(document, shape());
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("annotation.promote", { objectId: shapeId }),
+      ),
+    ).toThrow("Only annotations can be promoted");
+  });
+
+  it("captures a legacy annotation base before resize and persists object stroke patterns", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, annotation());
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.resize", {
+        objectId: connectorId,
+        width: 90,
+        height: 60,
+      }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      baseWidth: 30,
+      baseHeight: 30,
+      geometry: { width: 90, height: 60 },
+    });
+
+    putCanvasObjectV2(document, shape());
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.style", {
+        objectId: shapeId,
+        style: { outlineWidth: 8, outlinePattern: "dashed" },
+      }),
+    );
+    expect(readCanvasObjectV2(document, shapeId)).toMatchObject({
+      style: { outlineWidth: 8, outlinePattern: "dashed" },
+    });
+
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("object.style", {
+          objectId: connectorId,
+          style: { outlinePattern: "dotted" },
+        }),
+      ),
+    ).toThrow("solid pressure-rendered stroke");
+  });
+
   it("creates, patches, moves, resizes, and styles through validated commands", () => {
     const document = createProductCanvasDocument(canvasId);
     executeProductCanvasCommand(

@@ -32,6 +32,7 @@ const styleSchema = z.strictObject({
   fill: color.nullable(),
   outline: color,
   outlineWidth: finiteNumber.nonnegative().max(20),
+  outlinePattern: z.enum(["solid", "dashed", "dotted"]).optional(),
   fontFamily: z.string().min(1).max(200),
   fontSize: finiteNumber.min(8).max(400),
   fontWeight: z.enum(["normal", "bold"]).optional(),
@@ -103,6 +104,8 @@ const legacyAnnotationObjectSchema = canvasObjectBaseSchema.extend({
   pressures: z.array(finiteNumber.min(0).max(1)).min(2).max(10_000).optional(),
   strokeVersion: z.literal(1).optional(),
   pointerType: z.enum(["mouse", "touch", "pen"]).optional(),
+  baseWidth: finiteNumber.positive().optional(),
+  baseHeight: finiteNumber.positive().optional(),
   temporary: z.boolean(),
   attachedObjectId: uuid.nullable(),
 });

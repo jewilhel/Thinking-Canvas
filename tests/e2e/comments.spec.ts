@@ -276,11 +276,15 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
     .getByRole("button", { name: "Close comment thread" })
     .click();
   await openCommentHistory(page);
-  await page.getByRole("button", { name: "Hide markers" }).click();
+  await page
+    .getByRole("button", { name: "Hide comments and annotations" })
+    .click();
   await expect(
     page.getByRole("button", { name: /Open comment by/ }),
   ).not.toBeVisible();
-  await page.getByRole("button", { name: "Show markers" }).click();
+  await page
+    .getByRole("button", { name: "Show comments and annotations" })
+    .click();
   await expect(
     page.getByRole("button", { name: /Open comment by/ }),
   ).toBeVisible();
@@ -1154,7 +1158,9 @@ test("filters human collaborators and redirects inherited recipients to humans a
   await page.goto(`/app/canvases/${seedCanvasId}`);
   await expect(page.getByTestId("product-canvas-surface")).toBeVisible();
   const history = await openCommentHistory(page);
-  await history.getByRole("button", { name: "Hide markers" }).click();
+  await history
+    .getByRole("button", { name: "Hide comments and annotations" })
+    .click();
   const enabled = history.getByRole("checkbox", { name: "Enabled" });
   if (!(await enabled.isChecked())) await enabled.click();
   await history.getByRole("button", { name: "Close Comments" }).click();

@@ -58,6 +58,50 @@ function makeConnector(
 }
 
 describe("canvas clipboard", () => {
+  it("duplicates canonical annotations without losing editable stroke data", () => {
+    const source: CanvasObjectV2 = {
+      schemaVersion: 2,
+      id: "77777777-7777-4777-8777-777777777777",
+      canvasId,
+      createdBy: actorId,
+      createdAt: now,
+      updatedAt: now,
+      groupId: null,
+      type: "annotation",
+      strokeVersion: 1,
+      pointerType: "pen",
+      points: [0, 0, 20, 10, 40, 0],
+      pressures: [0.2, 0.8, 0.4],
+      baseWidth: 40,
+      baseHeight: 10,
+      temporary: true,
+      attachedObjectId: null,
+      geometry: { x: 10, y: 20, width: 40, height: 10, rotation: 0 },
+      style: {
+        fill: null,
+        outline: "#7c3aed",
+        outlineWidth: 5,
+        fontFamily: "Inter, sans-serif",
+        fontSize: 16,
+      },
+    };
+
+    const [duplicate] = remapCanvasClipboard(
+      createCanvasClipboardPayload([source], [source.id]),
+      { canvasId, actorId, issuedAt: now, offset: 32 },
+    );
+
+    expect(duplicate).toMatchObject({
+      type: "annotation",
+      points: source.points,
+      pressures: source.pressures,
+      temporary: true,
+      geometry: { x: 42, y: 52, width: 40, height: 10 },
+      style: { outline: "#7c3aed", outlineWidth: 5 },
+    });
+    expect(duplicate?.id).not.toBe(source.id);
+  });
+
   it("remaps object, group, and internal connector references", () => {
     const firstId = "33333333-3333-4333-8333-333333333333";
     const secondId = "44444444-4444-4444-8444-444444444444";

@@ -86,6 +86,7 @@ const styleCommand = commandBase.extend({
         fill: z.string().min(1).max(100).nullable().optional(),
         outline: z.string().min(1).max(100).optional(),
         outlineWidth: finiteNumber.min(0).max(20).optional(),
+        outlinePattern: z.enum(["solid", "dashed", "dotted"]).optional(),
         fontFamily: z.string().min(1).max(200).optional(),
         fontSize: finiteNumber.min(8).max(400).optional(),
         fontWeight: z.enum(["normal", "bold"]).optional(),
@@ -116,6 +117,10 @@ const endpointCommand = commandBase.extend({
     endpoint: z.enum(["start", "end"]),
     value: endpointSchema,
   }),
+});
+const promoteAnnotationCommand = commandBase.extend({
+  type: z.literal("annotation.promote"),
+  payload: z.strictObject({ objectId: uuid }),
 });
 const reorderCommand = commandBase.extend({
   type: z.literal("object.reorder"),
@@ -159,6 +164,7 @@ export const productCanvasMutationSchema = z.discriminatedUnion("type", [
   deleteCommand.omit(trustedCommandFields),
   styleCommand.omit(trustedCommandFields),
   endpointCommand.omit(trustedCommandFields),
+  promoteAnnotationCommand.omit(trustedCommandFields),
   reorderCommand.omit(trustedCommandFields),
   groupCommand.omit(trustedCommandFields),
   ungroupCommand.omit(trustedCommandFields),
@@ -176,6 +182,7 @@ export const productCanvasCommandSchema = z
     deleteCommand,
     styleCommand,
     endpointCommand,
+    promoteAnnotationCommand,
     reorderCommand,
     groupCommand,
     ungroupCommand,
@@ -417,6 +424,20 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         command.payload.y,
       );
     } else if (command.type === "object.resize") {
+      if (object.type === "annotation" && !object.baseWidth) {
+        setCanvasObjectField(
+          document,
+          object.id,
+          ["baseWidth"],
+          object.geometry.width,
+        );
+        setCanvasObjectField(
+          document,
+          object.id,
+          ["baseHeight"],
+          object.geometry.height,
+        );
+      }
       setCanvasObjectField(
         document,
         object.id,
@@ -451,9 +472,26 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         );
       }
     } else if (command.type === "object.style") {
+      if (
+        object.type === "annotation" &&
+        command.payload.style.outlinePattern &&
+        command.payload.style.outlinePattern !== "solid"
+      ) {
+        throw new ProductCanvasCommandConflictError(
+          "Freeform annotations use a solid pressure-rendered stroke.",
+        );
+      }
       for (const [field, value] of Object.entries(command.payload.style)) {
         setCanvasObjectField(document, object.id, ["style", field], value);
       }
+    } else if (command.type === "annotation.promote") {
+      if (object.type !== "annotation") {
+        throw new ProductCanvasCommandConflictError(
+          "Only annotations can be promoted.",
+        );
+      }
+      if (!object.temporary) return;
+      setCanvasObjectField(document, object.id, ["temporary"], false);
     } else if (command.type === "connector.endpoint") {
       if (object.type !== "connector") {
         throw new ProductCanvasCommandConflictError(
