@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 export type CanvasTool =
   | "select"
   | "pan"
+  | "pen"
   | "sticky"
   | "rectangle"
   | "ellipse"
@@ -46,7 +47,15 @@ type Props = {
   onAddSimulatedAiIdea: () => void;
   commentPlacementActive: boolean;
   onChooseComments: () => void;
+  canDraw: boolean;
+  penColor: string;
+  penThickness: number;
+  onPenColorChange: (color: string) => void;
+  onPenThicknessChange: (thickness: number) => void;
 };
+
+const penColors = ["#18181b", "#7c3aed", "#2563eb", "#dc2626", "#16a34a"];
+const penThicknesses = [3, 5, 8] as const;
 
 const shapeOptions = [
   { value: "rectangle", label: "Rectangle", icon: RectangleHorizontal },
@@ -96,6 +105,11 @@ export function WorkspacePrimaryDock({
   onAddSimulatedAiIdea,
   commentPlacementActive,
   onChooseComments,
+  canDraw,
+  penColor,
+  penThickness,
+  onPenColorChange,
+  onPenThicknessChange,
 }: Props) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const paletteInvokerRef = useRef<HTMLButtonElement | null>(null);
@@ -203,11 +217,64 @@ export function WorkspacePrimaryDock({
           ) : null}
 
           {openPalette === "drawing" ? (
-            <PaletteMessage
-              eyebrow="Drawing"
-              title="Vector pen arrives in Milestone 6"
-              description="This entry is a preview of the workspace vocabulary. It does not add or change canvas content yet."
-            />
+            <div className="min-w-72 p-1">
+              <p className="text-xs font-semibold tracking-wide text-violet-700 uppercase">
+                Drawing
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                role="menuitemradio"
+                aria-checked={activeTool === "pen"}
+                disabled={!canDraw}
+                className="mt-2 h-11 w-full justify-start border-zinc-200 bg-white text-zinc-700 hover:bg-violet-50 aria-checked:border-violet-600 aria-checked:bg-violet-50 aria-checked:text-violet-800"
+                onClick={() => chooseTool("pen")}
+              >
+                <PenLine aria-hidden="true" /> Pen
+              </Button>
+              <fieldset className="mt-3">
+                <legend className="text-xs font-semibold text-zinc-600">
+                  Stroke color
+                </legend>
+                <div className="mt-2 flex gap-2">
+                  {penColors.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      aria-label={`Pen color ${color}`}
+                      aria-pressed={penColor === color}
+                      className="size-9 rounded-full border-2 border-white shadow ring-1 ring-zinc-300 focus-visible:ring-2 focus-visible:ring-violet-600 aria-pressed:ring-2 aria-pressed:ring-violet-600"
+                      style={{ backgroundColor: color }}
+                      onClick={() => onPenColorChange(color)}
+                    />
+                  ))}
+                </div>
+              </fieldset>
+              <fieldset className="mt-3">
+                <legend className="text-xs font-semibold text-zinc-600">
+                  Stroke thickness
+                </legend>
+                <div className="mt-2 flex gap-2">
+                  {penThicknesses.map((thickness) => (
+                    <Button
+                      key={thickness}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-pressed={penThickness === thickness}
+                      onClick={() => onPenThicknessChange(thickness)}
+                    >
+                      {thickness}px
+                    </Button>
+                  ))}
+                </div>
+              </fieldset>
+              {!canDraw ? (
+                <p className="mt-3 text-xs text-zinc-500">
+                  Viewers and commenters can see annotations but cannot draw.
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
           {openPalette === "more" ? (
@@ -271,10 +338,10 @@ export function WorkspacePrimaryDock({
           size="icon"
           variant="outline"
           aria-label="Drawing"
-          aria-pressed={openPalette === "drawing"}
+          aria-pressed={openPalette === "drawing" || activeTool === "pen"}
           aria-expanded={openPalette === "drawing"}
           aria-controls="workspace-drawing-palette"
-          title="Drawing (Milestone 6)"
+          title="Drawing"
           className={iconButtonClass}
           onClick={(event) => togglePalette("drawing", event.currentTarget)}
         >

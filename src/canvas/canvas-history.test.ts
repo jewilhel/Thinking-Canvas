@@ -41,6 +41,33 @@ function shape(id = objectId): CanvasObjectV2 {
   };
 }
 
+function annotation(): Extract<CanvasObjectV2, { type: "annotation" }> {
+  return {
+    schemaVersion: 2,
+    id: objectId,
+    canvasId,
+    createdBy: actorId,
+    createdAt: now,
+    updatedAt: now,
+    groupId: null,
+    type: "annotation",
+    strokeVersion: 1,
+    pointerType: "pen",
+    points: [5, 5, 25, 25],
+    pressures: [0.2, 0.8],
+    temporary: true,
+    attachedObjectId: null,
+    geometry: { x: 5, y: 15, width: 30, height: 30, rotation: 0 },
+    style: {
+      fill: null,
+      outline: "#7c3aed",
+      outlineWidth: 5,
+      fontFamily: "Inter, sans-serif",
+      fontSize: 16,
+    },
+  };
+}
+
 function command(type: string, payload: unknown, issuedAt = now) {
   return {
     schemaVersion: 2,
@@ -72,6 +99,23 @@ describe("actor-local canvas history", () => {
     expect(readCanvasObjectV2(document, objectId)).toMatchObject({
       text: "Original",
     });
+  });
+
+  it("undoes and redoes one complete canonical annotation", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const { history } = executeProductCanvasCommandWithHistory(
+      document,
+      command("object.create", { object: annotation() }),
+    );
+
+    expect(applyCanvasHistoryEntry(document, history, "undo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, objectId)).toBeUndefined();
+    expect(applyCanvasHistoryEntry(document, history, "redo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, objectId)).toEqual(annotation());
   });
 
   it("reverses its text while preserving a later unrelated move", () => {

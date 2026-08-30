@@ -56,7 +56,55 @@ function shape(id = shapeId): CanvasObjectV2 {
   };
 }
 
+function annotation(): Extract<CanvasObjectV2, { type: "annotation" }> {
+  return {
+    schemaVersion: 2,
+    id: connectorId,
+    canvasId,
+    createdBy: actorId,
+    createdAt: issuedAt,
+    updatedAt: issuedAt,
+    type: "annotation",
+    strokeVersion: 1,
+    pointerType: "pen",
+    points: [5, 5, 25, 25],
+    pressures: [0.2, 0.8],
+    temporary: true,
+    attachedObjectId: null,
+    geometry: { x: 5, y: 15, width: 30, height: 30, rotation: 0 },
+    style: {
+      fill: null,
+      outline: "#7c3aed",
+      outlineWidth: 5,
+      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+      fontSize: 16,
+    },
+  };
+}
+
 describe("product canvas command boundary", () => {
+  it("creates only canonical new annotations through the command boundary", () => {
+    const document = createProductCanvasDocument(canvasId);
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.create", { object: annotation() }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toEqual(annotation());
+
+    expect(() =>
+      executeProductCanvasCommand(
+        createProductCanvasDocument(canvasId),
+        baseCommand("object.create", {
+          object: {
+            ...annotation(),
+            strokeVersion: undefined,
+            pressures: undefined,
+          },
+        }),
+      ),
+    ).toThrow("canonical pressure samples");
+  });
+
   it("creates, patches, moves, resizes, and styles through validated commands", () => {
     const document = createProductCanvasDocument(canvasId);
     executeProductCanvasCommand(

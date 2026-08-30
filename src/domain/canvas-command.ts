@@ -203,6 +203,20 @@ export const productCanvasCommandSchema = z
         message: "Command and object must target the same canvas.",
       });
     }
+    if (
+      command.type === "object.create" &&
+      command.payload.object.type === "annotation" &&
+      (command.payload.object.strokeVersion !== 1 ||
+        !command.payload.object.pressures ||
+        !command.payload.object.pointerType)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["payload", "object"],
+        message:
+          "New annotations require canonical pressure samples and pointer metadata.",
+      });
+    }
   });
 
 export type ProductCanvasCommand = z.infer<typeof productCanvasCommandSchema>;

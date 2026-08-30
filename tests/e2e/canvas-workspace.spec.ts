@@ -20,6 +20,78 @@ async function chooseShape(
   await page.getByRole("menuitemradio", { name: shape, exact: true }).click();
 }
 
+async function dispatchPointerStroke(
+  page: Page,
+  pointerType: "touch" | "pen",
+  pointerId: number,
+  pressure: number,
+) {
+  await page.getByTestId("product-canvas-surface").evaluate(
+    (surface, input) => {
+      const bounds = surface.getBoundingClientRect();
+      const dispatch = (
+        type: "pointerdown" | "pointermove" | "pointerup",
+        x: number,
+        y: number,
+        buttons: number,
+      ) =>
+        surface.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            clientX: bounds.left + x,
+            clientY: bounds.top + y,
+            pointerId: input.pointerId,
+            pointerType: input.pointerType,
+            isPrimary: true,
+            button: 0,
+            buttons,
+            pressure: input.pressure,
+          }),
+        );
+      dispatch("pointerdown", 420, 350, 1);
+      dispatch("pointermove", 455, 385, 1);
+      dispatch("pointermove", 510, 355, 1);
+      dispatch("pointerup", 540, 380, 0);
+    },
+    { pointerType, pointerId, pressure },
+  );
+}
+
+async function dispatchTwoTouchNavigation(page: Page) {
+  await page.getByTestId("product-canvas-surface").evaluate((surface) => {
+    const bounds = surface.getBoundingClientRect();
+    const dispatch = (
+      type: "pointerdown" | "pointermove" | "pointerup",
+      pointerId: number,
+      x: number,
+      y: number,
+      buttons: number,
+      isPrimary: boolean,
+    ) =>
+      surface.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: bounds.left + x,
+          clientY: bounds.top + y,
+          pointerId,
+          pointerType: "touch",
+          isPrimary,
+          button: 0,
+          buttons,
+          pressure: buttons ? 0.5 : 0,
+        }),
+      );
+    dispatch("pointerdown", 81, 300, 300, 1, true);
+    dispatch("pointerdown", 82, 500, 300, 1, false);
+    dispatch("pointermove", 81, 260, 315, 1, true);
+    dispatch("pointermove", 82, 550, 315, 1, false);
+    dispatch("pointerup", 82, 550, 315, 0, false);
+    dispatch("pointerup", 81, 260, 315, 0, true);
+  });
+}
+
 test("creates, reopens, restores the viewport, and survives sign-out", async ({
   page,
 }) => {
@@ -248,9 +320,9 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
 
   const baseline = await page.getByTestId("product-object-count").innerText();
   await page.getByRole("button", { name: "Drawing", exact: true }).click();
-  await expect(
-    page.getByText("Vector pen arrives in Milestone 6"),
-  ).toBeVisible();
+  await expect(page.getByRole("menuitemradio", { name: "Pen" })).toBeVisible();
+  await expect(page.getByText("Stroke color")).toBeVisible();
+  await expect(page.getByText("Stroke thickness")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Drawing", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -296,6 +368,96 @@ test("offers a keyboard-operable progressive dock without mutating from deferred
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
+});
+
+test("draws mouse, touch, and pen strokes that converge and reload", async ({
+  browser,
+}) => {
+  const ownerContext = await browser.newContext();
+  const editorContext = await browser.newContext();
+  const commenterContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const editor = await editorContext.newPage();
+  const commenter = await commenterContext.newPage();
+  await signIn(owner);
+  await signIn(editor, "editor@thinking-canvas.local");
+  await signIn(commenter, "commenter@thinking-canvas.local");
+  await owner.goto(`/app/canvases/${seedCanvasId}`);
+  await editor.goto(`/app/canvases/${seedCanvasId}`);
+  await commenter.goto(`/app/canvases/${seedCanvasId}`);
+  const surface = owner.getByTestId("product-canvas-surface");
+  await expect(owner.getByTestId("canvas-save-status")).toHaveText("Saved");
+  await expect(editor.getByTestId("canvas-save-status")).toHaveText("Saved");
+  await commenter.getByRole("button", { name: "Drawing", exact: true }).click();
+  await expect(
+    commenter.getByRole("menuitemradio", { name: "Pen" }),
+  ).toBeDisabled();
+  await expect(
+    commenter.getByText(
+      "Viewers and commenters can see annotations but cannot draw.",
+    ),
+  ).toBeVisible();
+  const baseline = Number(
+    await owner.getByTestId("product-annotation-count").innerText(),
+  );
+  await expect(editor.getByTestId("product-annotation-count")).toHaveText(
+    String(baseline),
+  );
+  const bounds = await surface.boundingBox();
+  if (!bounds) throw new Error("Canvas bounds are unavailable.");
+
+  await owner.getByRole("button", { name: "Drawing", exact: true }).click();
+  await owner.getByRole("menuitemradio", { name: "Pen" }).click();
+  await expect(
+    owner.getByRole("button", { name: "Drawing", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  const scaleBeforeTouchNavigation = await owner
+    .getByTestId("product-canvas-surface")
+    .getAttribute("data-viewport-scale");
+  await dispatchTwoTouchNavigation(owner);
+  await expect(owner.getByTestId("product-canvas-surface")).not.toHaveAttribute(
+    "data-viewport-scale",
+    scaleBeforeTouchNavigation ?? "1",
+  );
+  await expect(owner.getByTestId("product-annotation-count")).toHaveText(
+    String(baseline),
+  );
+
+  await owner.mouse.move(bounds.x + 360, bounds.y + 260);
+  await owner.mouse.down();
+  await owner.mouse.move(bounds.x + 410, bounds.y + 300, { steps: 8 });
+  await owner.mouse.move(bounds.x + 470, bounds.y + 270, { steps: 8 });
+  await owner.mouse.up();
+
+  await expect(owner.getByTestId("product-annotation-count")).toHaveText(
+    String(baseline + 1),
+  );
+  await expect(editor.getByTestId("product-annotation-count")).toHaveText(
+    String(baseline + 1),
+  );
+
+  await editor.getByRole("button", { name: "Drawing", exact: true }).click();
+  await editor.getByRole("menuitemradio", { name: "Pen" }).click();
+  await dispatchPointerStroke(editor, "touch", 71, 0.35);
+  await dispatchPointerStroke(owner, "pen", 72, 0.85);
+
+  for (const participant of [owner, editor]) {
+    await expect(
+      participant.getByTestId("product-annotation-count"),
+    ).toHaveText(String(baseline + 3));
+    await expect(participant.getByTestId("canvas-save-status")).toHaveText(
+      "Saved",
+    );
+    await participant.reload();
+    await expect(
+      participant.getByTestId("product-annotation-count"),
+    ).toHaveText(String(baseline + 3));
+  }
+
+  await ownerContext.close();
+  await editorContext.close();
+  await commenterContext.close();
 });
 
 test("uses dismissible responsive panels with focus containment, help, and true zoom-to-fit", async ({

@@ -100,18 +100,42 @@ const legacyDocumentObjectSchema = canvasObjectBaseSchema.extend({
 const legacyAnnotationObjectSchema = canvasObjectBaseSchema.extend({
   type: z.literal("annotation"),
   points: z.array(finiteNumber).min(4).max(20_000),
+  pressures: z.array(finiteNumber.min(0).max(1)).min(2).max(10_000).optional(),
+  strokeVersion: z.literal(1).optional(),
+  pointerType: z.enum(["mouse", "touch", "pen"]).optional(),
   temporary: z.boolean(),
   attachedObjectId: uuid.nullable(),
 });
 
-export const canvasObjectV2Schema = z.discriminatedUnion("type", [
-  shapeObjectSchema,
-  textObjectSchema,
-  connectorObjectSchema,
-  tableObjectSchema,
-  legacyDocumentObjectSchema,
-  legacyAnnotationObjectSchema,
-]);
+export const canvasObjectV2Schema = z
+  .discriminatedUnion("type", [
+    shapeObjectSchema,
+    textObjectSchema,
+    connectorObjectSchema,
+    tableObjectSchema,
+    legacyDocumentObjectSchema,
+    legacyAnnotationObjectSchema,
+  ])
+  .superRefine((object, context) => {
+    if (object.type !== "annotation") return;
+    if (object.points.length % 2 !== 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["points"],
+        message: "Annotation points must contain complete coordinate pairs.",
+      });
+    }
+    if (
+      object.pressures &&
+      object.pressures.length !== object.points.length / 2
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["pressures"],
+        message: "Annotation pressure must match the point count.",
+      });
+    }
+  });
 
 export type CanvasObjectV2 = z.infer<typeof canvasObjectV2Schema>;
 

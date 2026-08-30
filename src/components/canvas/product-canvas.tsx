@@ -47,6 +47,16 @@ import * as Y from "yjs";
 
 import { signOut } from "@/app/auth/actions";
 import {
+  annotationOutlinePoints,
+  annotationSamples,
+  canonicalizeAnnotationSamples,
+  defaultAnnotationColor,
+  defaultAnnotationThickness,
+  normalizeAnnotationPressure,
+  type AnnotationPointerType,
+  type AnnotationSample,
+} from "@/canvas/annotation-stroke";
+import {
   createCanvasClipboardPayload,
   parseCanvasClipboard,
   remapCanvasClipboard,
@@ -131,6 +141,16 @@ type CanvasUndoEntry =
   | { kind: "canvas"; history: CanvasHistoryEntry }
   | { kind: "ai"; changeSetId: string };
 type ObjectContextMenuPosition = { x: number; y: number; maxHeight: number };
+type ActiveAnnotationStroke = {
+  pointerId: number;
+  pointerType: AnnotationPointerType;
+  samples: AnnotationSample[];
+};
+type TouchNavigationGesture = {
+  viewport: Viewport;
+  centroid: Point;
+  distance: number;
+};
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
 const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left"];
@@ -205,9 +225,17 @@ function decodeUpdate(value: string) {
 
 function baseStyle(type: CanvasObjectV2["type"]) {
   return {
-    fill: type === "connector" || type === "text" ? null : "#ffffff",
-    outline: "#475569",
-    outlineWidth: type === "text" ? 0 : 2,
+    fill:
+      type === "connector" || type === "text" || type === "annotation"
+        ? null
+        : "#ffffff",
+    outline: type === "annotation" ? defaultAnnotationColor : "#475569",
+    outlineWidth:
+      type === "text"
+        ? 0
+        : type === "annotation"
+          ? defaultAnnotationThickness
+          : 2,
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
     fontSize: 16,
     fontWeight: "normal" as const,
@@ -253,6 +281,10 @@ export function ProductCanvas({
   const inlineEditorRef = useRef<HTMLTextAreaElement>(null);
   const contextPanelTriggerRef = useRef<HTMLButtonElement | null>(null);
   const objectNodeRefs = useRef(new Map<string, Konva.Node>());
+  const activeAnnotationStrokeRef = useRef<ActiveAnnotationStroke | null>(null);
+  const touchPointersRef = useRef(new Map<number, Point>());
+  const touchNavigationGestureRef = useRef<TouchNavigationGesture | null>(null);
+  const touchNavigationBlockedRef = useRef(false);
   const frameStartedAt = useRef(0);
   const documentStorageKey = `thinking-canvas:document:${canvasId}`;
   const viewportStorageKey = `thinking-canvas:viewport:${userId}:${canvasId}`;
@@ -271,6 +303,11 @@ export function ProductCanvas({
   const [objects, setObjects] = useState(() => listCanvasObjectsV2(document));
   const [size, setSize] = useState({ width: 960, height: 640 });
   const [tool, setTool] = useState<CanvasTool>("select");
+  const [penColor, setPenColor] = useState(defaultAnnotationColor);
+  const [penThickness, setPenThickness] = useState(defaultAnnotationThickness);
+  const [annotationPreview, setAnnotationPreview] = useState<
+    AnnotationSample[]
+  >([]);
   const [recentShape, setRecentShape] = useState<CanvasShapeTool>("rectangle");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [connectorStart, setConnectorStart] =
@@ -334,6 +371,7 @@ export function ProductCanvas({
     userId,
   });
   const instrumentationEnabled = process.env.NODE_ENV !== "production";
+  const canMutateCanvas = canvasRole === "owner" || canvasRole === "editor";
   const objectsById = useMemo(
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
@@ -571,7 +609,7 @@ export function ProductCanvas({
   }
 
   function createObject(
-    activeTool: Exclude<CanvasTool, "select" | "pan" | "connector">,
+    activeTool: Exclude<CanvasTool, "select" | "pan" | "pen" | "connector">,
     point: Point,
   ) {
     const id = crypto.randomUUID();
@@ -643,6 +681,11 @@ export function ProductCanvas({
   }
 
   function chooseTool(nextTool: CanvasTool) {
+    if (nextTool === "pen" && !canMutateCanvas) return;
+    if (nextTool !== "pen" && activeAnnotationStrokeRef.current) {
+      activeAnnotationStrokeRef.current = null;
+      setAnnotationPreview([]);
+    }
     setCommentPlacementActive(false);
     setContextPanel(null);
     setObjectContextMenu(null);
@@ -1446,7 +1489,7 @@ export function ProductCanvas({
       });
     } else if (tool === "connector") {
       finishConnector({ kind: "free", ...point });
-    } else if (tool !== "pan") {
+    } else if (tool !== "pan" && tool !== "pen") {
       createObject(tool, point);
     }
   }
@@ -1483,6 +1526,240 @@ export function ProductCanvas({
       x: (event.clientX - bounds.left - viewport.x) / viewport.scale,
       y: (event.clientY - bounds.top - viewport.y) / viewport.scale,
     });
+    if (
+      event.pointerType === "touch" &&
+      touchPointersRef.current.has(event.pointerId)
+    ) {
+      touchPointersRef.current.set(event.pointerId, {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      });
+      const gesture = touchNavigationGestureRef.current;
+      if (gesture) {
+        const [first, second] = [...touchPointersRef.current.values()];
+        if (first && second) {
+          const centroid = {
+            x: (first.x + second.x) / 2,
+            y: (first.y + second.y) / 2,
+          };
+          const nextDistance = Math.max(
+            1,
+            Math.hypot(second.x - first.x, second.y - first.y),
+          );
+          const scale = Math.min(
+            maxCanvasScale,
+            Math.max(
+              minCanvasScale,
+              gesture.viewport.scale * (nextDistance / gesture.distance),
+            ),
+          );
+          const worldCenter = {
+            x:
+              (gesture.centroid.x - gesture.viewport.x) /
+              gesture.viewport.scale,
+            y:
+              (gesture.centroid.y - gesture.viewport.y) /
+              gesture.viewport.scale,
+          };
+          setViewport({
+            scale,
+            x: centroid.x - worldCenter.x * scale,
+            y: centroid.y - worldCenter.y * scale,
+          });
+        }
+        event.preventDefault();
+        return;
+      }
+    }
+    const active = activeAnnotationStrokeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const nextSamples = pointerAnnotationSamples(event);
+    active.samples.push(...nextSamples);
+    setAnnotationPreview([...active.samples]);
+    event.preventDefault();
+  }
+
+  function clientWorldPoint(clientX: number, clientY: number) {
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!bounds) return null;
+    return {
+      x: (clientX - bounds.left - viewport.x) / viewport.scale,
+      y: (clientY - bounds.top - viewport.y) / viewport.scale,
+    };
+  }
+
+  function clientSurfacePoint(clientX: number, clientY: number) {
+    const bounds = containerRef.current?.getBoundingClientRect();
+    return bounds
+      ? { x: clientX - bounds.left, y: clientY - bounds.top }
+      : null;
+  }
+
+  function annotationPointerType(pointerType: string): AnnotationPointerType {
+    return pointerType === "pen" || pointerType === "touch"
+      ? pointerType
+      : "mouse";
+  }
+
+  function pointerAnnotationSamples(event: React.PointerEvent<HTMLDivElement>) {
+    const pointerType = annotationPointerType(event.pointerType);
+    const coalescedEvents = event.nativeEvent.getCoalescedEvents?.() ?? [];
+    const nativeEvents = coalescedEvents.length
+      ? coalescedEvents
+      : [event.nativeEvent];
+    return nativeEvents.flatMap((nativeEvent) => {
+      const point = clientWorldPoint(nativeEvent.clientX, nativeEvent.clientY);
+      return point
+        ? [
+            {
+              ...point,
+              pressure: normalizeAnnotationPressure(
+                pointerType,
+                nativeEvent.pressure,
+              ),
+            },
+          ]
+        : [];
+    });
+  }
+
+  function onSurfacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (tool === "pen" && event.pointerType === "touch") {
+      const point = clientSurfacePoint(event.clientX, event.clientY);
+      if (!point) return;
+      touchPointersRef.current.set(event.pointerId, point);
+      if (touchPointersRef.current.size >= 2) {
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // Synthetic pointer fixtures do not establish a browser session.
+        }
+        activeAnnotationStrokeRef.current = null;
+        setAnnotationPreview([]);
+        touchNavigationBlockedRef.current = true;
+        const [first, second] = [...touchPointersRef.current.values()];
+        if (first && second) {
+          touchNavigationGestureRef.current = {
+            viewport,
+            centroid: {
+              x: (first.x + second.x) / 2,
+              y: (first.y + second.y) / 2,
+            },
+            distance: Math.max(
+              1,
+              Math.hypot(second.x - first.x, second.y - first.y),
+            ),
+          };
+        }
+        event.preventDefault();
+        return;
+      }
+      if (touchNavigationBlockedRef.current) return;
+    }
+    if (
+      tool !== "pen" ||
+      !canMutateCanvas ||
+      !event.isPrimary ||
+      (event.pointerType === "mouse" && event.button !== 0) ||
+      activeAnnotationStrokeRef.current
+    ) {
+      return;
+    }
+    const pointerType = annotationPointerType(event.pointerType);
+    const samples = pointerAnnotationSamples(event);
+    if (!samples.length) return;
+    activeAnnotationStrokeRef.current = {
+      pointerId: event.pointerId,
+      pointerType,
+      samples,
+    };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthetic pointer fixtures do not establish a browser pointer session.
+      // Real mouse, touch, and pen input still uses pointer capture here.
+    }
+    setAnnotationPreview(samples);
+    setSelectedIds([]);
+    setContextPanel(null);
+    event.preventDefault();
+  }
+
+  function finishAnnotationStroke(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") {
+      const navigating = touchNavigationGestureRef.current !== null;
+      touchPointersRef.current.delete(event.pointerId);
+      if (touchPointersRef.current.size < 2) {
+        touchNavigationGestureRef.current = null;
+      }
+      if (touchPointersRef.current.size === 0) {
+        touchNavigationBlockedRef.current = false;
+      }
+      if (navigating || touchNavigationBlockedRef.current) {
+        event.preventDefault();
+        return;
+      }
+    }
+    const active = activeAnnotationStrokeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    active.samples.push(...pointerAnnotationSamples(event));
+    const canonical = canonicalizeAnnotationSamples(
+      active.samples,
+      penThickness,
+    );
+    activeAnnotationStrokeRef.current = null;
+    setAnnotationPreview([]);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (!canonical) return;
+
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const object: CanvasObjectV2 = {
+      schemaVersion: 2,
+      id,
+      canvasId,
+      createdBy: userId,
+      createdAt: now,
+      updatedAt: now,
+      type: "annotation",
+      strokeVersion: 1,
+      pointerType: active.pointerType,
+      points: canonical.points,
+      pressures: canonical.pressures,
+      temporary: true,
+      attachedObjectId: null,
+      geometry: canonical.geometry,
+      style: {
+        ...baseStyle("annotation"),
+        outline: penColor,
+        outlineWidth: penThickness,
+      },
+    };
+    runCommand("object.create", { object });
+    setSelectedIds([id]);
+    event.preventDefault();
+  }
+
+  function cancelAnnotationStroke(event?: React.PointerEvent<HTMLDivElement>) {
+    const active = activeAnnotationStrokeRef.current;
+    if (active) {
+      activeAnnotationStrokeRef.current = null;
+      setAnnotationPreview([]);
+      if (event?.currentTarget.hasPointerCapture(active.pointerId)) {
+        event.currentTarget.releasePointerCapture(active.pointerId);
+      }
+    }
+    if (event?.pointerType === "touch") {
+      touchPointersRef.current.delete(event.pointerId);
+      if (touchPointersRef.current.size < 2) {
+        touchNavigationGestureRef.current = null;
+      }
+      if (touchPointersRef.current.size === 0) {
+        touchNavigationBlockedRef.current = false;
+      }
+    }
   }
 
   function objectBounds(object: CanvasObjectV2) {
@@ -1547,6 +1824,12 @@ export function ProductCanvas({
     )
       return;
     const accelerator = event.metaKey || event.ctrlKey;
+    if (event.key === "Escape" && activeAnnotationStrokeRef.current) {
+      event.preventDefault();
+      activeAnnotationStrokeRef.current = null;
+      setAnnotationPreview([]);
+      return;
+    }
     if (
       selectedObjects.length &&
       ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu")
@@ -1671,6 +1954,7 @@ export function ProductCanvas({
         s: "sticky",
         r: recentShape,
         c: "connector",
+        p: "pen",
         t: "text",
         b: "table",
       }[event.key.toLowerCase()] as CanvasTool | undefined;
@@ -1852,6 +2136,28 @@ export function ProductCanvas({
   }
 
   function renderObject(object: CanvasObjectV2) {
+    if (object.type === "annotation") {
+      return (
+        <Group
+          key={object.id}
+          id={object.id}
+          x={object.geometry.x}
+          y={object.geometry.y}
+          rotation={object.geometry.rotation}
+          listening={false}
+        >
+          <Line
+            points={annotationOutlinePoints(
+              annotationSamples(object),
+              object.style.outlineWidth,
+            )}
+            closed
+            fill={object.style.outline}
+            listening={false}
+          />
+        </Group>
+      );
+    }
     if (object.type === "connector") {
       const points = resolveConnectorPointsV2(
         object,
@@ -1905,7 +2211,7 @@ export function ProductCanvas({
         </Group>
       );
     }
-    if (object.type === "document" || object.type === "annotation") return null;
+    if (object.type === "document") return null;
     return (
       <Fragment key={object.id}>
         <Group
@@ -2430,6 +2736,11 @@ export function ProductCanvas({
         onAddSimulatedAiIdea={addSimulatedAiIdea}
         commentPlacementActive={commentPlacementActive}
         onChooseComments={chooseComments}
+        canDraw={canMutateCanvas}
+        penColor={penColor}
+        penThickness={penThickness}
+        onPenColorChange={setPenColor}
+        onPenThicknessChange={setPenThickness}
       />
 
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
@@ -3016,10 +3327,14 @@ export function ProductCanvas({
           role="application"
           aria-label={`Canvas: ${title}. Choose a tool, then use the canvas. Arrow keys move a selection or pan; Delete removes a selection.`}
           onKeyDown={onKeyDown}
+          onPointerDown={onSurfacePointerDown}
           onPointerMove={onSurfacePointerMove}
+          onPointerUp={finishAnnotationStroke}
+          onPointerCancel={cancelAnnotationStroke}
           onPointerLeave={() => setHoveredShapeId(null)}
           className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
           style={{
+            touchAction: tool === "pen" ? "none" : undefined,
             backgroundImage: `radial-gradient(circle, var(--workspace-dot) ${canvasGrid.dotRadius}px, transparent ${canvasGrid.dotRadius}px)`,
             backgroundPosition: `${canvasGrid.x}px ${canvasGrid.y}px`,
             backgroundSize: `${canvasGrid.spacing}px ${canvasGrid.spacing}px`,
@@ -3056,6 +3371,18 @@ export function ProductCanvas({
           >
             <Layer>
               {displayObjects.map(renderObject)}
+              {annotationPreview.length > 1 ? (
+                <Line
+                  points={annotationOutlinePoints(
+                    annotationPreview,
+                    penThickness,
+                    false,
+                  )}
+                  closed
+                  fill={penColor}
+                  listening={false}
+                />
+              ) : null}
               {remoteCursors.map((cursor) => (
                 <Group
                   key={cursor.userId}
@@ -3192,6 +3519,15 @@ export function ProductCanvas({
               <div>
                 <dt className="text-zinc-400">Objects</dt>
                 <dd data-testid="product-object-count">{objects.length}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-400">Annotations</dt>
+                <dd data-testid="product-annotation-count">
+                  {
+                    objects.filter((object) => object.type === "annotation")
+                      .length
+                  }
+                </dd>
               </div>
               <div>
                 <dt className="text-zinc-400">Frame</dt>

@@ -4,7 +4,7 @@ Status: Milestones 0–5 closed; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-08-28
+Last updated: 2026-08-29
 
 ## Purpose
 
@@ -284,6 +284,12 @@ Evidence: [Milestone 5 implementation and verification record](docs/implementati
 - [ ] **FR-041 — Promote to durable content.** A participant can promote an annotation so it remains visible when the temporary overlay is hidden.
 - [ ] **FR-042 — Automatic overlap attachment.** A stroke overlapping an eligible object attaches to it by default and follows its movement.
 - [ ] **FR-043 — Disconnect attachment.** A participant can disconnect an attached stroke without changing its visible geometry at that moment.
+
+### Supporting work
+
+- [ ] **Unified multi-selection transform frame.** Drag-selecting or Shift-clicking multiple annotations and/or supported canvas objects shows one selection boundary and handles around the complete selection; moving or resizing that selection commits as one undoable batch while preserving connector and annotation attachment integrity.
+- [ ] **Unified Stroke palette.** Applicable annotations and canvas objects use the same expandable floating **Stroke** palette. Shared controls include stroke color and thickness; supported object borders and connectors also expose `Solid`, `Dashed`, and `Dotted` stroke styles through the same palette.
+- [ ] **Contextual styling parity.** Annotation and object palettes share placement, focus, responsive, accessible-name, mixed-value, and batch-application behavior. A mixed selection exposes only properties valid for every applicable selected item and does not overwrite a mixed property until the participant chooses a value.
 
 ### Exit gate
 
