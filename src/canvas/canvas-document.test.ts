@@ -184,6 +184,24 @@ describe("production canvas document", () => {
     });
   });
 
+  it("lists valid objects while preserving an unrelated malformed shared entry", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const malformedId = "50000000-0000-4000-8000-000000000099";
+    const malformed = new Y.Map<unknown>();
+    malformed.set("id", malformedId);
+    document
+      .getMap<Y.Map<unknown>>("canvas-objects-v2")
+      .set(malformedId, malformed);
+    document.getArray<string>("canvas-order-v2").push([malformedId]);
+    putCanvasObjectV2(document, makeObject());
+
+    expect(listCanvasObjectsV2(document)).toEqual([makeObject()]);
+    expect(
+      document.getMap<Y.Map<unknown>>("canvas-objects-v2").get(malformedId),
+    ).toBe(malformed);
+    expect(() => readCanvasObjectV2(document, malformedId)).toThrow();
+  });
+
   it("rejects documents and objects from another canvas", () => {
     const document = createProductCanvasDocument(canvasId);
 

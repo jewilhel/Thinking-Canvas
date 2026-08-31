@@ -4209,6 +4209,16 @@ function ObjectNavigatorContent({
                 {selectedObject.style.outlineWidth}
               </dd>
             </div>
+            {selectedObject.type !== "annotation" &&
+            selectedObject.type !== "text" &&
+            selectedObject.type !== "document" ? (
+              <div>
+                <dt>Stroke style</dt>
+                <dd data-testid="selected-stroke-pattern">
+                  {resolvedOutlinePattern(selectedObject.style.outlinePattern)}
+                </dd>
+              </div>
+            ) : null}
             {selectedObject.type === "annotation" ? (
               <>
                 <div>

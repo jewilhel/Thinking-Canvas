@@ -176,6 +176,9 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await expect(dashedStrokeStyle).toHaveClass(/bg-violet-500/);
   await expect(dashedStrokeStyle.locator("svg")).toHaveCount(1);
   await expect(solidStrokeStyle.locator("svg")).toHaveCount(0);
+  await expect(page.getByTestId("selected-stroke-pattern")).toHaveText(
+    "dashed",
+  );
   await openContextPanel(page, "Text style");
   await page.getByLabel("Typeface").selectOption({ label: "Bookish" });
   await page.getByLabel("Custom text size").fill("22");

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import * as Y from "yjs";
 
 import {
   createProductCanvasDocument,
+  listCanvasObjectsV2,
   putCanvasObjectV2,
   readCanvasObjectV2,
   readCanvasOrderV2,
@@ -16,6 +18,7 @@ import { executeProductCanvasCommand } from "@/domain/canvas-command";
 const canvasId = "11111111-1111-4111-8111-111111111111";
 const actorId = "22222222-2222-4222-8222-222222222222";
 const objectId = "33333333-3333-4333-8333-333333333333";
+const annotationId = "33333333-3333-4333-8333-333333333334";
 const now = "2026-08-11T20:00:00.000Z";
 
 function shape(id = objectId): CanvasObjectV2 {
@@ -41,10 +44,12 @@ function shape(id = objectId): CanvasObjectV2 {
   };
 }
 
-function annotation(): Extract<CanvasObjectV2, { type: "annotation" }> {
+function annotation(
+  id = objectId,
+): Extract<CanvasObjectV2, { type: "annotation" }> {
   return {
     schemaVersion: 2,
-    id: objectId,
+    id,
     canvasId,
     createdBy: actorId,
     createdAt: now,
@@ -116,6 +121,41 @@ describe("actor-local canvas history", () => {
       "applied",
     );
     expect(readCanvasObjectV2(document, objectId)).toEqual(annotation());
+  });
+
+  it("continues valid styling and annotation creation beside a malformed entry", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const malformedId = "33333333-3333-4333-8333-333333333399";
+    const malformed = new Y.Map<unknown>();
+    malformed.set("id", malformedId);
+    document
+      .getMap<Y.Map<unknown>>("canvas-objects-v2")
+      .set(malformedId, malformed);
+    document.getArray<string>("canvas-order-v2").push([malformedId]);
+    putCanvasObjectV2(document, shape());
+
+    executeProductCanvasCommandWithHistory(
+      document,
+      command("object.style", {
+        objectId,
+        style: { outlinePattern: "dashed" },
+      }),
+    );
+    executeProductCanvasCommandWithHistory(
+      document,
+      command("object.create", { object: annotation(annotationId) }),
+    );
+
+    expect(readCanvasObjectV2(document, objectId)?.style.outlinePattern).toBe(
+      "dashed",
+    );
+    expect(readCanvasObjectV2(document, annotationId)).toEqual(
+      annotation(annotationId),
+    );
+    expect(listCanvasObjectsV2(document)).toHaveLength(2);
+    expect(
+      document.getMap<Y.Map<unknown>>("canvas-objects-v2").get(malformedId),
+    ).toBe(malformed);
   });
 
   it("reverses its text while preserving a later unrelated move", () => {

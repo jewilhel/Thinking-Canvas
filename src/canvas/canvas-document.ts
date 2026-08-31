@@ -343,8 +343,14 @@ export function listCanvasObjectsV2(document: Y.Doc) {
     .sort();
 
   return [...orderedIds, ...orphanIds].flatMap((id) => {
-    const object = readCanvasObjectV2(document, id);
-    return object ? [object] : [];
+    const value = objectMap.get(id);
+    if (!value) return [];
+    try {
+      const object = canvasObjectV2Schema.safeParse(fromSharedValue(value));
+      return object.success ? [object.data] : [];
+    } catch {
+      return [];
+    }
   });
 }
 
