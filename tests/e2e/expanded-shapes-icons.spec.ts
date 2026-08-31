@@ -21,6 +21,29 @@ test("adds expanded shapes and styles a searchable vector icon", async ({
   const surface = page.getByTestId("product-canvas-surface");
 
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  const shapePalette = page.getByTestId("workspace-shape-palette");
+  const roundedRectangleTile = page.getByTestId(
+    "basic-shape-tile-rounded-rectangle",
+  );
+  await expect(
+    roundedRectangleTile.getByText("Rounded rectangle"),
+  ).toBeVisible();
+  expect(
+    await roundedRectangleTile.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+  ).toBe(true);
+  await expect(roundedRectangleTile.locator("svg")).toHaveAttribute(
+    "fill",
+    "currentColor",
+  );
+  const previewBox = await roundedRectangleTile.locator("svg").boundingBox();
+  const labelBox = await roundedRectangleTile
+    .getByText("Rounded rectangle")
+    .boundingBox();
+  expect(previewBox).not.toBeNull();
+  expect(labelBox).not.toBeNull();
+  expect(previewBox!.y + previewBox!.height).toBeLessThanOrEqual(labelBox!.y);
   await page.getByRole("menuitemradio", { name: "Star", exact: true }).click();
   await surface.click({ position: { x: 280, y: 220 } });
   await expect(
@@ -32,6 +55,23 @@ test("adds expanded shapes and styles a searchable vector icon", async ({
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page.getByRole("tab", { name: "Icons" }).click();
   await expect(page.getByText("1512 icons")).toBeVisible();
+  expect(
+    await shapePalette.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+  ).toBe(true);
+  const paletteBox = await shapePalette.boundingBox();
+  const searchBox = await page.getByLabel("Search icons").boundingBox();
+  const resultsBox = await page.getByTestId("icon-results").boundingBox();
+  expect(paletteBox).not.toBeNull();
+  expect(searchBox).not.toBeNull();
+  expect(resultsBox).not.toBeNull();
+  expect(searchBox!.x + searchBox!.width).toBeLessThanOrEqual(
+    paletteBox!.x + paletteBox!.width,
+  );
+  expect(resultsBox!.x + resultsBox!.width).toBeLessThanOrEqual(
+    paletteBox!.x + paletteBox!.width,
+  );
   const visibleTiles = page.getByTestId("icon-tile");
   await expect(visibleTiles.first()).toBeVisible();
   expect(await visibleTiles.count()).toBeLessThan(100);

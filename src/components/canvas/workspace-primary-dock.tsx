@@ -2,33 +2,25 @@
 
 import {
   Check,
-  Circle,
-  Cloud,
-  Cylinder,
-  Diamond,
   Eraser,
   Hand,
   Highlighter,
   Link2,
   MessageCircle,
-  MessageSquare,
   MousePointer2,
-  Octagon,
   PenLine,
-  Pentagon,
   Puzzle,
-  RectangleHorizontal,
   Shapes,
-  SquareRoundCorner,
-  Star,
   StickyNote,
   Table2,
   Type,
-  Triangle,
-  Hexagon,
 } from "lucide-react";
 import { useRef, useState } from "react";
 
+import {
+  basicShapePath,
+  basicShapePoints,
+} from "@/canvas/basic-shape-geometry";
 import { Button } from "@/components/ui/button";
 import { CustomColorPicker } from "@/components/canvas/custom-color-picker";
 import { drawingColorPairs } from "@/components/canvas/canvas-colors";
@@ -107,22 +99,18 @@ const drawingTools = [
 ] as const;
 
 const shapeOptions = [
-  { value: "rectangle", label: "Rectangle", icon: RectangleHorizontal },
-  {
-    value: "rounded-rectangle",
-    label: "Rounded rectangle",
-    icon: SquareRoundCorner,
-  },
-  { value: "ellipse", label: "Ellipse", icon: Circle },
-  { value: "diamond", label: "Diamond", icon: Diamond },
-  { value: "triangle", label: "Triangle", icon: Triangle },
-  { value: "pentagon", label: "Pentagon", icon: Pentagon },
-  { value: "hexagon", label: "Hexagon", icon: Hexagon },
-  { value: "octagon", label: "Octagon", icon: Octagon },
-  { value: "star", label: "Star", icon: Star },
-  { value: "cloud", label: "Cloud", icon: Cloud },
-  { value: "speech-bubble", label: "Speech bubble", icon: MessageSquare },
-  { value: "cylinder", label: "Cylinder", icon: Cylinder },
+  { value: "rectangle", label: "Rectangle" },
+  { value: "rounded-rectangle", label: "Rounded rectangle" },
+  { value: "ellipse", label: "Ellipse" },
+  { value: "diamond", label: "Diamond" },
+  { value: "triangle", label: "Triangle" },
+  { value: "pentagon", label: "Pentagon" },
+  { value: "hexagon", label: "Hexagon" },
+  { value: "octagon", label: "Octagon" },
+  { value: "star", label: "Star" },
+  { value: "cloud", label: "Cloud" },
+  { value: "speech-bubble", label: "Speech bubble" },
+  { value: "cylinder", label: "Cylinder" },
 ] as const;
 
 const directTools = [
@@ -155,6 +143,50 @@ const creationTools = [
 function shapeLabel(shape: CanvasShapeTool) {
   return (
     shapeOptions.find((option) => option.value === shape)?.label ?? "Shape"
+  );
+}
+
+function BasicShapePreview({ shape }: { shape: CanvasShapeTool }) {
+  const width = 36;
+  const height = 28;
+  const points = basicShapePoints(shape, width, height);
+  const path = basicShapePath(shape, width, height);
+
+  return (
+    <svg
+      viewBox="0 0 48 36"
+      className="h-9 w-12 shrink-0 fill-current"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <g transform="translate(6 4)">
+        {shape === "rectangle" || shape === "rounded-rectangle" ? (
+          <rect
+            width={width}
+            height={height}
+            rx={shape === "rounded-rectangle" ? 6 : 0}
+          />
+        ) : null}
+        {shape === "ellipse" ? (
+          <ellipse cx={width / 2} cy={height / 2} rx={18} ry={14} />
+        ) : null}
+        {points ? (
+          <polygon
+            points={Array.from({ length: points.length / 2 }, (_, index) =>
+              points.slice(index * 2, index * 2 + 2).join(","),
+            ).join(" ")}
+          />
+        ) : null}
+        {path ? <path d={path} /> : null}
+        {shape === "cylinder" ? (
+          <>
+            <rect y="4" width={width} height={height - 8} />
+            <ellipse cx={width / 2} cy="4" rx={width / 2} ry="4" />
+            <ellipse cx={width / 2} cy={height - 4} rx={width / 2} ry="4" />
+          </>
+        ) : null}
+      </g>
+    </svg>
   );
 }
 
@@ -257,7 +289,7 @@ export function WorkspacePrimaryDock({
       {openPalette ? (
         <div
           id={`workspace-${openPalette}-palette`}
-          className="absolute bottom-[calc(100%+0.75rem)] left-1/2 w-max max-w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome-solid)] p-3 text-zinc-800 shadow-[var(--workspace-shadow-strong)]"
+          className="absolute bottom-[calc(100%+0.75rem)] left-1/2 w-[min(28rem,calc(100vw-2rem))] max-w-full -translate-x-1/2 overflow-hidden rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome-solid)] p-3 text-zinc-800 shadow-[var(--workspace-shadow-strong)]"
           data-testid={`workspace-${openPalette}-palette`}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
@@ -289,12 +321,13 @@ export function WorkspacePrimaryDock({
               </div>
               {shapeSection === "basic" ? (
                 <div
-                  className="mt-2 grid max-h-72 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3"
+                  className="mt-2 grid max-h-72 min-w-0 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3"
                   role="menu"
                 >
-                  {shapeOptions.map(({ value, label, icon: Icon }) => (
+                  {shapeOptions.map(({ value, label }) => (
                     <Button
                       key={value}
+                      data-testid={`basic-shape-tile-${value}`}
                       type="button"
                       variant="outline"
                       role="menuitemradio"
@@ -302,14 +335,16 @@ export function WorkspacePrimaryDock({
                         value === "rounded-rectangle" ? "Rounded box" : label
                       }
                       aria-checked={activeTool === value}
-                      className="h-11 border-zinc-200 bg-white px-3 text-zinc-700 hover:bg-violet-50 aria-checked:border-violet-600 aria-checked:bg-violet-50 aria-checked:text-violet-800 dark:border-zinc-200 dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50 dark:aria-checked:border-violet-600 dark:aria-checked:bg-violet-50 dark:aria-checked:text-violet-800"
+                      className="h-20 min-w-0 flex-col gap-1 overflow-hidden border-zinc-200 bg-white p-2 text-zinc-900 hover:bg-violet-50 aria-checked:border-violet-600 aria-checked:bg-violet-50 aria-checked:text-violet-800 dark:border-zinc-200 dark:bg-white dark:text-zinc-900 dark:hover:bg-violet-50 dark:aria-checked:border-violet-600 dark:aria-checked:bg-violet-50 dark:aria-checked:text-violet-800"
                       onClick={() => {
                         onChooseShape(value);
                         setOpenPalette(null);
                       }}
                     >
-                      <Icon aria-hidden="true" />
-                      {label}
+                      <BasicShapePreview shape={value} />
+                      <span className="max-w-full truncate text-[10px]">
+                        {label}
+                      </span>
                     </Button>
                   ))}
                 </div>

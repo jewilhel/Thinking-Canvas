@@ -105,7 +105,7 @@ export function IconBrowser({ onChoose }: Props) {
   });
 
   return (
-    <div className="w-[min(44rem,calc(100vw-2rem))] p-1">
+    <div className="w-full max-w-full min-w-0 overflow-hidden p-1">
       <label className="block text-xs font-semibold text-zinc-600">
         Search icons
         <input
@@ -121,7 +121,7 @@ export function IconBrowser({ onChoose }: Props) {
         />
       </label>
       <div
-        className="mt-2 flex gap-2 overflow-x-auto pb-1"
+        className="mt-2 flex max-w-full min-w-0 gap-2 overflow-x-auto pb-1"
         aria-label="Icon categories"
       >
         <button
@@ -159,7 +159,7 @@ export function IconBrowser({ onChoose }: Props) {
           {!query && !category && recentIcons.length ? (
             <div className="mt-3">
               <p className="text-xs font-semibold text-zinc-600">Recent</p>
-              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+              <div className="mt-2 flex max-w-full min-w-0 gap-2 overflow-x-auto pb-1">
                 {recentIcons.map((icon) => (
                   <button
                     key={icon.name}
@@ -188,7 +188,7 @@ export function IconBrowser({ onChoose }: Props) {
           <div
             ref={gridRef}
             data-testid="icon-results"
-            className="mt-2 h-[26rem] overflow-y-auto pr-1"
+            className="mt-2 h-[26rem] w-full min-w-0 overflow-y-auto pr-1"
             onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
           >
             <div style={{ height: startRow * rowHeight }} aria-hidden="true" />
