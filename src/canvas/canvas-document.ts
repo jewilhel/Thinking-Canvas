@@ -40,6 +40,7 @@ const styleSchema = z.strictObject({
   listStyle: z.enum(["none", "bullet", "numbered"]).optional(),
   linkUrl: textLink.nullable().optional(),
   textColor: color.optional(),
+  opacity: finiteNumber.min(0).max(1).optional(),
 });
 
 const canvasObjectBaseSchema = z.strictObject({
@@ -69,8 +70,41 @@ const connectorEndpointSchema = z.discriminatedUnion("kind", [
 
 const shapeObjectSchema = canvasObjectBaseSchema.extend({
   type: z.literal("shape"),
-  shape: z.enum(["rectangle", "ellipse", "diamond"]),
+  shape: z.enum([
+    "rectangle",
+    "rounded-rectangle",
+    "ellipse",
+    "diamond",
+    "triangle",
+    "pentagon",
+    "hexagon",
+    "octagon",
+    "star",
+    "cloud",
+    "speech-bubble",
+    "cylinder",
+  ]),
   text: z.string().max(10_000),
+});
+
+const iconObjectSchema = canvasObjectBaseSchema.extend({
+  type: z.literal("icon"),
+  catalog: z.literal("phosphor"),
+  catalogVersion: z.literal("2.1.1"),
+  iconName: z
+    .string()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .max(100),
+  iconVariant: z.literal("fill"),
+  parentId: uuid.nullable(),
+  parentRelative: z
+    .strictObject({
+      x: finiteNumber,
+      y: finiteNumber,
+      width: finiteNumber.nonnegative(),
+      height: finiteNumber.nonnegative(),
+    })
+    .nullable(),
 });
 
 const textObjectSchema = canvasObjectBaseSchema.extend({
@@ -118,6 +152,7 @@ const legacyAnnotationObjectSchema = canvasObjectBaseSchema.extend({
 export const canvasObjectV2Schema = z
   .discriminatedUnion("type", [
     shapeObjectSchema,
+    iconObjectSchema,
     textObjectSchema,
     connectorObjectSchema,
     tableObjectSchema,

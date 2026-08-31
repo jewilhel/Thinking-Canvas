@@ -1,14 +1,14 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–6 closed; later milestones remain draft
+Status: Milestones 0–6 closed; Milestone 7 approved for implementation; later milestones shifted and remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-08-29
+Last updated: 2026-08-30
 
 ## Purpose
 
-This document is the build and completion ledger for the first version of Thinking Canvas. Every sourced product requirement retains its original `FR-###` identifier. A requirement may be checked only when its implementation, automated coverage where practical, and stated manual acceptance evidence are complete.
+This document is the build and completion ledger for the first version of Thinking Canvas. Every sourced product requirement retains its original `FR-###` identifier, and product-owner additions continue the identifier sequence. A requirement may be checked only when its implementation, automated coverage where practical, and stated manual acceptance evidence are complete.
 
 ## Completion rules
 
@@ -59,6 +59,7 @@ Use exact versions selected during project initialization and commit the lockfil
 | `@supabase/supabase-js` + `@supabase/ssr` | MIT | Auth, PostgreSQL access, Realtime channels, and Next.js session integration | Official Supabase clients for the selected platform |
 | `openai` | Apache-2.0 | Responses and Realtime server integration | Official OpenAI JavaScript/TypeScript SDK |
 | `lucide-react` | ISC | Application-interface icons only | Clear, consistent toolbar and menu icons; not a canvas illustration library |
+| `@phosphor-icons/core` | MIT | Approved searchable canvas illustration catalog and versioned raw SVG source | One coherent family with catalog metadata, categories, tags, and six vector weights; its pinned `2.1.1` package contains 1,512 base icons and 9,072 SVG variants |
 | `vitest` + Testing Library | MIT | Unit and component tests | Fast TypeScript-friendly tests for commands, reducers, schemas, and UI behavior |
 | `@playwright/test` + `axe-core` | Apache-2.0 / MPL-2.0 | Cross-browser end-to-end and automated accessibility tests | Covers real interaction flows, concurrent browser sessions, and accessibility regressions |
 
@@ -68,7 +69,8 @@ Use exact versions selected during project initialization and commit the lockfil
 - [x] Treat Yjs as the collaboration state engine; persist compacted updates and snapshots in Supabase instead of relying on transient Broadcast delivery.
 - [x] Use Supabase Presence for slow-changing participant state and Broadcast for high-frequency cursor and document-update messages.
 - [x] Keep Zustand state local only; durable or collaborative product state must not live exclusively in a Zustand store.
-- [x] Keep Lucide icons in the application chrome. A searchable icon library for insertion onto the canvas remains deferred.
+- [x] Keep Lucide icons in the application chrome; do not persist Lucide component names as canvas content.
+- [x] Use the pinned Phosphor Core catalog approved in `PD-013` for canvas-insertable illustration icons; compile trusted package assets into versioned local vector instructions and do not depend on a public icon API at runtime.
 - [x] Do not add a second hosted collaboration, authentication, database, or AI service without an approved architecture change.
 
 ## System architecture
@@ -259,7 +261,7 @@ The following original requirements remain verbatim for source traceability but 
 ### Supporting work
 
 - [x] Expand the versioned semantic canvas projection to include every render-affecting style and layout property required to understand the current composition, including fill, outline, typography, text alignment, object geometry, group/order, connector relationships, computed bounds, and applicable canvas design tokens; keep stable object IDs and server-derived state authoritative.
-- [x] Add a bounded initial set of deterministic higher-level layout tools for reviewable AI edits—at minimum alignment, distribution, spacing normalization, and resize-to-content—implemented through the same validated domain-command, authorization, idempotency, collaboration, and reversal boundaries as lower-level commands. Defer template-specific composition and broader layout expansion to Milestone 10.
+- [x] Add a bounded initial set of deterministic higher-level layout tools for reviewable AI edits—at minimum alignment, distribution, spacing normalization, and resize-to-content—implemented through the same validated domain-command, authorization, idempotency, collaboration, and reversal boundaries as lower-level commands. Defer template-specific composition and broader layout expansion to Milestone 11.
 - [x] Add targeted before-and-after render captures for visually sensitive AI changes: use an object-plus-context region for direct-object comments and a grounded affected region plus full-canvas orientation image for world-space multi-object comments. Send captures only to an approved vision-capable Responses API model, keep them supplementary to the semantic projection, bound resolution/count/cost, use `store: false`, and do not persist image content in operational logs.
 - [x] Validate each visually sensitive staged result with deterministic checks for clipping, overlap, contrast, spacing, bounds, and connector integrity, plus a bounded visual-feedback pass before presenting it for human review; never let screenshot interpretation create object IDs, widen comment-defined scope, or bypass server simulation.
 
@@ -300,7 +302,33 @@ Evidence: [Milestone 5 implementation and verification record](docs/implementati
 
 Evidence: [Milestone 6 implementation and verification record](docs/implementation/milestone-06-vector-annotations.md), pull request [#11](https://github.com/jewilhel/Thinking-Canvas/pull/11), protected CI [run `33357203357`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/33357203357) for commit `d062533`, ready Git-backed Netlify deploy preview `6a9502e919cbe900081cb3a6`, and product-owner hosted acceptance and closure approval on 2026-08-30.
 
-## Milestone 7 — First-class documents
+## Milestone 7 — Expanded shapes and illustration icons
+
+This milestone promotes the previously deferred canvas-insertable icon or illustration library into first-version scope. Phosphor Core, the filled-icon styling direction, the initial basic-shape set, and the one-level nesting behavior are approved in `PD-013` through `PD-015`; implementation remains subject to the detailed milestone-plan approval gate.
+
+### Product requirements
+
+- [ ] **FR-072 — Expanded basic shapes.** The Shapes palette adds rounded rectangle, triangle, pentagon, hexagon, octagon, star, cloud, speech bubble, and cylinder alongside the existing rectangle, ellipse, and diamond; every added shape supports the same create, select, move, resize, delete, duplicate, clipboard, grouping, ordering, commenting, connection-point, styling, history, persistence, and collaboration behaviors that apply to existing shapes.
+- [ ] **FR-073 — Searchable categorized illustration catalog.** A participant can browse and search a locally available vector icon catalog by accessible name, tag, and category without relying on a third-party runtime API; the palette remains responsive with the complete approved catalog.
+- [ ] **FR-074 — First-class icon objects.** A participant can insert an icon as an independent canvas object and then select, move, resize, rotate when rotation is supported, delete, duplicate, copy/paste, order, group, comment on, connect to, undo/redo, persist, reload, and collaboratively edit it through the ordinary canvas command boundary.
+- [ ] **FR-075 — Icon fill and stroke styling.** A Phosphor icon uses its filled artwork by default and exposes the same independent **Fill** and **Stroke** color controls as other canvas objects, including the shared standard colors and **Custom** color. Applicable controls also include no fill, no stroke, stroke thickness, `Solid`/`Dashed`/`Dotted` stroke style, and opacity. Fill and stroke remain independently editable for every supported Phosphor visual variant, stay crisp across the supported zoom range, and follow existing mixed-selection behavior without overwriting a mixed value until the participant chooses one.
+- [ ] **FR-076 — Nest icon in a parent object.** A participant can place an icon inside an eligible sticky note or basic shape, see an unambiguous containment preview, and detach or reparent it without a visual jump or data loss.
+- [ ] **FR-077 — Independent nested-icon editing.** A nested icon remains independently selectable, movable, resizable, styleable, commentable, and undoable within its parent while its local transform remains bounded by the parent.
+- [ ] **FR-078 — Parent-relative containment.** Moving or resizing an eligible parent moves and proportionally repositions/resizes its nested icon as one predictable, collaborative, reload-safe, undoable result; deleting, duplicating, grouping, ordering, and concurrent editing preserve referential integrity and never orphan or cycle containment relationships.
+
+### Supporting work
+
+- [ ] Pin and license-review the approved Phosphor Core version; compile only trusted packaged SVG assets into versioned local vector instructions and searchable metadata, default inserted icons to the Phosphor `fill` variant, and keep icon fill and stroke styling separate from source artwork, with no arbitrary SVG, remote URL, or executable markup entering shared canvas state.
+- [ ] Add searchable category tabs, recent choices, keyboard navigation, accessible icon names, virtualized results, and lazy asset loading to the existing progressive Shapes palette.
+- [ ] Extend canonical schema, geometry, selection, spatial indexing, rendering, commands, history, clipboard, comments, connectors, collaboration, semantic AI projection, and validated AI object tools for the new shape variants, icon objects, and one-level icon containment.
+- [ ] Keep the icon catalog separate from `lucide-react`, which remains application chrome only, and preserve stable icon rendering across catalog upgrades through an explicit catalog/version compatibility policy.
+- [ ] Keep the generated icon geometry behind a provider-neutral, renderer-independent vector-scene boundary that separates source provenance, normalized compound paths, and editable object styling. Milestone 7 does not expose path/node editing, but its renderer and commands must not prevent a later catalog-icon-to-editable-vector conversion that preserves object identity, appearance, placement, comments, connectors, collaboration, and history.
+
+### Exit gate
+
+- [ ] Complete `AS-007 — Illustrated nested idea`: find and insert representative tree, brain, clock, and shoe icons; independently change each icon's fill and stroke colors; nest one inside a sticky note and one inside a basic shape; move and resize each parent; detach and reparent a child; then verify crisp zoom, one-step undo/redo, two-collaborator convergence, reload, keyboard access, and no missing or orphaned icon on an authenticated immutable Netlify preview.
+
+## Milestone 8 — First-class documents
 
 ### Product requirements
 
@@ -319,7 +347,7 @@ Evidence: [Milestone 6 implementation and verification record](docs/implementati
 
 - [ ] Complete the sourced **Document collaboration** acceptance scenario in both scrolling and paginated layouts, then verify reload and concurrent editing.
 
-## Milestone 8 — Guided canvas stories
+## Milestone 9 — Guided canvas stories
 
 ### Product requirements
 
@@ -337,7 +365,7 @@ Evidence: [Milestone 6 implementation and verification record](docs/implementati
 
 - [ ] A saved story plays from beginning to end after underlying objects are edited, moved, and reloaded; reduced-motion mode substitutes an accessible non-sweeping transition.
 
-## Milestone 9 — Live conversation
+## Milestone 10 — Live conversation
 
 ### Product requirements
 
@@ -361,7 +389,7 @@ Evidence: [Milestone 6 implementation and verification record](docs/implementati
 
 - [ ] Complete the sourced **Live co-thinking** acceptance scenario on the Netlify preview deployment with typed messaging, an AI canvas action, pause behavior, and recovery from a dropped connection.
 
-## Milestone 10 — Conversational creation and templates
+## Milestone 11 — Conversational creation and templates
 
 ### Product requirements
 
@@ -379,7 +407,7 @@ Evidence: [Milestone 6 implementation and verification record](docs/implementati
 
 - [ ] Fixtures for a mind map, procedure, mood board, and storyboard create editable standard objects and never switch the product into a format-specific mode.
 
-## Milestone 11 — Production readiness and launch
+## Milestone 12 — Production readiness and launch
 
 ### Security and privacy
 
@@ -429,8 +457,8 @@ Evidence: [Milestone 6 implementation and verification record](docs/implementati
 
 ### Final acceptance
 
-- [ ] All `FR-001` through `FR-066` items are checked with linked evidence.
-- [ ] All five sourced acceptance scenarios pass in production-like conditions.
+- [ ] All `FR-001` through `FR-078` items are checked with linked evidence.
+- [ ] All required sourced and product-owner-added acceptance scenarios pass in production-like conditions.
 - [ ] No unresolved release-blocking security, accessibility, data-loss, permission, or cross-browser defect remains.
 - [ ] Product owner explicitly approves the first-version release.
 
@@ -444,6 +472,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [ ] **AS-004 — Document collaboration.** Rich text, a shape, and an annotation remain inside a document and support comments and AI review without connecting to the parent canvas.
 - [ ] **AS-005 — Guided review.** A multi-change AI review story visits one affected area at a time and provides the correct review controls at each scene. **Superseded for the first version by `PD-012` and `AS-006`; retained verbatim for source traceability.**
 - [x] **AS-006 — Conversational AI edit with undo.** In the user-facing **Edit with undo** authority mode, an AI applies one plain-language canvas change without exposing technical identifiers; the user can revise it through a normal thread reply or undo the complete AI turn while unrelated later human work remains intact; otherwise no explicit acceptance action is required.
+- [ ] **AS-007 — Illustrated nested idea.** A participant finds representative tree, brain, clock, and shoe icons by search or category, inserts them, independently changes their fill and stroke colors, nests icons inside a sticky note and a basic shape, moves and resizes both parents, detaches and reparents a child, and retains crisp, convergent, undoable, reload-safe results.
 
 ## Product decisions required before their milestones
 
@@ -457,8 +486,11 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [ ] **PD-008 — Voice data:** approve consent, transcript visibility, retention, deletion, and whether audio is ever recorded.
 - [x] **PD-009 — Offline behavior:** decide whether the first version supports deliberate offline editing or only temporary disconnect recovery. **Decision:** the first version supports temporary disconnect recovery only; a fully loaded canvas may retain and retry pending edits through a transient connection loss, while deliberate offline entry and opening an uncached canvas offline remain unsupported.
 - [ ] **PD-010 — Export and portability:** decide whether a user-facing export is a launch requirement; it is prudent for recovery but not stated in the source brief.
-- [x] **PD-011 — AI visual grounding and layout assistance:** keep the complete semantic canvas projection and stable object IDs authoritative; add validated deterministic layout tools for manipulation; use bounded targeted before-and-after render captures only as supplementary vision context and never as mutation authority. The bounded core is Milestone 5 scope, with broader starter-structure composition deferred to Milestone 10. Approved by the product owner on 2026-08-26.
+- [x] **PD-011 — AI visual grounding and layout assistance:** keep the complete semantic canvas projection and stable object IDs authoritative; add validated deterministic layout tools for manipulation; use bounded targeted before-and-after render captures only as supplementary vision context and never as mutation authority. The bounded core is Milestone 5 scope, with broader starter-structure composition deferred to Milestone 11. Approved by the product owner on 2026-08-26.
 - [x] **PD-012 — Conversational AI edits with undo:** replace the first-version guided per-object Keep/Discard/Request revision workflow with one immediately durable, conflict-safe AI transaction per turn. Show only a plain-language summary; expose the existing internal `edit_with_review` authority as **Edit with undo**; use normal comment replies for revisions; make acceptance implicit; and keep guided review only as deferred optional exploration. Approved by the product owner on 2026-08-27 after hosted Milestone 5 testing.
+- [x] **PD-013 — Canvas illustration library:** use pinned `@phosphor-icons/core` `2.1.1` as the first canvas catalog. It provides one MIT-licensed visual family with 1,512 named icons, six vector weights, tags, and categories; assets are compiled and served locally rather than fetched from Iconify or another public runtime API. Insert the filled Phosphor artwork by default and give every supported icon variant independent canvas-object **Fill** and **Stroke** styling through the shared palettes. Approved by the product owner on 2026-08-30.
+- [x] **PD-014 — Initial basic-shape set:** add rounded rectangle, triangle, pentagon, hexagon, octagon, star, cloud, speech bubble, and cylinder as the first expansion beyond rectangle, ellipse, and diamond. Approved by the product owner on 2026-08-30.
+- [x] **PD-015 — Nested-icon behavior:** use one containment level with icon children and sticky-note/basic-shape parents; full-containment drop or an explicit **Place inside** action nests, children remain bounded and clipped, parent resize uses proportional local coordinates, and **Remove from container** detaches without a visual jump. Approved by the product owner on 2026-08-30.
 
 ## Explicitly deferred
 
@@ -468,8 +500,8 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [ ] Do not restore the superseded per-object AI approval or guided-review workflow unless a later product decision explicitly promotes it as an optional advanced mode.
 - [ ] Do not allow connectors between document-internal and parent-canvas objects.
 - [ ] Do not add specialized document types.
-- [ ] Do not add a canvas-insertable icon or illustration library.
 - [ ] Do not add AI image generation as a canvas-element source.
+- [ ] Do not add user-authored vector paths, path/node editing, Boolean path operations, or catalog-icon conversion tools in Milestone 7. Preserve a provider-neutral normalized vector-scene boundary so basic vector editing can be proposed later without replacing the icon renderer or breaking saved icon objects.
 
 These boxes are checked when the release is verified to exclude or avoid implying each deferred capability.
 
@@ -486,3 +518,5 @@ These boxes are checked when the release is verified to exclude or avoid implyin
 - [Lexical](https://lexical.dev/)
 - [Motion for React](https://motion.dev/docs/react)
 - [perfect-freehand](https://github.com/steveruizok/perfect-freehand)
+- [Phosphor Icons](https://phosphoricons.com/)
+- [Phosphor Core catalog and raw SVG assets](https://github.com/phosphor-icons/core)

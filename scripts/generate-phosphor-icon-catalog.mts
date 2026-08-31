@@ -1,0 +1,63 @@
+import { createRequire } from "node:module";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import { icons } from "@phosphor-icons/core";
+
+const require = createRequire(import.meta.url);
+const packageEntry = require.resolve("@phosphor-icons/core");
+const packageRoot = path.resolve(path.dirname(packageEntry), "..");
+const outputDirectory = path.resolve("public/phosphor-icons");
+const outputPath = path.join(outputDirectory, "catalog-v2.1.1.json");
+
+function labelFor(name: string) {
+  return name
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function pathsFromTrustedSvg(svg: string, name: string) {
+  const withoutAllowedTags = svg
+    .replace(/<svg\b[^>]*>/, "")
+    .replace(/<\/svg>/, "")
+    .replace(/<path\s+d="[^"]+"\s*\/>/g, "")
+    .trim();
+  if (withoutAllowedTags) {
+    throw new Error(
+      `Unsupported SVG content in ${name}: ${withoutAllowedTags}`,
+    );
+  }
+  const paths = [...svg.matchAll(/<path\s+d="([^"]+)"\s*\/>/g)].map(
+    (match) => match[1]!,
+  );
+  if (!paths.length) throw new Error(`No vector paths found for ${name}.`);
+  return paths;
+}
+
+const catalog = await Promise.all(
+  icons.map(async (icon) => {
+    const svgPath = path.join(
+      packageRoot,
+      "assets",
+      "fill",
+      `${icon.name}-fill.svg`,
+    );
+    const svg = await readFile(svgPath, "utf8");
+    return {
+      name: icon.name,
+      label: labelFor(icon.name),
+      categories: [...icon.categories],
+      tags: icon.tags.filter((tag) => !tag.startsWith("*")),
+      paths: pathsFromTrustedSvg(svg, icon.name),
+    };
+  }),
+);
+
+await mkdir(outputDirectory, { recursive: true });
+await writeFile(
+  outputPath,
+  `${JSON.stringify({ version: "2.1.1", viewBox: 256, icons: catalog })}\n`,
+);
+
+process.stdout.write(`Generated ${catalog.length} icons at ${outputPath}\n`);

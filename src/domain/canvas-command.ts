@@ -104,6 +104,7 @@ const styleCommand = commandBase.extend({
           .nullable()
           .optional(),
         textColor: z.string().min(1).max(100).optional(),
+        opacity: finiteNumber.min(0).max(1).optional(),
       })
       .refine(
         (style) => Object.keys(style).length > 0,

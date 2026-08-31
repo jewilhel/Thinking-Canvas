@@ -3,20 +3,29 @@
 import {
   Check,
   Circle,
+  Cloud,
+  Cylinder,
   Diamond,
   Eraser,
   Hand,
   Highlighter,
   Link2,
   MessageCircle,
+  MessageSquare,
   MousePointer2,
+  Octagon,
   PenLine,
+  Pentagon,
   Puzzle,
   RectangleHorizontal,
   Shapes,
+  SquareRoundCorner,
+  Star,
   StickyNote,
   Table2,
   Type,
+  Triangle,
+  Hexagon,
 } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -33,15 +42,35 @@ export type CanvasTool =
   | "eraser"
   | "sticky"
   | "rectangle"
+  | "rounded-rectangle"
   | "ellipse"
   | "diamond"
+  | "triangle"
+  | "pentagon"
+  | "hexagon"
+  | "octagon"
+  | "star"
+  | "cloud"
+  | "speech-bubble"
+  | "cylinder"
   | "text"
   | "connector"
   | "table";
 
 export type CanvasShapeTool = Extract<
   CanvasTool,
-  "rectangle" | "ellipse" | "diamond"
+  | "rectangle"
+  | "rounded-rectangle"
+  | "ellipse"
+  | "diamond"
+  | "triangle"
+  | "pentagon"
+  | "hexagon"
+  | "octagon"
+  | "star"
+  | "cloud"
+  | "speech-bubble"
+  | "cylinder"
 >;
 
 export type CanvasDrawingTool = Extract<
@@ -77,8 +106,21 @@ const drawingTools = [
 
 const shapeOptions = [
   { value: "rectangle", label: "Rectangle", icon: RectangleHorizontal },
+  {
+    value: "rounded-rectangle",
+    label: "Rounded rectangle",
+    icon: SquareRoundCorner,
+  },
   { value: "ellipse", label: "Ellipse", icon: Circle },
   { value: "diamond", label: "Diamond", icon: Diamond },
+  { value: "triangle", label: "Triangle", icon: Triangle },
+  { value: "pentagon", label: "Pentagon", icon: Pentagon },
+  { value: "hexagon", label: "Hexagon", icon: Hexagon },
+  { value: "octagon", label: "Octagon", icon: Octagon },
+  { value: "star", label: "Star", icon: Star },
+  { value: "cloud", label: "Cloud", icon: Cloud },
+  { value: "speech-bubble", label: "Speech bubble", icon: MessageSquare },
+  { value: "cylinder", label: "Cylinder", icon: Cylinder },
 ] as const;
 
 const directTools = [
@@ -225,7 +267,10 @@ export function WorkspacePrimaryDock({
               <p className="px-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
                 Choose a shape
               </p>
-              <div className="mt-2 flex gap-2" role="menu">
+              <div
+                className="mt-2 grid max-h-72 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3"
+                role="menu"
+              >
                 {shapeOptions.map(({ value, label, icon: Icon }) => (
                   <Button
                     key={value}

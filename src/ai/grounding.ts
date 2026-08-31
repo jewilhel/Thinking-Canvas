@@ -91,6 +91,7 @@ function summarizeObject(object: CanvasObjectV2) {
     return object.cells.flat().join(" | ").slice(0, 10_000);
   if (object.type === "document") return object.title.slice(0, 10_000);
   if (object.type === "connector") return "Connector";
+  if (object.type === "icon") return `Phosphor icon: ${object.iconName}`;
   return `${object.temporary ? "Temporary" : "Promoted"} ${object.ink === "highlighter" ? "highlighter" : "pen"} annotation · ${object.style.outline} · ${object.style.outlineWidth}px${object.attachedObjectId ? " · attached" : ""}`;
 }
 

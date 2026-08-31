@@ -39,6 +39,7 @@ import {
   Group,
   Layer,
   Line,
+  Path,
   Rect,
   Stage,
   Text,
@@ -63,6 +64,10 @@ import {
   type AnnotationSample,
 } from "@/canvas/annotation-stroke";
 import { findAnnotationAttachmentTarget } from "@/canvas/annotation-attachment";
+import {
+  basicShapePath,
+  basicShapePoints,
+} from "@/canvas/basic-shape-geometry";
 import {
   createCanvasClipboardPayload,
   parseCanvasClipboard,
@@ -2372,25 +2377,55 @@ export function ProductCanvas({
         />
       );
     }
-    if (object.shape === "diamond") {
+    const points = basicShapePoints(
+      object.shape,
+      object.geometry.width,
+      object.geometry.height,
+    );
+    if (points) {
+      return <Line points={points} closed {...common} />;
+    }
+    const path = basicShapePath(
+      object.shape,
+      object.geometry.width,
+      object.geometry.height,
+    );
+    if (path) return <Path data={path} {...common} />;
+    if (object.shape === "cylinder") {
+      const capHeight = Math.min(24, object.geometry.height * 0.22);
       return (
-        <Line
-          points={[
-            object.geometry.width / 2,
-            0,
-            object.geometry.width,
-            object.geometry.height / 2,
-            object.geometry.width / 2,
-            object.geometry.height,
-            0,
-            object.geometry.height / 2,
-          ]}
-          closed
-          {...common}
-        />
+        <Group>
+          <Rect
+            {...common}
+            y={capHeight / 2}
+            height={Math.max(0, object.geometry.height - capHeight)}
+          />
+          <Ellipse
+            {...common}
+            x={object.geometry.width / 2}
+            y={capHeight / 2}
+            radiusX={object.geometry.width / 2}
+            radiusY={capHeight / 2}
+          />
+          <Ellipse
+            x={object.geometry.width / 2}
+            y={object.geometry.height - capHeight / 2}
+            radiusX={object.geometry.width / 2}
+            radiusY={capHeight / 2}
+            fill="transparent"
+            stroke={object.style.outline}
+            strokeWidth={object.style.outlineWidth}
+            dash={common.dash}
+          />
+        </Group>
       );
     }
-    return <Rect {...common} cornerRadius={12} />;
+    return (
+      <Rect
+        {...common}
+        cornerRadius={object.shape === "rounded-rectangle" ? 24 : 0}
+      />
+    );
   }
 
   function updateLiveResizeTextLayout(
@@ -2805,9 +2840,9 @@ export function ProductCanvas({
               verticalAlign="middle"
               opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
             />
-          ) : (
+          ) : object.type === "table" ? (
             renderTable(object)
-          )}
+          ) : null}
         </Group>
         {selectionAffordancesVisible &&
         object.type === "shape" &&
