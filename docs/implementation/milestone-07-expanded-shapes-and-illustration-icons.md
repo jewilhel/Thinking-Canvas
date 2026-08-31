@@ -146,10 +146,10 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 
 ### Slice 2 — Searchable icons as ordinary canvas objects
 
-- [ ] Build the responsive searchable/category icon browser with virtualization, recents, keyboard behavior, accessible names, drag/drop, and click insertion.
-- [ ] Render independent icons as crisp vectors and add ordinary selection, move, resize, rotation when supported, delete, duplicate, clipboard, ordering, grouping, comments, connectors, and annotation overlap behavior.
-- [ ] Add contextual icon **Fill** and **Stroke** colors, no-fill/no-stroke states, stroke thickness and pattern, opacity, and any approved visual-variant control using the existing palette vocabulary and atomic batch commands.
-- [ ] Extend history, Yjs collaboration, snapshot/reload, spatial indexing, semantic projection, validated AI tools, and permission handling for independent icons and new shape values.
+- [x] Build the responsive searchable/category icon browser with virtualization, recents, keyboard behavior, accessible names, drag/drop, and click insertion.
+- [x] Render independent icons as crisp vectors and add ordinary selection, move, resize, rotation when supported, delete, duplicate, clipboard, ordering, grouping, comments, connectors, and annotation overlap behavior.
+- [x] Add contextual icon **Fill** and **Stroke** colors, no-fill/no-stroke states, stroke thickness and pattern, opacity, and any approved visual-variant control using the existing palette vocabulary and atomic batch commands.
+- [x] Extend history, Yjs collaboration, snapshot/reload, spatial indexing, semantic projection, validated AI tools, and permission handling for independent icons and new shape values.
 - [ ] Verify representative tree, brain, clock, and shoe searches plus the full independent-object lifecycle before containment begins.
 
 ### Slice 3 — One-level parent/child containment
@@ -258,6 +258,7 @@ Retain the exact commit SHA, protected CI run, immutable deploy ID/URL, browser 
 
 - 2026-08-30 — Implementation began on `codex/milestone-7-expanded-shapes-icons` from `main` at `4047c1a` after explicit product-owner approval.
 - 2026-08-30 — Slice 1 added the nine approved shape variants to the existing three-shape palette, deterministic normalized geometry and Konva rendering, the pinned Phosphor dependency and MIT notice, a strict build-time fill-SVG compiler, the versioned local catalog, the icon object discriminator, and a provider-neutral vector-scene boundary. Icon insertion remains hidden until Slice 2 completes.
+- 2026-08-30 — Slice 2 exposed a responsive searchable/category browser with recents, bounded virtualized rendering, keyboard-accessible buttons, click insertion, and drag/drop. Independent icons now use Konva vector paths and the ordinary selection, transform, fill, stroke, opacity, connector, annotation, grouping, ordering, clipboard, history, collaboration, permission, and semantic-grounding paths. Generated catalog names reject invented AI or clipboard keys.
 
 ## Verification evidence
 
@@ -266,6 +267,7 @@ Implementation evidence on 2026-08-30:
 - Slice 1 `pnpm typecheck` passed.
 - Slice 1 `pnpm test` passed all 52 files and 244 tests, including new deterministic basic-shape geometry and provider-neutral vector-scene contract coverage.
 - `pnpm icons:generate` compiled 1,512 Phosphor `fill` icons into `public/phosphor-icons/catalog-v2.1.1.json` using the pinned local package and without a runtime third-party request.
+- Slice 2 `pnpm lint`, `pnpm typecheck`, `pnpm test` (53 files, 248 tests), and `pnpm build` passed.
 
 Research evidence:
 

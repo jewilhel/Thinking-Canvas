@@ -278,9 +278,13 @@ function assertEligibleEndpoint(
   const target =
     pendingObjects.get(endpoint.objectId) ??
     readCanvasObjectV2(document, endpoint.objectId);
-  if (!target || target.type !== "shape" || target.id === connectorId) {
+  if (
+    !target ||
+    (target.type !== "shape" && target.type !== "icon") ||
+    target.id === connectorId
+  ) {
     throw new ProductCanvasCommandConflictError(
-      "Attached connector endpoints require an existing eligible shape.",
+      "Attached connector endpoints require an existing eligible shape or icon.",
     );
   }
 }
@@ -293,7 +297,7 @@ function requireEligibleAnnotationTarget(
   const target = requireObject(document, targetObjectId);
   if (target.id === annotationId || !isEligibleAnnotationTarget(target)) {
     throw new ProductCanvasCommandConflictError(
-      "Annotations can attach only to an existing shape, text, or table.",
+      "Annotations can attach only to an existing shape, icon, text, or table.",
     );
   }
   return target;

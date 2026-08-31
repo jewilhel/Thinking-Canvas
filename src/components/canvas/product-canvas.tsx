@@ -80,6 +80,11 @@ import {
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
 import {
+  iconVectorScene,
+  loadPhosphorIconCatalog,
+  type PhosphorIconCatalog,
+} from "@/canvas/phosphor-icon-catalog";
+import {
   applyCanvasHistoryEntry,
   executeProductCanvasCommandWithHistory,
   type CanvasHistoryEntry,
@@ -257,14 +262,18 @@ function baseStyle(type: CanvasObjectV2["type"]) {
     fill:
       type === "connector" || type === "text" || type === "annotation"
         ? null
-        : "#ffffff",
+        : type === "icon"
+          ? "#18181b"
+          : "#ffffff",
     outline: type === "annotation" ? defaultAnnotationColor : "#475569",
     outlineWidth:
       type === "text"
         ? 0
         : type === "annotation"
           ? defaultAnnotationThickness
-          : 2,
+          : type === "icon"
+            ? 0
+            : 2,
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
     fontSize: 16,
     fontWeight: "normal" as const,
@@ -281,6 +290,7 @@ function objectLabel(object: CanvasObjectV2) {
   if (object.type === "text") return `text — ${object.text || "Untitled"}`;
   if (object.type === "table") return `table — ${object.cells.length} rows`;
   if (object.type === "connector") return "connector";
+  if (object.type === "icon") return `icon — ${object.iconName}`;
   if (object.type === "annotation")
     return object.ink === "highlighter" ? "highlighter" : "pen stroke";
   return object.type;
@@ -342,6 +352,9 @@ export function ProductCanvas({
     return next;
   }, [canvasId, documentStorageKey]);
   const [objects, setObjects] = useState(() => listCanvasObjectsV2(document));
+  const [iconCatalog, setIconCatalog] = useState<PhosphorIconCatalog | null>(
+    null,
+  );
   const [size, setSize] = useState({ width: 960, height: 640 });
   const [tool, setTool] = useState<CanvasTool>("select");
   const [dismissDockPaletteSignal, setDismissDockPaletteSignal] = useState(0);
@@ -523,7 +536,10 @@ export function ProductCanvas({
     : null;
   const useSelectionProxy = selectedObjects.length > 1;
   const fillObjects = selectedObjects.filter(
-    (object) => object.type === "shape" || object.type === "table",
+    (object) =>
+      object.type === "shape" ||
+      object.type === "table" ||
+      object.type === "icon",
   );
   const outlineObjects = selectedObjects.filter(
     (object) => object.type !== "text" && object.type !== "document",
@@ -534,6 +550,16 @@ export function ProductCanvas({
       object.type === "text" ||
       object.type === "table",
   );
+
+  useEffect(() => {
+    let active = true;
+    void loadPhosphorIconCatalog().then((catalog) => {
+      if (active) setIconCatalog(catalog);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     function synchronize() {
@@ -793,6 +819,46 @@ export function ProductCanvas({
     chooseTool(shape);
   }
 
+  function addIcon(iconName: string, point?: Point) {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const width = 112;
+    const height = 112;
+    const center =
+      point ??
+      ({
+        x: (size.width / 2 - viewport.x) / viewport.scale,
+        y: (size.height / 2 - viewport.y) / viewport.scale,
+      } satisfies Point);
+    runCommand("object.create", {
+      object: {
+        schemaVersion: 2,
+        id,
+        canvasId,
+        createdBy: userId,
+        createdAt: now,
+        updatedAt: now,
+        type: "icon",
+        catalog: "phosphor",
+        catalogVersion: "2.1.1",
+        iconName,
+        iconVariant: "fill",
+        parentId: null,
+        parentRelative: null,
+        geometry: {
+          x: Math.round(center.x - width / 2),
+          y: Math.round(center.y - height / 2),
+          width,
+          height,
+          rotation: 0,
+        },
+        style: baseStyle("icon"),
+      },
+    });
+    setSelectedIds([id]);
+    setTool("select");
+  }
+
   function addSimulatedAiIdea() {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -936,6 +1002,7 @@ export function ProductCanvas({
       outline?: string;
       outlineWidth?: number;
       outlinePattern?: OutlinePattern;
+      opacity?: number;
     },
   ) {
     if (!targets.length) return;
@@ -985,7 +1052,7 @@ export function ProductCanvas({
   ) {
     if (endpoint.kind === "attached") {
       const target = connectorLayoutObjectsById.get(endpoint.objectId);
-      if (target?.type === "shape")
+      if (target?.type === "shape" || target?.type === "icon")
         return connectionHandlePoint(target, endpoint.anchor);
     }
     return fallback;
@@ -1006,7 +1073,11 @@ export function ProductCanvas({
     const snapDistance = 24 / viewport.scale;
     let nearest: { endpoint: ConnectorEndpoint; distance: number } | undefined;
     for (const object of objects) {
-      if (object.type !== "shape" || object.id === excludedObjectId) continue;
+      if (
+        (object.type !== "shape" && object.type !== "icon") ||
+        object.id === excludedObjectId
+      )
+        continue;
       for (const anchor of anchors) {
         const handle = connectionHandlePoint(object, anchor);
         const distance = Math.hypot(handle.x - point.x, handle.y - point.y);
@@ -1026,7 +1097,7 @@ export function ProductCanvas({
 
   function beginConnectorDrag(
     event: Konva.KonvaEventObject<DragEvent>,
-    object: Extract<CanvasObjectV2, { type: "shape" }>,
+    object: Extract<CanvasObjectV2, { type: "shape" | "icon" }>,
     anchor: CanvasAnchor,
   ) {
     event.cancelBubble = true;
@@ -2428,6 +2499,35 @@ export function ProductCanvas({
     );
   }
 
+  function iconNode(object: Extract<CanvasObjectV2, { type: "icon" }>) {
+    const scene = iconCatalog
+      ? iconVectorScene(iconCatalog, object.iconName)
+      : null;
+    if (!scene) return null;
+    const scaleX = object.geometry.width / scene.viewBox;
+    const scaleY = object.geometry.height / scene.viewBox;
+    const strokeScale = Math.max(scaleX, scaleY, Number.EPSILON);
+    return (
+      <Group opacity={object.style.opacity ?? 1}>
+        {scene.paths.map((data, index) => (
+          <Path
+            key={`${object.iconName}-${index}`}
+            data={data}
+            scaleX={scaleX}
+            scaleY={scaleY}
+            fill={object.style.fill ?? "transparent"}
+            stroke={object.style.outline}
+            strokeWidth={object.style.outlineWidth / strokeScale}
+            dash={konvaStrokeDash(
+              object.style.outlinePattern,
+              object.style.outlineWidth / strokeScale,
+            )}
+          />
+        ))}
+      </Group>
+    );
+  }
+
   function updateLiveResizeTextLayout(
     node: Konva.Node,
     object: CanvasObjectV2,
@@ -2825,6 +2925,8 @@ export function ProductCanvas({
                 listening={false}
               />
             </>
+          ) : object.type === "icon" ? (
+            iconNode(object)
           ) : object.type === "text" ? (
             <Text
               name="resizable-object-text"
@@ -2845,7 +2947,7 @@ export function ProductCanvas({
           ) : null}
         </Group>
         {selectionAffordancesVisible &&
-        object.type === "shape" &&
+        (object.type === "shape" || object.type === "icon") &&
         (selectedIds.includes(object.id) ||
           hoveredShapeId === object.id ||
           connectorStart) ? (
@@ -3201,6 +3303,7 @@ export function ProductCanvas({
         simulatedAiEnabled={simulatedAiEnabled}
         onChooseTool={chooseTool}
         onChooseShape={chooseShape}
+        onChooseIcon={addIcon}
         onAddSimulatedAiIdea={addSimulatedAiIdea}
         commentPlacementActive={commentPlacementActive}
         onChooseComments={chooseComments}
@@ -3464,7 +3567,9 @@ export function ProductCanvas({
             ) : null}
             {selectedObjects.some(
               (object) =>
-                object.type === "shape" || object.type === "connector",
+                object.type === "shape" ||
+                object.type === "icon" ||
+                object.type === "connector",
             ) ? (
               <Button
                 type="button"
@@ -3620,7 +3725,8 @@ export function ProductCanvas({
                 ) : null}
                 {contextPanel === "connector" ? (
                   <div className="space-y-3">
-                    {selectedObject.type === "shape" &&
+                    {(selectedObject.type === "shape" ||
+                      selectedObject.type === "icon") &&
                     selectedIds.length === 1 ? (
                       <fieldset>
                         <legend className="text-xs text-zinc-300">
@@ -3680,6 +3786,36 @@ export function ProductCanvas({
                 ) : null}
                 {contextPanel === "more" ? (
                   <div className="grid grid-cols-2 gap-2">
+                    {selectedObjects.some(
+                      (object) => object.type === "icon",
+                    ) ? (
+                      <label className="col-span-2 text-xs text-zinc-300">
+                        Opacity
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={
+                            commonStyleValue(
+                              selectedObjects.filter(
+                                (object) => object.type === "icon",
+                              ),
+                              "opacity",
+                            ) ?? 1
+                          }
+                          className="mt-2 w-full accent-violet-500"
+                          onChange={(event) =>
+                            applyStyleToObjects(
+                              selectedObjects.filter(
+                                (object) => object.type === "icon",
+                              ),
+                              { opacity: Number(event.currentTarget.value) },
+                            )
+                          }
+                        />
+                      </label>
+                    ) : null}
                     {selectedObjects.some(
                       (object) =>
                         object.type === "annotation" && object.attachedObjectId,
@@ -3858,6 +3994,28 @@ export function ProductCanvas({
           onPointerUp={onSurfacePointerUp}
           onPointerCancel={cancelAnnotationStroke}
           onPointerLeave={() => setHoveredShapeId(null)}
+          onDragOver={(event) => {
+            if (
+              event.dataTransfer.types.includes(
+                "application/x-thinking-canvas-icon",
+              )
+            ) {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+            }
+          }}
+          onDrop={(event) => {
+            const iconName = event.dataTransfer.getData(
+              "application/x-thinking-canvas-icon",
+            );
+            if (!iconName) return;
+            event.preventDefault();
+            const bounds = event.currentTarget.getBoundingClientRect();
+            addIcon(iconName, {
+              x: (event.clientX - bounds.left - viewport.x) / viewport.scale,
+              y: (event.clientY - bounds.top - viewport.y) / viewport.scale,
+            });
+          }}
           className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
           style={{
             touchAction:

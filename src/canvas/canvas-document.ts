@@ -1,6 +1,7 @@
 import * as Y from "yjs";
 import { z } from "zod";
 
+import { phosphorIconNames } from "@/canvas/phosphor-icon-names";
 import { canvasObjectSchema, type CanvasObject } from "@/domain/canvas-object";
 
 const metadataMapName = "canvas-metadata-v2";
@@ -94,7 +95,8 @@ const iconObjectSchema = canvasObjectBaseSchema.extend({
   iconName: z
     .string()
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-    .max(100),
+    .max(100)
+    .refine((name) => phosphorIconNames.has(name), "Unknown icon name."),
   iconVariant: z.literal("fill"),
   parentId: uuid.nullable(),
   parentRelative: z

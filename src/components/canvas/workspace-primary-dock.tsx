@@ -32,6 +32,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CustomColorPicker } from "@/components/canvas/custom-color-picker";
 import { drawingColorPairs } from "@/components/canvas/canvas-colors";
+import { IconBrowser } from "@/components/canvas/icon-browser";
 import { StrokeThicknessOptions } from "@/components/canvas/stroke-thickness-options";
 
 export type CanvasTool =
@@ -86,6 +87,7 @@ type Props = {
   simulatedAiEnabled: boolean;
   onChooseTool: (tool: CanvasTool) => void;
   onChooseShape: (shape: CanvasShapeTool) => void;
+  onChooseIcon: (iconName: string) => void;
   onAddSimulatedAiIdea: () => void;
   commentPlacementActive: boolean;
   onChooseComments: () => void;
@@ -162,6 +164,7 @@ export function WorkspacePrimaryDock({
   simulatedAiEnabled,
   onChooseTool,
   onChooseShape,
+  onChooseIcon,
   onAddSimulatedAiIdea,
   commentPlacementActive,
   onChooseComments,
@@ -175,6 +178,7 @@ export function WorkspacePrimaryDock({
   const toolbarRef = useRef<HTMLDivElement>(null);
   const paletteInvokerRef = useRef<HTMLButtonElement | null>(null);
   const [openPalette, setOpenPalette] = useState<Palette>(null);
+  const [shapeSection, setShapeSection] = useState<"basic" | "icons">("basic");
   const DrawingIcon =
     lastDrawingTool === "highlighter"
       ? Highlighter
@@ -264,31 +268,53 @@ export function WorkspacePrimaryDock({
         >
           {openPalette === "shape" ? (
             <>
-              <p className="px-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-                Choose a shape
-              </p>
-              <div
-                className="mt-2 grid max-h-72 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3"
-                role="menu"
-              >
-                {shapeOptions.map(({ value, label, icon: Icon }) => (
+              <div className="flex gap-2" role="tablist" aria-label="Shapes">
+                {(["basic", "icons"] as const).map((section) => (
                   <Button
-                    key={value}
+                    key={section}
                     type="button"
+                    size="sm"
                     variant="outline"
-                    role="menuitemradio"
-                    aria-checked={activeTool === value}
-                    className="h-11 border-zinc-200 bg-white px-3 text-zinc-700 hover:bg-violet-50 aria-checked:border-violet-600 aria-checked:bg-violet-50 aria-checked:text-violet-800 dark:border-zinc-200 dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50 dark:aria-checked:border-violet-600 dark:aria-checked:bg-violet-50 dark:aria-checked:text-violet-800"
-                    onClick={() => {
-                      onChooseShape(value);
-                      setOpenPalette(null);
-                    }}
+                    role="tab"
+                    aria-selected={shapeSection === section}
+                    className="capitalize aria-selected:border-violet-600 aria-selected:bg-violet-50 aria-selected:text-violet-800"
+                    onClick={() => setShapeSection(section)}
                   >
-                    <Icon aria-hidden="true" />
-                    {label}
+                    {section === "basic" ? "Basic shapes" : "Icons"}
                   </Button>
                 ))}
               </div>
+              {shapeSection === "basic" ? (
+                <div
+                  className="mt-2 grid max-h-72 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3"
+                  role="menu"
+                >
+                  {shapeOptions.map(({ value, label, icon: Icon }) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      variant="outline"
+                      role="menuitemradio"
+                      aria-checked={activeTool === value}
+                      className="h-11 border-zinc-200 bg-white px-3 text-zinc-700 hover:bg-violet-50 aria-checked:border-violet-600 aria-checked:bg-violet-50 aria-checked:text-violet-800 dark:border-zinc-200 dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50 dark:aria-checked:border-violet-600 dark:aria-checked:bg-violet-50 dark:aria-checked:text-violet-800"
+                      onClick={() => {
+                        onChooseShape(value);
+                        setOpenPalette(null);
+                      }}
+                    >
+                      <Icon aria-hidden="true" />
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              ) : (
+                <IconBrowser
+                  onChoose={(icon) => {
+                    onChooseIcon(icon.name);
+                    setOpenPalette(null);
+                  }}
+                />
+              )}
             </>
           ) : null}
 
