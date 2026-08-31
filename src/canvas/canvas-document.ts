@@ -317,6 +317,11 @@ export function putCanvasObjectV2(
     const existingKeys = new Set(existingObjectMap?.keys() ?? []);
 
     for (const [key, value] of Object.entries(object)) {
+      if (value === undefined) {
+        objectMap.delete(key);
+        existingKeys.delete(key);
+        continue;
+      }
       objectMap.set(key, toSharedValue(value as JsonValue));
       existingKeys.delete(key);
     }

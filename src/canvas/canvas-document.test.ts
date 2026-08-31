@@ -202,6 +202,17 @@ describe("production canvas document", () => {
     expect(() => readCanvasObjectV2(document, malformedId)).toThrow();
   });
 
+  it("omits undefined optional fields when writing shared objects", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const object: CanvasObjectV2 = {
+      ...makeObject(),
+      groupId: undefined,
+    };
+
+    expect(() => putCanvasObjectV2(document, object)).not.toThrow();
+    expect(readCanvasObjectV2(document, object.id)).toEqual(makeObject());
+  });
+
   it("rejects documents and objects from another canvas", () => {
     const document = createProductCanvasDocument(canvasId);
 
