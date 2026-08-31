@@ -268,6 +268,9 @@ export function WorkspacePrimaryDock({
         >
           {openPalette === "shape" ? (
             <>
+              <p className="mb-2 px-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+                Choose a shape
+              </p>
               <div className="flex gap-2" role="tablist" aria-label="Shapes">
                 {(["basic", "icons"] as const).map((section) => (
                   <Button
@@ -295,6 +298,9 @@ export function WorkspacePrimaryDock({
                       type="button"
                       variant="outline"
                       role="menuitemradio"
+                      aria-label={
+                        value === "rounded-rectangle" ? "Rounded box" : label
+                      }
                       aria-checked={activeTool === value}
                       className="h-11 border-zinc-200 bg-white px-3 text-zinc-700 hover:bg-violet-50 aria-checked:border-violet-600 aria-checked:bg-violet-50 aria-checked:text-violet-800 dark:border-zinc-200 dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50 dark:aria-checked:border-violet-600 dark:aria-checked:bg-violet-50 dark:aria-checked:text-violet-800"
                       onClick={() => {

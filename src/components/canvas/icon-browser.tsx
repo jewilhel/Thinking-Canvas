@@ -187,6 +187,7 @@ export function IconBrowser({ onChoose }: Props) {
           </p>
           <div
             ref={gridRef}
+            data-testid="icon-results"
             className="mt-2 h-[26rem] overflow-y-auto pr-1"
             onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
           >
@@ -200,6 +201,7 @@ export function IconBrowser({ onChoose }: Props) {
               {visibleResults.map((icon) => (
                 <button
                   key={icon.name}
+                  data-testid="icon-tile"
                   type="button"
                   title={icon.label}
                   draggable
