@@ -1,6 +1,6 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–5 closed; later milestones remain draft
+Status: Milestones 0–6 closed; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
@@ -276,27 +276,29 @@ Evidence: [Milestone 5 implementation and verification record](docs/implementati
 
 ### Product requirements
 
-- [ ] **FR-036 — Freeform pen.** The product provides one mouse, touch, and stylus-capable freeform vector-pen annotation tool.
-- [ ] **FR-037 — True freeform strokes.** Drawing produces editable point-based vector strokes, not predefined arrow, circle, or underline objects.
-- [ ] **FR-038 — Stroke editing.** A participant can change stroke color, thickness, geometry, and position after drawing.
-- [ ] **FR-039 — Zoom fidelity.** Strokes remain visually crisp and correctly positioned across the supported zoom range.
-- [ ] **FR-040 — Temporary and hideable.** New strokes are temporary by default and hide with comment bubbles.
-- [ ] **FR-041 — Promote to durable content.** A participant can promote an annotation so it remains visible when the temporary overlay is hidden.
-- [ ] **FR-042 — Automatic overlap attachment.** A stroke overlapping an eligible object attaches to it by default and follows its movement.
-- [ ] **FR-043 — Disconnect attachment.** A participant can disconnect an attached stroke without changing its visible geometry at that moment.
+- [x] **FR-036 — Freeform pen.** The product provides one mouse, touch, and stylus-capable freeform vector-pen annotation tool.
+- [x] **FR-037 — True freeform strokes.** Drawing produces editable point-based vector strokes, not predefined arrow, circle, or underline objects.
+- [x] **FR-038 — Stroke editing.** A participant can change stroke color, thickness, geometry, and position after drawing.
+- [x] **FR-039 — Zoom fidelity.** Strokes remain visually crisp and correctly positioned across the supported zoom range.
+- [x] **FR-040 — Temporary and hideable.** New strokes are temporary by default and hide with comment bubbles.
+- [x] **FR-041 — Promote to durable content.** A participant can promote an annotation so it remains visible when the temporary overlay is hidden.
+- [x] **FR-042 — Automatic overlap attachment.** A stroke overlapping an eligible object attaches to it by default and follows its movement.
+- [x] **FR-043 — Disconnect attachment.** A participant can disconnect an attached stroke without changing its visible geometry at that moment.
 
 ### Supporting work
 
-- [ ] **Unified multi-selection transform frame.** Drag-selecting or Shift-clicking multiple annotations and/or supported canvas objects shows one selection boundary and handles around the complete selection; moving or resizing that selection commits as one undoable batch while preserving connector and annotation attachment integrity.
-- [ ] **Unified Stroke palette.** Applicable annotations and canvas objects use the same expandable floating **Stroke** palette. Shared controls include stroke color and thickness; supported object borders and connectors also expose `Solid`, `Dashed`, and `Dotted` stroke styles through the same palette.
-- [ ] **Contextual styling parity.** Annotation and object palettes share placement, focus, responsive, accessible-name, mixed-value, and batch-application behavior. A mixed selection exposes only properties valid for every applicable selected item and does not overwrite a mixed property until the participant chooses a value.
-- [ ] **Continuous annotation tool family.** The Drawing entry remembers the participant's last Pen, Highlighter, or Eraser choice; Pen and semi-transparent Highlighter remain active for successive whole editable vector strokes, while dragging Eraser across one or more annotations deletes each crossed complete stroke as one undoable eraser gesture. Starting any Drawing gesture dismisses its open palette immediately without changing the active tool.
-- [ ] **Visual stroke controls and border-off state.** Drawing and contextual Stroke palettes share the first ten standard colors plus Custom, show thickness as selected visual weight samples instead of numeric labels, and allow applicable canvas-object borders to use zero thickness without offering an invisible annotation width. The light Drawing palette uses black samples on white controls with a clear selected highlight; its solid color swatches have clean edges and show a white check on the selected color.
-- [ ] **Constant-width annotation transforms.** Resizing an annotation changes its vector path geometry while preserving the selected stroke thickness instead of scaling or distorting the rendered ink width.
+- [x] **Unified multi-selection transform frame.** Drag-selecting or Shift-clicking multiple annotations and/or supported canvas objects shows one selection boundary and handles around the complete selection; moving or resizing that selection commits as one undoable batch while preserving connector and annotation attachment integrity.
+- [x] **Unified Stroke palette.** Applicable annotations and canvas objects use the same expandable floating **Stroke** palette. Shared controls include stroke color and thickness; supported object borders and connectors also expose `Solid`, `Dashed`, and `Dotted` stroke styles through the same palette.
+- [x] **Contextual styling parity.** Annotation and object palettes share placement, focus, responsive, accessible-name, mixed-value, and batch-application behavior. A mixed selection exposes only properties valid for every applicable selected item and does not overwrite a mixed property until the participant chooses a value.
+- [x] **Continuous annotation tool family.** The Drawing entry remembers the participant's last Pen, Highlighter, or Eraser choice; Pen and semi-transparent Highlighter remain active for successive whole editable vector strokes, while dragging Eraser across one or more annotations deletes each crossed complete stroke as one undoable eraser gesture. Starting any Drawing gesture dismisses its open palette immediately without changing the active tool.
+- [x] **Visual stroke controls and border-off state.** Drawing and contextual Stroke palettes share the first ten standard colors plus Custom, show thickness as selected visual weight samples instead of numeric labels, and allow applicable canvas-object borders to use zero thickness without offering an invisible annotation width. The light Drawing palette uses black samples on white controls with a clear selected highlight; its solid color swatches have clean edges and show a white check on the selected color.
+- [x] **Constant-width annotation transforms.** Resizing an annotation changes its vector path geometry while preserving the selected stroke thickness instead of scaling or distorting the rendered ink width.
 
 ### Exit gate
 
-- [ ] Manual pen QA passes at minimum, default, and maximum zoom using mouse and touch/stylus emulation; automated geometry tests cover overlap, movement, disconnect, and promotion.
+- [x] Manual pen QA passes at minimum, default, and maximum zoom using mouse and touch/stylus emulation; automated geometry tests cover overlap, movement, disconnect, and promotion.
+
+Evidence: [Milestone 6 implementation and verification record](docs/implementation/milestone-06-vector-annotations.md), pull request [#11](https://github.com/jewilhel/Thinking-Canvas/pull/11), protected CI [run `33357203357`](https://github.com/jewilhel/Thinking-Canvas/actions/runs/33357203357) for commit `d062533`, ready Git-backed Netlify deploy preview `6a9502e919cbe900081cb3a6`, and product-owner hosted acceptance and closure approval on 2026-08-30.
 
 ## Milestone 7 — First-class documents
 
