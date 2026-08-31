@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  annotationIntersectsEraserSegment,
   annotationOutlinePoints,
   annotationSamples,
   canonicalizeAnnotationSamples,
@@ -111,5 +112,59 @@ describe("annotation stroke geometry", () => {
     const outline = annotationOutlinePoints(samples, object.style.outlineWidth);
     const ys = outline.filter((_, index) => index % 2 === 1);
     expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(9);
+  });
+
+  it("detects eraser crossings against transformed annotation centerlines", () => {
+    const object = {
+      schemaVersion: 2,
+      id: "50000000-0000-4000-8000-000000000002",
+      canvasId: "20000000-0000-4000-8000-000000000001",
+      createdBy: "10000000-0000-4000-8000-000000000001",
+      createdAt: "2026-08-30T00:00:00.000Z",
+      updatedAt: "2026-08-30T00:00:00.000Z",
+      type: "annotation",
+      strokeVersion: 1,
+      pointerType: "pen",
+      ink: "pen",
+      points: [0, 0, 40, 0],
+      pressures: [0.5, 0.5],
+      baseWidth: 40,
+      baseHeight: 1,
+      temporary: true,
+      attachedObjectId: null,
+      geometry: { x: 100, y: 100, width: 80, height: 1, rotation: 90 },
+      style: {
+        fill: null,
+        outline: "#6d28d9",
+        outlineWidth: 6,
+        fontFamily: "Inter",
+        fontSize: 16,
+      },
+    } satisfies Extract<CanvasObjectV2, { type: "annotation" }>;
+
+    expect(
+      annotationIntersectsEraserSegment(
+        object,
+        { x: 80, y: 140 },
+        { x: 120, y: 140 },
+        4,
+      ),
+    ).toBe(true);
+    expect(
+      annotationIntersectsEraserSegment(
+        object,
+        { x: 120, y: 90 },
+        { x: 140, y: 90 },
+        4,
+      ),
+    ).toBe(false);
+    expect(
+      annotationIntersectsEraserSegment(
+        object,
+        { x: 100, y: 200 },
+        { x: 100, y: 220 },
+        4,
+      ),
+    ).toBe(false);
   });
 });

@@ -465,7 +465,7 @@ test("draws mouse, touch, and pen strokes that converge and reload", async ({
   await commenterContext.close();
 });
 
-test("remembers drawing tools, highlights, erases whole strokes, and turns object borders off", async ({
+test("keeps drawing tools active, dismisses the palette, drag-erases whole strokes, and turns object borders off", async ({
   page,
 }) => {
   await signIn(page);
@@ -496,29 +496,42 @@ test("remembers drawing tools, highlights, erases whole strokes, and turns objec
     "true",
   );
   await expect(selectedHighlighterWeight).toHaveText("");
+  await expect(selectedHighlighterWeight).toHaveClass(/bg-white/);
+  await expect(selectedHighlighterWeight).toHaveClass(/text-zinc-950/);
+  await expect(selectedHighlighterWeight).toHaveClass(
+    /aria-pressed:bg-violet-50/,
+  );
+  await expect(
+    page.getByRole("button", { name: "3 pixel drawing stroke" }),
+  ).toHaveClass(/bg-white/);
+  const selectedDrawingColor = page.locator(
+    'button[aria-label$=" drawing color"][aria-pressed="true"]',
+  );
+  await expect(selectedDrawingColor.locator("svg")).toHaveCount(1);
+  await expect(selectedDrawingColor.locator("svg")).toHaveClass(/text-white/);
   await page.getByLabel("Custom drawing color").click();
   await page.getByLabel("Custom drawing color hex").fill("#0d9488");
   await page.getByLabel("Custom drawing color hex").press("Enter");
   await page.getByRole("button", { name: "Close color picker" }).click();
-  await page
-    .getByRole("button", { name: "Drawing", exact: true })
-    .press("Escape");
 
-  await page.mouse.move(bounds.x + 300, bounds.y + 260);
+  const drawStroke = async (y: number, startX = 260, endX = 400) => {
+    await page.mouse.move(bounds.x + startX, bounds.y + y);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + endX, bounds.y + y, { steps: 8 });
+    await page.mouse.up();
+  };
+
+  await page.mouse.move(bounds.x + 260, bounds.y + 220);
   await page.mouse.down();
-  await page.mouse.move(bounds.x + 340, bounds.y + 300, { steps: 6 });
-  await page.mouse.move(bounds.x + 380, bounds.y + 265, { steps: 6 });
+  await expect(page.getByTestId("workspace-drawing-palette")).toBeHidden();
+  await page.mouse.move(bounds.x + 400, bounds.y + 220, { steps: 8 });
   await page.mouse.up();
+  await drawStroke(300);
+  await drawStroke(380, 460, 580);
 
-  await expect(page.getByTestId("product-annotation-count")).toHaveText("1");
-  await page.getByRole("button", { name: "Open Object navigator" }).click();
-  await expect(page.getByTestId("selected-annotation-ink")).toHaveText(
-    "highlighter",
-  );
-  await expect(page.getByTestId("selected-stroke-color")).toHaveText("#0d9488");
-  await page.getByRole("button", { name: "Close Object navigator" }).click();
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("3");
   await expect(
-    page.getByRole("button", { name: "Select", exact: true }),
+    page.getByRole("button", { name: "Drawing", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: "Drawing", exact: true }).click();
@@ -526,14 +539,19 @@ test("remembers drawing tools, highlights, erases whole strokes, and turns objec
     page.getByRole("menuitemradio", { name: "Highlighter" }),
   ).toHaveAttribute("aria-checked", "true");
   await page.getByRole("menuitemradio", { name: "Eraser" }).click();
-  await surface.click({ position: { x: 340, y: 300 } });
-  await expect(page.getByTestId("product-annotation-count")).toHaveText("0");
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await page.mouse.move(bounds.x + 330, bounds.y + 185);
+  await page.mouse.down();
+  await expect(page.getByTestId("workspace-drawing-palette")).toBeHidden();
+  await page.mouse.move(bounds.x + 330, bounds.y + 335, { steps: 12 });
+  await page.mouse.up();
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("1");
   await expect(
-    page.getByRole("button", { name: "Select", exact: true }),
+    page.getByRole("button", { name: "Drawing", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await surface.focus();
   await surface.press("Control+z");
-  await expect(page.getByTestId("product-annotation-count")).toHaveText("1");
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("3");
 
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "Rectangle" }).click();

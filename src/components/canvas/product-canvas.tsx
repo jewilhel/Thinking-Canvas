@@ -49,6 +49,7 @@ import * as Y from "yjs";
 import { signOut } from "@/app/auth/actions";
 import {
   annotationCenterlinePoints,
+  annotationIntersectsEraserSegment,
   annotationOutlinePoints,
   annotationSamples,
   canonicalizeAnnotationSamples,
@@ -163,6 +164,11 @@ type ActiveAnnotationStroke = {
   pointerType: AnnotationPointerType;
   ink: AnnotationInk;
   samples: AnnotationSample[];
+};
+type ActiveEraserGesture = {
+  pointerId: number;
+  lastPoint: Point;
+  crossedIds: Set<string>;
 };
 type TouchNavigationGesture = {
   viewport: Viewport;
@@ -310,6 +316,7 @@ export function ProductCanvas({
   const contextPanelTriggerRef = useRef<HTMLButtonElement | null>(null);
   const objectNodeRefs = useRef(new Map<string, Konva.Node>());
   const activeAnnotationStrokeRef = useRef<ActiveAnnotationStroke | null>(null);
+  const activeEraserGestureRef = useRef<ActiveEraserGesture | null>(null);
   const touchPointersRef = useRef(new Map<number, Point>());
   const touchNavigationGestureRef = useRef<TouchNavigationGesture | null>(null);
   const touchNavigationBlockedRef = useRef(false);
@@ -332,6 +339,7 @@ export function ProductCanvas({
   const [objects, setObjects] = useState(() => listCanvasObjectsV2(document));
   const [size, setSize] = useState({ width: 960, height: 640 });
   const [tool, setTool] = useState<CanvasTool>("select");
+  const [dismissDockPaletteSignal, setDismissDockPaletteSignal] = useState(0);
   const [lastDrawingTool, setLastDrawingTool] =
     useState<CanvasDrawingTool>("pen");
   const [penColor, setPenColor] = useState(defaultAnnotationColor);
@@ -762,6 +770,7 @@ export function ProductCanvas({
       activeAnnotationStrokeRef.current = null;
       setAnnotationPreview([]);
     }
+    if (nextTool !== "eraser") activeEraserGestureRef.current = null;
     setCommentPlacementActive(false);
     setContextPanel(null);
     setObjectContextMenu(null);
@@ -1071,6 +1080,7 @@ export function ProductCanvas({
     object: CanvasObjectV2,
   ) {
     event.cancelBubble = true;
+    if (tool === "eraser") return;
     if (event.evt instanceof MouseEvent && event.evt.ctrlKey) {
       openObjectContextMenu(event, object);
       return;
@@ -1082,12 +1092,6 @@ export function ProductCanvas({
         objectId: object.id,
         anchor: point ? nearestExteriorAnchor(object, point) : "right",
       });
-      return;
-    }
-    if (tool === "eraser" && object.type === "annotation") {
-      runCommand("object.delete", { objectId: object.id });
-      setSelectedIds([]);
-      setTool("select");
       return;
     }
     if (tool === "select") {
@@ -1721,6 +1725,15 @@ export function ProductCanvas({
         return;
       }
     }
+    const activeEraser = activeEraserGestureRef.current;
+    if (activeEraser && activeEraser.pointerId === event.pointerId) {
+      for (const point of pointerWorldPoints(event)) {
+        collectEraserCrossings(activeEraser, activeEraser.lastPoint, point);
+        activeEraser.lastPoint = point;
+      }
+      event.preventDefault();
+      return;
+    }
     const active = activeAnnotationStrokeRef.current;
     if (!active || active.pointerId !== event.pointerId) return;
     const nextSamples = pointerAnnotationSamples(event);
@@ -1773,9 +1786,40 @@ export function ProductCanvas({
     });
   }
 
+  function pointerWorldPoints(event: React.PointerEvent<HTMLDivElement>) {
+    const coalescedEvents = event.nativeEvent.getCoalescedEvents?.() ?? [];
+    const nativeEvents = coalescedEvents.length
+      ? coalescedEvents
+      : [event.nativeEvent];
+    return nativeEvents.flatMap((nativeEvent) => {
+      const point = clientWorldPoint(nativeEvent.clientX, nativeEvent.clientY);
+      return point ? [point] : [];
+    });
+  }
+
+  function collectEraserCrossings(
+    active: ActiveEraserGesture,
+    start: Point,
+    end: Point,
+  ) {
+    const tolerance = 8 / viewport.scale;
+    for (const object of objects) {
+      if (
+        object.type !== "annotation" ||
+        active.crossedIds.has(object.id) ||
+        (object.temporary && !temporaryOverlayVisible)
+      ) {
+        continue;
+      }
+      if (annotationIntersectsEraserSegment(object, start, end, tolerance)) {
+        active.crossedIds.add(object.id);
+      }
+    }
+  }
+
   function onSurfacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (
-      (tool === "pen" || tool === "highlighter") &&
+      (tool === "pen" || tool === "highlighter" || tool === "eraser") &&
       event.pointerType === "touch"
     ) {
       const point = clientSurfacePoint(event.clientX, event.clientY);
@@ -1788,6 +1832,7 @@ export function ProductCanvas({
           // Synthetic pointer fixtures do not establish a browser session.
         }
         activeAnnotationStrokeRef.current = null;
+        activeEraserGestureRef.current = null;
         setAnnotationPreview([]);
         touchNavigationBlockedRef.current = true;
         const [first, second] = [...touchPointersRef.current.values()];
@@ -1810,12 +1855,35 @@ export function ProductCanvas({
       if (touchNavigationBlockedRef.current) return;
     }
     if (
-      (tool !== "pen" && tool !== "highlighter") ||
+      (tool !== "pen" && tool !== "highlighter" && tool !== "eraser") ||
       !canMutateCanvas ||
       !event.isPrimary ||
       (event.pointerType === "mouse" && event.button !== 0) ||
-      activeAnnotationStrokeRef.current
+      activeAnnotationStrokeRef.current ||
+      activeEraserGestureRef.current
     ) {
+      return;
+    }
+    const points = pointerWorldPoints(event);
+    const firstPoint = points[0];
+    if (!firstPoint) return;
+    setDismissDockPaletteSignal((current) => current + 1);
+    if (tool === "eraser") {
+      const active: ActiveEraserGesture = {
+        pointerId: event.pointerId,
+        lastPoint: firstPoint,
+        crossedIds: new Set(),
+      };
+      activeEraserGestureRef.current = active;
+      collectEraserCrossings(active, firstPoint, firstPoint);
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Synthetic pointer fixtures do not establish a browser pointer session.
+      }
+      setSelectedIds([]);
+      setContextPanel(null);
+      event.preventDefault();
       return;
     }
     const pointerType = annotationPointerType(event.pointerType);
@@ -1907,11 +1975,52 @@ export function ProductCanvas({
     }
     runCommand("object.create", { object });
     setSelectedIds([id]);
-    setTool("select");
     event.preventDefault();
   }
 
+  function finishEraserGesture(event: React.PointerEvent<HTMLDivElement>) {
+    const active = activeEraserGestureRef.current;
+    if (!active || active.pointerId !== event.pointerId) return false;
+    if (event.pointerType === "touch") {
+      touchPointersRef.current.delete(event.pointerId);
+      if (touchPointersRef.current.size < 2) {
+        touchNavigationGestureRef.current = null;
+      }
+      if (touchPointersRef.current.size === 0) {
+        touchNavigationBlockedRef.current = false;
+      }
+    }
+    for (const point of pointerWorldPoints(event)) {
+      collectEraserCrossings(active, active.lastPoint, point);
+      active.lastPoint = point;
+    }
+    activeEraserGestureRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    const commands = [...active.crossedIds].map((objectId) => ({
+      type: "object.delete",
+      payload: { objectId },
+    }));
+    if (commands.length) runCommandBatch(commands);
+    setSelectedIds([]);
+    event.preventDefault();
+    return true;
+  }
+
+  function onSurfacePointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    if (finishEraserGesture(event)) return;
+    finishAnnotationStroke(event);
+  }
+
   function cancelAnnotationStroke(event?: React.PointerEvent<HTMLDivElement>) {
+    const eraser = activeEraserGestureRef.current;
+    if (eraser) {
+      activeEraserGestureRef.current = null;
+      if (event?.currentTarget.hasPointerCapture(eraser.pointerId)) {
+        event.currentTarget.releasePointerCapture(eraser.pointerId);
+      }
+    }
     const active = activeAnnotationStrokeRef.current;
     if (active) {
       activeAnnotationStrokeRef.current = null;
@@ -2073,9 +2182,13 @@ export function ProductCanvas({
     )
       return;
     const accelerator = event.metaKey || event.ctrlKey;
-    if (event.key === "Escape" && activeAnnotationStrokeRef.current) {
+    if (
+      event.key === "Escape" &&
+      (activeAnnotationStrokeRef.current || activeEraserGestureRef.current)
+    ) {
       event.preventDefault();
       activeAnnotationStrokeRef.current = null;
+      activeEraserGestureRef.current = null;
       setAnnotationPreview([]);
       return;
     }
@@ -3044,6 +3157,7 @@ export function ProductCanvas({
       </p>
 
       <WorkspacePrimaryDock
+        key={dismissDockPaletteSignal}
         activeTool={tool}
         recentShape={recentShape}
         simulatedAiEnabled={simulatedAiEnabled}
@@ -3703,13 +3817,15 @@ export function ProductCanvas({
           onKeyDown={onKeyDown}
           onPointerDown={onSurfacePointerDown}
           onPointerMove={onSurfacePointerMove}
-          onPointerUp={finishAnnotationStroke}
+          onPointerUp={onSurfacePointerUp}
           onPointerCancel={cancelAnnotationStroke}
           onPointerLeave={() => setHoveredShapeId(null)}
           className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
           style={{
             touchAction:
-              tool === "pen" || tool === "highlighter" ? "none" : undefined,
+              tool === "pen" || tool === "highlighter" || tool === "eraser"
+                ? "none"
+                : undefined,
             backgroundImage: `radial-gradient(circle, var(--workspace-dot) ${canvasGrid.dotRadius}px, transparent ${canvasGrid.dotRadius}px)`,
             backgroundPosition: `${canvasGrid.x}px ${canvasGrid.y}px`,
             backgroundSize: `${canvasGrid.spacing}px ${canvasGrid.spacing}px`,

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Check,
   Circle,
   Diamond,
   Eraser,
@@ -280,13 +281,13 @@ export function WorkspacePrimaryDock({
                           type="button"
                           aria-label={`${name} drawing color`}
                           aria-pressed={penColor === color}
-                          className="relative size-9 rounded-full border-2 border-white/40 shadow ring-1 ring-zinc-300 focus-visible:ring-2 focus-visible:ring-violet-600 aria-pressed:ring-3 aria-pressed:ring-violet-600"
+                          className="relative grid size-9 place-items-center rounded-full border border-zinc-300 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-violet-600 aria-pressed:ring-2 aria-pressed:ring-violet-600 aria-pressed:ring-offset-2"
                           style={{ backgroundColor: color }}
                           onClick={() => onPenColorChange(color)}
                         >
                           {penColor === color ? (
-                            <span
-                              className="absolute inset-2 rounded-full border-2 border-white"
+                            <Check
+                              className="size-5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]"
                               aria-hidden="true"
                             />
                           ) : null}
@@ -307,6 +308,7 @@ export function WorkspacePrimaryDock({
                       <StrokeThicknessOptions
                         values={penThicknesses}
                         value={penThickness}
+                        tone="light"
                         labelPrefix="Drawing stroke"
                         onChange={onPenThicknessChange}
                       />
@@ -315,8 +317,8 @@ export function WorkspacePrimaryDock({
                 </>
               ) : (
                 <p className="mt-3 text-xs text-zinc-500">
-                  Select a complete stroke to erase it. Undo restores the
-                  stroke.
+                  Drag across one or more strokes to erase them. Undo restores
+                  the complete eraser gesture.
                 </p>
               )}
               {!canDraw ? (
