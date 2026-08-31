@@ -61,7 +61,8 @@ async function addRectangle(
 ) {
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page
-    .getByRole("menuitemradio", { name: "Rectangle", exact: true })
+    .getByTestId("catalog-results")
+    .getByRole("button", { name: "Rectangle — basic shape", exact: true })
     .click();
   await page.getByTestId("product-canvas-surface").click({ position });
   await expect(page.getByTestId("product-object-count")).toHaveText(
@@ -1265,7 +1266,8 @@ test("captures a connected selection as ordered AI path context", async ({
   await addRectangle(page);
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page
-    .getByRole("menuitemradio", { name: "Ellipse", exact: true })
+    .getByTestId("catalog-results")
+    .getByRole("button", { name: "Ellipse — basic shape", exact: true })
     .click();
   await page
     .getByTestId("product-canvas-surface")
@@ -1317,7 +1319,8 @@ test("repeats an inherited multi-object layout request after undo", async ({
   await addRectangle(page);
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page
-    .getByRole("menuitemradio", { name: "Ellipse", exact: true })
+    .getByTestId("catalog-results")
+    .getByRole("button", { name: "Ellipse — basic shape", exact: true })
     .click();
   const surface = page.getByTestId("product-canvas-surface");
   await surface.click({ position: { x: 650, y: 280 } });
@@ -1386,7 +1389,8 @@ test("keeps an unconnected ordered-path request and reports the path error inlin
   await addRectangle(page);
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page
-    .getByRole("menuitemradio", { name: "Ellipse", exact: true })
+    .getByTestId("catalog-results")
+    .getByRole("button", { name: "Ellipse — basic shape", exact: true })
     .click();
   const surface = page.getByTestId("product-canvas-surface");
   await surface.click({ position: { x: 650, y: 280 } });
@@ -1433,7 +1437,8 @@ test("anchors one thread to a complete group and preserves it after target delet
   await addRectangle(page);
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page
-    .getByRole("menuitemradio", { name: "Ellipse", exact: true })
+    .getByTestId("catalog-results")
+    .getByRole("button", { name: "Ellipse — basic shape", exact: true })
     .click();
   await page
     .getByTestId("product-canvas-surface")
@@ -1580,7 +1585,8 @@ test("broadcasts comment changes between canvas members", async ({
   );
   await owner.getByRole("button", { name: "Shapes", exact: true }).click();
   await owner
-    .getByRole("menuitemradio", { name: "Rectangle", exact: true })
+    .getByTestId("catalog-results")
+    .getByRole("button", { name: "Rectangle — basic shape", exact: true })
     .click();
   await owner
     .getByTestId("product-canvas-surface")

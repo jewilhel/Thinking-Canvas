@@ -40,7 +40,10 @@ async function createAt(
 ) {
   if (["Rectangle", "Ellipse", "Diamond"].includes(tool)) {
     await page.getByRole("button", { name: "Shapes", exact: true }).click();
-    await page.getByRole("menuitemradio", { name: tool, exact: true }).click();
+    await page
+      .getByTestId("catalog-results")
+      .getByRole("button", { name: `${tool} — basic shape`, exact: true })
+      .click();
   } else {
     await page.getByRole("button", { name: tool, exact: true }).click();
   }
