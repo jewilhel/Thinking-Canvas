@@ -17,10 +17,6 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 
-import {
-  basicShapePath,
-  basicShapePoints,
-} from "@/canvas/basic-shape-geometry";
 import { Button } from "@/components/ui/button";
 import { CustomColorPicker } from "@/components/canvas/custom-color-picker";
 import { drawingColorPairs } from "@/components/canvas/canvas-colors";
@@ -146,50 +142,6 @@ function shapeLabel(shape: CanvasShapeTool) {
   );
 }
 
-function BasicShapePreview({ shape }: { shape: CanvasShapeTool }) {
-  const width = 36;
-  const height = 28;
-  const points = basicShapePoints(shape, width, height);
-  const path = basicShapePath(shape, width, height);
-
-  return (
-    <svg
-      viewBox="0 0 48 36"
-      className="h-9 w-12 shrink-0 fill-current"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <g transform="translate(6 4)">
-        {shape === "rectangle" || shape === "rounded-rectangle" ? (
-          <rect
-            width={width}
-            height={height}
-            rx={shape === "rounded-rectangle" ? 6 : 0}
-          />
-        ) : null}
-        {shape === "ellipse" ? (
-          <ellipse cx={width / 2} cy={height / 2} rx={18} ry={14} />
-        ) : null}
-        {points ? (
-          <polygon
-            points={Array.from({ length: points.length / 2 }, (_, index) =>
-              points.slice(index * 2, index * 2 + 2).join(","),
-            ).join(" ")}
-          />
-        ) : null}
-        {path ? <path d={path} /> : null}
-        {shape === "cylinder" ? (
-          <>
-            <rect y="4" width={width} height={height - 8} />
-            <ellipse cx={width / 2} cy="4" rx={width / 2} ry="4" />
-            <ellipse cx={width / 2} cy={height - 4} rx={width / 2} ry="4" />
-          </>
-        ) : null}
-      </g>
-    </svg>
-  );
-}
-
 export function WorkspacePrimaryDock({
   activeTool,
   recentShape,
@@ -210,7 +162,6 @@ export function WorkspacePrimaryDock({
   const toolbarRef = useRef<HTMLDivElement>(null);
   const paletteInvokerRef = useRef<HTMLButtonElement | null>(null);
   const [openPalette, setOpenPalette] = useState<Palette>(null);
-  const [shapeSection, setShapeSection] = useState<"basic" | "icons">("basic");
   const DrawingIcon =
     lastDrawingTool === "highlighter"
       ? Highlighter
@@ -303,59 +254,22 @@ export function WorkspacePrimaryDock({
               <p className="mb-2 px-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
                 Choose a shape
               </p>
-              <div className="flex gap-2" role="tablist" aria-label="Shapes">
-                {(["basic", "icons"] as const).map((section) => (
-                  <Button
-                    key={section}
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    role="tab"
-                    aria-selected={shapeSection === section}
-                    className="capitalize aria-selected:border-violet-600 aria-selected:bg-violet-50 aria-selected:text-violet-800"
-                    onClick={() => setShapeSection(section)}
-                  >
-                    {section === "basic" ? "Basic shapes" : "Icons"}
-                  </Button>
-                ))}
-              </div>
-              {shapeSection === "basic" ? (
-                <div
-                  className="mt-2 grid max-h-72 min-w-0 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3"
-                  role="menu"
-                >
-                  {shapeOptions.map(({ value, label }) => (
-                    <Button
-                      key={value}
-                      data-testid={`basic-shape-tile-${value}`}
-                      type="button"
-                      variant="outline"
-                      role="menuitemradio"
-                      aria-label={
-                        value === "rounded-rectangle" ? "Rounded box" : label
-                      }
-                      aria-checked={activeTool === value}
-                      className="h-20 min-w-0 flex-col gap-1 overflow-hidden border-zinc-200 bg-white p-2 text-zinc-900 hover:bg-violet-50 aria-checked:border-violet-600 aria-checked:bg-violet-50 aria-checked:text-violet-800 dark:border-zinc-200 dark:bg-white dark:text-zinc-900 dark:hover:bg-violet-50 dark:aria-checked:border-violet-600 dark:aria-checked:bg-violet-50 dark:aria-checked:text-violet-800"
-                      onClick={() => {
-                        onChooseShape(value);
-                        setOpenPalette(null);
-                      }}
-                    >
-                      <BasicShapePreview shape={value} />
-                      <span className="max-w-full truncate text-[10px]">
-                        {label}
-                      </span>
-                    </Button>
-                  ))}
-                </div>
-              ) : (
-                <IconBrowser
-                  onChoose={(icon) => {
-                    onChooseIcon(icon.name);
-                    setOpenPalette(null);
-                  }}
-                />
-              )}
+              <IconBrowser
+                activeShape={
+                  shapeOptions.some((option) => option.value === activeTool)
+                    ? (activeTool as CanvasShapeTool)
+                    : null
+                }
+                shapes={shapeOptions}
+                onChooseShape={(shape) => {
+                  onChooseShape(shape);
+                  setOpenPalette(null);
+                }}
+                onChooseIcon={(icon) => {
+                  onChooseIcon(icon.name);
+                  setOpenPalette(null);
+                }}
+              />
             </>
           ) : null}
 

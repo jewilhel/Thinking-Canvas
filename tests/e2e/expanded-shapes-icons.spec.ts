@@ -22,6 +22,13 @@ test("adds expanded shapes and styles a searchable vector icon", async ({
 
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   const shapePalette = page.getByTestId("workspace-shape-palette");
+  const catalogSearch = page.getByLabel("Search shapes and icons");
+  const basicCategory = page.getByRole("button", {
+    name: "Basic",
+    exact: true,
+  });
+  await expect(basicCategory).toBeVisible();
+  await expect(page.getByText("1524 results")).toBeVisible();
   const roundedRectangleTile = page.getByTestId(
     "basic-shape-tile-rounded-rectangle",
   );
@@ -43,8 +50,26 @@ test("adds expanded shapes and styles a searchable vector icon", async ({
     .boundingBox();
   expect(previewBox).not.toBeNull();
   expect(labelBox).not.toBeNull();
+  expect(previewBox!.width).toBeGreaterThanOrEqual(36);
   expect(previewBox!.y + previewBox!.height).toBeLessThanOrEqual(labelBox!.y);
-  await page.getByRole("menuitemradio", { name: "Star", exact: true }).click();
+  const iconPreviewBox = await page
+    .getByTestId("icon-tile")
+    .first()
+    .locator("svg")
+    .boundingBox();
+  expect(iconPreviewBox).not.toBeNull();
+  expect(previewBox!.width).toBeGreaterThanOrEqual(iconPreviewBox!.width);
+  await basicCategory.click();
+  await expect(page.getByText("12 results")).toBeVisible();
+  await expect(page.getByTestId("icon-tile")).toHaveCount(0);
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.getByText("1524 results")).toBeVisible();
+  await catalogSearch.fill("rounded rectangle");
+  await expect(roundedRectangleTile).toBeVisible();
+  await catalogSearch.fill("");
+  await page
+    .getByRole("button", { name: "Star — basic shape", exact: true })
+    .click();
   await surface.click({ position: { x: 280, y: 220 } });
   await expect(
     page.locator('[data-testid^="object-list-item-"]').filter({
@@ -53,16 +78,17 @@ test("adds expanded shapes and styles a searchable vector icon", async ({
   ).toHaveCount(1);
 
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
-  await page.getByRole("tab", { name: "Icons" }).click();
-  await expect(page.getByText("1512 icons")).toBeVisible();
+  await expect(page.getByText("1524 results")).toBeVisible();
   expect(
     await shapePalette.evaluate(
       (element) => element.scrollWidth <= element.clientWidth,
     ),
   ).toBe(true);
   const paletteBox = await shapePalette.boundingBox();
-  const searchBox = await page.getByLabel("Search icons").boundingBox();
-  const resultsBox = await page.getByTestId("icon-results").boundingBox();
+  const searchBox = await page
+    .getByLabel("Search shapes and icons")
+    .boundingBox();
+  const resultsBox = await page.getByTestId("catalog-results").boundingBox();
   expect(paletteBox).not.toBeNull();
   expect(searchBox).not.toBeNull();
   expect(resultsBox).not.toBeNull();
@@ -75,7 +101,7 @@ test("adds expanded shapes and styles a searchable vector icon", async ({
   const visibleTiles = page.getByTestId("icon-tile");
   await expect(visibleTiles.first()).toBeVisible();
   expect(await visibleTiles.count()).toBeLessThan(100);
-  await page.getByLabel("Search icons").fill("brain");
+  await page.getByLabel("Search shapes and icons").fill("brain");
   await page.getByTitle("Brain", { exact: true }).click();
   await expect(
     page.locator('[data-testid^="object-list-item-"]').filter({
@@ -105,8 +131,7 @@ test("places an icon inside a sticky and removes it without a jump", async ({
   await surface.click({ position: { x: 540, y: 280 } });
 
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
-  await page.getByRole("tab", { name: "Icons" }).click();
-  await page.getByLabel("Search icons").fill("brain");
+  await page.getByLabel("Search shapes and icons").fill("brain");
   await page.getByTitle("Brain", { exact: true }).click();
   const iconItem = page.locator('[data-testid^="object-list-item-"]').filter({
     hasText: "icon — brain",
