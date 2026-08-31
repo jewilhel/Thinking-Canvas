@@ -566,6 +566,14 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           "Freeform annotations use a solid pressure-rendered stroke.",
         );
       }
+      if (
+        object.type === "annotation" &&
+        command.payload.style.outlineWidth === 0
+      ) {
+        throw new ProductCanvasCommandConflictError(
+          "Freeform annotations require a visible stroke thickness.",
+        );
+      }
       for (const [field, value] of Object.entries(command.payload.style)) {
         setCanvasObjectField(document, object.id, ["style", field], value);
       }

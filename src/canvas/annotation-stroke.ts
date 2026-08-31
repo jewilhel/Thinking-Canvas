@@ -3,6 +3,7 @@ import { getStroke } from "perfect-freehand";
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 
 export type AnnotationPointerType = "mouse" | "touch" | "pen";
+export type AnnotationInk = "pen" | "highlighter";
 
 export type AnnotationSample = {
   x: number;
@@ -11,8 +12,10 @@ export type AnnotationSample = {
 };
 
 export const maxAnnotationSamples = 2_048;
-export const defaultAnnotationColor = "#7c3aed";
+export const defaultAnnotationColor = "#6d28d9";
 export const defaultAnnotationThickness = 5;
+export const defaultHighlighterThickness = 16;
+export const highlighterOpacity = 0.36;
 
 export function normalizeAnnotationPressure(
   pointerType: string,
@@ -86,11 +89,22 @@ export function canonicalizeAnnotationSamples(
 export function annotationSamples(
   object: Extract<CanvasObjectV2, { type: "annotation" }>,
 ) {
+  const scaleX =
+    object.geometry.width / ((object.baseWidth ?? object.geometry.width) || 1);
+  const scaleY =
+    object.geometry.height /
+    ((object.baseHeight ?? object.geometry.height) || 1);
   return Array.from({ length: object.points.length / 2 }, (_, index) => ({
-    x: object.points[index * 2]!,
-    y: object.points[index * 2 + 1]!,
+    x: object.points[index * 2]! * scaleX,
+    y: object.points[index * 2 + 1]! * scaleY,
     pressure: object.pressures?.[index] ?? 0.5,
   }));
+}
+
+export function annotationCenterlinePoints(
+  object: Extract<CanvasObjectV2, { type: "annotation" }>,
+) {
+  return annotationSamples(object).flatMap((sample) => [sample.x, sample.y]);
 }
 
 export function annotationOutlinePoints(

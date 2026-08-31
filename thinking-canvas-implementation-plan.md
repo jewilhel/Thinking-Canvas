@@ -290,6 +290,9 @@ Evidence: [Milestone 5 implementation and verification record](docs/implementati
 - [ ] **Unified multi-selection transform frame.** Drag-selecting or Shift-clicking multiple annotations and/or supported canvas objects shows one selection boundary and handles around the complete selection; moving or resizing that selection commits as one undoable batch while preserving connector and annotation attachment integrity.
 - [ ] **Unified Stroke palette.** Applicable annotations and canvas objects use the same expandable floating **Stroke** palette. Shared controls include stroke color and thickness; supported object borders and connectors also expose `Solid`, `Dashed`, and `Dotted` stroke styles through the same palette.
 - [ ] **Contextual styling parity.** Annotation and object palettes share placement, focus, responsive, accessible-name, mixed-value, and batch-application behavior. A mixed selection exposes only properties valid for every applicable selected item and does not overwrite a mixed property until the participant chooses a value.
+- [ ] **Annotation tool family and return-to-select behavior.** The Drawing entry remembers the participant's last Pen, Highlighter, or Eraser choice; Pen and semi-transparent Highlighter create whole editable vector strokes, Eraser deletes complete strokes, and each completed draw or erase action returns to Select.
+- [ ] **Visual stroke controls and border-off state.** Drawing and contextual Stroke palettes share the first ten standard colors plus Custom, show thickness as selected visual weight samples instead of numeric labels, and allow applicable canvas-object borders to use zero thickness without offering an invisible annotation width.
+- [ ] **Constant-width annotation transforms.** Resizing an annotation changes its vector path geometry while preserving the selected stroke thickness instead of scaling or distorting the rendered ink width.
 
 ### Exit gate
 

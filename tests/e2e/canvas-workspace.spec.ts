@@ -443,6 +443,8 @@ test("draws mouse, touch, and pen strokes that converge and reload", async ({
   await editor.getByRole("button", { name: "Drawing", exact: true }).click();
   await editor.getByRole("menuitemradio", { name: "Pen" }).click();
   await dispatchPointerStroke(editor, "touch", 71, 0.35);
+  await owner.getByRole("button", { name: "Drawing", exact: true }).click();
+  await owner.getByRole("menuitemradio", { name: "Pen" }).click();
   await dispatchPointerStroke(owner, "pen", 72, 0.85);
 
   for (const participant of [owner, editor]) {
@@ -461,6 +463,85 @@ test("draws mouse, touch, and pen strokes that converge and reload", async ({
   await ownerContext.close();
   await editorContext.close();
   await commenterContext.close();
+});
+
+test("remembers drawing tools, highlights, erases whole strokes, and turns object borders off", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page
+    .getByLabel("Canvas name")
+    .fill(`Milestone 6 drawing refinements ${Date.now()}`);
+  await page.getByRole("button", { name: "Create canvas" }).click();
+  const surface = page.getByTestId("product-canvas-surface");
+  const bounds = await surface.boundingBox();
+  if (!bounds) throw new Error("Canvas bounds are unavailable.");
+
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await expect(
+    page.locator(
+      'button[aria-label$=" drawing color"]:not([aria-label="Custom drawing color"])',
+    ),
+  ).toHaveCount(10);
+  await page.getByRole("menuitemradio", { name: "Highlighter" }).click();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await expect(
+    page.getByRole("menuitemradio", { name: "Highlighter" }),
+  ).toHaveAttribute("aria-checked", "true");
+  const selectedHighlighterWeight = page.getByRole("button", {
+    name: "16 pixel drawing stroke",
+  });
+  await expect(selectedHighlighterWeight).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(selectedHighlighterWeight).toHaveText("");
+  await page.getByLabel("Custom drawing color").click();
+  await page.getByLabel("Custom drawing color hex").fill("#0d9488");
+  await page.getByLabel("Custom drawing color hex").press("Enter");
+  await page.getByRole("button", { name: "Close color picker" }).click();
+  await page
+    .getByRole("button", { name: "Drawing", exact: true })
+    .press("Escape");
+
+  await page.mouse.move(bounds.x + 300, bounds.y + 260);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 340, bounds.y + 300, { steps: 6 });
+  await page.mouse.move(bounds.x + 380, bounds.y + 265, { steps: 6 });
+  await page.mouse.up();
+
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("1");
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await expect(page.getByTestId("selected-annotation-ink")).toHaveText(
+    "highlighter",
+  );
+  await expect(page.getByTestId("selected-stroke-color")).toHaveText("#0d9488");
+  await page.getByRole("button", { name: "Close Object navigator" }).click();
+  await expect(
+    page.getByRole("button", { name: "Select", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await expect(
+    page.getByRole("menuitemradio", { name: "Highlighter" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("menuitemradio", { name: "Eraser" }).click();
+  await surface.click({ position: { x: 340, y: 300 } });
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("0");
+  await expect(
+    page.getByRole("button", { name: "Select", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await surface.focus();
+  await surface.press("Control+z");
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("1");
+
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Rectangle" }).click();
+  await surface.click({ position: { x: 560, y: 320 } });
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await page.getByRole("button", { name: "Stroke", exact: true }).click();
+  await page.getByRole("button", { name: "No stroke" }).click();
+  await expect(page.getByTestId("selected-stroke-width")).toHaveText("0");
 });
 
 test("styles, groups, transforms, hides, and promotes selected annotations", async ({

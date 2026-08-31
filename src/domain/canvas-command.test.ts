@@ -248,6 +248,15 @@ describe("product canvas command boundary", () => {
         }),
       ),
     ).toThrow("solid pressure-rendered stroke");
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("object.style", {
+          objectId: connectorId,
+          style: { outlineWidth: 0 },
+        }),
+      ),
+    ).toThrow("visible stroke thickness");
   });
 
   it("creates, patches, moves, resizes, and styles through validated commands", () => {

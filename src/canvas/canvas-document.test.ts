@@ -50,6 +50,7 @@ function makeAnnotation(): Extract<CanvasObjectV2, { type: "annotation" }> {
     type: "annotation",
     strokeVersion: 1,
     pointerType: "pen",
+    ink: "highlighter",
     points: [5, 5, 25, 25],
     pressures: [0.2, 0.8],
     temporary: true,
@@ -144,6 +145,7 @@ describe("production canvas document", () => {
     delete legacy.pressures;
     delete legacy.pointerType;
     delete legacy.strokeVersion;
+    delete legacy.ink;
     putCanvasObjectV2(document, legacy);
 
     expect(readCanvasObjectV2(document, objectId)).toMatchObject({

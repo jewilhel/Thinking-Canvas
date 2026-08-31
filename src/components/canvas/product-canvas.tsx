@@ -48,12 +48,16 @@ import * as Y from "yjs";
 
 import { signOut } from "@/app/auth/actions";
 import {
+  annotationCenterlinePoints,
   annotationOutlinePoints,
   annotationSamples,
   canonicalizeAnnotationSamples,
   defaultAnnotationColor,
   defaultAnnotationThickness,
+  defaultHighlighterThickness,
+  highlighterOpacity,
   normalizeAnnotationPressure,
+  type AnnotationInk,
   type AnnotationPointerType,
   type AnnotationSample,
 } from "@/canvas/annotation-stroke";
@@ -114,6 +118,7 @@ import {
 } from "@/components/canvas/text-style-panel";
 import {
   WorkspacePrimaryDock,
+  type CanvasDrawingTool,
   type CanvasShapeTool,
   type CanvasTool,
 } from "@/components/canvas/workspace-primary-dock";
@@ -156,6 +161,7 @@ type ObjectContextMenuPosition = { x: number; y: number; maxHeight: number };
 type ActiveAnnotationStroke = {
   pointerId: number;
   pointerType: AnnotationPointerType;
+  ink: AnnotationInk;
   samples: AnnotationSample[];
 };
 type TouchNavigationGesture = {
@@ -264,6 +270,8 @@ function objectLabel(object: CanvasObjectV2) {
   if (object.type === "text") return `text — ${object.text || "Untitled"}`;
   if (object.type === "table") return `table — ${object.cells.length} rows`;
   if (object.type === "connector") return "connector";
+  if (object.type === "annotation")
+    return object.ink === "highlighter" ? "highlighter" : "pen stroke";
   return object.type;
 }
 
@@ -324,8 +332,18 @@ export function ProductCanvas({
   const [objects, setObjects] = useState(() => listCanvasObjectsV2(document));
   const [size, setSize] = useState({ width: 960, height: 640 });
   const [tool, setTool] = useState<CanvasTool>("select");
+  const [lastDrawingTool, setLastDrawingTool] =
+    useState<CanvasDrawingTool>("pen");
   const [penColor, setPenColor] = useState(defaultAnnotationColor);
   const [penThickness, setPenThickness] = useState(defaultAnnotationThickness);
+  const [highlighterColor, setHighlighterColor] = useState("#b45309");
+  const [highlighterThickness, setHighlighterThickness] = useState(
+    defaultHighlighterThickness,
+  );
+  const drawingColor =
+    lastDrawingTool === "highlighter" ? highlighterColor : penColor;
+  const drawingThickness =
+    lastDrawingTool === "highlighter" ? highlighterThickness : penThickness;
   const [annotationPreview, setAnnotationPreview] = useState<
     AnnotationSample[]
   >([]);
@@ -657,7 +675,10 @@ export function ProductCanvas({
   }
 
   function createObject(
-    activeTool: Exclude<CanvasTool, "select" | "pan" | "pen" | "connector">,
+    activeTool: Exclude<
+      CanvasTool,
+      "select" | "pan" | "pen" | "highlighter" | "eraser" | "connector"
+    >,
     point: Point,
   ) {
     const id = crypto.randomUUID();
@@ -729,8 +750,15 @@ export function ProductCanvas({
   }
 
   function chooseTool(nextTool: CanvasTool) {
-    if (nextTool === "pen" && !canMutateCanvas) return;
-    if (nextTool !== "pen" && activeAnnotationStrokeRef.current) {
+    const drawingTool =
+      nextTool === "pen" || nextTool === "highlighter" || nextTool === "eraser";
+    if (drawingTool && !canMutateCanvas) return;
+    if (drawingTool) setLastDrawingTool(nextTool);
+    if (
+      nextTool !== "pen" &&
+      nextTool !== "highlighter" &&
+      activeAnnotationStrokeRef.current
+    ) {
       activeAnnotationStrokeRef.current = null;
       setAnnotationPreview([]);
     }
@@ -1054,6 +1082,12 @@ export function ProductCanvas({
         objectId: object.id,
         anchor: point ? nearestExteriorAnchor(object, point) : "right",
       });
+      return;
+    }
+    if (tool === "eraser" && object.type === "annotation") {
+      runCommand("object.delete", { objectId: object.id });
+      setSelectedIds([]);
+      setTool("select");
       return;
     }
     if (tool === "select") {
@@ -1600,7 +1634,12 @@ export function ProductCanvas({
       });
     } else if (tool === "connector") {
       finishConnector({ kind: "free", ...point });
-    } else if (tool !== "pan" && tool !== "pen") {
+    } else if (
+      tool !== "pan" &&
+      tool !== "pen" &&
+      tool !== "highlighter" &&
+      tool !== "eraser"
+    ) {
       createObject(tool, point);
     }
   }
@@ -1735,7 +1774,10 @@ export function ProductCanvas({
   }
 
   function onSurfacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (tool === "pen" && event.pointerType === "touch") {
+    if (
+      (tool === "pen" || tool === "highlighter") &&
+      event.pointerType === "touch"
+    ) {
       const point = clientSurfacePoint(event.clientX, event.clientY);
       if (!point) return;
       touchPointersRef.current.set(event.pointerId, point);
@@ -1768,7 +1810,7 @@ export function ProductCanvas({
       if (touchNavigationBlockedRef.current) return;
     }
     if (
-      tool !== "pen" ||
+      (tool !== "pen" && tool !== "highlighter") ||
       !canMutateCanvas ||
       !event.isPrimary ||
       (event.pointerType === "mouse" && event.button !== 0) ||
@@ -1782,6 +1824,7 @@ export function ProductCanvas({
     activeAnnotationStrokeRef.current = {
       pointerId: event.pointerId,
       pointerType,
+      ink: tool,
       samples,
     };
     try {
@@ -1816,7 +1859,7 @@ export function ProductCanvas({
     active.samples.push(...pointerAnnotationSamples(event));
     const canonical = canonicalizeAnnotationSamples(
       active.samples,
-      penThickness,
+      drawingThickness,
     );
     activeAnnotationStrokeRef.current = null;
     setAnnotationPreview([]);
@@ -1837,6 +1880,7 @@ export function ProductCanvas({
       type: "annotation",
       strokeVersion: 1,
       pointerType: active.pointerType,
+      ink: active.ink,
       baseWidth: canonical.geometry.width,
       baseHeight: canonical.geometry.height,
       points: canonical.points,
@@ -1846,8 +1890,8 @@ export function ProductCanvas({
       geometry: canonical.geometry,
       style: {
         ...baseStyle("annotation"),
-        outline: penColor,
-        outlineWidth: penThickness,
+        outline: drawingColor,
+        outlineWidth: drawingThickness,
       },
     };
     const attachmentTarget = findAnnotationAttachmentTarget(object, objects);
@@ -1863,6 +1907,7 @@ export function ProductCanvas({
     }
     runCommand("object.create", { object });
     setSelectedIds([id]);
+    setTool("select");
     event.preventDefault();
   }
 
@@ -2279,26 +2324,13 @@ export function ProductCanvas({
     node.getLayer()?.batchDraw();
   }
 
-  function objectRenderScale(object: CanvasObjectV2) {
-    return object.type === "annotation"
-      ? {
-          x:
-            object.geometry.width / (object.baseWidth ?? object.geometry.width),
-          y:
-            object.geometry.height /
-            (object.baseHeight ?? object.geometry.height),
-        }
-      : { x: 1, y: 1 };
-  }
-
   function previewSingleObjectTransform(
     event: Konva.KonvaEventObject<Event>,
     object: CanvasObjectV2,
   ) {
     const node = event.target;
-    const baseScale = objectRenderScale(object);
-    const scaleX = node.scaleX() / baseScale.x;
-    const scaleY = node.scaleY() / baseScale.y;
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
     const geometry = previewGeometryDuringTransform(object.geometry, {
       x: node.x(),
       y: node.y(),
@@ -2324,17 +2356,16 @@ export function ProductCanvas({
     object: CanvasObjectV2,
   ) {
     const node = event.target;
-    const baseScale = objectRenderScale(object);
-    const scaleX = node.scaleX() / baseScale.x;
-    const scaleY = node.scaleY() / baseScale.y;
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
     const geometry = previewGeometryDuringTransform(object.geometry, {
       x: node.x(),
       y: node.y(),
       scaleX,
       scaleY,
     });
-    node.scaleX(baseScale.x);
-    node.scaleY(baseScale.y);
+    node.scaleX(1);
+    node.scaleY(1);
     updateLiveResizeTextLayout(
       node,
       object,
@@ -2434,7 +2465,6 @@ export function ProductCanvas({
 
   function renderObject(object: CanvasObjectV2) {
     if (object.type === "annotation") {
-      const renderScale = objectRenderScale(object);
       return (
         <Group
           key={object.id}
@@ -2442,8 +2472,7 @@ export function ProductCanvas({
           x={object.geometry.x}
           y={object.geometry.y}
           rotation={object.geometry.rotation}
-          scaleX={renderScale.x}
-          scaleY={renderScale.y}
+          opacity={object.ink === "highlighter" ? highlighterOpacity : 1}
           ref={(node) => {
             if (node) objectNodeRefs.current.set(object.id, node);
             else objectNodeRefs.current.delete(object.id);
@@ -2484,7 +2513,7 @@ export function ProductCanvas({
             listening={false}
           />
           <Line
-            points={object.points}
+            points={annotationCenterlinePoints(object)}
             stroke="rgba(0,0,0,0.001)"
             strokeWidth={Math.max(
               object.style.outlineWidth,
@@ -3024,10 +3053,19 @@ export function ProductCanvas({
         commentPlacementActive={commentPlacementActive}
         onChooseComments={chooseComments}
         canDraw={canMutateCanvas}
-        penColor={penColor}
-        penThickness={penThickness}
-        onPenColorChange={setPenColor}
-        onPenThicknessChange={setPenThickness}
+        lastDrawingTool={lastDrawingTool}
+        penColor={drawingColor}
+        penThickness={drawingThickness}
+        onPenColorChange={(color) =>
+          lastDrawingTool === "highlighter"
+            ? setHighlighterColor(color)
+            : setPenColor(color)
+        }
+        onPenThicknessChange={(thickness) =>
+          lastDrawingTool === "highlighter"
+            ? setHighlighterThickness(thickness)
+            : setPenThickness(thickness)
+        }
       />
 
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
@@ -3368,6 +3406,11 @@ export function ProductCanvas({
                     allowPattern={outlineObjects.every(
                       (object) => object.type !== "annotation",
                     )}
+                    allowZeroWidth={outlineObjects.every(
+                      (object) =>
+                        object.type !== "annotation" &&
+                        object.type !== "connector",
+                    )}
                     onApply={(style) =>
                       applyStyleToObjects(outlineObjects, style)
                     }
@@ -3665,7 +3708,8 @@ export function ProductCanvas({
           onPointerLeave={() => setHoveredShapeId(null)}
           className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
           style={{
-            touchAction: tool === "pen" ? "none" : undefined,
+            touchAction:
+              tool === "pen" || tool === "highlighter" ? "none" : undefined,
             backgroundImage: `radial-gradient(circle, var(--workspace-dot) ${canvasGrid.dotRadius}px, transparent ${canvasGrid.dotRadius}px)`,
             backgroundPosition: `${canvasGrid.x}px ${canvasGrid.y}px`,
             backgroundSize: `${canvasGrid.spacing}px ${canvasGrid.spacing}px`,
@@ -3712,11 +3756,14 @@ export function ProductCanvas({
                 <Line
                   points={annotationOutlinePoints(
                     annotationPreview,
-                    penThickness,
+                    drawingThickness,
                     false,
                   )}
                   closed
-                  fill={penColor}
+                  fill={drawingColor}
+                  opacity={
+                    lastDrawingTool === "highlighter" ? highlighterOpacity : 1
+                  }
                   listening={false}
                 />
               ) : null}
@@ -4030,6 +4077,12 @@ function ObjectNavigatorContent({
               </dd>
             </div>
             <div>
+              <dt>Stroke color</dt>
+              <dd data-testid="selected-stroke-color">
+                {selectedObject.style.outline}
+              </dd>
+            </div>
+            <div>
               <dt>Stroke width</dt>
               <dd data-testid="selected-stroke-width">
                 {selectedObject.style.outlineWidth}
@@ -4037,6 +4090,12 @@ function ObjectNavigatorContent({
             </div>
             {selectedObject.type === "annotation" ? (
               <>
+                <div>
+                  <dt>Ink</dt>
+                  <dd data-testid="selected-annotation-ink">
+                    {selectedObject.ink ?? "pen"}
+                  </dd>
+                </div>
                 <div>
                   <dt>Temporary</dt>
                   <dd data-testid="selected-annotation-temporary">

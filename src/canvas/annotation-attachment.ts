@@ -71,17 +71,11 @@ function strokeIntersectsTarget(
       const ratio = step / steps;
       const localX = sample.x + (next ? (next.x - sample.x) * ratio : 0);
       const localY = sample.y + (next ? (next.y - sample.y) * ratio : 0);
-      const scaleX =
-        annotation.geometry.width /
-        ((annotation.baseWidth ?? annotation.geometry.width) || 1);
-      const scaleY =
-        annotation.geometry.height /
-        ((annotation.baseHeight ?? annotation.geometry.height) || 1);
       if (
         pointInTarget(
           target,
-          annotation.geometry.x + localX * scaleX,
-          annotation.geometry.y + localY * scaleY,
+          annotation.geometry.x + localX,
+          annotation.geometry.y + localY,
           tolerance,
         )
       ) {

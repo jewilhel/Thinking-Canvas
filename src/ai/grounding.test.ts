@@ -105,7 +105,7 @@ describe("AI grounding tools", () => {
     });
     const details = buildCanvasObjectDetails(canvasId, [first, annotation]);
     expect(details[1]).toMatchObject({
-      summary: "Promoted annotation · #000 · 1px · attached",
+      summary: "Promoted pen annotation · #000 · 1px · attached",
       relationshipIds: [ids.first],
       state: { type: "annotation", attachedObjectId: ids.first },
     });

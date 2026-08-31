@@ -104,6 +104,7 @@ const legacyAnnotationObjectSchema = canvasObjectBaseSchema.extend({
   pressures: z.array(finiteNumber.min(0).max(1)).min(2).max(10_000).optional(),
   strokeVersion: z.literal(1).optional(),
   pointerType: z.enum(["mouse", "touch", "pen"]).optional(),
+  ink: z.enum(["pen", "highlighter"]).optional(),
   baseWidth: finiteNumber.positive().optional(),
   baseHeight: finiteNumber.positive().optional(),
   temporary: z.boolean(),

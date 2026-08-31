@@ -2,9 +2,11 @@
 
 import { ColorStylePanel } from "@/components/canvas/color-style-panel";
 import type { OutlinePattern } from "@/canvas/stroke-style";
+import { StrokeThicknessOptions } from "@/components/canvas/stroke-thickness-options";
 import { Button } from "@/components/ui/button";
 
 const thicknesses = [1, 2, 3, 5, 8] as const;
+const objectThicknesses = [0, ...thicknesses] as const;
 const patterns = ["solid", "dashed", "dotted"] as const;
 
 type Props = {
@@ -15,6 +17,7 @@ type Props = {
   mixedWidth: boolean;
   mixedPattern: boolean;
   allowPattern: boolean;
+  allowZeroWidth: boolean;
   onApply: (style: {
     outline?: string;
     outlineWidth?: number;
@@ -30,6 +33,7 @@ export function StrokeStylePanel({
   mixedWidth,
   mixedPattern,
   allowPattern,
+  allowZeroWidth,
   onApply,
 }: Props) {
   return (
@@ -48,20 +52,14 @@ export function StrokeStylePanel({
         <legend className="text-xs font-medium text-zinc-300">
           Thickness{mixedWidth ? " — Mixed" : ""}
         </legend>
-        <div className="mt-2 grid grid-cols-5 gap-2">
-          {thicknesses.map((width) => (
-            <Button
-              key={width}
-              type="button"
-              size="sm"
-              variant="outline"
-              aria-label={`${width} pixel stroke`}
-              aria-pressed={!mixedWidth && outlineWidth === width}
-              onClick={() => onApply({ outlineWidth: width })}
-            >
-              {width}
-            </Button>
-          ))}
+        <div className="mt-2">
+          <StrokeThicknessOptions
+            values={allowZeroWidth ? objectThicknesses : thicknesses}
+            value={outlineWidth}
+            mixed={mixedWidth}
+            labelPrefix="Stroke"
+            onChange={(width) => onApply({ outlineWidth: width })}
+          />
         </div>
       </fieldset>
       {allowPattern ? (

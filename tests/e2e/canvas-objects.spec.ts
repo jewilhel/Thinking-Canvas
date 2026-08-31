@@ -356,7 +356,13 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
     "data-mixed",
     "true",
   );
-  await page.getByLabel("Custom fill color").click();
+  const customFillColor = page.getByLabel("Custom fill color");
+  await expect(customFillColor.locator("img")).toHaveCount(0);
+  await expect(customFillColor.locator('span[aria-hidden="true"]')).toHaveCSS(
+    "background-image",
+    /conic-gradient/,
+  );
+  await customFillColor.click();
   await expect(
     page.getByRole("dialog", { name: "Custom fill color picker" }),
   ).toBeVisible();

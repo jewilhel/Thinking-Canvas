@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   annotationOutlinePoints,
+  annotationSamples,
   canonicalizeAnnotationSamples,
   maxAnnotationSamples,
   normalizeAnnotationPressure,
   simplifyAnnotationSamples,
 } from "@/canvas/annotation-stroke";
+import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 
 describe("annotation stroke geometry", () => {
   it("uses supplied pen pressure and deterministic simulated mouse pressure", () => {
@@ -70,5 +72,44 @@ describe("annotation stroke geometry", () => {
     expect(first).toEqual(second);
     expect(first.length).toBeGreaterThan(samples.length * 2);
     expect(first.every(Number.isFinite)).toBe(true);
+  });
+
+  it("maps a resized centerline while keeping derived ink thickness constant", () => {
+    const object = {
+      schemaVersion: 2,
+      id: "50000000-0000-4000-8000-000000000001",
+      canvasId: "20000000-0000-4000-8000-000000000001",
+      createdBy: "10000000-0000-4000-8000-000000000001",
+      createdAt: "2026-08-30T00:00:00.000Z",
+      updatedAt: "2026-08-30T00:00:00.000Z",
+      type: "annotation",
+      strokeVersion: 1,
+      pointerType: "pen",
+      ink: "highlighter",
+      points: [5, 10, 25, 10],
+      pressures: [0.5, 0.5],
+      baseWidth: 30,
+      baseHeight: 20,
+      temporary: true,
+      attachedObjectId: null,
+      geometry: { x: 0, y: 0, width: 60, height: 40, rotation: 0 },
+      style: {
+        fill: null,
+        outline: "#b45309",
+        outlineWidth: 8,
+        fontFamily: "Inter",
+        fontSize: 16,
+      },
+    } satisfies Extract<CanvasObjectV2, { type: "annotation" }>;
+
+    const samples = annotationSamples(object);
+    expect(samples.map(({ x, y }) => [x, y])).toEqual([
+      [10, 20],
+      [50, 20],
+    ]);
+
+    const outline = annotationOutlinePoints(samples, object.style.outlineWidth);
+    const ys = outline.filter((_, index) => index % 2 === 1);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(9);
   });
 });
