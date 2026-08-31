@@ -69,6 +69,8 @@ type Props = {
   onSelectTargets: (targetIds: string[]) => void;
   onAiTransactionApplied: (changeSetId: string) => void;
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
+  overlayVisible: boolean;
+  onOverlayVisibilityChange: (visible: boolean) => void;
 };
 
 function initials(name: string) {
@@ -1137,6 +1139,8 @@ export function CanvasComments({
   onSelectTargets,
   onAiTransactionApplied,
   onUndoAiTransaction,
+  overlayVisible,
+  onOverlayVisibilityChange,
 }: Props) {
   const {
     threads,
@@ -1154,10 +1158,6 @@ export function CanvasComments({
     supabaseUrl,
     supabasePublishableKey,
     onAiTransactionApplied,
-  );
-  const visibilityKey = `thinking-canvas:comments-visible:${userId}:${canvasId}`;
-  const [visible, setVisible] = useState(
-    () => window.localStorage.getItem(visibilityKey) !== "false",
   );
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
@@ -1184,9 +1184,6 @@ export function CanvasComments({
   const selectedThread =
     threads.find((thread) => thread.id === selectedThreadId) ?? null;
   const canComment = canvasRole !== "viewer";
-  useEffect(() => {
-    window.localStorage.setItem(visibilityKey, String(visible));
-  }, [visibilityKey, visible]);
   useEffect(() => {
     if (composerOpen) requestAnimationFrame(() => composerRef.current?.focus());
   }, [composerOpen]);
@@ -1324,7 +1321,7 @@ export function CanvasComments({
     setDraft("");
     setPromptKind(null);
     closeComposer();
-    setVisible(true);
+    onOverlayVisibilityChange(true);
     if (id) focusThread(id);
   }
 
@@ -1481,7 +1478,7 @@ export function CanvasComments({
         />
       ) : null}
 
-      {visible
+      {overlayVisible
         ? threads
             .filter((thread) => thread.status === "open")
             .map((thread) => {
@@ -1686,14 +1683,16 @@ export function CanvasComments({
             <Button
               type="button"
               variant="outline"
-              onClick={() => setVisible((current) => !current)}
+              onClick={() => onOverlayVisibilityChange(!overlayVisible)}
             >
-              {visible ? (
+              {overlayVisible ? (
                 <EyeOff aria-hidden="true" />
               ) : (
                 <Eye aria-hidden="true" />
               )}
-              {visible ? "Hide markers" : "Show markers"}
+              {overlayVisible
+                ? "Hide comments and annotations"
+                : "Show comments and annotations"}
             </Button>
           </div>
           {collaboration ? (
@@ -1785,7 +1784,7 @@ export function CanvasComments({
                   type="button"
                   className="flex w-full items-start gap-3 rounded-xl border border-zinc-200 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50"
                   onClick={() => {
-                    setVisible(true);
+                    onOverlayVisibilityChange(true);
                     onPlacementModeChange(false);
                     closeComposer();
                     focusThread(thread.id);

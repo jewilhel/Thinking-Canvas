@@ -91,7 +91,25 @@ function summarizeObject(object: CanvasObjectV2) {
     return object.cells.flat().join(" | ").slice(0, 10_000);
   if (object.type === "document") return object.title.slice(0, 10_000);
   if (object.type === "connector") return "Connector";
-  return "Annotation";
+  return `${object.temporary ? "Temporary" : "Promoted"} ${object.ink === "highlighter" ? "highlighter" : "pen"} annotation · ${object.style.outline} · ${object.style.outlineWidth}px${object.attachedObjectId ? " · attached" : ""}`;
+}
+
+function compactProjectionState(object: CanvasObjectV2): CanvasObjectV2 {
+  if (object.type !== "annotation" || object.points.length <= 64) return object;
+  const sampleCount = object.points.length / 2;
+  const selectedIndexes = Array.from({ length: 32 }, (_, index) =>
+    Math.round((index * (sampleCount - 1)) / 31),
+  );
+  return {
+    ...object,
+    points: selectedIndexes.flatMap((index) => [
+      object.points[index * 2]!,
+      object.points[index * 2 + 1]!,
+    ]),
+    pressures: object.pressures
+      ? selectedIndexes.map((index) => object.pressures![index]!)
+      : undefined,
+  };
 }
 
 export function buildCanvasObjectDetails(
@@ -114,6 +132,12 @@ export function buildCanvasObjectDetails(
       adjacency.get(endpoints[1]!)?.add(endpoints[0]!);
     }
   }
+  for (const annotation of objects) {
+    if (annotation.type !== "annotation" || !annotation.attachedObjectId)
+      continue;
+    adjacency.get(annotation.id)?.add(annotation.attachedObjectId);
+    adjacency.get(annotation.attachedObjectId)?.add(annotation.id);
+  }
   return objects.map((object, orderIndex) =>
     canvasObjectDetailSchema.parse({
       id: object.id,
@@ -124,7 +148,7 @@ export function buildCanvasObjectDetails(
       groupId: object.groupId ?? null,
       orderIndex,
       relationshipIds: [...(adjacency.get(object.id) ?? [])].sort(),
-      state: object,
+      state: compactProjectionState(object),
       visual: buildObjectVisualFacts(object, objects),
     }),
   );

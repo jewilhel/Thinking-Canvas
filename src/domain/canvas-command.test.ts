@@ -56,7 +56,209 @@ function shape(id = shapeId): CanvasObjectV2 {
   };
 }
 
+function annotation(): Extract<CanvasObjectV2, { type: "annotation" }> {
+  return {
+    schemaVersion: 2,
+    id: connectorId,
+    canvasId,
+    createdBy: actorId,
+    createdAt: issuedAt,
+    updatedAt: issuedAt,
+    type: "annotation",
+    strokeVersion: 1,
+    pointerType: "pen",
+    points: [5, 5, 25, 25],
+    pressures: [0.2, 0.8],
+    temporary: true,
+    attachedObjectId: null,
+    geometry: { x: 5, y: 15, width: 30, height: 30, rotation: 0 },
+    style: {
+      fill: null,
+      outline: "#7c3aed",
+      outlineWidth: 5,
+      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+      fontSize: 16,
+    },
+  };
+}
+
 describe("product canvas command boundary", () => {
+  it("creates only canonical new annotations through the command boundary", () => {
+    const document = createProductCanvasDocument(canvasId);
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.create", { object: annotation() }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toEqual(annotation());
+
+    expect(() =>
+      executeProductCanvasCommand(
+        createProductCanvasDocument(canvasId),
+        baseCommand("object.create", {
+          object: {
+            ...annotation(),
+            strokeVersion: undefined,
+            pressures: undefined,
+          },
+        }),
+      ),
+    ).toThrow("canonical pressure samples");
+  });
+
+  it("promotes annotations idempotently and rejects other object types", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, annotation());
+    executeProductCanvasCommand(
+      document,
+      baseCommand("annotation.promote", { objectId: connectorId }),
+    );
+    const promoted = readCanvasObjectV2(document, connectorId);
+    expect(promoted).toMatchObject({ type: "annotation", temporary: false });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("annotation.promote", { objectId: connectorId }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toEqual(promoted);
+
+    putCanvasObjectV2(document, shape());
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("annotation.promote", { objectId: shapeId }),
+      ),
+    ).toThrow("Only annotations can be promoted");
+  });
+
+  it("attaches, follows, repositions, disconnects, and safely detaches annotations", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const target = shape();
+    putCanvasObjectV2(document, target);
+    putCanvasObjectV2(document, annotation());
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("annotation.attach", {
+        objectId: connectorId,
+        targetObjectId: shapeId,
+      }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      attachedObjectId: shapeId,
+      attachmentOffset: { x: -15, y: -25 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.move", { objectId: shapeId, x: 150, y: 260 }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      geometry: { x: 135, y: 235 },
+      attachmentOffset: { x: -15, y: -25 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.move", { objectId: connectorId, x: 90, y: 110 }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      geometry: { x: 90, y: 110 },
+      attachmentOffset: { x: -60, y: -150 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("annotation.disconnect", { objectId: connectorId }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      attachedObjectId: null,
+      attachmentOffset: null,
+      geometry: { x: 90, y: 110 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("annotation.attach", {
+        objectId: connectorId,
+        targetObjectId: shapeId,
+      }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.delete", { objectId: shapeId }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      attachedObjectId: null,
+      attachmentOffset: null,
+      geometry: { x: 90, y: 110 },
+    });
+  });
+
+  it("rejects ineligible annotation attachment targets", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, annotation());
+    const other = { ...annotation(), id: shapeId };
+    putCanvasObjectV2(document, other);
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("annotation.attach", {
+          objectId: connectorId,
+          targetObjectId: shapeId,
+        }),
+      ),
+    ).toThrow("shape, text, or table");
+  });
+
+  it("captures a legacy annotation base before resize and persists object stroke patterns", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, annotation());
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.resize", {
+        objectId: connectorId,
+        width: 90,
+        height: 60,
+      }),
+    );
+    expect(readCanvasObjectV2(document, connectorId)).toMatchObject({
+      baseWidth: 30,
+      baseHeight: 30,
+      geometry: { width: 90, height: 60 },
+    });
+
+    putCanvasObjectV2(document, shape());
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.style", {
+        objectId: shapeId,
+        style: { outlineWidth: 8, outlinePattern: "dashed" },
+      }),
+    );
+    expect(readCanvasObjectV2(document, shapeId)).toMatchObject({
+      style: { outlineWidth: 8, outlinePattern: "dashed" },
+    });
+
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("object.style", {
+          objectId: connectorId,
+          style: { outlinePattern: "dotted" },
+        }),
+      ),
+    ).toThrow("solid pressure-rendered stroke");
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("object.style", {
+          objectId: connectorId,
+          style: { outlineWidth: 0 },
+        }),
+      ),
+    ).toThrow("visible stroke thickness");
+  });
+
   it("creates, patches, moves, resizes, and styles through validated commands", () => {
     const document = createProductCanvasDocument(canvasId);
     executeProductCanvasCommand(

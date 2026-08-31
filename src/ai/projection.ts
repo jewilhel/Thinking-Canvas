@@ -51,7 +51,7 @@ function summarizeContent(object: CanvasObject) {
       content = "connector";
       break;
     case "annotation":
-      content = "temporary annotation";
+      content = `${object.temporary ? "temporary" : "promoted"} annotation with ${object.points.length / 2} points`;
       break;
   }
 

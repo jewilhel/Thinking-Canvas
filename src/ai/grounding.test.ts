@@ -86,6 +86,37 @@ describe("AI grounding tools", () => {
     ).toMatchObject({ total: 3, nextCursor: 2 });
   });
 
+  it("projects annotation meaning and relationships with a bounded sample", () => {
+    const annotationId = "61000000-0000-4000-8000-000000000006";
+    const points = Array.from({ length: 100 }, (_, index) => [
+      index,
+      index % 7,
+    ]).flat();
+    const annotation = canvasObjectV2Schema.parse({
+      ...base(annotationId),
+      type: "annotation",
+      strokeVersion: 1,
+      pointerType: "pen",
+      points,
+      pressures: Array.from({ length: 100 }, () => 0.5),
+      temporary: false,
+      attachedObjectId: ids.first,
+      attachmentOffset: { x: 4, y: 8 },
+    });
+    const details = buildCanvasObjectDetails(canvasId, [first, annotation]);
+    expect(details[1]).toMatchObject({
+      summary: "Promoted pen annotation · #000 · 1px · attached",
+      relationshipIds: [ids.first],
+      state: { type: "annotation", attachedObjectId: ids.first },
+    });
+    expect(
+      details[1]?.state.type === "annotation"
+        ? details[1].state.points.length
+        : Number.POSITIVE_INFINITY,
+    ).toBe(64);
+    expect(details[0]?.relationshipIds).toContain(annotationId);
+  });
+
   it("pages only authorized open and resolved thread details", () => {
     const thread = {
       id: "30000000-0000-4000-8000-000000000001",

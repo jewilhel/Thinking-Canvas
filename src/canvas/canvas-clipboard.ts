@@ -40,6 +40,17 @@ export function createCanvasClipboardPayload(
       object.groupId && completeGroupIds.has(object.groupId)
         ? object.groupId
         : null;
+    if (object.type === "annotation") {
+      return object.attachedObjectId &&
+        !selectedIds.has(object.attachedObjectId)
+        ? {
+            ...object,
+            groupId,
+            attachedObjectId: null,
+            attachmentOffset: null,
+          }
+        : { ...object, groupId };
+    }
     if (object.type !== "connector") return { ...object, groupId };
 
     function portableEndpoint(
@@ -113,6 +124,18 @@ export function remapCanvasClipboard(
         y: object.geometry.y + offset,
       },
     };
+    if (object.type === "annotation") {
+      const attachedObjectId = object.attachedObjectId
+        ? objectIds.get(object.attachedObjectId)
+        : null;
+      if (object.attachedObjectId && !attachedObjectId) {
+        throw new Error("Clipboard annotation references an external object.");
+      }
+      return canvasObjectV2Schema.parse({
+        ...shared,
+        attachedObjectId,
+      });
+    }
     if (object.type !== "connector") {
       return canvasObjectV2Schema.parse(shared);
     }

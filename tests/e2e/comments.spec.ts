@@ -276,11 +276,15 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
     .getByRole("button", { name: "Close comment thread" })
     .click();
   await openCommentHistory(page);
-  await page.getByRole("button", { name: "Hide markers" }).click();
+  await page
+    .getByRole("button", { name: "Hide comments and annotations" })
+    .click();
   await expect(
     page.getByRole("button", { name: /Open comment by/ }),
   ).not.toBeVisible();
-  await page.getByRole("button", { name: "Show markers" }).click();
+  await page
+    .getByRole("button", { name: "Show comments and annotations" })
+    .click();
   await expect(
     page.getByRole("button", { name: /Open comment by/ }),
   ).toBeVisible();
@@ -632,6 +636,50 @@ test("creates and atomically undoes five labeled sticky notes", async ({
 
   await page.reload();
   await expect(page.getByTestId("product-object-count")).toHaveText("0");
+});
+
+test("creates and atomically undoes a freeform AI annotation", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  await configurePrimaryAi(page, "edit_with_review");
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
+  await placeArmedComment(page, { x: 420, y: 280 });
+
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  const comment = composer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await comment.fill("@");
+  await composer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await comment.fill("Please add one freeform annotation here.");
+  await composer.getByRole("button", { name: "Submit comment" }).click();
+
+  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    thread.getByText(
+      "I added the requested freeform annotation to the canvas.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByTestId("product-object-count")).toHaveText("1");
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("1");
+  await expect(thread.getByText(/[0-9a-f]{8}-[0-9a-f-]{27}/)).toHaveCount(0);
+
+  const undoResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/ai/transactions/undo"),
+  );
+  await thread.getByRole("button", { name: "Undo AI change" }).click();
+  const undoResponse = await undoResponsePromise;
+  expect(undoResponse.ok(), await undoResponse.text()).toBeTruthy();
+  await expect(page.getByTestId("product-object-count")).toHaveText("0");
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("0");
+  await expect(thread.getByText("Change undone")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByTestId("product-annotation-count")).toHaveText("0");
 });
 
 test("adds an intentional background circle behind unchanged sticky notes", async ({
@@ -1154,7 +1202,9 @@ test("filters human collaborators and redirects inherited recipients to humans a
   await page.goto(`/app/canvases/${seedCanvasId}`);
   await expect(page.getByTestId("product-canvas-surface")).toBeVisible();
   const history = await openCommentHistory(page);
-  await history.getByRole("button", { name: "Hide markers" }).click();
+  await history
+    .getByRole("button", { name: "Hide comments and annotations" })
+    .click();
   const enabled = history.getByRole("checkbox", { name: "Enabled" });
   if (!(await enabled.isChecked())) await enabled.click();
   await history.getByRole("button", { name: "Close Comments" }).click();
@@ -1502,11 +1552,15 @@ test("broadcasts comment changes between canvas members", async ({
   const owner = await ownerContext.newPage();
   const editor = await editorContext.newPage();
   await signIn(owner, "owner@thinking-canvas.local");
+  await owner
+    .getByLabel("Canvas name")
+    .fill(`Realtime comment flow ${Date.now()}`);
+  await owner.getByRole("button", { name: "Create canvas" }).click();
+  await expect(owner).toHaveURL(/\/app\/canvases\/[0-9a-f-]+$/);
+  const canvasId = owner.url().split("/").at(-1)!;
+  await addEditorMembership(canvasId);
   await signIn(editor, "editor@thinking-canvas.local");
-  await Promise.all([
-    owner.goto(`/app/canvases/${seedCanvasId}`),
-    editor.goto(`/app/canvases/${seedCanvasId}`),
-  ]);
+  await editor.goto(`/app/canvases/${canvasId}`);
 
   await expect(owner.getByTestId("canvas-save-status")).toHaveText("Saved");
   await expect(editor.getByTestId("canvas-save-status")).toHaveText("Saved");

@@ -1,7 +1,6 @@
 "use client";
 
 import { Pipette, X } from "lucide-react";
-import Image from "next/image";
 import {
   type KeyboardEvent,
   type PointerEvent,
@@ -361,12 +360,12 @@ export function CustomColorPicker({ label, value, mixed, onChange }: Props) {
           setOpen((current) => !current);
         }}
       >
-        <Image
-          src="/assets/color-wheel-swatch.png"
-          alt=""
-          width={36}
-          height={36}
-          className="size-9 rounded-full"
+        <span
+          className="block size-9 rounded-full border border-white/50 shadow-sm"
+          style={{
+            background:
+              "conic-gradient(from 0deg, #ef4444, #f59e0b, #eab308, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)",
+          }}
           aria-hidden="true"
         />
       </button>

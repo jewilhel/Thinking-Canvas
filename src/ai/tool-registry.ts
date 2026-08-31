@@ -145,6 +145,52 @@ export const reviewNewConnectorsArgumentsSchema = z
 export type ReviewNewConnectorsArguments = z.infer<
   typeof reviewNewConnectorsArgumentsSchema
 >;
+const newAnnotationPointSchema = z.strictObject({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  pressure: z.number().finite().min(0).max(1).default(0.5),
+});
+const newAnnotationSpecSchema = z.strictObject({
+  key: z.string().trim().min(1).max(120),
+  points: z.array(newAnnotationPointSchema).min(2).max(64),
+  outline: z.string().min(1).max(100),
+  outlineWidth: z.number().finite().min(1).max(20),
+});
+export const reviewNewAnnotationsArgumentsSchema = z
+  .strictObject({
+    summary: z.string().trim().min(1).max(10_000),
+    annotations: z.array(newAnnotationSpecSchema).min(1).max(20),
+    explanations: z.array(newShapeExplanationSchema).min(1).max(20),
+  })
+  .superRefine((value, context) => {
+    const annotationKeys = value.annotations.map(
+      (annotation) => annotation.key,
+    );
+    const explanationKeys = value.explanations.map(
+      (explanation) => explanation.key,
+    );
+    if (new Set(annotationKeys).size !== annotationKeys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "New annotation keys must be unique.",
+      });
+    }
+    if (
+      annotationKeys.length !== explanationKeys.length ||
+      [...annotationKeys]
+        .sort()
+        .some((key, index) => key !== [...explanationKeys].sort()[index])
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "New annotation explanations must exactly match the annotation keys.",
+      });
+    }
+  });
+export type ReviewNewAnnotationsArguments = z.infer<
+  typeof reviewNewAnnotationsArgumentsSchema
+>;
 export const executeArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
 });
@@ -226,6 +272,13 @@ export const AI_TOOL_REGISTRY = {
     description:
       "Create one or more directional connectors between existing shape objects immediately as one undoable AI transaction. List connections in the requested direction; the server assigns connector identities and chooses safe edge anchors.",
     argumentsSchema: reviewNewConnectorsArgumentsSchema,
+  },
+  stage_new_annotations: {
+    effect: "review" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Create one or more bounded point-based vector annotations immediately as one undoable AI transaction. Supply 2 to 64 world-space points and local keys; the server canonicalizes the path and assigns durable identities and metadata.",
+    argumentsSchema: reviewNewAnnotationsArgumentsSchema,
   },
   execute_canvas_commands: {
     effect: "mutation" as const,

@@ -1,9 +1,12 @@
 "use client";
 
 import {
+  Check,
   Circle,
   Diamond,
+  Eraser,
   Hand,
+  Highlighter,
   Link2,
   MessageCircle,
   MousePointer2,
@@ -18,10 +21,16 @@ import {
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { CustomColorPicker } from "@/components/canvas/custom-color-picker";
+import { drawingColorPairs } from "@/components/canvas/canvas-colors";
+import { StrokeThicknessOptions } from "@/components/canvas/stroke-thickness-options";
 
 export type CanvasTool =
   | "select"
   | "pan"
+  | "pen"
+  | "highlighter"
+  | "eraser"
   | "sticky"
   | "rectangle"
   | "ellipse"
@@ -35,6 +44,11 @@ export type CanvasShapeTool = Extract<
   "rectangle" | "ellipse" | "diamond"
 >;
 
+export type CanvasDrawingTool = Extract<
+  CanvasTool,
+  "pen" | "highlighter" | "eraser"
+>;
+
 type Palette = "shape" | "drawing" | "more" | null;
 
 type Props = {
@@ -46,7 +60,20 @@ type Props = {
   onAddSimulatedAiIdea: () => void;
   commentPlacementActive: boolean;
   onChooseComments: () => void;
+  canDraw: boolean;
+  lastDrawingTool: CanvasDrawingTool;
+  penColor: string;
+  penThickness: number;
+  onPenColorChange: (color: string) => void;
+  onPenThicknessChange: (thickness: number) => void;
 };
+
+const penThicknesses = [3, 5, 8, 12, 16] as const;
+const drawingTools = [
+  { value: "pen", label: "Pen", icon: PenLine },
+  { value: "highlighter", label: "Highlighter", icon: Highlighter },
+  { value: "eraser", label: "Eraser", icon: Eraser },
+] as const;
 
 const shapeOptions = [
   { value: "rectangle", label: "Rectangle", icon: RectangleHorizontal },
@@ -96,15 +123,33 @@ export function WorkspacePrimaryDock({
   onAddSimulatedAiIdea,
   commentPlacementActive,
   onChooseComments,
+  canDraw,
+  lastDrawingTool,
+  penColor,
+  penThickness,
+  onPenColorChange,
+  onPenThicknessChange,
 }: Props) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const paletteInvokerRef = useRef<HTMLButtonElement | null>(null);
   const [openPalette, setOpenPalette] = useState<Palette>(null);
+  const DrawingIcon =
+    lastDrawingTool === "highlighter"
+      ? Highlighter
+      : lastDrawingTool === "eraser"
+        ? Eraser
+        : PenLine;
   const toolIsPressed = (tool: CanvasTool) =>
     openPalette === null && !commentPlacementActive && activeTool === tool;
 
   function chooseTool(tool: CanvasTool) {
-    onChooseTool(activeTool === tool && tool !== "select" ? "select" : tool);
+    const drawingTool =
+      tool === "pen" || tool === "highlighter" || tool === "eraser";
+    onChooseTool(
+      activeTool === tool && tool !== "select" && !drawingTool
+        ? "select"
+        : tool,
+    );
     setOpenPalette(null);
   }
 
@@ -203,11 +248,85 @@ export function WorkspacePrimaryDock({
           ) : null}
 
           {openPalette === "drawing" ? (
-            <PaletteMessage
-              eyebrow="Drawing"
-              title="Vector pen arrives in Milestone 6"
-              description="This entry is a preview of the workspace vocabulary. It does not add or change canvas content yet."
-            />
+            <div className="min-w-72 p-1">
+              <p className="text-xs font-semibold tracking-wide text-violet-700 uppercase">
+                Drawing
+              </p>
+              <div className="mt-2 grid grid-cols-3 gap-2" role="menu">
+                {drawingTools.map(({ value, label, icon: Icon }) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    variant="outline"
+                    role="menuitemradio"
+                    aria-checked={lastDrawingTool === value}
+                    disabled={!canDraw}
+                    className="h-11 border-zinc-200 bg-white px-2 text-zinc-700 hover:bg-violet-50 aria-checked:border-violet-600 aria-checked:bg-violet-50 aria-checked:text-violet-800"
+                    onClick={() => chooseTool(value)}
+                  >
+                    <Icon aria-hidden="true" /> {label}
+                  </Button>
+                ))}
+              </div>
+              {lastDrawingTool !== "eraser" ? (
+                <>
+                  <fieldset className="mt-3">
+                    <legend className="text-xs font-semibold text-zinc-600">
+                      Stroke color
+                    </legend>
+                    <div className="mt-2 grid grid-cols-6 gap-2">
+                      {drawingColorPairs.map(({ name, outline: color }) => (
+                        <button
+                          key={color}
+                          type="button"
+                          aria-label={`${name} drawing color`}
+                          aria-pressed={penColor === color}
+                          className="relative grid size-9 place-items-center rounded-full border border-zinc-300 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-violet-600 aria-pressed:ring-2 aria-pressed:ring-violet-600 aria-pressed:ring-offset-2"
+                          style={{ backgroundColor: color }}
+                          onClick={() => onPenColorChange(color)}
+                        >
+                          {penColor === color ? (
+                            <Check
+                              className="size-5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]"
+                              aria-hidden="true"
+                            />
+                          ) : null}
+                        </button>
+                      ))}
+                      <CustomColorPicker
+                        label="Custom drawing color"
+                        value={penColor}
+                        onChange={onPenColorChange}
+                      />
+                    </div>
+                  </fieldset>
+                  <fieldset className="mt-3">
+                    <legend className="text-xs font-semibold text-zinc-600">
+                      Stroke thickness
+                    </legend>
+                    <div className="mt-2">
+                      <StrokeThicknessOptions
+                        values={penThicknesses}
+                        value={penThickness}
+                        tone="light"
+                        labelPrefix="Drawing stroke"
+                        onChange={onPenThicknessChange}
+                      />
+                    </div>
+                  </fieldset>
+                </>
+              ) : (
+                <p className="mt-3 text-xs text-zinc-500">
+                  Drag across one or more strokes to erase them. Undo restores
+                  the complete eraser gesture.
+                </p>
+              )}
+              {!canDraw ? (
+                <p className="mt-3 text-xs text-zinc-500">
+                  Viewers and commenters can see annotations but cannot draw.
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
           {openPalette === "more" ? (
@@ -271,14 +390,22 @@ export function WorkspacePrimaryDock({
           size="icon"
           variant="outline"
           aria-label="Drawing"
-          aria-pressed={openPalette === "drawing"}
+          aria-pressed={
+            openPalette === "drawing" ||
+            activeTool === "pen" ||
+            activeTool === "highlighter" ||
+            activeTool === "eraser"
+          }
           aria-expanded={openPalette === "drawing"}
           aria-controls="workspace-drawing-palette"
-          title="Drawing (Milestone 6)"
+          title={`Drawing — ${lastDrawingTool}`}
           className={iconButtonClass}
-          onClick={(event) => togglePalette("drawing", event.currentTarget)}
+          onClick={(event) => {
+            if (openPalette !== "drawing") onChooseTool(lastDrawingTool);
+            togglePalette("drawing", event.currentTarget);
+          }}
         >
-          <PenLine aria-hidden="true" />
+          <DrawingIcon aria-hidden="true" />
         </Button>
 
         <Button

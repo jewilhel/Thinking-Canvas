@@ -182,6 +182,78 @@ describe("validated canvas proposals", () => {
     ).toThrow("The target object does not exist");
   });
 
+  it("lets the AI style, move, resize, and delete canonical annotations", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, {
+      schemaVersion: 2,
+      id: objectId,
+      canvasId,
+      createdBy: actorId,
+      createdAt: "2026-08-24T00:00:00.000Z",
+      updatedAt: "2026-08-24T00:00:00.000Z",
+      type: "annotation",
+      strokeVersion: 1,
+      pointerType: "pen",
+      points: [4, 4, 84, 44],
+      pressures: [0.4, 0.8],
+      baseWidth: 88,
+      baseHeight: 48,
+      temporary: true,
+      attachedObjectId: null,
+      attachmentOffset: null,
+      geometry: { x: 96, y: 96, width: 88, height: 48, rotation: 0 },
+      style: {
+        fill: null,
+        outline: "#334155",
+        outlineWidth: 4,
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        fontSize: 16,
+      },
+    });
+
+    const edit = validateCanvasReviewStage({
+      document,
+      canvasId,
+      actorId,
+      commands: [
+        {
+          type: "object.style",
+          payload: {
+            objectId,
+            style: { outline: "#7c3aed", outlineWidth: 8 },
+          },
+        },
+        {
+          type: "object.move",
+          payload: { objectId, x: 240, y: 180 },
+        },
+        {
+          type: "object.resize",
+          payload: { objectId, width: 176, height: 96 },
+        },
+      ],
+    });
+    expect(edit.objectChanges[0]?.afterState.object).toMatchObject({
+      type: "annotation",
+      geometry: { x: 240, y: 180, width: 176, height: 96 },
+      style: { outline: "#7c3aed", outlineWidth: 8 },
+    });
+    expect(listCanvasObjectsV2(document)).toHaveLength(1);
+
+    const deletion = validateCanvasReviewStage({
+      document,
+      canvasId,
+      actorId,
+      commands: [{ type: "object.delete", payload: { objectId } }],
+    });
+    expect(deletion.objectChanges[0]).toMatchObject({
+      objectId,
+      beforeState: { object: { type: "annotation" } },
+      afterState: { object: null },
+    });
+    expect(listCanvasObjectsV2(document)).toHaveLength(1);
+  });
+
   it("layers visual adjustments after newly proposed objects exist", () => {
     const document = createProductCanvasDocument(canvasId);
     const createdId = "61000000-0000-4000-8000-000000000002";

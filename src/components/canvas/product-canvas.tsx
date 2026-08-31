@@ -20,6 +20,7 @@ import {
   AlignJustify,
   Trash2,
   Type,
+  Unlink,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -46,6 +47,22 @@ import {
 import * as Y from "yjs";
 
 import { signOut } from "@/app/auth/actions";
+import {
+  annotationCenterlinePoints,
+  annotationIntersectsEraserSegment,
+  annotationOutlinePoints,
+  annotationSamples,
+  canonicalizeAnnotationSamples,
+  defaultAnnotationColor,
+  defaultAnnotationThickness,
+  defaultHighlighterThickness,
+  highlighterOpacity,
+  normalizeAnnotationPressure,
+  type AnnotationInk,
+  type AnnotationPointerType,
+  type AnnotationSample,
+} from "@/canvas/annotation-stroke";
+import { findAnnotationAttachmentTarget } from "@/canvas/annotation-attachment";
 import {
   createCanvasClipboardPayload,
   parseCanvasClipboard,
@@ -80,18 +97,29 @@ import {
   type Point,
   type Viewport,
 } from "@/canvas/geometry";
+import {
+  transformSelectionObjects,
+  type SelectionBounds,
+} from "@/canvas/selection-transform";
+import {
+  konvaStrokeDash,
+  resolvedOutlinePattern,
+  type OutlinePattern,
+} from "@/canvas/stroke-style";
 import { useCanvasRecovery } from "@/collaboration/use-canvas-recovery";
 import {
   ColorStylePanel,
   type ColorPair,
 } from "@/components/canvas/color-style-panel";
 import { ObjectContextMenu } from "@/components/canvas/object-context-menu";
+import { StrokeStylePanel } from "@/components/canvas/stroke-style-panel";
 import {
   TextStylePanel,
   type TextStylePatch,
 } from "@/components/canvas/text-style-panel";
 import {
   WorkspacePrimaryDock,
+  type CanvasDrawingTool,
   type CanvasShapeTool,
   type CanvasTool,
 } from "@/components/canvas/workspace-primary-dock";
@@ -131,6 +159,22 @@ type CanvasUndoEntry =
   | { kind: "canvas"; history: CanvasHistoryEntry }
   | { kind: "ai"; changeSetId: string };
 type ObjectContextMenuPosition = { x: number; y: number; maxHeight: number };
+type ActiveAnnotationStroke = {
+  pointerId: number;
+  pointerType: AnnotationPointerType;
+  ink: AnnotationInk;
+  samples: AnnotationSample[];
+};
+type ActiveEraserGesture = {
+  pointerId: number;
+  lastPoint: Point;
+  crossedIds: Set<string>;
+};
+type TouchNavigationGesture = {
+  viewport: Viewport;
+  centroid: Point;
+  distance: number;
+};
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
 const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left"];
@@ -205,9 +249,17 @@ function decodeUpdate(value: string) {
 
 function baseStyle(type: CanvasObjectV2["type"]) {
   return {
-    fill: type === "connector" || type === "text" ? null : "#ffffff",
-    outline: "#475569",
-    outlineWidth: type === "text" ? 0 : 2,
+    fill:
+      type === "connector" || type === "text" || type === "annotation"
+        ? null
+        : "#ffffff",
+    outline: type === "annotation" ? defaultAnnotationColor : "#475569",
+    outlineWidth:
+      type === "text"
+        ? 0
+        : type === "annotation"
+          ? defaultAnnotationThickness
+          : 2,
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
     fontSize: 16,
     fontWeight: "normal" as const,
@@ -224,7 +276,16 @@ function objectLabel(object: CanvasObjectV2) {
   if (object.type === "text") return `text — ${object.text || "Untitled"}`;
   if (object.type === "table") return `table — ${object.cells.length} rows`;
   if (object.type === "connector") return "connector";
+  if (object.type === "annotation")
+    return object.ink === "highlighter" ? "highlighter" : "pen stroke";
   return object.type;
+}
+
+function referenceSafeSelectionOrder(objects: CanvasObjectV2[]) {
+  return [...objects].sort(
+    (left, right) =>
+      Number(left.type === "annotation") - Number(right.type === "annotation"),
+  );
 }
 
 function tableText(object: Extract<CanvasObjectV2, { type: "table" }>) {
@@ -246,6 +307,7 @@ export function ProductCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
+  const selectionProxyRef = useRef<Konva.Rect>(null);
   const wheelGestureRef = useRef<{
     intent: "pan" | "zoom";
     lastEventAt: number;
@@ -253,9 +315,15 @@ export function ProductCanvas({
   const inlineEditorRef = useRef<HTMLTextAreaElement>(null);
   const contextPanelTriggerRef = useRef<HTMLButtonElement | null>(null);
   const objectNodeRefs = useRef(new Map<string, Konva.Node>());
+  const activeAnnotationStrokeRef = useRef<ActiveAnnotationStroke | null>(null);
+  const activeEraserGestureRef = useRef<ActiveEraserGesture | null>(null);
+  const touchPointersRef = useRef(new Map<number, Point>());
+  const touchNavigationGestureRef = useRef<TouchNavigationGesture | null>(null);
+  const touchNavigationBlockedRef = useRef(false);
   const frameStartedAt = useRef(0);
   const documentStorageKey = `thinking-canvas:document:${canvasId}`;
   const viewportStorageKey = `thinking-canvas:viewport:${userId}:${canvasId}`;
+  const overlayVisibilityKey = `thinking-canvas:comments-visible:${userId}:${canvasId}`;
   const document = useMemo(() => {
     const next = createProductCanvasDocument(canvasId);
     const stored = window.localStorage.getItem(documentStorageKey);
@@ -271,6 +339,25 @@ export function ProductCanvas({
   const [objects, setObjects] = useState(() => listCanvasObjectsV2(document));
   const [size, setSize] = useState({ width: 960, height: 640 });
   const [tool, setTool] = useState<CanvasTool>("select");
+  const [dismissDockPaletteSignal, setDismissDockPaletteSignal] = useState(0);
+  const [lastDrawingTool, setLastDrawingTool] =
+    useState<CanvasDrawingTool>("pen");
+  const [penColor, setPenColor] = useState(defaultAnnotationColor);
+  const [penThickness, setPenThickness] = useState(defaultAnnotationThickness);
+  const [highlighterColor, setHighlighterColor] = useState("#b45309");
+  const [highlighterThickness, setHighlighterThickness] = useState(
+    defaultHighlighterThickness,
+  );
+  const drawingColor =
+    lastDrawingTool === "highlighter" ? highlighterColor : penColor;
+  const drawingThickness =
+    lastDrawingTool === "highlighter" ? highlighterThickness : penThickness;
+  const [annotationPreview, setAnnotationPreview] = useState<
+    AnnotationSample[]
+  >([]);
+  const [temporaryOverlayVisible, setTemporaryOverlayVisible] = useState(
+    () => window.localStorage.getItem(overlayVisibilityKey) !== "false",
+  );
   const [recentShape, setRecentShape] = useState<CanvasShapeTool>("rectangle");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [connectorStart, setConnectorStart] =
@@ -293,6 +380,10 @@ export function ProductCanvas({
   const [resizePreviewGeometries, setResizePreviewGeometries] = useState<
     Record<string, CanvasObjectV2["geometry"]>
   >({});
+  const [
+    selectionTransformPreviewObjects,
+    setSelectionTransformPreviewObjects,
+  ] = useState<Record<string, CanvasObjectV2>>({});
   const [clipboardText, setClipboardText] = useState("");
   const [undoStack, setUndoStack] = useState<CanvasUndoEntry[]>([]);
   const [redoStack, setRedoStack] = useState<CanvasHistoryEntry[]>([]);
@@ -310,6 +401,8 @@ export function ProductCanvas({
   });
   const selectionAffordanceFactor = selectionAffordanceScale(viewport.scale);
   const selectionAffordancesVisible = selectionAffordanceFactor > 0;
+  const selectionTransformAffordancesVisible =
+    tool === "select" && selectionAffordancesVisible;
   const selectionAffordanceWorldSize = (screenSize: number) =>
     (screenSize * selectionAffordanceFactor) / viewport.scale;
   const canvasGrid = canvasGridMetrics(viewport);
@@ -334,6 +427,7 @@ export function ProductCanvas({
     userId,
   });
   const instrumentationEnabled = process.env.NODE_ENV !== "production";
+  const canMutateCanvas = canvasRole === "owner" || canvasRole === "editor";
   const objectsById = useMemo(
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
@@ -341,6 +435,8 @@ export function ProductCanvas({
   const displayObjects = useMemo(
     () =>
       objects.map((object) => {
+        const selectionPreview = selectionTransformPreviewObjects[object.id];
+        if (selectionPreview) return selectionPreview;
         const preview = dragPreviewPositions[object.id];
         return preview && object.type !== "connector"
           ? {
@@ -353,7 +449,7 @@ export function ProductCanvas({
             }
           : object;
       }),
-    [dragPreviewPositions, objects],
+    [dragPreviewPositions, objects, selectionTransformPreviewObjects],
   );
   const connectorLayoutObjectsById = useMemo(
     () =>
@@ -412,14 +508,20 @@ export function ProductCanvas({
         top: Math.max(112, viewport.y + selectedBounds.y * viewport.scale - 66),
       }
     : null;
+  const selectedFrame: SelectionBounds | null = selectedBounds
+    ? {
+        x: selectedBounds.x,
+        y: selectedBounds.y,
+        width: Math.max(1, selectedBounds.right - selectedBounds.x),
+        height: Math.max(1, selectedBounds.bottom - selectedBounds.y),
+      }
+    : null;
+  const useSelectionProxy = selectedObjects.length > 1;
   const fillObjects = selectedObjects.filter(
     (object) => object.type === "shape" || object.type === "table",
   );
   const outlineObjects = selectedObjects.filter(
-    (object) =>
-      object.type !== "text" &&
-      object.type !== "document" &&
-      object.type !== "annotation",
+    (object) => object.type !== "text" && object.type !== "document",
   );
   const textStyleObjects = selectedObjects.filter(
     (object) =>
@@ -448,6 +550,13 @@ export function ProductCanvas({
   }, [viewportStorageKey, viewport]);
 
   useEffect(() => {
+    window.localStorage.setItem(
+      overlayVisibilityKey,
+      String(temporaryOverlayVisible),
+    );
+  }, [overlayVisibilityKey, temporaryOverlayVisible]);
+
+  useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const observer = new ResizeObserver(([entry]) => {
@@ -463,14 +572,15 @@ export function ProductCanvas({
 
   useEffect(() => {
     const transformer = transformerRef.current;
-    const node = selectedId
-      ? objectNodeRefs.current.get(selectedId)
-      : undefined;
+    const node = useSelectionProxy
+      ? (selectionProxyRef.current ?? undefined)
+      : selectedId
+        ? objectNodeRefs.current.get(selectedId)
+        : undefined;
     if (!transformer) return;
     transformer.nodes(
       node &&
-        selectionAffordancesVisible &&
-        selectedObject?.type !== "connector" &&
+        selectionTransformAffordancesVisible &&
         inlineTextEditor?.objectId !== selectedId
         ? [node]
         : [],
@@ -480,7 +590,8 @@ export function ProductCanvas({
     inlineTextEditor?.objectId,
     selectedId,
     selectedObject,
-    selectionAffordancesVisible,
+    selectionTransformAffordancesVisible,
+    useSelectionProxy,
   ]);
 
   useEffect(() => {
@@ -552,9 +663,12 @@ export function ProductCanvas({
   }
 
   function runCommandBatch(commands: CommandDefinition[]) {
-    const results = commands.map((command) =>
-      executeCommand(command.type, command.payload),
-    );
+    const results: ReturnType<typeof executeCommand>[] = [];
+    document.transact(() => {
+      for (const command of commands) {
+        results.push(executeCommand(command.type, command.payload));
+      }
+    }, `canvas.command.batch.${crypto.randomUUID()}`);
     recordHistory(results.map((result) => result.history));
     return results;
   }
@@ -571,7 +685,10 @@ export function ProductCanvas({
   }
 
   function createObject(
-    activeTool: Exclude<CanvasTool, "select" | "pan" | "connector">,
+    activeTool: Exclude<
+      CanvasTool,
+      "select" | "pan" | "pen" | "highlighter" | "eraser" | "connector"
+    >,
     point: Point,
   ) {
     const id = crypto.randomUUID();
@@ -643,6 +760,19 @@ export function ProductCanvas({
   }
 
   function chooseTool(nextTool: CanvasTool) {
+    const drawingTool =
+      nextTool === "pen" || nextTool === "highlighter" || nextTool === "eraser";
+    if (drawingTool && !canMutateCanvas) return;
+    if (drawingTool) setLastDrawingTool(nextTool);
+    if (
+      nextTool !== "pen" &&
+      nextTool !== "highlighter" &&
+      activeAnnotationStrokeRef.current
+    ) {
+      activeAnnotationStrokeRef.current = null;
+      setAnnotationPreview([]);
+    }
+    if (nextTool !== "eraser") activeEraserGestureRef.current = null;
     setCommentPlacementActive(false);
     setContextPanel(null);
     setObjectContextMenu(null);
@@ -799,6 +929,8 @@ export function ProductCanvas({
     style: TextStylePatch & {
       fill?: string | null;
       outline?: string;
+      outlineWidth?: number;
+      outlinePattern?: OutlinePattern;
     },
   ) {
     if (!targets.length) return;
@@ -822,6 +954,14 @@ export function ProductCanvas({
     field: K,
   ) {
     const values = targets.map((object) => object.style[field]);
+    const first = values[0];
+    return values.every((value) => value === first) ? first : undefined;
+  }
+
+  function commonOutlinePattern(targets: CanvasObjectV2[]) {
+    const values = targets.map((object) =>
+      resolvedOutlinePattern(object.style.outlinePattern),
+    );
     const first = values[0];
     return values.every((value) => value === first) ? first : undefined;
   }
@@ -942,6 +1082,7 @@ export function ProductCanvas({
     object: CanvasObjectV2,
   ) {
     event.cancelBubble = true;
+    if (tool === "eraser") return;
     if (event.evt instanceof MouseEvent && event.evt.ctrlKey) {
       openObjectContextMenu(event, object);
       return;
@@ -1050,7 +1191,7 @@ export function ProductCanvas({
     const dx = x - object.geometry.x;
     const dy = y - object.geometry.y;
     const commands: CommandDefinition[] = [];
-    for (const selected of selectedObjects) {
+    for (const selected of referenceSafeSelectionOrder(selectedObjects)) {
       if (selected.type === "connector")
         commands.push(...moveConnectorCommands(selected, dx, dy, true));
       else
@@ -1074,11 +1215,26 @@ export function ProductCanvas({
     const durableObject = objectsById.get(object.id) ?? object;
     const dx = x - durableObject.geometry.x;
     const dy = y - durableObject.geometry.y;
-    const targets = selectedIds.includes(object.id)
+    const selectedTargets = selectedIds.includes(object.id)
       ? selectedObjects
       : object.groupId
         ? objects.filter((candidate) => candidate.groupId === object.groupId)
         : [durableObject];
+    const movingTargetIds = new Set(
+      selectedTargets
+        .filter((candidate) => candidate.type !== "annotation")
+        .map((candidate) => candidate.id),
+    );
+    const targets = [
+      ...selectedTargets,
+      ...objects.filter(
+        (candidate) =>
+          candidate.type === "annotation" &&
+          candidate.attachedObjectId !== null &&
+          movingTargetIds.has(candidate.attachedObjectId) &&
+          !selectedTargets.some((selected) => selected.id === candidate.id),
+      ),
+    ];
     setDragPreviewPositions(
       Object.fromEntries(
         targets.flatMap((target) =>
@@ -1134,6 +1290,44 @@ export function ProductCanvas({
     setSelectedIds([]);
     setContextPanel(null);
     setObjectContextMenu(null);
+  }
+
+  function promoteSelectedAnnotations() {
+    const temporaryAnnotations = selectedObjects.filter(
+      (object) => object.type === "annotation" && object.temporary,
+    );
+    if (!temporaryAnnotations.length) return;
+    runCommandBatch(
+      temporaryAnnotations.map((object) => ({
+        type: "annotation.promote",
+        payload: { objectId: object.id },
+      })),
+    );
+  }
+
+  function disconnectSelectedAnnotations() {
+    const attachedAnnotations = selectedObjects.filter(
+      (object) => object.type === "annotation" && object.attachedObjectId,
+    );
+    if (!attachedAnnotations.length) return;
+    runCommandBatch(
+      attachedAnnotations.map((object) => ({
+        type: "annotation.disconnect",
+        payload: { objectId: object.id },
+      })),
+    );
+  }
+
+  function changeTemporaryOverlayVisibility(visible: boolean) {
+    if (!visible) {
+      setSelectedIds((current) =>
+        current.filter((id) => {
+          const object = objectsById.get(id);
+          return object?.type !== "annotation" || !object.temporary;
+        }),
+      );
+    }
+    setTemporaryOverlayVisible(visible);
   }
 
   function groupSelected() {
@@ -1446,7 +1640,12 @@ export function ProductCanvas({
       });
     } else if (tool === "connector") {
       finishConnector({ kind: "free", ...point });
-    } else if (tool !== "pan") {
+    } else if (
+      tool !== "pan" &&
+      tool !== "pen" &&
+      tool !== "highlighter" &&
+      tool !== "eraser"
+    ) {
       createObject(tool, point);
     }
   }
@@ -1483,6 +1682,444 @@ export function ProductCanvas({
       x: (event.clientX - bounds.left - viewport.x) / viewport.scale,
       y: (event.clientY - bounds.top - viewport.y) / viewport.scale,
     });
+    if (
+      event.pointerType === "touch" &&
+      touchPointersRef.current.has(event.pointerId)
+    ) {
+      touchPointersRef.current.set(event.pointerId, {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      });
+      const gesture = touchNavigationGestureRef.current;
+      if (gesture) {
+        const [first, second] = [...touchPointersRef.current.values()];
+        if (first && second) {
+          const centroid = {
+            x: (first.x + second.x) / 2,
+            y: (first.y + second.y) / 2,
+          };
+          const nextDistance = Math.max(
+            1,
+            Math.hypot(second.x - first.x, second.y - first.y),
+          );
+          const scale = Math.min(
+            maxCanvasScale,
+            Math.max(
+              minCanvasScale,
+              gesture.viewport.scale * (nextDistance / gesture.distance),
+            ),
+          );
+          const worldCenter = {
+            x:
+              (gesture.centroid.x - gesture.viewport.x) /
+              gesture.viewport.scale,
+            y:
+              (gesture.centroid.y - gesture.viewport.y) /
+              gesture.viewport.scale,
+          };
+          setViewport({
+            scale,
+            x: centroid.x - worldCenter.x * scale,
+            y: centroid.y - worldCenter.y * scale,
+          });
+        }
+        event.preventDefault();
+        return;
+      }
+    }
+    const activeEraser = activeEraserGestureRef.current;
+    if (activeEraser && activeEraser.pointerId === event.pointerId) {
+      for (const point of pointerWorldPoints(event)) {
+        collectEraserCrossings(activeEraser, activeEraser.lastPoint, point);
+        activeEraser.lastPoint = point;
+      }
+      event.preventDefault();
+      return;
+    }
+    const active = activeAnnotationStrokeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const nextSamples = pointerAnnotationSamples(event);
+    active.samples.push(...nextSamples);
+    setAnnotationPreview([...active.samples]);
+    event.preventDefault();
+  }
+
+  function clientWorldPoint(clientX: number, clientY: number) {
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!bounds) return null;
+    return {
+      x: (clientX - bounds.left - viewport.x) / viewport.scale,
+      y: (clientY - bounds.top - viewport.y) / viewport.scale,
+    };
+  }
+
+  function clientSurfacePoint(clientX: number, clientY: number) {
+    const bounds = containerRef.current?.getBoundingClientRect();
+    return bounds
+      ? { x: clientX - bounds.left, y: clientY - bounds.top }
+      : null;
+  }
+
+  function annotationPointerType(pointerType: string): AnnotationPointerType {
+    return pointerType === "pen" || pointerType === "touch"
+      ? pointerType
+      : "mouse";
+  }
+
+  function pointerAnnotationSamples(event: React.PointerEvent<HTMLDivElement>) {
+    const pointerType = annotationPointerType(event.pointerType);
+    const coalescedEvents = event.nativeEvent.getCoalescedEvents?.() ?? [];
+    const nativeEvents = coalescedEvents.length
+      ? coalescedEvents
+      : [event.nativeEvent];
+    return nativeEvents.flatMap((nativeEvent) => {
+      const point = clientWorldPoint(nativeEvent.clientX, nativeEvent.clientY);
+      return point
+        ? [
+            {
+              ...point,
+              pressure: normalizeAnnotationPressure(
+                pointerType,
+                nativeEvent.pressure,
+              ),
+            },
+          ]
+        : [];
+    });
+  }
+
+  function pointerWorldPoints(event: React.PointerEvent<HTMLDivElement>) {
+    const coalescedEvents = event.nativeEvent.getCoalescedEvents?.() ?? [];
+    const nativeEvents = coalescedEvents.length
+      ? coalescedEvents
+      : [event.nativeEvent];
+    return nativeEvents.flatMap((nativeEvent) => {
+      const point = clientWorldPoint(nativeEvent.clientX, nativeEvent.clientY);
+      return point ? [point] : [];
+    });
+  }
+
+  function collectEraserCrossings(
+    active: ActiveEraserGesture,
+    start: Point,
+    end: Point,
+  ) {
+    const tolerance = 8 / viewport.scale;
+    for (const object of objects) {
+      if (
+        object.type !== "annotation" ||
+        active.crossedIds.has(object.id) ||
+        (object.temporary && !temporaryOverlayVisible)
+      ) {
+        continue;
+      }
+      if (annotationIntersectsEraserSegment(object, start, end, tolerance)) {
+        active.crossedIds.add(object.id);
+      }
+    }
+  }
+
+  function onSurfacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (
+      (tool === "pen" || tool === "highlighter" || tool === "eraser") &&
+      event.pointerType === "touch"
+    ) {
+      const point = clientSurfacePoint(event.clientX, event.clientY);
+      if (!point) return;
+      touchPointersRef.current.set(event.pointerId, point);
+      if (touchPointersRef.current.size >= 2) {
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // Synthetic pointer fixtures do not establish a browser session.
+        }
+        activeAnnotationStrokeRef.current = null;
+        activeEraserGestureRef.current = null;
+        setAnnotationPreview([]);
+        touchNavigationBlockedRef.current = true;
+        const [first, second] = [...touchPointersRef.current.values()];
+        if (first && second) {
+          touchNavigationGestureRef.current = {
+            viewport,
+            centroid: {
+              x: (first.x + second.x) / 2,
+              y: (first.y + second.y) / 2,
+            },
+            distance: Math.max(
+              1,
+              Math.hypot(second.x - first.x, second.y - first.y),
+            ),
+          };
+        }
+        event.preventDefault();
+        return;
+      }
+      if (touchNavigationBlockedRef.current) return;
+    }
+    if (
+      (tool !== "pen" && tool !== "highlighter" && tool !== "eraser") ||
+      !canMutateCanvas ||
+      !event.isPrimary ||
+      (event.pointerType === "mouse" && event.button !== 0) ||
+      activeAnnotationStrokeRef.current ||
+      activeEraserGestureRef.current
+    ) {
+      return;
+    }
+    const points = pointerWorldPoints(event);
+    const firstPoint = points[0];
+    if (!firstPoint) return;
+    setDismissDockPaletteSignal((current) => current + 1);
+    if (tool === "eraser") {
+      const active: ActiveEraserGesture = {
+        pointerId: event.pointerId,
+        lastPoint: firstPoint,
+        crossedIds: new Set(),
+      };
+      activeEraserGestureRef.current = active;
+      collectEraserCrossings(active, firstPoint, firstPoint);
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Synthetic pointer fixtures do not establish a browser pointer session.
+      }
+      setSelectedIds([]);
+      setContextPanel(null);
+      event.preventDefault();
+      return;
+    }
+    const pointerType = annotationPointerType(event.pointerType);
+    const samples = pointerAnnotationSamples(event);
+    if (!samples.length) return;
+    activeAnnotationStrokeRef.current = {
+      pointerId: event.pointerId,
+      pointerType,
+      ink: tool,
+      samples,
+    };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthetic pointer fixtures do not establish a browser pointer session.
+      // Real mouse, touch, and pen input still uses pointer capture here.
+    }
+    setAnnotationPreview(samples);
+    setSelectedIds([]);
+    setContextPanel(null);
+    event.preventDefault();
+  }
+
+  function finishAnnotationStroke(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") {
+      const navigating = touchNavigationGestureRef.current !== null;
+      touchPointersRef.current.delete(event.pointerId);
+      if (touchPointersRef.current.size < 2) {
+        touchNavigationGestureRef.current = null;
+      }
+      if (touchPointersRef.current.size === 0) {
+        touchNavigationBlockedRef.current = false;
+      }
+      if (navigating || touchNavigationBlockedRef.current) {
+        event.preventDefault();
+        return;
+      }
+    }
+    const active = activeAnnotationStrokeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    active.samples.push(...pointerAnnotationSamples(event));
+    const canonical = canonicalizeAnnotationSamples(
+      active.samples,
+      drawingThickness,
+    );
+    activeAnnotationStrokeRef.current = null;
+    setAnnotationPreview([]);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (!canonical) return;
+
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    let object: Extract<CanvasObjectV2, { type: "annotation" }> = {
+      schemaVersion: 2,
+      id,
+      canvasId,
+      createdBy: userId,
+      createdAt: now,
+      updatedAt: now,
+      type: "annotation",
+      strokeVersion: 1,
+      pointerType: active.pointerType,
+      ink: active.ink,
+      baseWidth: canonical.geometry.width,
+      baseHeight: canonical.geometry.height,
+      points: canonical.points,
+      pressures: canonical.pressures,
+      temporary: true,
+      attachedObjectId: null,
+      geometry: canonical.geometry,
+      style: {
+        ...baseStyle("annotation"),
+        outline: drawingColor,
+        outlineWidth: drawingThickness,
+      },
+    };
+    const attachmentTarget = findAnnotationAttachmentTarget(object, objects);
+    if (attachmentTarget) {
+      object = {
+        ...object,
+        attachedObjectId: attachmentTarget.id,
+        attachmentOffset: {
+          x: object.geometry.x - attachmentTarget.geometry.x,
+          y: object.geometry.y - attachmentTarget.geometry.y,
+        },
+      };
+    }
+    runCommand("object.create", { object });
+    setSelectedIds([id]);
+    event.preventDefault();
+  }
+
+  function finishEraserGesture(event: React.PointerEvent<HTMLDivElement>) {
+    const active = activeEraserGestureRef.current;
+    if (!active || active.pointerId !== event.pointerId) return false;
+    if (event.pointerType === "touch") {
+      touchPointersRef.current.delete(event.pointerId);
+      if (touchPointersRef.current.size < 2) {
+        touchNavigationGestureRef.current = null;
+      }
+      if (touchPointersRef.current.size === 0) {
+        touchNavigationBlockedRef.current = false;
+      }
+    }
+    for (const point of pointerWorldPoints(event)) {
+      collectEraserCrossings(active, active.lastPoint, point);
+      active.lastPoint = point;
+    }
+    activeEraserGestureRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    const commands = [...active.crossedIds].map((objectId) => ({
+      type: "object.delete",
+      payload: { objectId },
+    }));
+    if (commands.length) runCommandBatch(commands);
+    setSelectedIds([]);
+    event.preventDefault();
+    return true;
+  }
+
+  function onSurfacePointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    if (finishEraserGesture(event)) return;
+    finishAnnotationStroke(event);
+  }
+
+  function cancelAnnotationStroke(event?: React.PointerEvent<HTMLDivElement>) {
+    const eraser = activeEraserGestureRef.current;
+    if (eraser) {
+      activeEraserGestureRef.current = null;
+      if (event?.currentTarget.hasPointerCapture(eraser.pointerId)) {
+        event.currentTarget.releasePointerCapture(eraser.pointerId);
+      }
+    }
+    const active = activeAnnotationStrokeRef.current;
+    if (active) {
+      activeAnnotationStrokeRef.current = null;
+      setAnnotationPreview([]);
+      if (event?.currentTarget.hasPointerCapture(active.pointerId)) {
+        event.currentTarget.releasePointerCapture(active.pointerId);
+      }
+    }
+    if (event?.pointerType === "touch") {
+      touchPointersRef.current.delete(event.pointerId);
+      if (touchPointersRef.current.size < 2) {
+        touchNavigationGestureRef.current = null;
+      }
+      if (touchPointersRef.current.size === 0) {
+        touchNavigationBlockedRef.current = false;
+      }
+    }
+  }
+
+  function selectionProxyTarget(node: Konva.Rect): SelectionBounds | null {
+    if (!selectedFrame) return null;
+    return {
+      x: node.x(),
+      y: node.y(),
+      width: Math.max(1, selectedFrame.width * node.scaleX()),
+      height: Math.max(1, selectedFrame.height * node.scaleY()),
+    };
+  }
+
+  function previewSelectionProxy(node: Konva.Rect) {
+    if (!selectedFrame) return;
+    const target = selectionProxyTarget(node);
+    if (!target) return;
+    setSelectionTransformPreviewObjects(
+      Object.fromEntries(
+        transformSelectionObjects(selectedObjects, selectedFrame, target).map(
+          (object) => [object.id, object],
+        ),
+      ),
+    );
+  }
+
+  function finishSelectionProxy(node: Konva.Rect) {
+    if (!selectedFrame) return;
+    const target = selectionProxyTarget(node);
+    if (!target) return;
+    const transformed = transformSelectionObjects(
+      selectedObjects,
+      selectedFrame,
+      target,
+    );
+    const commands: CommandDefinition[] = [];
+    for (const object of referenceSafeSelectionOrder(transformed)) {
+      if (object.type === "connector") {
+        const original = objectsById.get(object.id);
+        if (original?.type !== "connector") continue;
+        for (const endpoint of ["start", "end"] as const) {
+          if (
+            object[endpoint].kind === "free" &&
+            JSON.stringify(object[endpoint]) !==
+              JSON.stringify(original[endpoint])
+          ) {
+            commands.push({
+              type: "connector.endpoint",
+              payload: {
+                objectId: object.id,
+                endpoint,
+                value: object[endpoint],
+              },
+            });
+          }
+        }
+        continue;
+      }
+      commands.push(
+        {
+          type: "object.move",
+          payload: {
+            objectId: object.id,
+            x: object.geometry.x,
+            y: object.geometry.y,
+          },
+        },
+        {
+          type: "object.resize",
+          payload: {
+            objectId: object.id,
+            width: object.geometry.width,
+            height: object.geometry.height,
+          },
+        },
+      );
+    }
+    node.position({ x: target.x, y: target.y });
+    node.scale({ x: 1, y: 1 });
+    setSelectionTransformPreviewObjects({});
+    if (commands.length) runCommandBatch(commands);
   }
 
   function objectBounds(object: CanvasObjectV2) {
@@ -1547,6 +2184,16 @@ export function ProductCanvas({
     )
       return;
     const accelerator = event.metaKey || event.ctrlKey;
+    if (
+      event.key === "Escape" &&
+      (activeAnnotationStrokeRef.current || activeEraserGestureRef.current)
+    ) {
+      event.preventDefault();
+      activeAnnotationStrokeRef.current = null;
+      activeEraserGestureRef.current = null;
+      setAnnotationPreview([]);
+      return;
+    }
     if (
       selectedObjects.length &&
       ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu")
@@ -1620,7 +2267,7 @@ export function ProductCanvas({
             ? amount
             : 0;
       const commands: CommandDefinition[] = [];
-      for (const object of selectedObjects) {
+      for (const object of referenceSafeSelectionOrder(selectedObjects)) {
         if (event.altKey && object.type !== "connector") {
           commands.push({
             type: "object.resize",
@@ -1671,6 +2318,7 @@ export function ProductCanvas({
         s: "sticky",
         r: recentShape,
         c: "connector",
+        p: "pen",
         t: "text",
         b: "table",
       }[event.key.toLowerCase()] as CanvasTool | undefined;
@@ -1708,6 +2356,10 @@ export function ProductCanvas({
       fill: object.style.fill ?? "transparent",
       stroke: object.style.outline,
       strokeWidth: object.style.outlineWidth,
+      dash: konvaStrokeDash(
+        object.style.outlinePattern,
+        object.style.outlineWidth,
+      ),
     };
     if (object.shape === "ellipse") {
       return (
@@ -1787,6 +2439,77 @@ export function ProductCanvas({
     node.getLayer()?.batchDraw();
   }
 
+  function previewSingleObjectTransform(
+    event: Konva.KonvaEventObject<Event>,
+    object: CanvasObjectV2,
+  ) {
+    const node = event.target;
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+    const geometry = previewGeometryDuringTransform(object.geometry, {
+      x: node.x(),
+      y: node.y(),
+      scaleX,
+      scaleY,
+    });
+    setResizePreviewGeometries((current) => ({
+      ...current,
+      [object.id]: geometry,
+    }));
+    updateLiveResizeTextLayout(
+      node,
+      object,
+      geometry.width,
+      geometry.height,
+      scaleX,
+      scaleY,
+    );
+  }
+
+  function finishSingleObjectTransform(
+    event: Konva.KonvaEventObject<Event>,
+    object: CanvasObjectV2,
+  ) {
+    const node = event.target;
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+    const geometry = previewGeometryDuringTransform(object.geometry, {
+      x: node.x(),
+      y: node.y(),
+      scaleX,
+      scaleY,
+    });
+    node.scaleX(1);
+    node.scaleY(1);
+    updateLiveResizeTextLayout(
+      node,
+      object,
+      geometry.width,
+      geometry.height,
+      1,
+      1,
+    );
+    runCommandBatch([
+      {
+        type: "object.move",
+        payload: { objectId: object.id, x: geometry.x, y: geometry.y },
+      },
+      {
+        type: "object.resize",
+        payload: {
+          objectId: object.id,
+          width: geometry.width,
+          height: geometry.height,
+        },
+      },
+    ]);
+    setResizePreviewGeometries((current) => {
+      const next = { ...current };
+      delete next[object.id];
+      return next;
+    });
+  }
+
   function renderTable(object: Extract<CanvasObjectV2, { type: "table" }>) {
     const rows = object.cells.length;
     const columns = Math.max(...object.cells.map((row) => row.length), 1);
@@ -1800,6 +2523,10 @@ export function ProductCanvas({
           fill={object.style.fill ?? "#ffffff"}
           stroke={object.style.outline}
           strokeWidth={object.style.outlineWidth}
+          dash={konvaStrokeDash(
+            object.style.outlinePattern,
+            object.style.outlineWidth,
+          )}
           cornerRadius={6}
         />
         {Array.from({ length: rows - 1 }, (_, index) => (
@@ -1852,6 +2579,67 @@ export function ProductCanvas({
   }
 
   function renderObject(object: CanvasObjectV2) {
+    if (object.type === "annotation") {
+      return (
+        <Group
+          key={object.id}
+          id={object.id}
+          x={object.geometry.x}
+          y={object.geometry.y}
+          rotation={object.geometry.rotation}
+          opacity={object.ink === "highlighter" ? highlighterOpacity : 1}
+          ref={(node) => {
+            if (node) objectNodeRefs.current.set(object.id, node);
+            else objectNodeRefs.current.delete(object.id);
+          }}
+          draggable={tool === "select"}
+          onClick={(event) => selectObject(event, object)}
+          onTap={(event) => selectObject(event, object)}
+          onContextMenu={(event) => openObjectContextMenu(event, object)}
+          onDragStart={() => {
+            if (!selectedIds.includes(object.id)) setSelectedIds([object.id]);
+          }}
+          onDragMove={(event) =>
+            previewSelectionFromDrag(
+              objectsById.get(object.id) ?? object,
+              event.target.x(),
+              event.target.y(),
+            )
+          }
+          onDragEnd={(event) => {
+            const durableObject = objectsById.get(object.id) ?? object;
+            setDragPreviewPositions({});
+            moveSelectionFromDrag(
+              durableObject,
+              event.target.x(),
+              event.target.y(),
+            );
+          }}
+          onTransform={(event) => previewSingleObjectTransform(event, object)}
+          onTransformEnd={(event) => finishSingleObjectTransform(event, object)}
+        >
+          <Line
+            points={annotationOutlinePoints(
+              annotationSamples(object),
+              object.style.outlineWidth,
+            )}
+            closed
+            fill={object.style.outline}
+            listening={false}
+          />
+          <Line
+            points={annotationCenterlinePoints(object)}
+            stroke="rgba(0,0,0,0.001)"
+            strokeWidth={Math.max(
+              object.style.outlineWidth,
+              18 / viewport.scale,
+            )}
+            lineCap="round"
+            lineJoin="round"
+          />
+        </Group>
+      );
+    }
     if (object.type === "connector") {
       const points = resolveConnectorPointsV2(
         object,
@@ -1871,6 +2659,10 @@ export function ProductCanvas({
             stroke={object.style.outline}
             fill={object.style.outline}
             strokeWidth={object.style.outlineWidth}
+            dash={konvaStrokeDash(
+              object.style.outlinePattern,
+              object.style.outlineWidth,
+            )}
             pointerLength={10}
             pointerWidth={8}
             hitStrokeWidth={18}
@@ -1878,7 +2670,8 @@ export function ProductCanvas({
             onTap={(event) => selectObject(event, object)}
             onContextMenu={(event) => openObjectContextMenu(event, object)}
           />
-          {selectionAffordancesVisible && selectedIds.includes(object.id)
+          {selectionTransformAffordancesVisible &&
+          selectedIds.includes(object.id)
             ? (["start", "end"] as const).map((endpoint, index) => (
                 <Circle
                   key={endpoint}
@@ -1905,7 +2698,7 @@ export function ProductCanvas({
         </Group>
       );
     }
-    if (object.type === "document" || object.type === "annotation") return null;
+    if (object.type === "document") return null;
     return (
       <Fragment key={object.id}>
         <Group
@@ -1971,63 +2764,8 @@ export function ProductCanvas({
               event.target.y(),
             );
           }}
-          onTransformEnd={(event) => {
-            const node = event.target;
-            const geometry = previewGeometryDuringTransform(object.geometry, {
-              x: node.x(),
-              y: node.y(),
-              scaleX: node.scaleX(),
-              scaleY: node.scaleY(),
-            });
-            node.scaleX(1);
-            node.scaleY(1);
-            updateLiveResizeTextLayout(
-              node,
-              object,
-              geometry.width,
-              geometry.height,
-              1,
-              1,
-            );
-            runCommand("object.move", {
-              objectId: object.id,
-              x: geometry.x,
-              y: geometry.y,
-            });
-            runCommand("object.resize", {
-              objectId: object.id,
-              width: geometry.width,
-              height: geometry.height,
-            });
-            setResizePreviewGeometries((current) => {
-              const next = { ...current };
-              delete next[object.id];
-              return next;
-            });
-          }}
-          onTransform={(event) => {
-            const node = event.target;
-            const scaleX = node.scaleX();
-            const scaleY = node.scaleY();
-            const geometry = previewGeometryDuringTransform(object.geometry, {
-              x: node.x(),
-              y: node.y(),
-              scaleX,
-              scaleY,
-            });
-            setResizePreviewGeometries((current) => ({
-              ...current,
-              [object.id]: geometry,
-            }));
-            updateLiveResizeTextLayout(
-              node,
-              object,
-              geometry.width,
-              geometry.height,
-              scaleX,
-              scaleY,
-            );
-          }}
+          onTransformEnd={(event) => finishSingleObjectTransform(event, object)}
+          onTransform={(event) => previewSingleObjectTransform(event, object)}
         >
           {object.type === "shape" ? (
             <>
@@ -2422,6 +3160,7 @@ export function ProductCanvas({
       </p>
 
       <WorkspacePrimaryDock
+        key={dismissDockPaletteSignal}
         activeTool={tool}
         recentShape={recentShape}
         simulatedAiEnabled={simulatedAiEnabled}
@@ -2430,6 +3169,20 @@ export function ProductCanvas({
         onAddSimulatedAiIdea={addSimulatedAiIdea}
         commentPlacementActive={commentPlacementActive}
         onChooseComments={chooseComments}
+        canDraw={canMutateCanvas}
+        lastDrawingTool={lastDrawingTool}
+        penColor={drawingColor}
+        penThickness={drawingThickness}
+        onPenColorChange={(color) =>
+          lastDrawingTool === "highlighter"
+            ? setHighlighterColor(color)
+            : setPenColor(color)
+        }
+        onPenThicknessChange={(thickness) =>
+          lastDrawingTool === "highlighter"
+            ? setHighlighterThickness(thickness)
+            : setPenThickness(thickness)
+        }
       />
 
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
@@ -2525,6 +3278,8 @@ export function ProductCanvas({
         onPlacementModeChange={setCommentPlacementActive}
         onAiTransactionApplied={registerAiTransaction}
         onUndoAiTransaction={undoAiTransaction}
+        overlayVisible={temporaryOverlayVisible}
+        onOverlayVisibilityChange={changeTemporaryOverlayVisibility}
         onSelectTargets={(targetIds) => {
           if (!targetIds.length) {
             closeContextPanel(false);
@@ -2619,9 +3374,9 @@ export function ProductCanvas({
                 type="button"
                 size="icon-sm"
                 variant="outline"
-                aria-label="Stroke color"
+                aria-label="Stroke"
                 aria-expanded={contextPanel === "outline"}
-                title="Stroke color"
+                title="Stroke"
                 onClick={(event) =>
                   toggleContextPanel("outline", event.currentTarget)
                 }
@@ -2748,18 +3503,33 @@ export function ProductCanvas({
                   />
                 ) : null}
                 {contextPanel === "outline" ? (
-                  <ColorStylePanel
-                    mode="outline"
-                    fill={null}
+                  <StrokeStylePanel
                     outline={commonStyleValue(outlineObjects, "outline")}
-                    mixedFill={false}
                     mixedOutline={
                       commonStyleValue(outlineObjects, "outline") === undefined
                     }
-                    onApplyPair={() => undefined}
-                    onApplyFill={() => undefined}
-                    onApplyOutline={(outline) =>
-                      applyStyleToObjects(outlineObjects, { outline })
+                    outlineWidth={commonStyleValue(
+                      outlineObjects,
+                      "outlineWidth",
+                    )}
+                    mixedWidth={
+                      commonStyleValue(outlineObjects, "outlineWidth") ===
+                      undefined
+                    }
+                    outlinePattern={commonOutlinePattern(outlineObjects)}
+                    mixedPattern={
+                      commonOutlinePattern(outlineObjects) === undefined
+                    }
+                    allowPattern={outlineObjects.every(
+                      (object) => object.type !== "annotation",
+                    )}
+                    allowZeroWidth={outlineObjects.every(
+                      (object) =>
+                        object.type !== "annotation" &&
+                        object.type !== "connector",
+                    )}
+                    onApply={(style) =>
+                      applyStyleToObjects(outlineObjects, style)
                     }
                   />
                 ) : null}
@@ -2875,6 +3645,38 @@ export function ProductCanvas({
                 ) : null}
                 {contextPanel === "more" ? (
                   <div className="grid grid-cols-2 gap-2">
+                    {selectedObjects.some(
+                      (object) =>
+                        object.type === "annotation" && object.attachedObjectId,
+                    ) ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="col-span-2"
+                        onClick={() =>
+                          completeContextAction(disconnectSelectedAnnotations)
+                        }
+                      >
+                        <Unlink aria-hidden="true" /> Disconnect annotation
+                      </Button>
+                    ) : null}
+                    {selectedObjects.some(
+                      (object) =>
+                        object.type === "annotation" && object.temporary,
+                    ) ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="col-span-2"
+                        onClick={() =>
+                          completeContextAction(promoteSelectedAnnotations)
+                        }
+                      >
+                        <Check aria-hidden="true" /> Promote annotation
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       size="sm"
@@ -3016,10 +3818,17 @@ export function ProductCanvas({
           role="application"
           aria-label={`Canvas: ${title}. Choose a tool, then use the canvas. Arrow keys move a selection or pan; Delete removes a selection.`}
           onKeyDown={onKeyDown}
+          onPointerDown={onSurfacePointerDown}
           onPointerMove={onSurfacePointerMove}
+          onPointerUp={onSurfacePointerUp}
+          onPointerCancel={cancelAnnotationStroke}
           onPointerLeave={() => setHoveredShapeId(null)}
           className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
           style={{
+            touchAction:
+              tool === "pen" || tool === "highlighter" || tool === "eraser"
+                ? "none"
+                : undefined,
             backgroundImage: `radial-gradient(circle, var(--workspace-dot) ${canvasGrid.dotRadius}px, transparent ${canvasGrid.dotRadius}px)`,
             backgroundPosition: `${canvasGrid.x}px ${canvasGrid.y}px`,
             backgroundSize: `${canvasGrid.spacing}px ${canvasGrid.spacing}px`,
@@ -3055,7 +3864,28 @@ export function ProductCanvas({
             }}
           >
             <Layer>
-              {displayObjects.map(renderObject)}
+              {displayObjects.map((object) =>
+                object.type === "annotation" &&
+                object.temporary &&
+                !temporaryOverlayVisible
+                  ? null
+                  : renderObject(object),
+              )}
+              {annotationPreview.length > 1 ? (
+                <Line
+                  points={annotationOutlinePoints(
+                    annotationPreview,
+                    drawingThickness,
+                    false,
+                  )}
+                  closed
+                  fill={drawingColor}
+                  opacity={
+                    lastDrawingTool === "highlighter" ? highlighterOpacity : 1
+                  }
+                  listening={false}
+                />
+              ) : null}
               {remoteCursors.map((cursor) => (
                 <Group
                   key={cursor.userId}
@@ -3090,6 +3920,31 @@ export function ProductCanvas({
                   strokeWidth={1}
                   dash={[6, 4]}
                   listening={false}
+                />
+              ) : null}
+              {selectionTransformAffordancesVisible &&
+              selectedFrame &&
+              useSelectionProxy ? (
+                <Rect
+                  ref={selectionProxyRef}
+                  x={selectedFrame.x}
+                  y={selectedFrame.y}
+                  width={selectedFrame.width}
+                  height={selectedFrame.height}
+                  fill="rgba(0,0,0,0.001)"
+                  draggable={tool === "select"}
+                  onDragMove={(event) =>
+                    previewSelectionProxy(event.target as Konva.Rect)
+                  }
+                  onDragEnd={(event) =>
+                    finishSelectionProxy(event.target as Konva.Rect)
+                  }
+                  onTransform={(event) =>
+                    previewSelectionProxy(event.target as Konva.Rect)
+                  }
+                  onTransformEnd={(event) =>
+                    finishSelectionProxy(event.target as Konva.Rect)
+                  }
                 />
               ) : null}
               <Transformer
@@ -3193,6 +4048,42 @@ export function ProductCanvas({
                 <dt className="text-zinc-400">Objects</dt>
                 <dd data-testid="product-object-count">{objects.length}</dd>
               </div>
+              <div>
+                <dt className="text-zinc-400">Annotations</dt>
+                <dd data-testid="product-annotation-count">
+                  {
+                    objects.filter((object) => object.type === "annotation")
+                      .length
+                  }
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-400">Visible annotations</dt>
+                <dd data-testid="product-visible-annotation-count">
+                  {
+                    objects.filter(
+                      (object) =>
+                        object.type === "annotation" &&
+                        (temporaryOverlayVisible || !object.temporary),
+                    ).length
+                  }
+                </dd>
+              </div>
+              {selectedFrame ? (
+                <div>
+                  <dt className="text-zinc-400">Selection frame</dt>
+                  <dd data-testid="product-selection-frame">
+                    {[
+                      selectedFrame.x,
+                      selectedFrame.y,
+                      selectedFrame.width,
+                      selectedFrame.height,
+                    ]
+                      .map((value) => Math.round(value))
+                      .join(",")}
+                  </dd>
+                </div>
+              ) : null}
               <div>
                 <dt className="text-zinc-400">Frame</dt>
                 <dd data-testid="product-frame-time">
@@ -3306,6 +4197,50 @@ function ObjectNavigatorContent({
                 {Math.round(selectedObject.geometry.height)}
               </dd>
             </div>
+            <div>
+              <dt>Stroke color</dt>
+              <dd data-testid="selected-stroke-color">
+                {selectedObject.style.outline}
+              </dd>
+            </div>
+            <div>
+              <dt>Stroke width</dt>
+              <dd data-testid="selected-stroke-width">
+                {selectedObject.style.outlineWidth}
+              </dd>
+            </div>
+            {selectedObject.type !== "annotation" &&
+            selectedObject.type !== "text" &&
+            selectedObject.type !== "document" ? (
+              <div>
+                <dt>Stroke style</dt>
+                <dd data-testid="selected-stroke-pattern">
+                  {resolvedOutlinePattern(selectedObject.style.outlinePattern)}
+                </dd>
+              </div>
+            ) : null}
+            {selectedObject.type === "annotation" ? (
+              <>
+                <div>
+                  <dt>Ink</dt>
+                  <dd data-testid="selected-annotation-ink">
+                    {selectedObject.ink ?? "pen"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Temporary</dt>
+                  <dd data-testid="selected-annotation-temporary">
+                    {String(selectedObject.temporary)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Attached</dt>
+                  <dd data-testid="selected-annotation-attached">
+                    {String(selectedObject.attachedObjectId !== null)}
+                  </dd>
+                </div>
+              </>
+            ) : null}
           </dl>
           {selectedObject.type === "connector" ? (
             <div>

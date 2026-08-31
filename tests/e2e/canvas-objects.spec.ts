@@ -157,8 +157,28 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await createAt(page, "Rectangle", { x: 180, y: 140 });
   await editSelectedText(page, "Styled planning idea");
   await setFill(page, "#fef3c7");
-  await openContextPanel(page, "Stroke color");
+  await openContextPanel(page, "Stroke");
+  const solidStrokeStyle = page.getByRole("button", {
+    name: "solid",
+    exact: true,
+  });
+  await expect(solidStrokeStyle).toHaveAttribute("aria-pressed", "true");
+  await expect(solidStrokeStyle).toHaveClass(/bg-violet-500/);
+  await expect(solidStrokeStyle.locator("svg")).toHaveCount(1);
   await setCustomColor(page, "Custom stroke color", "#d97706");
+  await page.getByRole("button", { name: "5 pixel stroke" }).click();
+  const dashedStrokeStyle = page.getByRole("button", {
+    name: "dashed",
+    exact: true,
+  });
+  await dashedStrokeStyle.click();
+  await expect(dashedStrokeStyle).toHaveAttribute("aria-pressed", "true");
+  await expect(dashedStrokeStyle).toHaveClass(/bg-violet-500/);
+  await expect(dashedStrokeStyle.locator("svg")).toHaveCount(1);
+  await expect(solidStrokeStyle.locator("svg")).toHaveCount(0);
+  await expect(page.getByTestId("selected-stroke-pattern")).toHaveText(
+    "dashed",
+  );
   await openContextPanel(page, "Text style");
   await page.getByLabel("Typeface").selectOption({ label: "Bookish" });
   await page.getByLabel("Custom text size").fill("22");
@@ -239,12 +259,18 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await page.getByLabel("Custom fill color").click();
   await expect(page.getByLabel("Custom fill color hex")).toHaveValue("#FEF3C7");
   await page.getByRole("button", { name: "Close color picker" }).click();
-  await openContextPanel(page, "Stroke color");
+  await openContextPanel(page, "Stroke");
   await page.getByLabel("Custom stroke color").click();
   await expect(page.getByLabel("Custom stroke color hex")).toHaveValue(
     "#D97706",
   );
   await page.getByRole("button", { name: "Close color picker" }).click();
+  await expect(
+    page.getByRole("button", { name: "5 pixel stroke" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "dashed", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await openContextPanel(page, "Text style");
   await expect(page.getByLabel("Typeface")).toHaveValue(
     "Georgia, ui-serif, serif",
@@ -334,9 +360,7 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
 
   const [fillBox, strokeBox, textBox] = await Promise.all([
     page.getByRole("button", { name: "Fill", exact: true }).boundingBox(),
-    page
-      .getByRole("button", { name: "Stroke color", exact: true })
-      .boundingBox(),
+    page.getByRole("button", { name: "Stroke", exact: true }).boundingBox(),
     page.getByRole("button", { name: "Text style", exact: true }).boundingBox(),
   ]);
   if (!fillBox || !strokeBox || !textBox)
@@ -350,7 +374,13 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
     "data-mixed",
     "true",
   );
-  await page.getByLabel("Custom fill color").click();
+  const customFillColor = page.getByLabel("Custom fill color");
+  await expect(customFillColor.locator("img")).toHaveCount(0);
+  await expect(customFillColor.locator('span[aria-hidden="true"]')).toHaveCSS(
+    "background-image",
+    /conic-gradient/,
+  );
+  await customFillColor.click();
   await expect(
     page.getByRole("dialog", { name: "Custom fill color picker" }),
   ).toBeVisible();
@@ -381,7 +411,7 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
   await expect(page.getByLabel("Custom fill color hex")).toHaveValue("#DBEAFE");
   await page.getByRole("button", { name: "Close color picker" }).click();
   await expect(page.getByLabel("Custom stroke color")).not.toBeVisible();
-  await openContextPanel(page, "Stroke color");
+  await openContextPanel(page, "Stroke");
   await page.getByLabel("Custom stroke color").click();
   await expect(page.getByLabel("Custom stroke color hex")).toHaveValue(
     "#2563EB",
@@ -393,7 +423,7 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
   await page.getByLabel("Custom fill color").click();
   await expect(page.getByLabel("Custom fill color hex")).toHaveValue("#DBEAFE");
   await page.getByRole("button", { name: "Close color picker" }).click();
-  await openContextPanel(page, "Stroke color");
+  await openContextPanel(page, "Stroke");
   await page.getByLabel("Custom stroke color").click();
   await expect(page.getByLabel("Custom stroke color hex")).toHaveValue(
     "#1D4ED8",

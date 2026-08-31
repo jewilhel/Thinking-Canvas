@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import * as Y from "yjs";
 
 import {
   createProductCanvasDocument,
+  listCanvasObjectsV2,
   putCanvasObjectV2,
   readCanvasObjectV2,
   readCanvasOrderV2,
@@ -16,6 +18,7 @@ import { executeProductCanvasCommand } from "@/domain/canvas-command";
 const canvasId = "11111111-1111-4111-8111-111111111111";
 const actorId = "22222222-2222-4222-8222-222222222222";
 const objectId = "33333333-3333-4333-8333-333333333333";
+const annotationId = "33333333-3333-4333-8333-333333333334";
 const now = "2026-08-11T20:00:00.000Z";
 
 function shape(id = objectId): CanvasObjectV2 {
@@ -35,6 +38,35 @@ function shape(id = objectId): CanvasObjectV2 {
       fill: "#ffffff",
       outline: "#334155",
       outlineWidth: 2,
+      fontFamily: "Inter, sans-serif",
+      fontSize: 16,
+    },
+  };
+}
+
+function annotation(
+  id = objectId,
+): Extract<CanvasObjectV2, { type: "annotation" }> {
+  return {
+    schemaVersion: 2,
+    id,
+    canvasId,
+    createdBy: actorId,
+    createdAt: now,
+    updatedAt: now,
+    groupId: null,
+    type: "annotation",
+    strokeVersion: 1,
+    pointerType: "pen",
+    points: [5, 5, 25, 25],
+    pressures: [0.2, 0.8],
+    temporary: true,
+    attachedObjectId: null,
+    geometry: { x: 5, y: 15, width: 30, height: 30, rotation: 0 },
+    style: {
+      fill: null,
+      outline: "#7c3aed",
+      outlineWidth: 5,
       fontFamily: "Inter, sans-serif",
       fontSize: 16,
     },
@@ -72,6 +104,58 @@ describe("actor-local canvas history", () => {
     expect(readCanvasObjectV2(document, objectId)).toMatchObject({
       text: "Original",
     });
+  });
+
+  it("undoes and redoes one complete canonical annotation", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const { history } = executeProductCanvasCommandWithHistory(
+      document,
+      command("object.create", { object: annotation() }),
+    );
+
+    expect(applyCanvasHistoryEntry(document, history, "undo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, objectId)).toBeUndefined();
+    expect(applyCanvasHistoryEntry(document, history, "redo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, objectId)).toEqual(annotation());
+  });
+
+  it("continues valid styling and annotation creation beside a malformed entry", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const malformedId = "33333333-3333-4333-8333-333333333399";
+    const malformed = new Y.Map<unknown>();
+    malformed.set("id", malformedId);
+    document
+      .getMap<Y.Map<unknown>>("canvas-objects-v2")
+      .set(malformedId, malformed);
+    document.getArray<string>("canvas-order-v2").push([malformedId]);
+    putCanvasObjectV2(document, shape());
+
+    executeProductCanvasCommandWithHistory(
+      document,
+      command("object.style", {
+        objectId,
+        style: { outlinePattern: "dashed" },
+      }),
+    );
+    executeProductCanvasCommandWithHistory(
+      document,
+      command("object.create", { object: annotation(annotationId) }),
+    );
+
+    expect(readCanvasObjectV2(document, objectId)?.style.outlinePattern).toBe(
+      "dashed",
+    );
+    expect(readCanvasObjectV2(document, annotationId)).toEqual(
+      annotation(annotationId),
+    );
+    expect(listCanvasObjectsV2(document)).toHaveLength(2);
+    expect(
+      document.getMap<Y.Map<unknown>>("canvas-objects-v2").get(malformedId),
+    ).toBe(malformed);
   });
 
   it("reverses its text while preserving a later unrelated move", () => {
