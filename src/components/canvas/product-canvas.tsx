@@ -1993,6 +1993,12 @@ export function ProductCanvas({
 
   function onSurfacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (
+      event.isPrimary &&
+      (event.pointerType !== "mouse" || event.button === 0)
+    ) {
+      setDismissDockPaletteSignal((current) => current + 1);
+    }
+    if (
       (tool === "pen" || tool === "highlighter" || tool === "eraser") &&
       event.pointerType === "touch"
     ) {
@@ -2041,7 +2047,6 @@ export function ProductCanvas({
     const points = pointerWorldPoints(event);
     const firstPoint = points[0];
     if (!firstPoint) return;
-    setDismissDockPaletteSignal((current) => current + 1);
     if (tool === "eraser") {
       const active: ActiveEraserGesture = {
         pointerId: event.pointerId,

@@ -22,6 +22,10 @@ test("adds expanded shapes and styles a searchable vector icon", async ({
 
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   const shapePalette = page.getByTestId("workspace-shape-palette");
+  await expect(shapePalette).toBeVisible();
+  await surface.click({ position: { x: 80, y: 80 } });
+  await expect(shapePalette).toBeHidden();
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
   const catalogSearch = page.getByLabel("Search shapes and icons");
   const basicCategory = page.getByRole("button", {
     name: "Basic",
