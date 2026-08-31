@@ -158,9 +158,24 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await editSelectedText(page, "Styled planning idea");
   await setFill(page, "#fef3c7");
   await openContextPanel(page, "Stroke");
+  const solidStrokeStyle = page.getByRole("button", {
+    name: "solid",
+    exact: true,
+  });
+  await expect(solidStrokeStyle).toHaveAttribute("aria-pressed", "true");
+  await expect(solidStrokeStyle).toHaveClass(/bg-violet-500/);
+  await expect(solidStrokeStyle.locator("svg")).toHaveCount(1);
   await setCustomColor(page, "Custom stroke color", "#d97706");
   await page.getByRole("button", { name: "5 pixel stroke" }).click();
-  await page.getByRole("button", { name: "dashed", exact: true }).click();
+  const dashedStrokeStyle = page.getByRole("button", {
+    name: "dashed",
+    exact: true,
+  });
+  await dashedStrokeStyle.click();
+  await expect(dashedStrokeStyle).toHaveAttribute("aria-pressed", "true");
+  await expect(dashedStrokeStyle).toHaveClass(/bg-violet-500/);
+  await expect(dashedStrokeStyle.locator("svg")).toHaveCount(1);
+  await expect(solidStrokeStyle.locator("svg")).toHaveCount(0);
   await openContextPanel(page, "Text style");
   await page.getByLabel("Typeface").selectOption({ label: "Bookish" });
   await page.getByLabel("Custom text size").fill("22");

@@ -401,6 +401,8 @@ export function ProductCanvas({
   });
   const selectionAffordanceFactor = selectionAffordanceScale(viewport.scale);
   const selectionAffordancesVisible = selectionAffordanceFactor > 0;
+  const selectionTransformAffordancesVisible =
+    tool === "select" && selectionAffordancesVisible;
   const selectionAffordanceWorldSize = (screenSize: number) =>
     (screenSize * selectionAffordanceFactor) / viewport.scale;
   const canvasGrid = canvasGridMetrics(viewport);
@@ -578,7 +580,7 @@ export function ProductCanvas({
     if (!transformer) return;
     transformer.nodes(
       node &&
-        selectionAffordancesVisible &&
+        selectionTransformAffordancesVisible &&
         inlineTextEditor?.objectId !== selectedId
         ? [node]
         : [],
@@ -588,7 +590,7 @@ export function ProductCanvas({
     inlineTextEditor?.objectId,
     selectedId,
     selectedObject,
-    selectionAffordancesVisible,
+    selectionTransformAffordancesVisible,
     useSelectionProxy,
   ]);
 
@@ -2668,7 +2670,8 @@ export function ProductCanvas({
             onTap={(event) => selectObject(event, object)}
             onContextMenu={(event) => openObjectContextMenu(event, object)}
           />
-          {selectionAffordancesVisible && selectedIds.includes(object.id)
+          {selectionTransformAffordancesVisible &&
+          selectedIds.includes(object.id)
             ? (["start", "end"] as const).map((endpoint, index) => (
                 <Circle
                   key={endpoint}
@@ -3919,7 +3922,9 @@ export function ProductCanvas({
                   listening={false}
                 />
               ) : null}
-              {selectedFrame && useSelectionProxy ? (
+              {selectionTransformAffordancesVisible &&
+              selectedFrame &&
+              useSelectionProxy ? (
                 <Rect
                   ref={selectionProxyRef}
                   x={selectedFrame.x}

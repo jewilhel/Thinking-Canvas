@@ -1,5 +1,7 @@
 "use client";
 
+import { Check } from "lucide-react";
+
 import { ColorStylePanel } from "@/components/canvas/color-style-panel";
 import type { OutlinePattern } from "@/canvas/stroke-style";
 import { StrokeThicknessOptions } from "@/components/canvas/stroke-thickness-options";
@@ -68,19 +70,29 @@ export function StrokeStylePanel({
             Style{mixedPattern ? " — Mixed" : ""}
           </legend>
           <div className="mt-2 grid grid-cols-3 gap-2">
-            {patterns.map((pattern) => (
-              <Button
-                key={pattern}
-                type="button"
-                size="sm"
-                variant="outline"
-                aria-pressed={!mixedPattern && outlinePattern === pattern}
-                className="capitalize"
-                onClick={() => onApply({ outlinePattern: pattern })}
-              >
-                {pattern}
-              </Button>
-            ))}
+            {patterns.map((pattern) => {
+              const selected = !mixedPattern && outlinePattern === pattern;
+              return (
+                <Button
+                  key={pattern}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  aria-pressed={selected}
+                  className={
+                    selected
+                      ? "!border-violet-400 !bg-violet-500/25 !text-white capitalize ring-2 ring-violet-500"
+                      : "capitalize"
+                  }
+                  onClick={() => onApply({ outlinePattern: pattern })}
+                >
+                  {pattern}
+                  {selected ? (
+                    <Check className="size-3.5 text-white" aria-hidden="true" />
+                  ) : null}
+                </Button>
+              );
+            })}
           </div>
         </fieldset>
       ) : null}

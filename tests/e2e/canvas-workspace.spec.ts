@@ -533,6 +533,11 @@ test("keeps drawing tools active, dismisses the palette, drag-erases whole strok
   await expect(
     page.getByRole("button", { name: "Drawing", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByTestId("contextual-selection-controls"),
+  ).not.toBeVisible();
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await expect(page.getByTestId("contextual-selection-controls")).toBeVisible();
 
   await page.getByRole("button", { name: "Drawing", exact: true }).click();
   await expect(
