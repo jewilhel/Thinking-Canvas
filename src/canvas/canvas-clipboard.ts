@@ -19,6 +19,15 @@ export function createCanvasClipboardPayload(
   selectedObjectIds: string[],
 ) {
   const selectedIds = new Set(selectedObjectIds);
+  for (const object of allObjects) {
+    if (
+      object.type === "icon" &&
+      object.parentId &&
+      selectedIds.has(object.parentId)
+    ) {
+      selectedIds.add(object.id);
+    }
+  }
   const objectsById = new Map(allObjects.map((object) => [object.id, object]));
   const selected = allObjects.filter((object) => selectedIds.has(object.id));
   if (!selected.length) throw new Error("Select at least one object to copy.");
@@ -49,6 +58,11 @@ export function createCanvasClipboardPayload(
             attachedObjectId: null,
             attachmentOffset: null,
           }
+        : { ...object, groupId };
+    }
+    if (object.type === "icon") {
+      return object.parentId && !selectedIds.has(object.parentId)
+        ? { ...object, groupId, parentId: null, parentRelative: null }
         : { ...object, groupId };
     }
     if (object.type !== "connector") return { ...object, groupId };
@@ -135,6 +149,13 @@ export function remapCanvasClipboard(
         ...shared,
         attachedObjectId,
       });
+    }
+    if (object.type === "icon") {
+      const parentId = object.parentId ? objectIds.get(object.parentId) : null;
+      if (object.parentId && !parentId) {
+        throw new Error("Clipboard icon references an external parent.");
+      }
+      return canvasObjectV2Schema.parse({ ...shared, parentId });
     }
     if (object.type !== "connector") {
       return canvasObjectV2Schema.parse(shared);

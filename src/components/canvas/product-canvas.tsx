@@ -84,6 +84,7 @@ import {
   loadPhosphorIconCatalog,
   type PhosphorIconCatalog,
 } from "@/canvas/phosphor-icon-catalog";
+import { fullyContains } from "@/canvas/icon-containment";
 import {
   applyCanvasHistoryEntry,
   executeProductCanvasCommandWithHistory,
@@ -384,6 +385,9 @@ export function ProductCanvas({
   const [inlineTextEditor, setInlineTextEditor] =
     useState<InlineTextEditor | null>(null);
   const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
+  const [containmentPreviewParentId, setContainmentPreviewParentId] = useState<
+    string | null
+  >(null);
   const [contextPanel, setContextPanel] = useState<ContextPanel | null>(null);
   const [objectContextMenu, setObjectContextMenu] =
     useState<ObjectContextMenuPosition | null>(null);
@@ -1174,6 +1178,18 @@ export function ProductCanvas({
     }
     if (tool === "select") {
       const modifier = event.evt.shiftKey || event.evt.metaKey;
+      if (
+        object.type === "icon" &&
+        object.parentId &&
+        !modifier &&
+        !selectedIds.includes(object.id)
+      ) {
+        const parent = objectsById.get(object.parentId);
+        if (parent && !selectedIds.includes(parent.id)) {
+          updateSelectionForObject(parent, false);
+          return;
+        }
+      }
       updateSelectionForObject(object, modifier);
     }
   }
@@ -1267,10 +1283,54 @@ export function ProductCanvas({
     const dx = x - object.geometry.x;
     const dy = y - object.geometry.y;
     const commands: CommandDefinition[] = [];
+    const selectedIdSet = new Set(selectedIds);
     for (const selected of referenceSafeSelectionOrder(selectedObjects)) {
+      if (
+        selected.type === "icon" &&
+        selected.parentId &&
+        selectedIdSet.has(selected.parentId)
+      )
+        continue;
       if (selected.type === "connector")
         commands.push(...moveConnectorCommands(selected, dx, dy, true));
-      else
+      else if (selected.type === "icon" && selectedObjects.length === 1) {
+        const geometry = {
+          ...selected.geometry,
+          x: selected.geometry.x + dx,
+          y: selected.geometry.y + dy,
+        };
+        const currentParent = selected.parentId
+          ? objectsById.get(selected.parentId)
+          : null;
+        const nextParent = [...objects]
+          .reverse()
+          .find(
+            (candidate) =>
+              candidate.type === "shape" &&
+              candidate.id !== selected.parentId &&
+              fullyContains(candidate, geometry),
+          );
+        if (
+          selected.parentId &&
+          (currentParent?.type !== "shape" ||
+            !fullyContains(currentParent, geometry))
+        ) {
+          commands.push({
+            type: "icon.detach",
+            payload: { objectId: selected.id },
+          });
+        }
+        commands.push({
+          type: "object.move",
+          payload: { objectId: selected.id, x: geometry.x, y: geometry.y },
+        });
+        if (nextParent) {
+          commands.push({
+            type: "icon.nest",
+            payload: { objectId: selected.id, parentId: nextParent.id },
+          });
+        }
+      } else
         commands.push({
           type: "object.move",
           payload: {
@@ -1281,6 +1341,7 @@ export function ProductCanvas({
         });
     }
     runCommandBatch(commands);
+    setContainmentPreviewParentId(null);
   }
 
   function previewSelectionFromDrag(
@@ -1296,6 +1357,22 @@ export function ProductCanvas({
       : object.groupId
         ? objects.filter((candidate) => candidate.groupId === object.groupId)
         : [durableObject];
+    if (durableObject.type === "icon" && selectedTargets.length === 1) {
+      const geometry = {
+        ...durableObject.geometry,
+        x: durableObject.geometry.x + dx,
+        y: durableObject.geometry.y + dy,
+      };
+      const parent = [...objects]
+        .reverse()
+        .find(
+          (candidate) =>
+            candidate.type === "shape" && fullyContains(candidate, geometry),
+        );
+      setContainmentPreviewParentId(parent?.id ?? null);
+    } else {
+      setContainmentPreviewParentId(null);
+    }
     const movingTargetIds = new Set(
       selectedTargets
         .filter((candidate) => candidate.type !== "annotation")
@@ -1357,6 +1434,25 @@ export function ProductCanvas({
 
   function deleteSelected() {
     if (!selectedObjects.length) return;
+    const selectedParentIds = new Set(
+      selectedObjects
+        .filter((object) => object.type === "shape")
+        .map((object) => object.id),
+    );
+    const containedCount = objects.filter(
+      (object) =>
+        object.type === "icon" &&
+        object.parentId &&
+        selectedParentIds.has(object.parentId) &&
+        !selectedIds.includes(object.id),
+    ).length;
+    if (
+      containedCount > 0 &&
+      !window.confirm(
+        `Delete the selected container and ${containedCount} contained icon${containedCount === 1 ? "" : "s"}? This can be undone.`,
+      )
+    )
+      return;
     runCommandBatch(
       [...selectedObjects].reverse().map((object) => ({
         type: "object.delete",
@@ -2150,8 +2246,15 @@ export function ProductCanvas({
       selectedFrame,
       target,
     );
+    const transformedIds = new Set(transformed.map((object) => object.id));
     const commands: CommandDefinition[] = [];
     for (const object of referenceSafeSelectionOrder(transformed)) {
+      if (
+        object.type === "icon" &&
+        object.parentId &&
+        transformedIds.has(object.parentId)
+      )
+        continue;
       if (object.type === "connector") {
         const original = objectsById.get(object.id);
         if (original?.type !== "connector") continue;
@@ -2845,6 +2948,28 @@ export function ProductCanvas({
           x={object.geometry.x}
           y={object.geometry.y}
           rotation={object.geometry.rotation}
+          clipX={
+            object.type === "icon" && object.parentId
+              ? (objectsById.get(object.parentId)?.geometry.x ??
+                  object.geometry.x) - object.geometry.x
+              : undefined
+          }
+          clipY={
+            object.type === "icon" && object.parentId
+              ? (objectsById.get(object.parentId)?.geometry.y ??
+                  object.geometry.y) - object.geometry.y
+              : undefined
+          }
+          clipWidth={
+            object.type === "icon" && object.parentId
+              ? objectsById.get(object.parentId)?.geometry.width
+              : undefined
+          }
+          clipHeight={
+            object.type === "icon" && object.parentId
+              ? objectsById.get(object.parentId)?.geometry.height
+              : undefined
+          }
           draggable={
             tool === "select" && inlineTextEditor?.objectId !== object.id
           }
@@ -3786,6 +3911,59 @@ export function ProductCanvas({
                 ) : null}
                 {contextPanel === "more" ? (
                   <div className="grid grid-cols-2 gap-2">
+                    {selectedObject.type === "icon" &&
+                    selectedIds.length === 1 &&
+                    selectedObject.parentId ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="col-span-2"
+                        onClick={() =>
+                          completeContextAction(() =>
+                            runCommand("icon.detach", {
+                              objectId: selectedObject.id,
+                            }),
+                          )
+                        }
+                      >
+                        <Unlink aria-hidden="true" /> Remove from container
+                      </Button>
+                    ) : null}
+                    {selectedObject.type === "icon" &&
+                    selectedIds.length === 1 &&
+                    !selectedObject.parentId
+                      ? (() => {
+                          const parent = [...objects]
+                            .reverse()
+                            .find(
+                              (candidate) =>
+                                candidate.type === "shape" &&
+                                fullyContains(
+                                  candidate,
+                                  selectedObject.geometry,
+                                ),
+                            );
+                          return parent ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="col-span-2"
+                              onClick={() =>
+                                completeContextAction(() =>
+                                  runCommand("icon.nest", {
+                                    objectId: selectedObject.id,
+                                    parentId: parent.id,
+                                  }),
+                                )
+                              }
+                            >
+                              Place inside {objectLabel(parent)}
+                            </Button>
+                          ) : null;
+                        })()
+                      : null}
                     {selectedObjects.some(
                       (object) => object.type === "icon",
                     ) ? (
@@ -4064,6 +4242,24 @@ export function ProductCanvas({
                   ? null
                   : renderObject(object),
               )}
+              {containmentPreviewParentId
+                ? (() => {
+                    const parent = objectsById.get(containmentPreviewParentId);
+                    return parent?.type === "shape" ? (
+                      <Rect
+                        x={parent.geometry.x - 4}
+                        y={parent.geometry.y - 4}
+                        width={parent.geometry.width + 8}
+                        height={parent.geometry.height + 8}
+                        rotation={parent.geometry.rotation}
+                        stroke="#8b5cf6"
+                        strokeWidth={3 / viewport.scale}
+                        dash={[8 / viewport.scale, 5 / viewport.scale]}
+                        listening={false}
+                      />
+                    ) : null;
+                  })()
+                : null}
               {annotationPreview.length > 1 ? (
                 <Line
                   points={annotationOutlinePoints(
@@ -4337,6 +4533,11 @@ function ObjectNavigatorContent({
               <button
                 type="button"
                 data-testid={`object-list-item-${object.id}`}
+                aria-label={
+                  object.type === "icon" && object.parentId
+                    ? `Contained ${objectLabel(object)}`
+                    : objectLabel(object)
+                }
                 aria-pressed={selectedIds.includes(object.id)}
                 onClick={(event) =>
                   onSelect(
@@ -4344,8 +4545,9 @@ function ObjectNavigatorContent({
                     event.shiftKey || event.metaKey || event.ctrlKey,
                   )
                 }
-                className="min-h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50"
+                className={`min-h-11 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50 ${object.type === "icon" && object.parentId ? "ml-5 w-[calc(100%-1.25rem)]" : "w-full"}`}
               >
+                {object.type === "icon" && object.parentId ? "↳ " : ""}
                 {objectLabel(object)}
               </button>
             </li>

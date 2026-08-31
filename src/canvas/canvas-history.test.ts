@@ -73,6 +73,33 @@ function annotation(
   };
 }
 
+function icon(): Extract<CanvasObjectV2, { type: "icon" }> {
+  return {
+    schemaVersion: 2,
+    id: "44444444-4444-4444-8444-444444444444",
+    canvasId,
+    createdBy: actorId,
+    createdAt: now,
+    updatedAt: now,
+    groupId: null,
+    type: "icon",
+    catalog: "phosphor",
+    catalogVersion: "2.1.1",
+    iconName: "brain",
+    iconVariant: "fill",
+    parentId: null,
+    parentRelative: null,
+    geometry: { x: 60, y: 60, width: 40, height: 30, rotation: 0 },
+    style: {
+      fill: "#7c3aed",
+      outline: "#312e81",
+      outlineWidth: 2,
+      fontFamily: "Inter, sans-serif",
+      fontSize: 16,
+    },
+  };
+}
+
 function command(type: string, payload: unknown, issuedAt = now) {
   return {
     schemaVersion: 2,
@@ -87,6 +114,36 @@ function command(type: string, payload: unknown, issuedAt = now) {
 }
 
 describe("actor-local canvas history", () => {
+  it("undoes and redoes a complete icon parent relationship", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, shape());
+    putCanvasObjectV2(document, icon());
+    const { history } = executeProductCanvasCommandWithHistory(
+      document,
+      command("icon.nest", {
+        objectId: icon().id,
+        parentId: objectId,
+      }),
+    );
+
+    expect(readCanvasObjectV2(document, icon().id)).toMatchObject({
+      parentId: objectId,
+    });
+    expect(applyCanvasHistoryEntry(document, history, "undo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, icon().id)).toMatchObject({
+      parentId: null,
+      parentRelative: null,
+    });
+    expect(applyCanvasHistoryEntry(document, history, "redo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, icon().id)).toMatchObject({
+      parentId: objectId,
+      parentRelative: { x: 0.25, width: 0.25 },
+    });
+  });
   it("undoes and redoes object creation", () => {
     const document = createProductCanvasDocument(canvasId);
     const { history } = executeProductCanvasCommandWithHistory(

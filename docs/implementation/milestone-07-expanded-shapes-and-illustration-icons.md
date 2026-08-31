@@ -154,9 +154,9 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 
 ### Slice 3 — One-level parent/child containment
 
-- [ ] Add validated nest, detach, and reparent commands with eligibility, cycle/orphan prevention, local/world transform conversion, clipping, and one-step undo/redo.
-- [ ] Add containment preview, **Place inside**, **Remove from container**, nested selection entry/exit, keyboard path, object-list representation, and invalid-target feedback.
-- [ ] Make parent move, resize, delete, duplicate, group, order, copy/paste, comment markers, connectors, annotations, AI projection/tools, and concurrent edits reference-safe.
+- [x] Add validated nest, detach, and reparent commands with eligibility, cycle/orphan prevention, local/world transform conversion, clipping, and one-step undo/redo.
+- [x] Add containment preview, **Place inside**, **Remove from container**, nested selection entry/exit, keyboard path, object-list representation, and invalid-target feedback.
+- [x] Make parent move, resize, delete, duplicate, group, order, copy/paste, comment markers, connectors, annotations, AI projection/tools, and concurrent edits reference-safe.
 - [ ] Add deterministic concurrency tests for simultaneous child edit and parent transform, reparent versus detach, and parent deletion versus child edit.
 - [ ] Validate that a child remains independently editable but moves and proportionally scales with its parent across zoom, reload, reconnect, and undo/redo.
 
@@ -259,6 +259,7 @@ Retain the exact commit SHA, protected CI run, immutable deploy ID/URL, browser 
 - 2026-08-30 — Implementation began on `codex/milestone-7-expanded-shapes-icons` from `main` at `4047c1a` after explicit product-owner approval.
 - 2026-08-30 — Slice 1 added the nine approved shape variants to the existing three-shape palette, deterministic normalized geometry and Konva rendering, the pinned Phosphor dependency and MIT notice, a strict build-time fill-SVG compiler, the versioned local catalog, the icon object discriminator, and a provider-neutral vector-scene boundary. Icon insertion remains hidden until Slice 2 completes.
 - 2026-08-30 — Slice 2 exposed a responsive searchable/category browser with recents, bounded virtualized rendering, keyboard-accessible buttons, click insertion, and drag/drop. Independent icons now use Konva vector paths and the ordinary selection, transform, fill, stroke, opacity, connector, annotation, grouping, ordering, clipboard, history, collaboration, permission, and semantic-grounding paths. Generated catalog names reject invented AI or clipboard keys.
+- 2026-08-30 — Slice 3 added validated `icon.nest` and `icon.detach` commands, with `icon.nest` also providing reparenting. Normalized parent-relative geometry is authoritative at read time so concurrent child edits and parent transforms converge to stable world geometry. The canvas adds full-containment drop preview, **Place inside**, **Remove from container**, parent-first/child-second selection, clipped child rendering, nested object-list affordance, proportional parent movement/resizing, bounded child editing, cascade confirmation/deletion, family ordering, and reference-safe duplication/clipboard/history.
 
 ## Verification evidence
 
@@ -268,6 +269,7 @@ Implementation evidence on 2026-08-30:
 - Slice 1 `pnpm test` passed all 52 files and 244 tests, including new deterministic basic-shape geometry and provider-neutral vector-scene contract coverage.
 - `pnpm icons:generate` compiled 1,512 Phosphor `fill` icons into `public/phosphor-icons/catalog-v2.1.1.json` using the pinned local package and without a runtime third-party request.
 - Slice 2 `pnpm lint`, `pnpm typecheck`, `pnpm test` (53 files, 248 tests), and `pnpm build` passed.
+- Slice 3 `pnpm lint`, `pnpm typecheck`, and `pnpm test` passed 55 files and 256 tests. New coverage proves local/world round trips, proportional transforms, bounds clamping, command validation, detach/reparent, cascade deletion, parent-with-child clipboard remapping, atomic history, and two-client Yjs convergence during simultaneous child movement and parent resize.
 
 Research evidence:
 

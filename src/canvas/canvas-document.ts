@@ -103,8 +103,8 @@ const iconObjectSchema = canvasObjectBaseSchema.extend({
     .strictObject({
       x: finiteNumber,
       y: finiteNumber,
-      width: finiteNumber.nonnegative(),
-      height: finiteNumber.nonnegative(),
+      width: finiteNumber.nonnegative().max(1),
+      height: finiteNumber.nonnegative().max(1),
     })
     .nullable(),
 });
@@ -162,6 +162,29 @@ export const canvasObjectV2Schema = z
     legacyAnnotationObjectSchema,
   ])
   .superRefine((object, context) => {
+    if (object.type === "icon") {
+      if ((object.parentId === null) !== (object.parentRelative === null)) {
+        context.addIssue({
+          code: "custom",
+          path: ["parentRelative"],
+          message: "Parented icons require normalized parent geometry.",
+        });
+      }
+      if (
+        object.parentRelative &&
+        (object.parentRelative.x < 0 ||
+          object.parentRelative.y < 0 ||
+          object.parentRelative.x + object.parentRelative.width > 1 ||
+          object.parentRelative.y + object.parentRelative.height > 1)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["parentRelative"],
+          message: "Nested icon geometry must remain inside its parent.",
+        });
+      }
+      return;
+    }
     if (object.type !== "annotation") return;
     if (object.points.length % 2 !== 0) {
       context.addIssue({
@@ -183,6 +206,26 @@ export const canvasObjectV2Schema = z
   });
 
 export type CanvasObjectV2 = z.infer<typeof canvasObjectV2Schema>;
+
+function resolveParentRelativeGeometry(
+  object: CanvasObjectV2,
+  candidates: ReadonlyMap<string, CanvasObjectV2>,
+): CanvasObjectV2 {
+  if (object.type !== "icon" || !object.parentId || !object.parentRelative)
+    return object;
+  const parent = candidates.get(object.parentId);
+  if (parent?.type !== "shape") return object;
+  return {
+    ...object,
+    geometry: {
+      ...object.geometry,
+      x: parent.geometry.x + object.parentRelative.x * parent.geometry.width,
+      y: parent.geometry.y + object.parentRelative.y * parent.geometry.height,
+      width: object.parentRelative.width * parent.geometry.width,
+      height: object.parentRelative.height * parent.geometry.height,
+    },
+  };
+}
 
 export const canvasDocumentMetadataSchema = z.strictObject({
   schemaVersion: z.literal(2),
@@ -374,7 +417,18 @@ export function putCanvasObjectV2(
 
 export function readCanvasObjectV2(document: Y.Doc, objectId: string) {
   const value = objects(document).get(objectId);
-  return value ? canvasObjectV2Schema.parse(fromSharedValue(value)) : undefined;
+  if (!value) return undefined;
+  const object = canvasObjectV2Schema.parse(fromSharedValue(value));
+  if (object.type !== "icon" || !object.parentId) return object;
+  const parentValue = objects(document).get(object.parentId);
+  if (!parentValue) return object;
+  const parent = canvasObjectV2Schema.safeParse(fromSharedValue(parentValue));
+  return parent.success
+    ? resolveParentRelativeGeometry(
+        object,
+        new Map([[parent.data.id, parent.data]]),
+      )
+    : object;
 }
 
 export function listCanvasObjectsV2(document: Y.Doc) {
@@ -384,7 +438,7 @@ export function listCanvasObjectsV2(document: Y.Doc) {
     .filter((id) => !orderedIds.includes(id))
     .sort();
 
-  return [...orderedIds, ...orphanIds].flatMap((id) => {
+  const parsed = [...orderedIds, ...orphanIds].flatMap((id) => {
     const value = objectMap.get(id);
     if (!value) return [];
     try {
@@ -394,6 +448,10 @@ export function listCanvasObjectsV2(document: Y.Doc) {
       return [];
     }
   });
+  const parsedById = new Map(parsed.map((object) => [object.id, object]));
+  return parsed.map((object) =>
+    resolveParentRelativeGeometry(object, parsedById),
+  );
 }
 
 export function readCanvasOrderV2(document: Y.Doc) {

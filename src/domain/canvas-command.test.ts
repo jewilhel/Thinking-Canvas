@@ -191,6 +191,124 @@ describe("product canvas command boundary", () => {
       start: { kind: "attached", objectId: iconId, anchor: "right" },
     });
   });
+
+  it("nests, proportionally transforms, reparents, and detaches icons", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const parent = shape();
+    const secondParent = {
+      ...shape(secondShapeId),
+      geometry: { x: 300, y: 40, width: 160, height: 90, rotation: 0 },
+    };
+    const child = {
+      ...icon(),
+      geometry: { x: 60, y: 60, width: 40, height: 30, rotation: 0 },
+    };
+    putCanvasObjectV2(document, parent);
+    putCanvasObjectV2(document, secondParent);
+    putCanvasObjectV2(document, child);
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("icon.nest", { objectId: iconId, parentId: shapeId }),
+    );
+    expect(readCanvasObjectV2(document, iconId)).toMatchObject({
+      parentId: shapeId,
+      parentRelative: {
+        x: 0.25,
+        y: 2 / 9,
+        width: 0.25,
+        height: 1 / 3,
+      },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.move", { objectId: shapeId, x: 100, y: 140 }),
+    );
+    expect(readCanvasObjectV2(document, iconId)).toMatchObject({
+      geometry: { x: 140, y: 160, width: 40, height: 30 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.resize", {
+        objectId: shapeId,
+        width: 320,
+        height: 180,
+      }),
+    );
+    expect(readCanvasObjectV2(document, iconId)).toMatchObject({
+      geometry: { x: 180, y: 180, width: 80, height: 60 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("icon.detach", { objectId: iconId }),
+    );
+    expect(readCanvasObjectV2(document, iconId)).toMatchObject({
+      parentId: null,
+      parentRelative: null,
+      geometry: { x: 180, y: 180, width: 80, height: 60 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.move", { objectId: iconId, x: 330, y: 55 }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.resize", {
+        objectId: iconId,
+        width: 60,
+        height: 40,
+      }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("icon.nest", {
+        objectId: iconId,
+        parentId: secondShapeId,
+      }),
+    );
+    expect(readCanvasObjectV2(document, iconId)).toMatchObject({
+      parentId: secondShapeId,
+    });
+  });
+
+  it("rejects partial containment and cascades parent deletion", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, shape());
+    putCanvasObjectV2(document, icon());
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("icon.nest", { objectId: iconId, parentId: shapeId }),
+      ),
+    ).toThrow("fully inside");
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.move", { objectId: iconId, x: 50, y: 50 }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.resize", {
+        objectId: iconId,
+        width: 40,
+        height: 40,
+      }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("icon.nest", { objectId: iconId, parentId: shapeId }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.delete", { objectId: shapeId }),
+    );
+    expect(readCanvasObjectV2(document, shapeId)).toBeUndefined();
+    expect(readCanvasObjectV2(document, iconId)).toBeUndefined();
+  });
   it("creates only canonical new annotations through the command boundary", () => {
     const document = createProductCanvasDocument(canvasId);
     executeProductCanvasCommand(

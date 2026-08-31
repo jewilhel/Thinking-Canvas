@@ -57,7 +57,60 @@ function makeConnector(
   };
 }
 
+function nestedIcon(
+  parentId: string,
+): Extract<CanvasObjectV2, { type: "icon" }> {
+  return {
+    schemaVersion: 2,
+    id: "99999999-9999-4999-8999-999999999999",
+    canvasId,
+    createdBy: actorId,
+    createdAt: now,
+    updatedAt: now,
+    groupId: null,
+    type: "icon",
+    catalog: "phosphor",
+    catalogVersion: "2.1.1",
+    iconName: "brain",
+    iconVariant: "fill",
+    parentId,
+    parentRelative: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+    geometry: { x: 60, y: 62.5, width: 80, height: 45, rotation: 0 },
+    style: {
+      fill: "#7c3aed",
+      outline: "#312e81",
+      outlineWidth: 2,
+      fontFamily: "Inter, sans-serif",
+      fontSize: 16,
+    },
+  };
+}
+
 describe("canvas clipboard", () => {
+  it("duplicates a parent with its child and detaches a copied child alone", () => {
+    const parent = shape("33333333-3333-4333-8333-333333333333");
+    const child = nestedIcon(parent.id);
+    const payload = createCanvasClipboardPayload([parent, child], [parent.id]);
+    expect(payload.objects).toHaveLength(2);
+
+    const duplicated = remapCanvasClipboard(payload, {
+      canvasId,
+      actorId,
+      issuedAt: now,
+    });
+    const duplicatedParent = duplicated.find(
+      (object) => object.type === "shape",
+    )!;
+    expect(duplicated.find((object) => object.type === "icon")).toMatchObject({
+      parentId: duplicatedParent.id,
+      parentRelative: child.parentRelative,
+      geometry: { x: 92, y: 94.5, width: 80, height: 45 },
+    });
+
+    expect(
+      createCanvasClipboardPayload([parent, child], [child.id]).objects[0],
+    ).toMatchObject({ parentId: null, parentRelative: null });
+  });
   it("duplicates canonical annotations without losing editable stroke data", () => {
     const source: CanvasObjectV2 = {
       schemaVersion: 2,

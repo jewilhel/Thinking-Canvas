@@ -139,6 +139,11 @@ export function buildCanvasObjectDetails(
     adjacency.get(annotation.id)?.add(annotation.attachedObjectId);
     adjacency.get(annotation.attachedObjectId)?.add(annotation.id);
   }
+  for (const icon of objects) {
+    if (icon.type !== "icon" || !icon.parentId) continue;
+    adjacency.get(icon.id)?.add(icon.parentId);
+    adjacency.get(icon.parentId)?.add(icon.id);
+  }
   return objects.map((object, orderIndex) =>
     canvasObjectDetailSchema.parse({
       id: object.id,

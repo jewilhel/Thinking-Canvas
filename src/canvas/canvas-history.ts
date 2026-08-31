@@ -146,7 +146,33 @@ export function applyCanvasHistoryEntry(
         continue;
       }
 
+      const parentRelationshipChanged =
+        expected.type === "icon" &&
+        desired.type === "icon" &&
+        current.type === "icon" &&
+        (expected.parentId !== desired.parentId ||
+          !equal(expected.parentRelative, desired.parentRelative));
+      if (parentRelationshipChanged) {
+        if (
+          current.parentId !== expected.parentId ||
+          !equal(current.parentRelative, expected.parentRelative)
+        ) {
+          conflicts.push(`${objectId}:parent`);
+        } else {
+          putCanvasObjectV2(document, {
+            ...current,
+            parentId: desired.parentId,
+            parentRelative: desired.parentRelative,
+          });
+        }
+      }
+
       for (const path of changedPaths(expected, desired)) {
+        if (
+          parentRelationshipChanged &&
+          (path[0] === "parentId" || path[0] === "parentRelative")
+        )
+          continue;
         const expectedValue = readPath(expected, path);
         const desiredValue = readPath(desired, path);
         const currentValue = readPath(
