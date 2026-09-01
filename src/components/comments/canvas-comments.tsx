@@ -1205,9 +1205,9 @@ export function CanvasComments({
       setSelectedThreadId(null);
     }
 
-    document.addEventListener("pointerdown", dismissThreadOutside);
+    window.addEventListener("pointerdown", dismissThreadOutside, true);
     return () =>
-      document.removeEventListener("pointerdown", dismissThreadOutside);
+      window.removeEventListener("pointerdown", dismissThreadOutside, true);
   }, [selectedThreadId]);
   useEffect(() => {
     if (!composerOpen) return;
@@ -1228,9 +1228,9 @@ export function CanvasComments({
       onSelectTargets([]);
     }
 
-    document.addEventListener("pointerdown", cancelComposerOutside);
+    window.addEventListener("pointerdown", cancelComposerOutside, true);
     return () =>
-      document.removeEventListener("pointerdown", cancelComposerOutside);
+      window.removeEventListener("pointerdown", cancelComposerOutside, true);
   }, [composerOpen, onSelectTargets]);
 
   function closeComposer() {
