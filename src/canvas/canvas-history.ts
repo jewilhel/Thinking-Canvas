@@ -10,6 +10,7 @@ import {
   setCanvasOrderV2,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
+import { isContainableObject } from "@/canvas/icon-containment";
 import {
   executeProductCanvasCommand,
   type ProductCanvasCommand,
@@ -147,11 +148,12 @@ export function applyCanvasHistoryEntry(
       }
 
       const parentRelationshipChanged =
-        expected.type === "icon" &&
-        desired.type === "icon" &&
-        current.type === "icon" &&
+        isContainableObject(expected) &&
+        isContainableObject(desired) &&
+        isContainableObject(current) &&
         (expected.parentId !== desired.parentId ||
-          !equal(expected.parentRelative, desired.parentRelative));
+          !equal(expected.parentRelative, desired.parentRelative) ||
+          !equal(expected.childLayout, desired.childLayout));
       if (parentRelationshipChanged) {
         if (
           current.parentId !== expected.parentId ||
@@ -163,6 +165,7 @@ export function applyCanvasHistoryEntry(
             ...current,
             parentId: desired.parentId,
             parentRelative: desired.parentRelative,
+            childLayout: desired.childLayout,
           });
         }
       }
@@ -170,7 +173,9 @@ export function applyCanvasHistoryEntry(
       for (const path of changedPaths(expected, desired)) {
         if (
           parentRelationshipChanged &&
-          (path[0] === "parentId" || path[0] === "parentRelative")
+          (path[0] === "parentId" ||
+            path[0] === "parentRelative" ||
+            path[0] === "childLayout")
         )
           continue;
         const expectedValue = readPath(expected, path);

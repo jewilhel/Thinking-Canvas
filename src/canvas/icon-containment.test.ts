@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 import {
+  boundParentGeometryToChildren,
+  childRelativeAfterParentResize,
   childWorldGeometry,
   clampIconGeometryToParent,
   fullyContains,
@@ -73,5 +75,73 @@ describe("icon containment geometry", () => {
     );
     expect(clamped).toMatchObject({ x: 100, y: 320, width: 400, height: 80 });
     expect(fullyContains(parent, clamped)).toBe(true);
+  });
+
+  it("applies position and dimension layout choices independently", () => {
+    const resizedParent = {
+      ...parent,
+      geometry: { ...parent.geometry, width: 800, height: 400 },
+    };
+    const fixedChild = {
+      ...child,
+      childLayout: {
+        pinPosition: false,
+        scaleWidth: false,
+        scaleHeight: false,
+      },
+    };
+    const relative = childRelativeAfterParentResize(
+      fixedChild,
+      parent,
+      resizedParent,
+    );
+    expect(
+      childWorldGeometry(
+        { ...fixedChild, parentRelative: relative },
+        resizedParent,
+      ),
+    ).toMatchObject({
+      x: 200,
+      y: 250,
+      width: 100,
+      height: 100,
+    });
+
+    const pinnedWidthOnly = {
+      ...fixedChild,
+      childLayout: {
+        pinPosition: true,
+        scaleWidth: true,
+        scaleHeight: false,
+      },
+    };
+    const pinnedRelative = childRelativeAfterParentResize(
+      pinnedWidthOnly,
+      parent,
+      resizedParent,
+    );
+    expect(
+      childWorldGeometry(
+        { ...pinnedWidthOnly, parentRelative: pinnedRelative },
+        resizedParent,
+      ),
+    ).toMatchObject({ x: 300, y: 300, width: 200, height: 100 });
+  });
+
+  it("bounds modifier resize at unchanged child extents", () => {
+    expect(
+      boundParentGeometryToChildren(
+        parent,
+        { ...parent.geometry, width: 150 },
+        [child],
+      ),
+    ).toMatchObject({ x: 100, width: 200 });
+    expect(
+      boundParentGeometryToChildren(
+        parent,
+        { ...parent.geometry, x: 250, width: 250 },
+        [child],
+      ),
+    ).toMatchObject({ x: 200, width: 300 });
   });
 });

@@ -4,6 +4,7 @@ import * as Y from "yjs";
 import {
   createProductCanvasDocument,
   listCanvasObjectsV2,
+  migrateLegacyShapeLabels,
   putCanvasObjectV2,
   readCanvasDocumentMetadata,
   readCanvasObjectV2,
@@ -75,6 +76,32 @@ describe("production canvas document", () => {
       canvasId,
     });
     expect(listCanvasObjectsV2(document)).toEqual([]);
+  });
+
+  it("migrates embedded shape text into one stable first-class label child", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, makeObject());
+
+    expect(migrateLegacyShapeLabels(document)).toBe(1);
+    expect(migrateLegacyShapeLabels(document)).toBe(0);
+
+    const objects = listCanvasObjectsV2(document);
+    const parent = objects.find((object) => object.id === objectId);
+    const label = objects.find(
+      (object) => object.type === "text" && object.childRole === "shape-label",
+    );
+    expect(parent).toMatchObject({ type: "shape", text: "" });
+    expect(label).toMatchObject({
+      type: "text",
+      text: "Shared idea",
+      parentId: objectId,
+      childLayout: {
+        pinPosition: true,
+        scaleWidth: true,
+        scaleHeight: true,
+      },
+      geometry: { x: 52, y: 72, width: 156, height: 72, rotation: 0 },
+    });
   });
 
   it("upgrades a legacy object without changing its identity or geometry", () => {

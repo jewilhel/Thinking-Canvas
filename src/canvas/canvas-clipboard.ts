@@ -5,6 +5,7 @@ import {
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
 import { resolveConnectorEndpointV2 } from "@/canvas/geometry";
+import { isContainableObject } from "@/canvas/icon-containment";
 
 export const canvasClipboardSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -19,13 +20,19 @@ export function createCanvasClipboardPayload(
   selectedObjectIds: string[],
 ) {
   const selectedIds = new Set(selectedObjectIds);
-  for (const object of allObjects) {
-    if (
-      object.type === "icon" &&
-      object.parentId &&
-      selectedIds.has(object.parentId)
-    ) {
-      selectedIds.add(object.id);
+  let addedChild = true;
+  while (addedChild) {
+    addedChild = false;
+    for (const object of allObjects) {
+      if (
+        isContainableObject(object) &&
+        object.parentId &&
+        selectedIds.has(object.parentId) &&
+        !selectedIds.has(object.id)
+      ) {
+        selectedIds.add(object.id);
+        addedChild = true;
+      }
     }
   }
   const objectsById = new Map(allObjects.map((object) => [object.id, object]));
@@ -60,9 +67,15 @@ export function createCanvasClipboardPayload(
           }
         : { ...object, groupId };
     }
-    if (object.type === "icon") {
+    if (isContainableObject(object)) {
       return object.parentId && !selectedIds.has(object.parentId)
-        ? { ...object, groupId, parentId: null, parentRelative: null }
+        ? {
+            ...object,
+            groupId,
+            parentId: null,
+            parentRelative: null,
+            childLayout: null,
+          }
         : { ...object, groupId };
     }
     if (object.type !== "connector") return { ...object, groupId };
@@ -150,10 +163,10 @@ export function remapCanvasClipboard(
         attachedObjectId,
       });
     }
-    if (object.type === "icon") {
+    if (isContainableObject(object)) {
       const parentId = object.parentId ? objectIds.get(object.parentId) : null;
       if (object.parentId && !parentId) {
-        throw new Error("Clipboard icon references an external parent.");
+        throw new Error("Clipboard object references an external parent.");
       }
       return canvasObjectV2Schema.parse({ ...shared, parentId });
     }

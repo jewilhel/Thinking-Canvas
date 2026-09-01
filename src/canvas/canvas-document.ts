@@ -69,6 +69,26 @@ const connectorEndpointSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
+const parentRelativeSchema = z.strictObject({
+  x: finiteNumber,
+  y: finiteNumber,
+  width: finiteNumber.nonnegative().max(1),
+  height: finiteNumber.nonnegative().max(1),
+  rotation: finiteNumber.optional(),
+});
+
+const childLayoutSchema = z.strictObject({
+  pinPosition: z.boolean(),
+  scaleWidth: z.boolean(),
+  scaleHeight: z.boolean(),
+});
+
+const containmentFields = {
+  parentId: uuid.nullable().optional(),
+  parentRelative: parentRelativeSchema.nullable().optional(),
+  childLayout: childLayoutSchema.nullable().optional(),
+};
+
 const shapeObjectSchema = canvasObjectBaseSchema.extend({
   type: z.literal("shape"),
   shape: z.enum([
@@ -86,6 +106,7 @@ const shapeObjectSchema = canvasObjectBaseSchema.extend({
     "cylinder",
   ]),
   text: z.string().max(10_000),
+  ...containmentFields,
 });
 
 const iconObjectSchema = canvasObjectBaseSchema.extend({
@@ -98,20 +119,14 @@ const iconObjectSchema = canvasObjectBaseSchema.extend({
     .max(100)
     .refine((name) => phosphorIconNames.has(name), "Unknown icon name."),
   iconVariant: z.literal("fill"),
-  parentId: uuid.nullable(),
-  parentRelative: z
-    .strictObject({
-      x: finiteNumber,
-      y: finiteNumber,
-      width: finiteNumber.nonnegative().max(1),
-      height: finiteNumber.nonnegative().max(1),
-    })
-    .nullable(),
+  ...containmentFields,
 });
 
 const textObjectSchema = canvasObjectBaseSchema.extend({
   type: z.literal("text"),
   text: z.string().max(100_000),
+  childRole: z.literal("shape-label").nullable().optional(),
+  ...containmentFields,
 });
 
 const connectorObjectSchema = canvasObjectBaseSchema.extend({
@@ -162,25 +177,31 @@ export const canvasObjectV2Schema = z
     legacyAnnotationObjectSchema,
   ])
   .superRefine((object, context) => {
-    if (object.type === "icon") {
-      if ((object.parentId === null) !== (object.parentRelative === null)) {
+    if (
+      object.type === "shape" ||
+      object.type === "icon" ||
+      object.type === "text"
+    ) {
+      const parentId = object.parentId ?? null;
+      const parentRelative = object.parentRelative ?? null;
+      if ((parentId === null) !== (parentRelative === null)) {
         context.addIssue({
           code: "custom",
           path: ["parentRelative"],
-          message: "Parented icons require normalized parent geometry.",
+          message: "Parented objects require normalized parent geometry.",
         });
       }
       if (
-        object.parentRelative &&
-        (object.parentRelative.x < 0 ||
-          object.parentRelative.y < 0 ||
-          object.parentRelative.x + object.parentRelative.width > 1 ||
-          object.parentRelative.y + object.parentRelative.height > 1)
+        parentRelative &&
+        (parentRelative.x < 0 ||
+          parentRelative.y < 0 ||
+          parentRelative.x + parentRelative.width > 1 ||
+          parentRelative.y + parentRelative.height > 1)
       ) {
         context.addIssue({
           code: "custom",
           path: ["parentRelative"],
-          message: "Nested icon geometry must remain inside its parent.",
+          message: "Nested object geometry must remain inside its parent.",
         });
       }
       return;
@@ -211,18 +232,31 @@ function resolveParentRelativeGeometry(
   object: CanvasObjectV2,
   candidates: ReadonlyMap<string, CanvasObjectV2>,
 ): CanvasObjectV2 {
-  if (object.type !== "icon" || !object.parentId || !object.parentRelative)
+  if (
+    (object.type !== "shape" &&
+      object.type !== "icon" &&
+      object.type !== "text") ||
+    !object.parentId ||
+    !object.parentRelative
+  )
     return object;
   const parent = candidates.get(object.parentId);
   if (parent?.type !== "shape") return object;
+  const localX = object.parentRelative.x * parent.geometry.width;
+  const localY = object.parentRelative.y * parent.geometry.height;
+  const radians = (parent.geometry.rotation * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
   return {
     ...object,
     geometry: {
       ...object.geometry,
-      x: parent.geometry.x + object.parentRelative.x * parent.geometry.width,
-      y: parent.geometry.y + object.parentRelative.y * parent.geometry.height,
+      x: parent.geometry.x + localX * cos - localY * sin,
+      y: parent.geometry.y + localX * sin + localY * cos,
       width: object.parentRelative.width * parent.geometry.width,
       height: object.parentRelative.height * parent.geometry.height,
+      rotation:
+        parent.geometry.rotation + (object.parentRelative.rotation ?? 0),
     },
   };
 }
@@ -416,19 +450,42 @@ export function putCanvasObjectV2(
 }
 
 export function readCanvasObjectV2(document: Y.Doc, objectId: string) {
-  const value = objects(document).get(objectId);
-  if (!value) return undefined;
-  const object = canvasObjectV2Schema.parse(fromSharedValue(value));
-  if (object.type !== "icon" || !object.parentId) return object;
-  const parentValue = objects(document).get(object.parentId);
-  if (!parentValue) return object;
-  const parent = canvasObjectV2Schema.safeParse(fromSharedValue(parentValue));
-  return parent.success
-    ? resolveParentRelativeGeometry(
-        object,
-        new Map([[parent.data.id, parent.data]]),
-      )
-    : object;
+  const initialValue = objects(document).get(objectId);
+  if (!initialValue) return undefined;
+  const initial = canvasObjectV2Schema.parse(fromSharedValue(initialValue));
+  const candidates = new Map<string, CanvasObjectV2>();
+  candidates.set(initial.id, initial);
+  let nextId: string | null =
+    (initial.type === "shape" ||
+      initial.type === "icon" ||
+      initial.type === "text") &&
+    initial.parentId
+      ? initial.parentId
+      : null;
+  while (nextId && !candidates.has(nextId)) {
+    const value = objects(document).get(nextId);
+    if (!value) break;
+    const parsed = canvasObjectV2Schema.safeParse(fromSharedValue(value));
+    if (!parsed.success) break;
+    candidates.set(parsed.data.id, parsed.data);
+    nextId =
+      (parsed.data.type === "shape" ||
+        parsed.data.type === "icon" ||
+        parsed.data.type === "text") &&
+      parsed.data.parentId
+        ? parsed.data.parentId
+        : null;
+  }
+  const object = candidates.get(objectId)!;
+  const lineage = [...candidates.values()].reverse();
+  const resolved = new Map<string, CanvasObjectV2>();
+  for (const candidate of lineage) {
+    resolved.set(
+      candidate.id,
+      resolveParentRelativeGeometry(candidate, resolved),
+    );
+  }
+  return resolved.get(objectId) ?? object;
 }
 
 export function listCanvasObjectsV2(document: Y.Doc) {
@@ -449,9 +506,119 @@ export function listCanvasObjectsV2(document: Y.Doc) {
     }
   });
   const parsedById = new Map(parsed.map((object) => [object.id, object]));
-  return parsed.map((object) =>
-    resolveParentRelativeGeometry(object, parsedById),
+  const resolvedById = new Map<string, CanvasObjectV2>();
+  function resolveObject(object: CanvasObjectV2, active = new Set<string>()) {
+    const existing = resolvedById.get(object.id);
+    if (existing) return existing;
+    if (
+      active.has(object.id) ||
+      (object.type !== "shape" &&
+        object.type !== "icon" &&
+        object.type !== "text") ||
+      !object.parentId
+    ) {
+      resolvedById.set(object.id, object);
+      return object;
+    }
+    const parent = parsedById.get(object.parentId);
+    if (!parent) return object;
+    const nextActive = new Set(active).add(object.id);
+    const resolvedParent = resolveObject(parent, nextActive);
+    const resolved = resolveParentRelativeGeometry(
+      object,
+      new Map([[resolvedParent.id, resolvedParent]]),
+    );
+    resolvedById.set(object.id, resolved);
+    return resolved;
+  }
+  return parsed.map((object) => resolveObject(object));
+}
+
+function legacyShapeLabelId(shapeId: string) {
+  const source = shapeId.replaceAll("-", "");
+  const mask = "9e3779b97f4a4c1585ebca6b2f4d3817";
+  const mixed = [...source].map((value, index) =>
+    (Number.parseInt(value, 16) ^ Number.parseInt(mask[index]!, 16)).toString(
+      16,
+    ),
   );
+  mixed[12] = "4";
+  mixed[16] = "8";
+  return `${mixed.slice(0, 8).join("")}-${mixed.slice(8, 12).join("")}-${mixed.slice(12, 16).join("")}-${mixed.slice(16, 20).join("")}-${mixed.slice(20).join("")}`;
+}
+
+export function migrateLegacyShapeLabels(document: Y.Doc) {
+  const current = listCanvasObjectsV2(document);
+  const existingLabelParents = new Set(
+    current.flatMap((object) =>
+      object.type === "text" &&
+      object.childRole === "shape-label" &&
+      object.parentId
+        ? [object.parentId]
+        : [],
+    ),
+  );
+  const legacyShapes = current.flatMap((object) =>
+    object.type === "shape" &&
+    object.text.length > 0 &&
+    !existingLabelParents.has(object.id)
+      ? [object]
+      : [],
+  );
+  if (!legacyShapes.length) return 0;
+
+  document.transact(() => {
+    for (const shape of legacyShapes) {
+      const insetX = Math.min(12, shape.geometry.width / 4);
+      const insetY = Math.min(12, shape.geometry.height / 4);
+      const relative = {
+        x: insetX / Math.max(shape.geometry.width, Number.EPSILON),
+        y: insetY / Math.max(shape.geometry.height, Number.EPSILON),
+        width:
+          Math.max(0, shape.geometry.width - insetX * 2) /
+          Math.max(shape.geometry.width, Number.EPSILON),
+        height:
+          Math.max(0, shape.geometry.height - insetY * 2) /
+          Math.max(shape.geometry.height, Number.EPSILON),
+        rotation: 0,
+      };
+      const radians = (shape.geometry.rotation * Math.PI) / 180;
+      const localX = insetX * Math.cos(radians) - insetY * Math.sin(radians);
+      const localY = insetX * Math.sin(radians) + insetY * Math.cos(radians);
+      putCanvasObjectV2(document, {
+        schemaVersion: 2,
+        id: legacyShapeLabelId(shape.id),
+        canvasId: shape.canvasId,
+        createdBy: shape.createdBy,
+        createdAt: shape.createdAt,
+        updatedAt: shape.updatedAt,
+        type: "text",
+        text: shape.text,
+        childRole: "shape-label",
+        parentId: shape.id,
+        parentRelative: relative,
+        childLayout: {
+          pinPosition: true,
+          scaleWidth: true,
+          scaleHeight: true,
+        },
+        geometry: {
+          x: shape.geometry.x + localX,
+          y: shape.geometry.y + localY,
+          width: Math.max(24, shape.geometry.width - insetX * 2),
+          height: Math.max(24, shape.geometry.height - insetY * 2),
+          rotation: shape.geometry.rotation,
+        },
+        style: {
+          ...shape.style,
+          fill: null,
+          outlineWidth: 0,
+        },
+      });
+      setCanvasObjectField(document, shape.id, ["text"], "");
+    }
+  }, "canvas.shape-labels.migrate");
+  return legacyShapes.length;
 }
 
 export function readCanvasOrderV2(document: Y.Doc) {
