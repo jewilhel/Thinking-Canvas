@@ -178,7 +178,19 @@ const layoutObjectCommand = commandBase.extend({
   type: z.literal("object.layout"),
   payload: z.strictObject({
     objectId: uuid,
-    pinPosition: z.boolean(),
+    pinPosition: z.boolean().optional(),
+    horizontalPosition: z.enum(["fixed", "pin", "center"]).optional(),
+    verticalPosition: z.enum(["fixed", "pin", "center"]).optional(),
+    scaleWidth: z.boolean(),
+    scaleHeight: z.boolean(),
+  }),
+});
+const layoutGroupCommand = commandBase.extend({
+  type: z.literal("group.layout"),
+  payload: z.strictObject({
+    groupId: uuid,
+    horizontalPosition: z.enum(["fixed", "pin", "center"]),
+    verticalPosition: z.enum(["fixed", "pin", "center"]),
     scaleWidth: z.boolean(),
     scaleHeight: z.boolean(),
   }),
@@ -278,6 +290,7 @@ export const productCanvasMutationSchema = z.discriminatedUnion("type", [
   nestObjectCommand.omit(trustedCommandFields),
   detachObjectCommand.omit(trustedCommandFields),
   layoutObjectCommand.omit(trustedCommandFields),
+  layoutGroupCommand.omit(trustedCommandFields),
   rotateObjectCommand.omit(trustedCommandFields),
   flipObjectCommand.omit(trustedCommandFields),
   transformObjectCommand.omit(trustedCommandFields),
@@ -310,6 +323,7 @@ export const productCanvasCommandSchema = z
     nestObjectCommand,
     detachObjectCommand,
     layoutObjectCommand,
+    layoutGroupCommand,
     rotateObjectCommand,
     flipObjectCommand,
     transformObjectCommand,
@@ -1132,6 +1146,24 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
       return;
     }
 
+    if (command.type === "group.layout") {
+      const group = readCanvasGroupV2(document, command.payload.groupId);
+      if (!group?.parentId) {
+        throw new ProductCanvasCommandConflictError(
+          "Layout properties require a nested group.",
+        );
+      }
+      setCanvasGroupField(document, group.id, ["childLayout"], {
+        horizontalPosition: command.payload.horizontalPosition,
+        verticalPosition: command.payload.verticalPosition,
+        scaleWidth: command.payload.scaleWidth,
+        scaleHeight: command.payload.scaleHeight,
+      });
+      setCanvasGroupField(document, group.id, ["updatedAt"], command.issuedAt);
+      affectedGroupIds.add(group.id);
+      return;
+    }
+
     if (command.type === "object.reorder") {
       const object = requireObject(document, command.payload.objectId);
       const currentOrder = readCanvasOrderV2(document);
@@ -1266,7 +1298,12 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         );
       }
       setCanvasObjectField(document, child.id, ["childLayout"], {
-        pinPosition: command.payload.pinPosition,
+        horizontalPosition:
+          command.payload.horizontalPosition ??
+          (command.payload.pinPosition === false ? "fixed" : "pin"),
+        verticalPosition:
+          command.payload.verticalPosition ??
+          (command.payload.pinPosition === false ? "fixed" : "pin"),
         scaleWidth: command.payload.scaleWidth,
         scaleHeight: command.payload.scaleHeight,
       });

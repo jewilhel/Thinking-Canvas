@@ -13,10 +13,21 @@ export type IconObject = Extract<CanvasObjectV2, { type: "icon" }>;
 export type IconParent = ObjectParent;
 
 export const defaultChildLayout: ChildLayout = {
-  pinPosition: true,
+  horizontalPosition: "pin",
+  verticalPosition: "pin",
   scaleWidth: true,
   scaleHeight: true,
 };
+
+export function childPositionMode(
+  layout: ChildLayout,
+  axis: "horizontal" | "vertical",
+) {
+  const explicit =
+    axis === "horizontal" ? layout.horizontalPosition : layout.verticalPosition;
+  if (explicit) return explicit;
+  return layout.pinPosition === false ? "fixed" : "pin";
+}
 
 export function isContainableObject(
   object: CanvasObjectV2,
@@ -264,24 +275,34 @@ export function childRelativeAfterParentResize(
     child.parentRelative ??
     parentRelativeGeometry(child.geometry, previousParent);
   const layout = child.childLayout ?? defaultChildLayout;
+  const width = layout.scaleWidth
+    ? relative.width
+    : (relative.width * previousParent.geometry.width) /
+      Math.max(nextParent.geometry.width, Number.EPSILON);
+  const height = layout.scaleHeight
+    ? relative.height
+    : (relative.height * previousParent.geometry.height) /
+      Math.max(nextParent.geometry.height, Number.EPSILON);
+  const horizontal = childPositionMode(layout, "horizontal");
+  const vertical = childPositionMode(layout, "vertical");
   return {
     ...relative,
-    x: layout.pinPosition
-      ? relative.x
-      : (relative.x * previousParent.geometry.width) /
-        Math.max(nextParent.geometry.width, Number.EPSILON),
-    y: layout.pinPosition
-      ? relative.y
-      : (relative.y * previousParent.geometry.height) /
-        Math.max(nextParent.geometry.height, Number.EPSILON),
-    width: layout.scaleWidth
-      ? relative.width
-      : (relative.width * previousParent.geometry.width) /
-        Math.max(nextParent.geometry.width, Number.EPSILON),
-    height: layout.scaleHeight
-      ? relative.height
-      : (relative.height * previousParent.geometry.height) /
-        Math.max(nextParent.geometry.height, Number.EPSILON),
+    x:
+      horizontal === "center"
+        ? 0.5 - width / 2
+        : horizontal === "pin"
+          ? relative.x
+          : (relative.x * previousParent.geometry.width) /
+            Math.max(nextParent.geometry.width, Number.EPSILON),
+    y:
+      vertical === "center"
+        ? 0.5 - height / 2
+        : vertical === "pin"
+          ? relative.y
+          : (relative.y * previousParent.geometry.height) /
+            Math.max(nextParent.geometry.height, Number.EPSILON),
+    width,
+    height,
   };
 }
 

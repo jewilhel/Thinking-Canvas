@@ -337,7 +337,8 @@ describe("product canvas command boundary", () => {
     expect(readCanvasObjectV2(document, textId)).toMatchObject({
       parentId: shapeId,
       childLayout: {
-        pinPosition: true,
+        horizontalPosition: "pin",
+        verticalPosition: "pin",
         scaleWidth: false,
         scaleHeight: true,
       },
@@ -1113,6 +1114,22 @@ describe("product canvas command boundary", () => {
     expect(readCanvasGroupV2(document, groupId)).toMatchObject({
       parentId: parent.id,
       childLayout: { scaleWidth: true, scaleHeight: true },
+    });
+    executeProductCanvasCommand(
+      document,
+      baseCommand("group.layout", {
+        groupId,
+        horizontalPosition: "center",
+        verticalPosition: "pin",
+        scaleWidth: false,
+        scaleHeight: true,
+      }),
+    );
+    expect(readCanvasGroupV2(document, groupId)?.childLayout).toEqual({
+      horizontalPosition: "center",
+      verticalPosition: "pin",
+      scaleWidth: false,
+      scaleHeight: true,
     });
     executeProductCanvasCommand(
       document,

@@ -95,6 +95,8 @@ import {
 } from "@/canvas/phosphor-icon-catalog";
 import {
   childWorldGeometry,
+  childPositionMode,
+  childRelativeAfterParentResize,
   defaultChildLayout,
   fullyContains,
   geometryClipPolygonInLocalSpace,
@@ -536,10 +538,6 @@ export function ProductCanvas({
     });
     return previewed;
   }, [dragPreviewPositions, orderedObjects, selectionTransformPreviewObjects]);
-  const displayObjectsById = useMemo(
-    () => new Map(displayObjects.map((object) => [object.id, object])),
-    [displayObjects],
-  );
   const connectorLayoutObjectsById = useMemo(
     () =>
       new Map(
@@ -3122,6 +3120,65 @@ export function ProductCanvas({
       ...current,
       [object.id]: geometry,
     }));
+    if (isObjectParent(object)) {
+      const nextParent = { ...object, geometry };
+      const preserveChildren =
+        "metaKey" in event.evt &&
+        "ctrlKey" in event.evt &&
+        hasContainmentModifier(
+          {
+            metaKey: event.evt.metaKey === true,
+            ctrlKey: event.evt.ctrlKey === true,
+          },
+          navigator.platform,
+        );
+      const previews: Record<string, CanvasObjectV2> = {};
+      for (const child of objects) {
+        if (!isContainableObject(child) || child.parentId !== object.id)
+          continue;
+        const relative = preserveChildren
+          ? parentRelativeGeometry(child.geometry, nextParent)
+          : childRelativeAfterParentResize(child, object, nextParent);
+        previews[child.id] = {
+          ...child,
+          geometry: childWorldGeometry(
+            { ...child, parentRelative: relative },
+            nextParent,
+          ),
+        };
+      }
+      for (const group of groups.filter(
+        (candidate) => candidate.parentId === object.id,
+      )) {
+        const relative = preserveChildren
+          ? parentRelativeGeometry(group.geometry, nextParent)
+          : childRelativeAfterParentResize(group, object, nextParent);
+        const nextGroupGeometry = childWorldGeometry(
+          { ...group, parentRelative: relative },
+          nextParent,
+        );
+        const members = objects.filter(
+          (candidate) => candidate.groupId === group.id,
+        );
+        const rotatedMembers = rotateSelectionObjects(
+          members,
+          group.geometry,
+          nextGroupGeometry.rotation,
+        );
+        const rotatedFrame = rotateGeometryAroundCenter(
+          group.geometry,
+          nextGroupGeometry.rotation,
+        );
+        for (const member of transformSelectionObjects(
+          rotatedMembers,
+          rotatedFrame,
+          nextGroupGeometry,
+        )) {
+          previews[member.id] = member;
+        }
+      }
+      setSelectionTransformPreviewObjects(previews);
+    }
     updateLiveResizeTextLayout(
       node,
       object,
@@ -3197,6 +3254,7 @@ export function ProductCanvas({
       delete next[object.id];
       return next;
     });
+    setSelectionTransformPreviewObjects({});
   }
 
   function beginCornerRotation(event: React.PointerEvent<HTMLButtonElement>) {
@@ -3510,7 +3568,7 @@ export function ProductCanvas({
       selectedIds.includes(object.id);
     const displayedParent =
       isContainableObject(object) && nestedParentId
-        ? displayObjectsById.get(nestedParentId)
+        ? connectorLayoutObjectsById.get(nestedParentId)
         : undefined;
     const nestedClipPolygon =
       displayedParent?.type === "shape"
@@ -4567,48 +4625,134 @@ export function ProductCanvas({
                           ) : null;
                         })()
                       : null}
+                    {selectedGroup?.parentId ||
+                    (isContainableObject(selectedObject) &&
+                      selectedIds.length === 1 &&
+                      selectedObject.parentId)
+                      ? (() => {
+                          const layout =
+                            selectedGroup?.childLayout ??
+                            (isContainableObject(selectedObject)
+                              ? selectedObject.childLayout
+                              : null) ??
+                            defaultChildLayout;
+                          const horizontal = childPositionMode(
+                            layout,
+                            "horizontal",
+                          );
+                          const vertical = childPositionMode(
+                            layout,
+                            "vertical",
+                          );
+                          const updateLayout = (
+                            next: typeof defaultChildLayout,
+                          ) =>
+                            selectedGroup
+                              ? runCommand("group.layout", {
+                                  groupId: selectedGroup.id,
+                                  ...next,
+                                })
+                              : runCommand("object.layout", {
+                                  objectId: selectedObject.id,
+                                  ...next,
+                                });
+                          return (
+                            <fieldset className="col-span-2 rounded-lg border border-white/15 p-2">
+                              <legend className="px-1 text-xs text-zinc-300">
+                                Child layout
+                              </legend>
+                              <div className="grid gap-3 text-xs text-white">
+                                {(
+                                  [
+                                    ["Horizontal", horizontal],
+                                    ["Vertical", vertical],
+                                  ] as const
+                                ).map(([label, value]) => (
+                                  <div key={label}>
+                                    <span className="text-zinc-300">
+                                      {label}
+                                    </span>
+                                    <div className="mt-1 grid grid-cols-3 gap-1">
+                                      {(
+                                        ["fixed", "pin", "center"] as const
+                                      ).map((mode) => (
+                                        <Button
+                                          key={mode}
+                                          type="button"
+                                          size="sm"
+                                          variant={
+                                            value === mode
+                                              ? "secondary"
+                                              : "outline"
+                                          }
+                                          aria-pressed={value === mode}
+                                          onClick={() =>
+                                            updateLayout({
+                                              horizontalPosition:
+                                                label === "Horizontal"
+                                                  ? mode
+                                                  : horizontal,
+                                              verticalPosition:
+                                                label === "Vertical"
+                                                  ? mode
+                                                  : vertical,
+                                              scaleWidth: layout.scaleWidth,
+                                              scaleHeight: layout.scaleHeight,
+                                            })
+                                          }
+                                        >
+                                          {mode[0]!.toUpperCase() +
+                                            mode.slice(1)}
+                                        </Button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                                <div className="grid grid-cols-2 gap-1">
+                                  {(
+                                    [
+                                      ["scaleWidth", "Scale width"],
+                                      ["scaleHeight", "Scale height"],
+                                    ] as const
+                                  ).map(([property, label]) => (
+                                    <Button
+                                      key={property}
+                                      type="button"
+                                      size="sm"
+                                      variant={
+                                        layout[property]
+                                          ? "secondary"
+                                          : "outline"
+                                      }
+                                      aria-pressed={layout[property]}
+                                      onClick={() =>
+                                        updateLayout({
+                                          horizontalPosition: horizontal,
+                                          verticalPosition: vertical,
+                                          scaleWidth:
+                                            property === "scaleWidth"
+                                              ? !layout.scaleWidth
+                                              : layout.scaleWidth,
+                                          scaleHeight:
+                                            property === "scaleHeight"
+                                              ? !layout.scaleHeight
+                                              : layout.scaleHeight,
+                                        })
+                                      }
+                                    >
+                                      {label}
+                                    </Button>
+                                  ))}
+                                </div>
+                              </div>
+                            </fieldset>
+                          );
+                        })()
+                      : null}
                     {isContainableObject(selectedObject) &&
                     selectedIds.length === 1 &&
                     selectedObject.parentId ? (
                       <>
-                        <fieldset className="col-span-2 rounded-lg border border-white/15 p-2">
-                          <legend className="px-1 text-xs text-zinc-300">
-                            Child layout
-                          </legend>
-                          <div className="grid gap-2 text-sm text-white">
-                            {(
-                              [
-                                ["pinPosition", "Pin position"],
-                                ["scaleWidth", "Scale width"],
-                                ["scaleHeight", "Scale height"],
-                              ] as const
-                            ).map(([property, label]) => {
-                              const layout =
-                                selectedObject.childLayout ??
-                                defaultChildLayout;
-                              return (
-                                <label
-                                  key={property}
-                                  className="flex min-h-9 items-center gap-2"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={layout[property]}
-                                    className="size-4 accent-violet-500"
-                                    onChange={(event) =>
-                                      runCommand("object.layout", {
-                                        objectId: selectedObject.id,
-                                        ...layout,
-                                        [property]: event.currentTarget.checked,
-                                      })
-                                    }
-                                  />
-                                  {label}
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </fieldset>
                         <Button
                           type="button"
                           size="sm"
@@ -5275,6 +5419,12 @@ export function ProductCanvas({
                 <dt className="text-zinc-400">Frame</dt>
                 <dd data-testid="product-frame-time">
                   {frameTime === null ? "—" : `${frameTime} ms`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-400">Live descendants</dt>
+                <dd data-testid="live-descendant-preview-count">
+                  {Object.keys(selectionTransformPreviewObjects).length}
                 </dd>
               </div>
               <div>

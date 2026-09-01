@@ -152,10 +152,20 @@ test("places an icon inside a sticky and removes it without a jump", async ({
     /Contained icon — brain/,
   );
   await page.getByRole("button", { name: "More selection actions" }).click();
-  await expect(page.getByLabel("Pin position")).toBeChecked();
-  await expect(page.getByLabel("Scale width")).toBeChecked();
-  await page.getByLabel("Scale width").uncheck();
-  await expect(page.getByLabel("Scale width")).not.toBeChecked();
+  const childLayout = page.getByRole("group", { name: "Child layout" });
+  await expect(
+    childLayout.getByRole("button", { name: "Pin" }).first(),
+  ).toHaveAttribute("aria-pressed", "true");
+  await childLayout.getByRole("button", { name: "Center" }).first().click();
+  await expect(
+    childLayout.getByRole("button", { name: "Center" }).first(),
+  ).toHaveAttribute("aria-pressed", "true");
+  const scaleWidth = childLayout.getByRole("button", {
+    name: "Scale width",
+  });
+  await expect(scaleWidth).toHaveAttribute("aria-pressed", "true");
+  await scaleWidth.click();
+  await expect(scaleWidth).toHaveAttribute("aria-pressed", "false");
   await page.getByLabel("Rotation").fill("30");
   await expect(page.getByTestId("selected-rotation")).toHaveText("30°");
   const beforeDetachX = await page
@@ -311,4 +321,89 @@ test("selects a composition parent first and exposes rotation at every corner", 
   await expect(page.getByTestId("selected-position-y")).toHaveText(
     String(objectY + objectHeight / 2 - objectWidth / 2),
   );
+});
+
+test("rotates a grouped selection as one composition", async ({ page }) => {
+  await openFreshCanvas(page);
+  const surface = page.getByTestId("product-canvas-surface");
+
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Rectangle — basic shape", exact: true })
+    .click();
+  await surface.click({ position: { x: 180, y: 180 } });
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Ellipse — basic shape", exact: true })
+    .click();
+  await surface.click({ position: { x: 430, y: 180 } });
+
+  const rectangle = page.getByRole("button", {
+    name: "rectangle — New idea",
+    exact: true,
+  });
+  const ellipse = page.getByRole("button", {
+    name: "ellipse — New idea",
+    exact: true,
+  });
+  await rectangle.click();
+  await ellipse.click({ modifiers: ["Shift"] });
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await page.getByRole("button", { name: "Group", exact: true }).click();
+
+  await expect(page.getByTestId("rotation-cursor-zone")).toHaveCount(4);
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await page.getByLabel("Rotation").fill("45");
+  await expect(page.getByTestId("selected-rotation")).toHaveText("45°");
+  await expect(rectangle).toHaveAttribute("aria-pressed", "true");
+  await expect(ellipse).toHaveAttribute("aria-pressed", "true");
+});
+
+test("previews child layout continuously while its parent resizes", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  const surface = page.getByTestId("product-canvas-surface");
+  await page.getByRole("button", { name: "Sticky note", exact: true }).click();
+  await surface.click({ position: { x: 300, y: 260 } });
+  const parent = page.getByRole("button", {
+    name: "rectangle — Sticky note",
+    exact: true,
+  });
+  const label = page.getByRole("button", {
+    name: "Contained intrinsic label",
+  });
+  await label.click();
+  const initialLabelWidth = Number(
+    await page.getByTestId("selected-width").innerText(),
+  );
+  await parent.click();
+
+  const surfaceBox = await surface.boundingBox();
+  expect(surfaceBox).not.toBeNull();
+  const viewportX = Number(await surface.getAttribute("data-viewport-x"));
+  const viewportY = Number(await surface.getAttribute("data-viewport-y"));
+  const viewportScale = Number(
+    await surface.getAttribute("data-viewport-scale"),
+  );
+  const x = Number(await page.getByTestId("selected-position-x").innerText());
+  const y = Number(await page.getByTestId("selected-position-y").innerText());
+  const width = Number(await page.getByTestId("selected-width").innerText());
+  const height = Number(await page.getByTestId("selected-height").innerText());
+  const handleX = surfaceBox!.x + viewportX + (x + width) * viewportScale;
+  const handleY = surfaceBox!.y + viewportY + (y + height) * viewportScale;
+  await page.mouse.move(handleX, handleY);
+  await page.mouse.down();
+  await page.mouse.move(handleX + 80, handleY + 40, { steps: 4 });
+  await expect(
+    page.getByTestId("live-descendant-preview-count"),
+  ).not.toHaveText("0");
+  await page.mouse.up();
+  await expect(page.getByTestId("live-descendant-preview-count")).toHaveText(
+    "0",
+  );
+  await label.click();
+  expect(
+    Number(await page.getByTestId("selected-width").innerText()),
+  ).toBeGreaterThan(initialLabelWidth);
 });

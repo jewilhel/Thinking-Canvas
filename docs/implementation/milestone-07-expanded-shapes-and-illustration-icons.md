@@ -223,7 +223,7 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 - [x] Replace visible rotation controls with four fixed-screen-size cursor zones that remain reachable and correctly offset at every canvas zoom.
 - [x] Add durable horizontal and vertical flip actions for shapes, icons, text, and contained families.
 - [x] Lower only the icon-object resize minimum to 8px and preserve the 24px shape/text minimum.
-- [ ] Pass focused automated/browser checks, complete repository gates, exact-head CI, and replacement-preview hands-on review.
+- [x] Pass focused automated/browser checks, complete repository gates, exact-head CI, and replacement-preview hands-on review.
 
 ### Slice 10 — Durable group frames and group rotation
 
@@ -239,10 +239,10 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 
 ### Slice 12 — Axis-aware layout and live resize previews
 
-- [ ] Migrate child and group layout to independent horizontal and vertical `Fixed`/`Pin`/`Center` modes plus independent `Scale width` and `Scale height`, preserving legacy Pin-off behavior as `Fixed`.
-- [ ] Replace layout checkboxes with accessible exclusive axis button groups and independent scale toggles, including mixed-selection and keyboard behavior.
-- [ ] Render direct children and nested-group members continuously from the in-progress parent resize, including preserve-children modifier resize, and commit one history transaction only on pointer release.
-- [ ] Pass focused transform, compatibility, convergence, browser, and accessibility checks before requesting a replacement hosted preview.
+- [x] Migrate child and group layout to independent horizontal and vertical `Fixed`/`Pin`/`Center` modes plus independent `Scale width` and `Scale height`, preserving legacy Pin-off behavior as `Fixed`.
+- [x] Replace layout checkboxes with accessible exclusive axis button groups and independent scale toggles, including mixed-selection and keyboard behavior.
+- [x] Render direct children and nested-group members continuously from the in-progress parent resize, including preserve-children modifier resize, and commit one history transaction only on pointer release.
+- [x] Pass focused transform, compatibility, convergence, browser, and accessibility checks before requesting a replacement hosted preview.
 
 ## Pull-request slices
 
@@ -291,6 +291,8 @@ No commit, push, pull request, deployment, closure, or merge is authorized by ap
 7. With two authenticated editors, concurrently edit a child and resize its parent, then reload both sessions and confirm convergence. Repeat through a temporary disconnect.
 8. Verify owner/editor/commenter/viewer behavior and invoke permitted AI creation/style/nesting with no raw SVG, technical IDs, or unauthorized mutation exposed to the user.
 9. Repeat the core path at `1440 × 900`, `1024 × 768`, and the `768 × 1024` stress viewport; inspect minimum/default/maximum canvas zoom and keyboard-only navigation.
+10. Rotate a complete top-level group, Command/Control-drag it into a basic shape, then detach it. Group two children that already share a parent and verify the group receives one parent relationship and one layout record.
+11. Exercise horizontal and vertical `Fixed`, `Pin`, and `Center` modes with independent width/height scaling. During normal and modifier parent resize, confirm direct children and nested-group members track the pointer continuously before the one release-time history commit.
 
 Retain the exact commit SHA, protected CI run, immutable deploy ID/URL, browser and viewport, date, screenshots of the catalog and nested result, performance measurements, and any limitation. Local success is not hosted proof.
 
@@ -324,6 +326,11 @@ Retain the exact commit SHA, protected CI run, immutable deploy ID/URL, browser 
 - [ ] `FR-080`: corner-adjacent pointer rotation, Shift snapping, exact keyboard control, parent-local child transforms, history, collaboration, reconnect, and reload pass automated and hosted checks.
 - [ ] `FR-081`: horizontal and vertical flipping works for eligible independent objects and complete contained families, with durable history, collaboration, clipboard, reconnect, and reload behavior.
 - [ ] `FR-082`: independent and nested icons resize to 8px without lowering the 24px minimum for shapes or text, losing crisp vector rendering, or making selection unusable.
+- [ ] `FR-083`: complete legacy and new groups rotate around their durable visual-center frame with live member previews, exact input, Shift snapping, history, collaboration, clipboard, reconnect, and reload.
+- [ ] `FR-084`: modifier-drag and accessible actions nest, detach, and reparent a complete group as one child while ordinary overlap remains independent.
+- [ ] `FR-085`: same-parent children group without losing containment, mixed-parent grouping is rejected, and the nested group passes the complete family transform/lifecycle matrix.
+- [ ] `FR-086`: direct children and nested groups preserve legacy fixed-offset data and pass every independent horizontal/vertical `Fixed`/`Pin`/`Center` and scale-width/scale-height combination with accessible controls.
+- [ ] `FR-087`: normal and modifier parent resize preview every direct child and nested-group member continuously, then persist the same final geometry in one undoable transaction.
 - [ ] The exact expanded Milestone 7 `AS-007` exit scenario passes with tree, brain, clock, and shoe icons plus nested shape and text children on an authenticated immutable Netlify preview using two collaborators.
 - [ ] Catalog generation/security, source-quality, unit/integration, migration/RLS, complete Chromium/axe, build, and performance gates pass for the exact implementation head.
 - [ ] The milestone record contains exact-head CI and matching immutable preview evidence, known limitations, and product-owner hands-on acceptance.
@@ -360,6 +367,7 @@ Retain the exact commit SHA, protected CI run, immutable deploy ID/URL, browser 
 - 2026-08-31 — A second product-owner preview pass found that child-local rectangular clip offsets drifted while a parent was dragged or rotated, that selecting a parent immediately made its intrinsic label draggable, and that the corner-to-rotation-control hover gap dismissed the control before pointer-down. Child clipping now derives the current parent polygon in each child's local coordinate space, nested children remain non-listening until a deliberate second click enters them, and the overlapping rotation control retains pointer capture through the drag. The second-click entry is briefly deferred and canceled by double-click so the established inline label editor remains available without making the label draggable during a parent gesture.
 - 2026-09-01 — Slice 10 added strict transparent group frames in a dedicated collaborative Yjs map, atomic creation/ungroup/history handling, compatibility-derived frames for legacy or pasted `groupId`-only groups, and frame-backed group move/resize. Complete groups now use the existing four screen-space rotation zones and exact rotation field, preview every member around the frame center, and commit one group rotation transaction with annotation following and reload-safe geometry.
 - 2026-09-01 — Slice 11 added validated `group.nest` and `group.detach` commands, Command/Control-drag containment for complete groups, accessible place/remove actions, and same-parent grouping that transfers ownership and layout to the frame. Parent move, resize, rotation, flip, deletion, ungroup, ordering, and clipboard duplication now preserve the nested group family; cross-parent or mixed-level grouping is rejected without mutation.
+- 2026-09-01 — Slice 12 replaced the legacy shared pin flag with compatibility-aware horizontal and vertical `Fixed`/`Pin`/`Center` modes plus independent scale toggles for direct children and nested groups. The properties palette now uses accessible pressed-state button groups. Parent transform previews derive direct children, nested group frames, and group members from the in-progress geometry on every pointer update and clear the transient state after one release-time command/history entry.
 
 ## Verification evidence
 
@@ -393,6 +401,7 @@ Expanded-containment evidence on 2026-08-31:
 - The Slice 9 transform-affordance refinement passed `pnpm check`: formatting, ESLint with zero warnings, strict TypeScript, all 57 Vitest files / 280 tests, and the optimized Next.js production build. Focused authenticated Chromium checks passed 4 of 4 scenarios, including all four fixed 28px rotation cursor zones before and after zoom, a real center-based rotation drag, palette flipping, legacy flip-field undo/redo, and the existing annotation group-transform history path.
 - Slice 10 passed ESLint with zero warnings, strict TypeScript, and all 57 Vitest files / 281 tests. New coverage proves group-frame creation/removal, center-based member rotation, frame-backed transform persistence, and legacy-compatible group geometry; focused browser and complete repository gates remain part of Slice 12 delivery verification.
 - Slice 11 passed ESLint with zero warnings, strict TypeScript, and all 57 Vitest files / 283 tests before the focused history addition. New command coverage proves whole-group nest/detach, same-parent child grouping, parent-following movement, and safe ungroup back to independent parent children; final focused and complete counts are recorded with Slice 12.
+- Slice 12 passed `pnpm check`: Prettier, ESLint with zero warnings, strict TypeScript, all 57 Vitest files / 284 tests, and the optimized Next.js production build. The authenticated focused Chromium/axe spec passed 5 of 5 scenarios in 12.2 seconds, including the migrated axis-layout controls, four group rotation zones with exact group rotation, and a pointer-held parent resize whose child preview count remained nonzero until release and whose final scaled label geometry matched the preview.
 - After a clean local Supabase reset, the CI-equivalent serialized Chromium/axe run passed all 62 scenarios in 3.3 minutes. The first full attempt exposed that optional flip fields needed a compatibility-aware history default; the correction preserves absent legacy fields as semantic `false` without adding unrelated history changes. Exact-head CI and the matching replacement preview remain pending.
 
 Research evidence:

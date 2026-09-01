@@ -80,11 +80,25 @@ const parentRelativeSchema = z.strictObject({
   rotation: finiteNumber.optional(),
 });
 
-const childLayoutSchema = z.strictObject({
-  pinPosition: z.boolean(),
-  scaleWidth: z.boolean(),
-  scaleHeight: z.boolean(),
-});
+const childLayoutSchema = z
+  .strictObject({
+    pinPosition: z.boolean().optional(),
+    horizontalPosition: z.enum(["fixed", "pin", "center"]).optional(),
+    verticalPosition: z.enum(["fixed", "pin", "center"]).optional(),
+    scaleWidth: z.boolean(),
+    scaleHeight: z.boolean(),
+  })
+  .superRefine((layout, context) => {
+    if (
+      layout.pinPosition === undefined &&
+      (!layout.horizontalPosition || !layout.verticalPosition)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Child layout requires legacy pinning or both axis modes.",
+      });
+    }
+  });
 
 export const canvasGroupV2Schema = z.strictObject({
   schemaVersion: z.literal(2),

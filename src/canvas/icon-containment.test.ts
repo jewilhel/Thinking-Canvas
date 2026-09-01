@@ -132,6 +132,27 @@ describe("icon containment geometry", () => {
         resizedParent,
       ),
     ).toMatchObject({ x: 300, y: 300, width: 200, height: 100 });
+
+    const centered = {
+      ...fixedChild,
+      childLayout: {
+        horizontalPosition: "center" as const,
+        verticalPosition: "center" as const,
+        scaleWidth: false,
+        scaleHeight: false,
+      },
+    };
+    const centeredRelative = childRelativeAfterParentResize(
+      centered,
+      parent,
+      resizedParent,
+    );
+    expect(
+      childWorldGeometry(
+        { ...centered, parentRelative: centeredRelative },
+        resizedParent,
+      ),
+    ).toMatchObject({ x: 450, y: 350, width: 100, height: 100 });
   });
 
   it("bounds modifier resize at unchanged child extents", () => {
