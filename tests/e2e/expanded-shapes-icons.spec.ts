@@ -133,6 +133,9 @@ test("places an icon inside a sticky and removes it without a jump", async ({
 
   await page.getByRole("button", { name: "Sticky note", exact: true }).click();
   await surface.click({ position: { x: 540, y: 280 } });
+  await expect(
+    page.getByRole("button", { name: /Contained text — Sticky note/ }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page.getByLabel("Search shapes and icons").fill("brain");
@@ -150,6 +153,13 @@ test("places an icon inside a sticky and removes it without a jump", async ({
     "aria-label",
     /Contained icon — brain/,
   );
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await expect(page.getByLabel("Pin position")).toBeChecked();
+  await expect(page.getByLabel("Scale width")).toBeChecked();
+  await page.getByLabel("Scale width").uncheck();
+  await expect(page.getByLabel("Scale width")).not.toBeChecked();
+  await page.getByLabel("Rotation").fill("30");
+  await expect(page.getByTestId("selected-rotation")).toHaveText("30°");
 
   await iconItem.click();
   await page.getByRole("button", { name: "More selection actions" }).click();
