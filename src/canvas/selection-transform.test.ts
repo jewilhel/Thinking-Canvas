@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 import {
   rotateSelectionObjects,
+  selectionBoundsForObjects,
   transformSelectionObjects,
 } from "@/canvas/selection-transform";
 
@@ -108,5 +109,23 @@ describe("combined selection transform", () => {
       { x: 60, y: -40, width: 20, height: 20, rotation: 90 },
       { x: 60, y: 40, width: 20, height: 20, rotation: 90 },
     ]);
+  });
+
+  it("hugs the rendered corners of rotated selection members", () => {
+    const object: CanvasObjectV2 = {
+      ...shared,
+      id: "33333333-3333-4333-8333-333333333333",
+      type: "shape",
+      shape: "rectangle",
+      text: "One",
+      geometry: { x: 100, y: 100, width: 80, height: 40, rotation: 90 },
+    };
+
+    expect(selectionBoundsForObjects([object])).toEqual({
+      x: 60,
+      y: 100,
+      width: 40,
+      height: 80,
+    });
   });
 });

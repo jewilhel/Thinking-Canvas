@@ -99,6 +99,7 @@ import {
   childRelativeAfterParentResize,
   defaultChildLayout,
   fullyContains,
+  geometryCorners,
   geometryClipPolygonInLocalSpace,
   geometryContainsPoint,
   isContainableObject,
@@ -587,7 +588,16 @@ export function ProductCanvas({
     ? selectionBoundsForObjects(selectedObjects)
     : null;
   const selectedGroup =
-    persistedSelectedGroup ??
+    (persistedSelectedGroup
+      ? {
+          ...persistedSelectedGroup,
+          geometry:
+            selectedGroupBounds &&
+            Math.abs(persistedSelectedGroup.geometry.rotation % 360) < 0.001
+              ? { ...persistedSelectedGroup.geometry, ...selectedGroupBounds }
+              : persistedSelectedGroup.geometry,
+        }
+      : undefined) ??
     (selectedGroupId && selectedGroupBounds && selectedObjects[0]
       ? {
           schemaVersion: 2 as const,
@@ -626,17 +636,28 @@ export function ProductCanvas({
       )
     : null;
   const contextualToolbarPosition = selectedBounds
-    ? {
-        left: Math.min(
-          Math.max(
-            viewport.x +
-              ((selectedBounds.x + selectedBounds.right) / 2) * viewport.scale,
-            190,
+    ? (() => {
+        const selectedTop = viewport.y + selectedBounds.y * viewport.scale;
+        const selectedBottom =
+          viewport.y + selectedBounds.bottom * viewport.scale;
+        const preferredAbove = selectedTop - 66;
+        const top =
+          preferredAbove >= 112
+            ? preferredAbove
+            : Math.min(Math.max(112, selectedBottom + 12), size.height - 64);
+        return {
+          left: Math.min(
+            Math.max(
+              viewport.x +
+                ((selectedBounds.x + selectedBounds.right) / 2) *
+                  viewport.scale,
+              190,
+            ),
+            Math.max(190, size.width - 190),
           ),
-          Math.max(190, size.width - 190),
-        ),
-        top: Math.max(112, viewport.y + selectedBounds.y * viewport.scale - 66),
-      }
+          top,
+        };
+      })()
     : null;
   const selectedFrame: SelectionBounds | null = selectedGroup
     ? selectedGroup.geometry
@@ -2618,10 +2639,24 @@ export function ProductCanvas({
     };
   }
 
-  function previewSelectionProxy(node: Konva.Rect) {
+  function previewSelectionProxy(node: Konva.Rect, containmentIntent = false) {
     if (!selectedFrame) return;
     const target = selectionProxyTarget(node);
     if (!target) return;
+    if (containmentIntent && selectedGroup) {
+      const parent = [...objects].reverse().find(
+        (candidate) =>
+          isObjectParent(candidate) &&
+          !selectedIds.includes(candidate.id) &&
+          fullyContains(candidate, {
+            ...selectedGroup.geometry,
+            ...target,
+          }),
+      );
+      setContainmentPreviewParentId(parent?.id ?? null);
+    } else {
+      setContainmentPreviewParentId(null);
+    }
     setSelectionTransformPreviewObjects(
       Object.fromEntries(
         transformSelectionObjects(selectedObjects, selectedFrame, target).map(
@@ -2631,7 +2666,7 @@ export function ProductCanvas({
     );
   }
 
-  function finishSelectionProxy(node: Konva.Rect) {
+  function finishSelectionProxy(node: Konva.Rect, containmentIntent = false) {
     if (!selectedFrame) return;
     const target = selectionProxyTarget(node);
     if (!target) return;
@@ -2639,10 +2674,42 @@ export function ProductCanvas({
       node.position({ x: target.x, y: target.y });
       node.scale({ x: 1, y: 1 });
       setSelectionTransformPreviewObjects({});
-      runCommand("group.transform", {
-        groupId: selectedGroup.id,
-        ...target,
+      const nextParent = [...objects].reverse().find(
+        (candidate) =>
+          isObjectParent(candidate) &&
+          !selectedIds.includes(candidate.id) &&
+          fullyContains(candidate, {
+            ...selectedGroup.geometry,
+            ...target,
+          }),
+      );
+      const commands: CommandDefinition[] = [];
+      if (
+        containmentIntent &&
+        selectedGroup.parentId &&
+        nextParent?.id !== selectedGroup.parentId
+      ) {
+        commands.push({
+          type: "group.detach",
+          payload: { groupId: selectedGroup.id },
+        });
+      }
+      commands.push({
+        type: "group.transform",
+        payload: { groupId: selectedGroup.id, ...target },
       });
+      if (
+        containmentIntent &&
+        nextParent &&
+        nextParent.id !== selectedGroup.parentId
+      ) {
+        commands.push({
+          type: "group.nest",
+          payload: { groupId: selectedGroup.id, parentId: nextParent.id },
+        });
+      }
+      runCommandBatch(commands);
+      setContainmentPreviewParentId(null);
       return;
     }
     const transformed = transformSelectionObjects(
@@ -2706,7 +2773,19 @@ export function ProductCanvas({
   }
 
   function objectBounds(object: CanvasObjectV2) {
-    if (object.type !== "connector") return object.geometry;
+    if (object.type !== "connector") {
+      const corners = geometryCorners(object.geometry);
+      const xs = corners.map((corner) => corner.x);
+      const ys = corners.map((corner) => corner.y);
+      const x = Math.min(...xs);
+      const y = Math.min(...ys);
+      return {
+        x,
+        y,
+        width: Math.max(1, Math.max(...xs) - x),
+        height: Math.max(1, Math.max(...ys) - y),
+      };
+    }
     const points = resolveConnectorPointsV2(object, objectsById);
     const xs = [points[0]!, points[2]!];
     const ys = [points[1]!, points[3]!];
@@ -3738,6 +3817,7 @@ export function ProductCanvas({
           </Group>
         </Group>
         {selectionAffordancesVisible &&
+        selectedIds.length <= 1 &&
         (object.type === "shape" ||
           object.type === "icon" ||
           object.type === "text") &&
@@ -3923,29 +4003,64 @@ export function ProductCanvas({
         </output>
       ) : null}
       {instrumentationEnabled ? (
-        <output
-          aria-hidden="true"
-          data-testid="live-connector-points"
-          className="hidden"
-        >
-          {displayObjects
-            .filter(
-              (
-                object,
-              ): object is Extract<CanvasObjectV2, { type: "connector" }> =>
-                object.type === "connector",
-            )
-            .map((connector) =>
-              [
-                connector.id,
-                ...resolveConnectorPointsV2(
-                  connector,
-                  connectorLayoutObjectsById,
-                ).map(Math.round),
-              ].join(":"),
-            )
-            .join(";")}
-        </output>
+        <>
+          <output
+            aria-hidden="true"
+            data-testid="live-connector-points"
+            className="hidden"
+          >
+            {displayObjects
+              .filter(
+                (
+                  object,
+                ): object is Extract<CanvasObjectV2, { type: "connector" }> =>
+                  object.type === "connector",
+              )
+              .map((connector) =>
+                [
+                  connector.id,
+                  ...resolveConnectorPointsV2(
+                    connector,
+                    connectorLayoutObjectsById,
+                  ).map(Math.round),
+                ].join(":"),
+              )
+              .join(";")}
+          </output>
+          <output
+            aria-hidden="true"
+            data-testid="selection-frame-geometry"
+            className="hidden"
+          >
+            {selectedFrame
+              ? [
+                  selectedFrame.x,
+                  selectedFrame.y,
+                  selectedFrame.width,
+                  selectedFrame.height,
+                ]
+                  .map(Math.round)
+                  .join(",")
+              : ""}
+          </output>
+          <output
+            aria-hidden="true"
+            data-testid="visible-connection-anchor-count"
+            className="hidden"
+          >
+            {selectedIds.length > 1
+              ? 0
+              : displayObjects.filter(
+                  (object) =>
+                    (object.type === "shape" ||
+                      object.type === "icon" ||
+                      object.type === "text") &&
+                    (selectedIds.includes(object.id) ||
+                      hoveredShapeId === object.id ||
+                      connectorStart),
+                ).length * 4}
+          </output>
+        </>
       ) : null}
       <div
         className="pointer-events-none absolute inset-x-4 top-4 z-30 flex items-start justify-between gap-4"
@@ -4694,6 +4809,7 @@ export function ProductCanvas({
                                               : "outline"
                                           }
                                           aria-pressed={value === mode}
+                                          className="aria-pressed:border-violet-400! aria-pressed:bg-violet-600! aria-pressed:text-white! aria-pressed:ring-2 aria-pressed:ring-violet-300/70"
                                           onClick={() =>
                                             updateLayout({
                                               horizontalPosition:
@@ -4733,6 +4849,7 @@ export function ProductCanvas({
                                           : "outline"
                                       }
                                       aria-pressed={layout[property]}
+                                      className="aria-pressed:border-violet-400! aria-pressed:bg-violet-600! aria-pressed:text-white! aria-pressed:ring-2 aria-pressed:ring-violet-300/70"
                                       onClick={() =>
                                         updateLayout({
                                           horizontalPosition: horizontal,
@@ -5235,12 +5352,38 @@ export function ProductCanvas({
                   rotation={selectedGroup?.geometry.rotation ?? 0}
                   fill="rgba(0,0,0,0.001)"
                   draggable={tool === "select"}
-                  onDragMove={(event) =>
-                    previewSelectionProxy(event.target as Konva.Rect)
-                  }
-                  onDragEnd={(event) =>
-                    finishSelectionProxy(event.target as Konva.Rect)
-                  }
+                  onDragMove={(event) => {
+                    const containmentIntent =
+                      "metaKey" in event.evt &&
+                      "ctrlKey" in event.evt &&
+                      hasContainmentModifier(
+                        {
+                          metaKey: event.evt.metaKey === true,
+                          ctrlKey: event.evt.ctrlKey === true,
+                        },
+                        navigator.platform,
+                      );
+                    previewSelectionProxy(
+                      event.target as Konva.Rect,
+                      containmentIntent,
+                    );
+                  }}
+                  onDragEnd={(event) => {
+                    const containmentIntent =
+                      "metaKey" in event.evt &&
+                      "ctrlKey" in event.evt &&
+                      hasContainmentModifier(
+                        {
+                          metaKey: event.evt.metaKey === true,
+                          ctrlKey: event.evt.ctrlKey === true,
+                        },
+                        navigator.platform,
+                      );
+                    finishSelectionProxy(
+                      event.target as Konva.Rect,
+                      containmentIntent,
+                    );
+                  }}
                   onTransform={(event) =>
                     previewSelectionProxy(event.target as Konva.Rect)
                   }

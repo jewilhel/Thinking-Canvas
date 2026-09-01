@@ -621,6 +621,33 @@ function updateChildrenForParentGeometry(
   return boundedGeometry;
 }
 
+function tightUnrotatedGroupFrame(
+  group: NonNullable<ReturnType<typeof readCanvasGroupV2>>,
+  members: CanvasObjectV2[],
+) {
+  if (Math.abs(group.geometry.rotation % 360) >= 0.001) {
+    return group.geometry;
+  }
+  const bounds = selectionBoundsForObjects(members);
+  return bounds
+    ? { ...group.geometry, ...bounds, rotation: 0 }
+    : group.geometry;
+}
+
+function relativeGeometryForLayout(
+  geometry: CanvasObjectV2["geometry"],
+  parent: ObjectParent,
+  horizontalPosition: "fixed" | "pin" | "center",
+  verticalPosition: "fixed" | "pin" | "center",
+) {
+  const relative = parentRelativeGeometry(geometry, parent);
+  return {
+    ...relative,
+    x: horizontalPosition === "center" ? 0.5 - relative.width / 2 : relative.x,
+    y: verticalPosition === "center" ? 0.5 - relative.height / 2 : relative.y,
+  };
+}
+
 export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
   const command = productCanvasCommandSchema.parse(input);
   if (readCanvasDocumentMetadata(document).canvasId !== command.canvasId) {
@@ -928,9 +955,10 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         };
         putCanvasGroupV2(document, group);
       }
+      const sourceFrame = tightUnrotatedGroupFrame(group, members);
       const rotated = rotateSelectionObjects(
         members,
-        group.geometry,
+        sourceFrame,
         command.payload.rotation,
       );
       for (const member of rotated) {
@@ -951,10 +979,10 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         );
       }
       const nextFrame = rotateGeometryAroundCenter(
-        group.geometry,
+        sourceFrame,
         command.payload.rotation,
       );
-      for (const field of ["x", "y", "rotation"] as const) {
+      for (const field of ["x", "y", "width", "height", "rotation"] as const) {
         setCanvasGroupField(
           document,
           group.id,
@@ -1007,6 +1035,7 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         };
         putCanvasGroupV2(document, group);
       }
+      const sourceFrame = tightUnrotatedGroupFrame(group, members);
       let target = {
         x: command.payload.x,
         y: command.payload.y,
@@ -1015,13 +1044,13 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
       };
       if (group.parentId) {
         target = clampObjectGeometryToParent(
-          { ...group.geometry, ...target },
+          { ...sourceFrame, ...target },
           requireObjectParent(document, group.parentId),
         );
       }
       for (const member of transformSelectionObjects(
         members,
-        group.geometry,
+        sourceFrame,
         target,
       )) {
         if (member.type === "connector") continue;
@@ -1055,7 +1084,7 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           group.id,
           ["parentRelative"],
           parentRelativeGeometry(
-            { ...group.geometry, ...target },
+            { ...sourceFrame, ...target },
             requireObjectParent(document, group.parentId),
           ),
         );
@@ -1085,9 +1114,18 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           "Only a complete top-level shape, icon, and text group can be nested.",
         );
       }
-      if (!fullyContains(parent, group.geometry)) {
+      const frame = tightUnrotatedGroupFrame(group, members);
+      if (!fullyContains(parent, frame)) {
         throw new ProductCanvasCommandConflictError(
           "Move the complete group fully inside the container before placing it inside.",
+        );
+      }
+      for (const field of ["x", "y", "width", "height", "rotation"] as const) {
+        setCanvasGroupField(
+          document,
+          group.id,
+          ["geometry", field],
+          frame[field],
         );
       }
       setCanvasGroupField(document, group.id, ["parentId"], parent.id);
@@ -1095,7 +1133,7 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         document,
         group.id,
         ["parentRelative"],
-        parentRelativeGeometry(group.geometry, parent),
+        parentRelativeGeometry(frame, parent),
       );
       setCanvasGroupField(
         document,
@@ -1153,6 +1191,51 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           "Layout properties require a nested group.",
         );
       }
+      const parent = requireObjectParent(document, group.parentId);
+      const members = listCanvasObjectsV2(document).filter(
+        (object) => object.groupId === group.id,
+      );
+      const currentFrame = tightUnrotatedGroupFrame(group, members);
+      const relative = relativeGeometryForLayout(
+        currentFrame,
+        parent,
+        command.payload.horizontalPosition,
+        command.payload.verticalPosition,
+      );
+      const nextFrame = childWorldGeometry(
+        { geometry: currentFrame, parentRelative: relative },
+        parent,
+      );
+      for (const member of transformSelectionObjects(
+        members,
+        currentFrame,
+        nextFrame,
+      )) {
+        if (member.type === "connector") continue;
+        const previous = members.find(
+          (candidate) => candidate.id === member.id,
+        )!;
+        writeGeometry(document, member.id, member.geometry);
+        touch(document, member.id, command.issuedAt);
+        affectedObjectIds.add(member.id);
+        updateAttachedAnnotationPosition(
+          document,
+          member.id,
+          member.geometry.x - previous.geometry.x,
+          member.geometry.y - previous.geometry.y,
+          command.issuedAt,
+          affectedObjectIds,
+        );
+      }
+      for (const field of ["x", "y", "width", "height", "rotation"] as const) {
+        setCanvasGroupField(
+          document,
+          group.id,
+          ["geometry", field],
+          nextFrame[field],
+        );
+      }
+      setCanvasGroupField(document, group.id, ["parentRelative"], relative);
       setCanvasGroupField(document, group.id, ["childLayout"], {
         horizontalPosition: command.payload.horizontalPosition,
         verticalPosition: command.payload.verticalPosition,
@@ -1297,13 +1380,36 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           "Layout properties require a nested shape, icon, or text object.",
         );
       }
+      const horizontalPosition =
+        command.payload.horizontalPosition ??
+        (command.payload.pinPosition === false ? "fixed" : "pin");
+      const verticalPosition =
+        command.payload.verticalPosition ??
+        (command.payload.pinPosition === false ? "fixed" : "pin");
+      const parent = requireObjectParent(document, child.parentId);
+      const relative = relativeGeometryForLayout(
+        child.geometry,
+        parent,
+        horizontalPosition,
+        verticalPosition,
+      );
+      const nextChild = childWorldGeometry(
+        { ...child, parentRelative: relative },
+        parent,
+      );
+      setCanvasObjectField(document, child.id, ["parentRelative"], relative);
+      writeGeometry(document, child.id, nextChild);
+      updateAttachedAnnotationPosition(
+        document,
+        child.id,
+        nextChild.x - child.geometry.x,
+        nextChild.y - child.geometry.y,
+        command.issuedAt,
+        affectedObjectIds,
+      );
       setCanvasObjectField(document, child.id, ["childLayout"], {
-        horizontalPosition:
-          command.payload.horizontalPosition ??
-          (command.payload.pinPosition === false ? "fixed" : "pin"),
-        verticalPosition:
-          command.payload.verticalPosition ??
-          (command.payload.pinPosition === false ? "fixed" : "pin"),
+        horizontalPosition,
+        verticalPosition,
         scaleWidth: command.payload.scaleWidth,
         scaleHeight: command.payload.scaleHeight,
       });

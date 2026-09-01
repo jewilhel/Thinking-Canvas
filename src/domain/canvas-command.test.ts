@@ -419,6 +419,48 @@ describe("product canvas command boundary", () => {
     });
   });
 
+  it("centers a child immediately and keeps it centered through parent resize", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, shape());
+    putCanvasObjectV2(document, text());
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.nest", { objectId: textId, parentId: shapeId }),
+    );
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.layout", {
+        objectId: textId,
+        horizontalPosition: "center",
+        verticalPosition: "center",
+        scaleWidth: false,
+        scaleHeight: false,
+      }),
+    );
+    expect(readCanvasObjectV2(document, textId)?.geometry).toMatchObject({
+      x: 60,
+      y: 65,
+      width: 80,
+      height: 40,
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.resize", {
+        objectId: shapeId,
+        width: 320,
+        height: 180,
+      }),
+    );
+    expect(readCanvasObjectV2(document, textId)?.geometry).toMatchObject({
+      x: 140,
+      y: 110,
+      width: 80,
+      height: 40,
+    });
+  });
+
   it("composes child and parent rotation in parent-local space", () => {
     const document = createProductCanvasDocument(canvasId);
     const child = {
@@ -1013,6 +1055,49 @@ describe("product canvas command boundary", () => {
     expect(readCanvasGroupV2(document, groupId)).toBeUndefined();
   });
 
+  it("reconciles an unrotated group frame to its current member geometry", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, shape());
+    putCanvasObjectV2(document, shape(secondShapeId));
+    const groupId = "99999999-9999-4999-8999-999999999999";
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("selection.group", {
+        objectIds: [shapeId, secondShapeId],
+        groupId,
+      }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.move", {
+        objectId: secondShapeId,
+        x: 200,
+        y: 40,
+      }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("group.transform", {
+        groupId,
+        x: 20,
+        y: 40,
+        width: 340,
+        height: 90,
+      }),
+    );
+
+    expect(readCanvasGroupV2(document, groupId)?.geometry).toMatchObject({
+      x: 20,
+      y: 40,
+      width: 340,
+      height: 90,
+      rotation: 0,
+    });
+    expect(readCanvasObjectV2(document, shapeId)?.geometry.x).toBe(20);
+    expect(readCanvasObjectV2(document, secondShapeId)?.geometry.x).toBe(200);
+  });
+
   it("groups same-parent children and moves the nested group with its parent", () => {
     const document = createProductCanvasDocument(canvasId);
     const parent = {
@@ -1130,6 +1215,16 @@ describe("product canvas command boundary", () => {
       verticalPosition: "pin",
       scaleWidth: false,
       scaleHeight: true,
+    });
+    expect(readCanvasGroupV2(document, groupId)?.geometry).toMatchObject({
+      x: 150,
+      y: 90,
+      width: 200,
+      height: 70,
+    });
+    expect(readCanvasObjectV2(document, first.id)?.geometry).toMatchObject({
+      x: 150,
+      y: 90,
     });
     executeProductCanvasCommand(
       document,

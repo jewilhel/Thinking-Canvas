@@ -1,5 +1,5 @@
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
-import { rotatePoint } from "@/canvas/icon-containment";
+import { geometryCorners, rotatePoint } from "@/canvas/icon-containment";
 
 export type SelectionBounds = {
   x: number;
@@ -11,14 +11,13 @@ export type SelectionBounds = {
 export function selectionBoundsForObjects(objects: CanvasObjectV2[]) {
   const eligible = objects.filter((object) => object.type !== "connector");
   if (!eligible.length) return null;
-  const left = Math.min(...eligible.map((object) => object.geometry.x));
-  const top = Math.min(...eligible.map((object) => object.geometry.y));
-  const right = Math.max(
-    ...eligible.map((object) => object.geometry.x + object.geometry.width),
+  const corners = eligible.flatMap((object) =>
+    geometryCorners(object.geometry),
   );
-  const bottom = Math.max(
-    ...eligible.map((object) => object.geometry.y + object.geometry.height),
-  );
+  const left = Math.min(...corners.map((point) => point.x));
+  const top = Math.min(...corners.map((point) => point.y));
+  const right = Math.max(...corners.map((point) => point.x));
+  const bottom = Math.max(...corners.map((point) => point.y));
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 

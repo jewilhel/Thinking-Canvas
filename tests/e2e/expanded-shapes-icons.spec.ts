@@ -133,6 +133,18 @@ test("places an icon inside a sticky and removes it without a jump", async ({
 
   await page.getByRole("button", { name: "Sticky note", exact: true }).click();
   await surface.click({ position: { x: 540, y: 280 } });
+  const parentX = Number(
+    await page.getByTestId("selected-position-x").innerText(),
+  );
+  const parentY = Number(
+    await page.getByTestId("selected-position-y").innerText(),
+  );
+  const parentWidth = Number(
+    await page.getByTestId("selected-width").innerText(),
+  );
+  const parentHeight = Number(
+    await page.getByTestId("selected-height").innerText(),
+  );
   await expect(
     page.getByRole("button", { name: "Contained intrinsic label" }),
   ).toBeVisible();
@@ -156,10 +168,36 @@ test("places an icon inside a sticky and removes it without a jump", async ({
   await expect(
     childLayout.getByRole("button", { name: "Pin" }).first(),
   ).toHaveAttribute("aria-pressed", "true");
-  await childLayout.getByRole("button", { name: "Center" }).first().click();
-  await expect(
-    childLayout.getByRole("button", { name: "Center" }).first(),
-  ).toHaveAttribute("aria-pressed", "true");
+  const horizontalPin = childLayout
+    .getByRole("button", { name: "Pin" })
+    .first();
+  const horizontalCenter = childLayout
+    .getByRole("button", { name: "Center" })
+    .first();
+  await horizontalCenter.click();
+  await expect(horizontalCenter).toHaveAttribute("aria-pressed", "true");
+  expect(
+    await horizontalCenter.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    ),
+  ).not.toBe(
+    await horizontalPin.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    ),
+  );
+  const childWidth = Number(
+    await page.getByTestId("selected-width").innerText(),
+  );
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    String(Math.round(parentX + (parentWidth - childWidth) / 2)),
+  );
+  await childLayout.getByRole("button", { name: "Center" }).nth(1).click();
+  const childHeight = Number(
+    await page.getByTestId("selected-height").innerText(),
+  );
+  await expect(page.getByTestId("selected-position-y")).toHaveText(
+    String(Math.round(parentY + (parentHeight - childHeight) / 2)),
+  );
   const scaleWidth = childLayout.getByRole("button", {
     name: "Scale width",
   });
@@ -357,6 +395,112 @@ test("rotates a grouped selection as one composition", async ({ page }) => {
   await expect(page.getByTestId("selected-rotation")).toHaveText("45°");
   await expect(rectangle).toHaveAttribute("aria-pressed", "true");
   await expect(ellipse).toHaveAttribute("aria-pressed", "true");
+});
+
+test("keeps grouped selection chrome tight and command-drags the group into a parent", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  const surface = page.getByTestId("product-canvas-surface");
+  const surfaceBox = await surface.boundingBox();
+  expect(surfaceBox).not.toBeNull();
+  const center = {
+    x: surfaceBox!.width / 2,
+    y: surfaceBox!.height / 2,
+  };
+
+  await page.getByRole("button", { name: "Sticky note", exact: true }).click();
+  await surface.click({
+    position: { x: center.x - 100, y: center.y - 80 },
+  });
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page.getByLabel("Search shapes and icons").fill("brain");
+  await page.getByTitle("Brain", { exact: true }).click();
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page.getByLabel("Search shapes and icons").fill("arrow up");
+  await page.getByTitle("Arrow Up", { exact: true }).click();
+
+  const brain = page.locator('[data-testid^="object-list-item-"]').filter({
+    hasText: "icon — brain",
+  });
+  const arrow = page.locator('[data-testid^="object-list-item-"]').filter({
+    hasText: "icon — arrow-up",
+  });
+  await brain.click();
+  await arrow.click({ modifiers: ["Shift"] });
+  await expect(page.getByTestId("selection-frame-geometry")).toHaveText(
+    /,112,112$/,
+  );
+  await expect(page.getByTestId("visible-connection-anchor-count")).toHaveText(
+    "0",
+  );
+
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await page.getByRole("button", { name: "Group", exact: true }).click();
+  await expect(page.getByTestId("selection-frame-geometry")).toHaveText(
+    /,112,112$/,
+  );
+
+  const containmentModifier = await page.evaluate(() =>
+    /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? "Meta" : "Control",
+  );
+  await page.keyboard.down(containmentModifier);
+  await page.mouse.move(surfaceBox!.x + center.x, surfaceBox!.y + center.y);
+  await page.mouse.down();
+  await page.mouse.move(surfaceBox!.x + center.x + 8, surfaceBox!.y + center.y);
+  await page.mouse.up();
+  await page.keyboard.up(containmentModifier);
+
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await expect(
+    page.getByRole("button", { name: "Remove group from container" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("visible-connection-anchor-count")).toHaveText(
+    "0",
+  );
+});
+
+test("keeps the contextual properties palette outside the selected frame", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  const surface = page.getByTestId("product-canvas-surface");
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Rectangle — basic shape", exact: true })
+    .click();
+  await surface.click({ position: { x: 250, y: 100 } });
+  for (let index = 0; index < 5; index += 1) {
+    await page.getByRole("button", { name: "Zoom out" }).click();
+  }
+
+  const toolbar = page.getByTestId("contextual-selection-controls");
+  const toolbarBox = await toolbar.boundingBox();
+  const surfaceBox = await surface.boundingBox();
+  expect(toolbarBox).not.toBeNull();
+  expect(surfaceBox).not.toBeNull();
+  const viewportX = Number(await surface.getAttribute("data-viewport-x"));
+  const viewportY = Number(await surface.getAttribute("data-viewport-y"));
+  const viewportScale = Number(
+    await surface.getAttribute("data-viewport-scale"),
+  );
+  const [x, y, width, height] = (
+    await page.getByTestId("selection-frame-geometry").innerText()
+  )
+    .split(",")
+    .map(Number);
+  const frame = {
+    left: surfaceBox!.x + viewportX + x! * viewportScale,
+    top: surfaceBox!.y + viewportY + y! * viewportScale,
+    right: surfaceBox!.x + viewportX + (x! + width!) * viewportScale,
+    bottom: surfaceBox!.y + viewportY + (y! + height!) * viewportScale,
+  };
+  const separated =
+    toolbarBox!.y + toolbarBox!.height <= frame.top ||
+    toolbarBox!.y >= frame.bottom ||
+    toolbarBox!.x + toolbarBox!.width <= frame.left ||
+    toolbarBox!.x >= frame.right;
+  expect(separated).toBe(true);
 });
 
 test("previews child layout continuously while its parent resizes", async ({
