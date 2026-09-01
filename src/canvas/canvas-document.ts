@@ -7,6 +7,7 @@ import { canvasObjectSchema, type CanvasObject } from "@/domain/canvas-object";
 const metadataMapName = "canvas-metadata-v2";
 const objectsMapName = "canvas-objects-v2";
 const orderArrayName = "canvas-order-v2";
+const groupsMapName = "canvas-groups-v2";
 
 const uuid = z.uuid();
 const finiteNumber = z.number().finite();
@@ -84,6 +85,21 @@ const childLayoutSchema = z.strictObject({
   scaleWidth: z.boolean(),
   scaleHeight: z.boolean(),
 });
+
+export const canvasGroupV2Schema = z.strictObject({
+  schemaVersion: z.literal(2),
+  id: uuid,
+  canvasId: uuid,
+  createdBy: uuid,
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  geometry: geometrySchema,
+  parentId: uuid.nullable(),
+  parentRelative: parentRelativeSchema.nullable(),
+  childLayout: childLayoutSchema.nullable(),
+});
+
+export type CanvasGroupV2 = z.infer<typeof canvasGroupV2Schema>;
 
 const containmentFields = {
   parentId: uuid.nullable().optional(),
@@ -350,6 +366,10 @@ function order(document: Y.Doc) {
   return document.getArray<string>(orderArrayName);
 }
 
+function groups(document: Y.Doc) {
+  return document.getMap<Y.Map<unknown>>(groupsMapName);
+}
+
 function defaultStyle(type: CanvasObject["type"]) {
   return {
     fill: type === "connector" || type === "annotation" ? null : "#ffffff",
@@ -423,7 +443,70 @@ export function initializeCanvasDocument(document: Y.Doc, canvasId: string) {
     metadata(document).set("canvasId", canvasId);
     objects(document);
     order(document);
+    groups(document);
   }, "canvas.initialize");
+}
+
+export function putCanvasGroupV2(document: Y.Doc, input: CanvasGroupV2) {
+  const group = canvasGroupV2Schema.parse(input);
+  const documentMetadata = readCanvasDocumentMetadata(document);
+  if (group.canvasId !== documentMetadata.canvasId) {
+    throw new Error("Canvas group identity does not match its document.");
+  }
+  document.transact(() => {
+    const existing = groups(document).get(group.id);
+    const groupMap = existing ?? new Y.Map<unknown>();
+    const existingKeys = new Set(existing?.keys() ?? []);
+    for (const [key, value] of Object.entries(group)) {
+      groupMap.set(key, toSharedValue(value as JsonValue));
+      existingKeys.delete(key);
+    }
+    for (const key of existingKeys) groupMap.delete(key);
+    if (!existing) groups(document).set(group.id, groupMap);
+  }, "canvas.group.put");
+}
+
+export function readCanvasGroupV2(document: Y.Doc, groupId: string) {
+  const value = groups(document).get(groupId);
+  return value ? canvasGroupV2Schema.parse(fromSharedValue(value)) : undefined;
+}
+
+export function listCanvasGroupsV2(document: Y.Doc) {
+  return [...groups(document).values()].flatMap((value) => {
+    const parsed = canvasGroupV2Schema.safeParse(fromSharedValue(value));
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+export function deleteCanvasGroupV2(document: Y.Doc, groupId: string) {
+  const current = readCanvasGroupV2(document, groupId);
+  if (current) groups(document).delete(groupId);
+  return current;
+}
+
+export function setCanvasGroupField(
+  document: Y.Doc,
+  groupId: string,
+  path: string[],
+  replacement: JsonValue,
+) {
+  const current = readCanvasGroupV2(document, groupId);
+  if (!current) throw new Error("Canvas group does not exist.");
+  const next = canvasGroupV2Schema.parse(
+    patchRecord(current, path, replacement),
+  );
+  let target: Y.Map<unknown> = groups(document).get(groupId)!;
+  for (const segment of path.slice(0, -1)) {
+    const child = target.get(segment);
+    if (!(child instanceof Y.Map)) {
+      throw new Error("Canvas group field path does not resolve to a map.");
+    }
+    target = child;
+  }
+  const leaf = path.at(-1);
+  if (!leaf) throw new Error("A canvas group field path is required.");
+  target.set(leaf, toSharedValue(replacement));
+  return next;
 }
 
 export function createProductCanvasDocument(canvasId: string) {

@@ -227,9 +227,9 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 
 ### Slice 10 — Durable group frames and group rotation
 
-- [ ] Add a strict transparent group-frame schema, compatibility derivation for legacy peer groups, and atomic materialization on the first frame mutation.
-- [ ] Rotate selected groups around the visual center of their canonical frame with live member previews, exact rotation input, Shift snapping, one-step history, collaboration, reload, clipboard, and AI-safe projection.
-- [ ] Preserve ordinary group selection, drag, resize, flip, ordering, annotation, connector, and ungroup behavior while making the frame the single transform boundary.
+- [x] Add a strict transparent group-frame schema, compatibility derivation for legacy peer groups, and atomic materialization on the first frame mutation.
+- [x] Rotate selected groups around the visual center of their canonical frame with live member previews, exact rotation input, Shift snapping, one-step history, collaboration, reload, clipboard, and AI-safe projection.
+- [x] Preserve ordinary group selection, drag, resize, flip, ordering, annotation, connector, and ungroup behavior while making the frame the single transform boundary.
 
 ### Slice 11 — Nested groups and grouped children
 
@@ -358,6 +358,7 @@ Retain the exact commit SHA, protected CI run, immutable deploy ID/URL, browser 
 - 2026-08-31 — Product-owner preview feedback identified four containment interaction defects. The refinement keeps each nested family in parent-before-child render order, requires parent selection before a nested child accepts pointer interaction, previews children and their attached annotations during parent drag, persists the same family geometry on drop, exposes rotation beside the hovered corner, and rotates eligible objects around their visual center.
 - 2026-08-31 — The first exact-head CI attempt after that refinement exposed an AI-review projection mismatch: moving a parent now correctly moves its intrinsic label, but the proposal validator initially treated the hidden label as a separate user-facing affected object. Proposal/review validation now maps intrinsic-label effects back to the parent composition while retaining the label's canonical transform in the tentative update and undoable change set.
 - 2026-08-31 — A second product-owner preview pass found that child-local rectangular clip offsets drifted while a parent was dragged or rotated, that selecting a parent immediately made its intrinsic label draggable, and that the corner-to-rotation-control hover gap dismissed the control before pointer-down. Child clipping now derives the current parent polygon in each child's local coordinate space, nested children remain non-listening until a deliberate second click enters them, and the overlapping rotation control retains pointer capture through the drag. The second-click entry is briefly deferred and canceled by double-click so the established inline label editor remains available without making the label draggable during a parent gesture.
+- 2026-09-01 — Slice 10 added strict transparent group frames in a dedicated collaborative Yjs map, atomic creation/ungroup/history handling, compatibility-derived frames for legacy or pasted `groupId`-only groups, and frame-backed group move/resize. Complete groups now use the existing four screen-space rotation zones and exact rotation field, preview every member around the frame center, and commit one group rotation transaction with annotation following and reload-safe geometry.
 
 ## Verification evidence
 
@@ -389,6 +390,7 @@ Expanded-containment evidence on 2026-08-31:
 - The child-clipping, deliberate nested-entry, and rotation-pointer refinement passed `pnpm check`: formatting, ESLint with zero warnings, strict TypeScript, all 57 Vitest files / 276 tests, and the optimized Next.js production build. Its focused authenticated Chromium run passed all three catalog/containment scenarios in 9.3 seconds, including a parent drag initiated over its intrinsic label and a real pointer drag from the corner-adjacent rotation control to a snapped 90-degree result. Exact-head hosted verification remains pending.
 - A targeted compatibility rerun passed the two existing essential-object and inline-editing scenarios plus the updated composition-interaction scenario, 3 of 3 in 11.8 seconds. This proves deliberate child entry does not regress double-click editing for shapes, sticky notes, or standalone text.
 - The Slice 9 transform-affordance refinement passed `pnpm check`: formatting, ESLint with zero warnings, strict TypeScript, all 57 Vitest files / 280 tests, and the optimized Next.js production build. Focused authenticated Chromium checks passed 4 of 4 scenarios, including all four fixed 28px rotation cursor zones before and after zoom, a real center-based rotation drag, palette flipping, legacy flip-field undo/redo, and the existing annotation group-transform history path.
+- Slice 10 passed ESLint with zero warnings, strict TypeScript, and all 57 Vitest files / 281 tests. New coverage proves group-frame creation/removal, center-based member rotation, frame-backed transform persistence, and legacy-compatible group geometry; focused browser and complete repository gates remain part of Slice 12 delivery verification.
 - After a clean local Supabase reset, the CI-equivalent serialized Chromium/axe run passed all 62 scenarios in 3.3 minutes. The first full attempt exposed that optional flip fields needed a compatibility-aware history default; the correction preserves absent legacy fields as semantic `false` without adding unrelated history changes. Exact-head CI and the matching replacement preview remain pending.
 
 Research evidence:

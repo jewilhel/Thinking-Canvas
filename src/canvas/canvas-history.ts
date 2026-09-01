@@ -2,14 +2,18 @@ import type * as Y from "yjs";
 
 import {
   deleteCanvasObjectV2,
+  deleteCanvasGroupV2,
   isIntrinsicShapeLabel,
+  listCanvasGroupsV2,
   listCanvasObjectsV2,
+  putCanvasGroupV2,
   putCanvasObjectV2,
   readCanvasObjectV2,
   readCanvasOrderV2,
   setCanvasObjectField,
   setCanvasOrderV2,
   type CanvasObjectV2,
+  type CanvasGroupV2,
 } from "@/canvas/canvas-document";
 import { isContainableObject } from "@/canvas/icon-containment";
 import {
@@ -25,6 +29,8 @@ export type CanvasHistoryEntry = {
   actorId: string;
   beforeObjects: Record<string, CanvasObjectV2 | null>;
   afterObjects: Record<string, CanvasObjectV2 | null>;
+  beforeGroups?: Record<string, CanvasGroupV2 | null>;
+  afterGroups?: Record<string, CanvasGroupV2 | null>;
   beforeOrder: string[];
   afterOrder: string[];
 };
@@ -34,6 +40,15 @@ function snapshot(document: Y.Doc) {
     listCanvasObjectsV2(document).map((object) => [
       object.id,
       structuredClone({ ...object, groupId: object.groupId ?? null }),
+    ]),
+  );
+}
+
+function groupSnapshot(document: Y.Doc) {
+  return Object.fromEntries(
+    listCanvasGroupsV2(document).map((group) => [
+      group.id,
+      structuredClone(group),
     ]),
   );
 }
@@ -70,9 +85,11 @@ export function executeProductCanvasCommandWithHistory(
   input: unknown,
 ) {
   const before = snapshot(document);
+  const beforeGroups = groupSnapshot(document);
   const beforeOrder = readCanvasOrderV2(document);
   const result = executeProductCanvasCommand(document, input);
   const after = snapshot(document);
+  const afterGroups = groupSnapshot(document);
   const affectedIds = new Set(result.affectedObjectIds);
 
   return {
@@ -85,6 +102,12 @@ export function executeProductCanvasCommandWithHistory(
       ),
       afterObjects: Object.fromEntries(
         [...affectedIds].map((id) => [id, after[id] ?? null]),
+      ),
+      beforeGroups: Object.fromEntries(
+        result.affectedGroupIds.map((id) => [id, beforeGroups[id] ?? null]),
+      ),
+      afterGroups: Object.fromEntries(
+        result.affectedGroupIds.map((id) => [id, afterGroups[id] ?? null]),
       ),
       beforeOrder,
       afterOrder: readCanvasOrderV2(document),
@@ -164,6 +187,24 @@ export function applyCanvasHistoryEntry(
   const conflicts: string[] = [];
 
   document.transact(() => {
+    const expectedGroups =
+      direction === "undo" ? entry.afterGroups : entry.beforeGroups;
+    const desiredGroups =
+      direction === "undo" ? entry.beforeGroups : entry.afterGroups;
+    for (const groupId of Object.keys(expectedGroups ?? {})) {
+      const expected = expectedGroups?.[groupId] ?? null;
+      const desired = desiredGroups?.[groupId] ?? null;
+      const current =
+        listCanvasGroupsV2(document).find((group) => group.id === groupId) ??
+        null;
+      if (!equal(current, expected)) {
+        conflicts.push(`${groupId}:group`);
+      } else if (desired) {
+        putCanvasGroupV2(document, desired);
+      } else {
+        deleteCanvasGroupV2(document, groupId);
+      }
+    }
     for (const objectId of Object.keys(expectedObjects)) {
       const expected = expectedObjects[objectId] ?? null;
       const desired = desiredObjects[objectId] ?? null;

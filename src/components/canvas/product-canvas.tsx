@@ -78,6 +78,7 @@ import {
 } from "@/canvas/canvas-clipboard";
 import {
   createProductCanvasDocument,
+  listCanvasGroupsV2,
   listCanvasObjectsV2,
   migrateLegacyShapeLabels,
   type CanvasObjectV2,
@@ -130,6 +131,8 @@ import {
   type Viewport,
 } from "@/canvas/geometry";
 import {
+  rotateSelectionObjects,
+  selectionBoundsForObjects,
   transformSelectionObjects,
   type SelectionBounds,
 } from "@/canvas/selection-transform";
@@ -402,6 +405,7 @@ export function ProductCanvas({
     return next;
   }, [canvasId, documentStorageKey]);
   const [objects, setObjects] = useState(() => listCanvasObjectsV2(document));
+  const [groups, setGroups] = useState(() => listCanvasGroupsV2(document));
   const [iconCatalog, setIconCatalog] = useState<PhosphorIconCatalog | null>(
     null,
   );
@@ -503,6 +507,10 @@ export function ProductCanvas({
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
   );
+  const groupsById = useMemo(
+    () => new Map(groups.map((group) => [group.id, group])),
+    [groups],
+  );
   const orderedObjects = useMemo(
     () => parentFirstObjectOrder(objects),
     [objects],
@@ -553,6 +561,38 @@ export function ProductCanvas({
     const object = objectsById.get(id);
     return object ? [object] : [];
   });
+  const selectedGroupId =
+    selectedObjects.length > 1 &&
+    selectedObjects[0]?.groupId &&
+    selectedObjects.every(
+      (object) => object.groupId === selectedObjects[0]!.groupId,
+    ) &&
+    objects.filter((object) => object.groupId === selectedObjects[0]!.groupId)
+      .length === selectedObjects.length
+      ? selectedObjects[0].groupId
+      : null;
+  const persistedSelectedGroup = selectedGroupId
+    ? groupsById.get(selectedGroupId)
+    : undefined;
+  const selectedGroupBounds = selectedGroupId
+    ? selectionBoundsForObjects(selectedObjects)
+    : null;
+  const selectedGroup =
+    persistedSelectedGroup ??
+    (selectedGroupId && selectedGroupBounds && selectedObjects[0]
+      ? {
+          schemaVersion: 2 as const,
+          id: selectedGroupId,
+          canvasId,
+          createdBy: selectedObjects[0].createdBy,
+          createdAt: selectedObjects[0].createdAt,
+          updatedAt: selectedObjects[0].updatedAt,
+          geometry: { ...selectedGroupBounds, rotation: 0 },
+          parentId: null,
+          parentRelative: null,
+          childLayout: null,
+        }
+      : undefined);
   const selectedObject = selectedId ? objectsById.get(selectedId) : undefined;
   const selectedBounds = selectedObjects.length
     ? selectedObjects.reduce(
@@ -589,14 +629,16 @@ export function ProductCanvas({
         top: Math.max(112, viewport.y + selectedBounds.y * viewport.scale - 66),
       }
     : null;
-  const selectedFrame: SelectionBounds | null = selectedBounds
-    ? {
-        x: selectedBounds.x,
-        y: selectedBounds.y,
-        width: Math.max(1, selectedBounds.right - selectedBounds.x),
-        height: Math.max(1, selectedBounds.bottom - selectedBounds.y),
-      }
-    : null;
+  const selectedFrame: SelectionBounds | null = selectedGroup
+    ? selectedGroup.geometry
+    : selectedBounds
+      ? {
+          x: selectedBounds.x,
+          y: selectedBounds.y,
+          width: Math.max(1, selectedBounds.right - selectedBounds.x),
+          height: Math.max(1, selectedBounds.bottom - selectedBounds.y),
+        }
+      : null;
   const useSelectionProxy = selectedObjects.length > 1;
   const fillObjects = selectedObjects.filter(
     (object) =>
@@ -628,6 +670,7 @@ export function ProductCanvas({
     function synchronize() {
       migrateLegacyShapeLabels(document);
       setObjects(listCanvasObjectsV2(document));
+      setGroups(listCanvasGroupsV2(document));
       window.localStorage.setItem(
         documentStorageKey,
         encodeUpdate(Y.encodeStateAsUpdate(document)),
@@ -732,17 +775,25 @@ export function ProductCanvas({
     if (!first || !last) return;
     const beforeObjects: CanvasHistoryEntry["beforeObjects"] = {};
     const afterObjects: CanvasHistoryEntry["afterObjects"] = {};
+    const beforeGroups: NonNullable<CanvasHistoryEntry["beforeGroups"]> = {};
+    const afterGroups: NonNullable<CanvasHistoryEntry["afterGroups"]> = {};
     for (const entry of entries) {
       for (const [id, object] of Object.entries(entry.beforeObjects)) {
         if (!(id in beforeObjects)) beforeObjects[id] = object;
       }
       Object.assign(afterObjects, entry.afterObjects);
+      for (const [id, group] of Object.entries(entry.beforeGroups ?? {})) {
+        if (!(id in beforeGroups)) beforeGroups[id] = group;
+      }
+      Object.assign(afterGroups, entry.afterGroups ?? {});
     }
     const history: CanvasHistoryEntry = {
       commandId: first.commandId,
       actorId: first.actorId,
       beforeObjects,
       afterObjects,
+      beforeGroups,
+      afterGroups,
       beforeOrder: first.beforeOrder,
       afterOrder: last.afterOrder,
     };
@@ -1465,6 +1516,17 @@ export function ProductCanvas({
   ) {
     const dx = x - object.geometry.x;
     const dy = y - object.geometry.y;
+    if (selectedGroup && !containmentIntent) {
+      runCommand("group.transform", {
+        groupId: selectedGroup.id,
+        x: selectedGroup.geometry.x + dx,
+        y: selectedGroup.geometry.y + dy,
+        width: selectedGroup.geometry.width,
+        height: selectedGroup.geometry.height,
+      });
+      setContainmentPreviewParentId(null);
+      return;
+    }
     const commands: CommandDefinition[] = [];
     const selectedIdSet = new Set(selectedIds);
     for (const selected of referenceSafeSelectionOrder(selectedObjects)) {
@@ -2502,6 +2564,16 @@ export function ProductCanvas({
     if (!selectedFrame) return;
     const target = selectionProxyTarget(node);
     if (!target) return;
+    if (selectedGroup) {
+      node.position({ x: target.x, y: target.y });
+      node.scale({ x: 1, y: 1 });
+      setSelectionTransformPreviewObjects({});
+      runCommand("group.transform", {
+        groupId: selectedGroup.id,
+        ...target,
+      });
+      return;
+    }
     const transformed = transformSelectionObjects(
       selectedObjects,
       selectedFrame,
@@ -3066,22 +3138,27 @@ export function ProductCanvas({
   }
 
   function beginCornerRotation(event: React.PointerEvent<HTMLButtonElement>) {
-    if (!selectedObject || !isContainableObject(selectedObject)) return;
+    if (
+      (!selectedObject || !isContainableObject(selectedObject)) &&
+      !selectedGroup
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     const bounds = containerRef.current?.getBoundingClientRect();
     if (!bounds) return;
     const object = selectedObject;
-    const radians = (object.geometry.rotation * Math.PI) / 180;
+    const rotationGeometry = selectedGroup?.geometry ?? object!.geometry;
+    const radians = (rotationGeometry.rotation * Math.PI) / 180;
     const center = {
       x:
-        object.geometry.x +
-        (object.geometry.width / 2) * Math.cos(radians) -
-        (object.geometry.height / 2) * Math.sin(radians),
+        rotationGeometry.x +
+        (rotationGeometry.width / 2) * Math.cos(radians) -
+        (rotationGeometry.height / 2) * Math.sin(radians),
       y:
-        object.geometry.y +
-        (object.geometry.width / 2) * Math.sin(radians) +
-        (object.geometry.height / 2) * Math.cos(radians),
+        rotationGeometry.y +
+        (rotationGeometry.width / 2) * Math.sin(radians) +
+        (rotationGeometry.height / 2) * Math.cos(radians),
     };
     const pointerAngle = (clientX: number, clientY: number) => {
       const world = {
@@ -3091,7 +3168,7 @@ export function ProductCanvas({
       return Math.atan2(world.y - center.y, world.x - center.x);
     };
     const startPointerAngle = pointerAngle(event.clientX, event.clientY);
-    const startRotation = object.geometry.rotation;
+    const startRotation = rotationGeometry.rotation;
     let nextRotation = startRotation;
     function move(pointerEvent: PointerEvent) {
       const delta =
@@ -3103,24 +3180,33 @@ export function ProductCanvas({
       if (pointerEvent.shiftKey) {
         nextRotation = Math.round(nextRotation / 15) * 15;
       }
+      if (selectedGroup) {
+        setSelectionTransformPreviewObjects(
+          Object.fromEntries(
+            rotateSelectionObjects(
+              selectedObjects,
+              selectedGroup.geometry,
+              nextRotation,
+            ).map((member) => [member.id, member]),
+          ),
+        );
+        return;
+      }
       const nextGeometry = rotateGeometryAroundCenter(
-        object.geometry,
+        object!.geometry,
         nextRotation,
       );
-      const nextObject = {
-        ...object,
-        geometry: nextGeometry,
-      };
+      const nextObject = { ...object!, geometry: nextGeometry };
       const previews: Record<string, CanvasObjectV2> = {
-        [object.id]: nextObject,
+        [object!.id]: nextObject,
       };
-      if (isObjectParent(object)) {
+      if (isObjectParent(object!)) {
         const nextParent = {
-          ...object,
+          ...object!,
           geometry: nextGeometry,
         };
         for (const child of objects) {
-          if (!isContainableObject(child) || child.parentId !== object.id)
+          if (!isContainableObject(child) || child.parentId !== object!.id)
             continue;
           previews[child.id] = {
             ...child,
@@ -3135,10 +3221,17 @@ export function ProductCanvas({
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", cancel);
       setSelectionTransformPreviewObjects({});
-      runCommand("object.rotate", {
-        objectId: object.id,
-        rotation: nextRotation,
-      });
+      if (selectedGroup) {
+        runCommand("group.rotate", {
+          groupId: selectedGroup.id,
+          rotation: nextRotation,
+        });
+      } else {
+        runCommand("object.rotate", {
+          objectId: object!.id,
+          rotation: nextRotation,
+        });
+      }
     }
     function cancel() {
       window.removeEventListener("pointermove", move);
@@ -4448,8 +4541,9 @@ export function ProductCanvas({
                           ) : null;
                         })()
                       : null}
-                    {isContainableObject(selectedObject) &&
-                    selectedIds.length === 1 ? (
+                    {selectedGroup ||
+                    (isContainableObject(selectedObject) &&
+                      selectedIds.length === 1) ? (
                       <label className="col-span-2 text-xs text-zinc-300">
                         Rotation
                         <div className="mt-1 flex items-center gap-2">
@@ -4458,13 +4552,21 @@ export function ProductCanvas({
                             min="-360"
                             max="360"
                             step="1"
-                            value={Math.round(selectedObject.geometry.rotation)}
+                            value={Math.round(
+                              selectedGroup?.geometry.rotation ??
+                                selectedObject.geometry.rotation,
+                            )}
                             className="min-h-9 w-full rounded-md border border-white/15 bg-zinc-800 px-2 text-sm text-white"
                             onChange={(event) =>
-                              runCommand("object.rotate", {
-                                objectId: selectedObject.id,
-                                rotation: Number(event.currentTarget.value),
-                              })
+                              selectedGroup
+                                ? runCommand("group.rotate", {
+                                    groupId: selectedGroup.id,
+                                    rotation: Number(event.currentTarget.value),
+                                  })
+                                : runCommand("object.rotate", {
+                                    objectId: selectedObject.id,
+                                    rotation: Number(event.currentTarget.value),
+                                  })
                             }
                           />
                           <span aria-hidden="true">°</span>
@@ -4861,6 +4963,7 @@ export function ProductCanvas({
                   y={selectedFrame.y}
                   width={selectedFrame.width}
                   height={selectedFrame.height}
+                  rotation={selectedGroup?.geometry.rotation ?? 0}
                   fill="rgba(0,0,0,0.001)"
                   draggable={tool === "select"}
                   onDragMove={(event) =>
@@ -4901,12 +5004,13 @@ export function ProductCanvas({
               />
             </Layer>
           </Stage>
-          {selectedObject &&
-          selectedIds.length === 1 &&
-          isContainableObject(selectedObject)
+          {selectedGroup ||
+          (selectedObject &&
+            selectedIds.length === 1 &&
+            isContainableObject(selectedObject))
             ? rotationCorners.map((corner) => {
                 const handlePoint = rotationHandleWorldPoint(
-                  selectedObject.geometry,
+                  selectedGroup?.geometry ?? selectedObject!.geometry,
                   corner,
                   rotationZoneOffsetPx / viewport.scale,
                 );

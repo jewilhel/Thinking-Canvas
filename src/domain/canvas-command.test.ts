@@ -4,6 +4,7 @@ import {
   createProductCanvasDocument,
   listCanvasObjectsV2,
   putCanvasObjectV2,
+  readCanvasGroupV2,
   readCanvasObjectV2,
   readCanvasOrderV2,
   type CanvasObjectV2,
@@ -937,6 +938,37 @@ describe("product canvas command boundary", () => {
     );
     expect(readCanvasObjectV2(document, shapeId)?.groupId).toBe(groupId);
     expect(readCanvasObjectV2(document, secondShapeId)?.groupId).toBe(groupId);
+    expect(readCanvasGroupV2(document, groupId)).toMatchObject({
+      id: groupId,
+      geometry: { rotation: 0 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("group.rotate", { groupId, rotation: 90 }),
+    );
+    expect(readCanvasGroupV2(document, groupId)?.geometry.rotation).toBe(90);
+    expect(readCanvasObjectV2(document, shapeId)?.geometry.rotation).toBe(90);
+    expect(readCanvasObjectV2(document, secondShapeId)?.geometry.rotation).toBe(
+      90,
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("group.transform", {
+        groupId,
+        x: 20,
+        y: 30,
+        width: 240,
+        height: 160,
+      }),
+    );
+    expect(readCanvasGroupV2(document, groupId)?.geometry).toMatchObject({
+      x: 20,
+      y: 30,
+      width: 240,
+      height: 160,
+      rotation: 90,
+    });
 
     expect(() =>
       executeProductCanvasCommand(
@@ -976,5 +1008,6 @@ describe("product canvas command boundary", () => {
     );
     expect(readCanvasObjectV2(document, shapeId)?.groupId).toBeNull();
     expect(readCanvasObjectV2(document, secondShapeId)?.groupId).toBeNull();
+    expect(readCanvasGroupV2(document, groupId)).toBeUndefined();
   });
 });

@@ -3,13 +3,17 @@ import type * as Y from "yjs";
 
 import {
   canvasObjectV2Schema,
+  deleteCanvasGroupV2,
   deleteCanvasObjectV2,
   listCanvasObjectsV2,
+  putCanvasGroupV2,
   putCanvasObjectV2,
+  readCanvasGroupV2,
   readCanvasDocumentMetadata,
   readCanvasObjectV2,
   readCanvasOrderV2,
   setCanvasObjectField,
+  setCanvasGroupField,
   setCanvasOrderV2,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
@@ -30,6 +34,11 @@ import {
   type ObjectParent,
 } from "@/canvas/icon-containment";
 import { isEligibleAnnotationTarget } from "@/canvas/annotation-attachment";
+import {
+  rotateSelectionObjects,
+  selectionBoundsForObjects,
+  transformSelectionObjects,
+} from "@/canvas/selection-transform";
 
 const uuid = z.uuid();
 const finiteNumber = z.number().finite();
@@ -214,6 +223,20 @@ const ungroupCommand = commandBase.extend({
   type: z.literal("selection.ungroup"),
   payload: z.strictObject({ groupId: uuid }),
 });
+const rotateGroupCommand = commandBase.extend({
+  type: z.literal("group.rotate"),
+  payload: z.strictObject({ groupId: uuid, rotation: finiteNumber }),
+});
+const transformGroupCommand = commandBase.extend({
+  type: z.literal("group.transform"),
+  payload: z.strictObject({
+    groupId: uuid,
+    x: finiteNumber,
+    y: finiteNumber,
+    width: finiteNumber.min(1),
+    height: finiteNumber.min(1),
+  }),
+});
 const duplicateCommand = commandBase.extend({
   type: z.literal("selection.duplicate"),
   payload: z.strictObject({
@@ -252,6 +275,8 @@ export const productCanvasMutationSchema = z.discriminatedUnion("type", [
   reorderCommand.omit(trustedCommandFields),
   groupCommand.omit(trustedCommandFields),
   ungroupCommand.omit(trustedCommandFields),
+  rotateGroupCommand.omit(trustedCommandFields),
+  transformGroupCommand.omit(trustedCommandFields),
   duplicateCommand.omit(trustedCommandFields),
 ]);
 
@@ -280,6 +305,8 @@ export const productCanvasCommandSchema = z
     reorderCommand,
     groupCommand,
     ungroupCommand,
+    rotateGroupCommand,
+    transformGroupCommand,
     duplicateCommand,
   ])
   .superRefine((command, context) => {
@@ -517,6 +544,7 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
   }
 
   const affectedObjectIds = new Set<string>();
+  const affectedGroupIds = new Set<string>();
   document.transact(() => {
     if (command.type === "object.create") {
       if (readCanvasObjectV2(document, command.payload.object.id)) {
@@ -643,6 +671,25 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         touch(document, object.id, command.issuedAt);
         affectedObjectIds.add(object.id);
       }
+      const bounds = selectionBoundsForObjects(selected);
+      if (!bounds) {
+        throw new ProductCanvasCommandConflictError(
+          "A group requires at least one spatial canvas object.",
+        );
+      }
+      putCanvasGroupV2(document, {
+        schemaVersion: 2,
+        id: command.payload.groupId,
+        canvasId: command.canvasId,
+        createdBy: command.actor.id,
+        createdAt: command.issuedAt,
+        updatedAt: command.issuedAt,
+        geometry: { ...bounds, rotation: 0 },
+        parentId: null,
+        parentRelative: null,
+        childLayout: null,
+      });
+      affectedGroupIds.add(command.payload.groupId);
       return;
     }
 
@@ -660,6 +707,149 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         touch(document, object.id, command.issuedAt);
         affectedObjectIds.add(object.id);
       }
+      deleteCanvasGroupV2(document, command.payload.groupId);
+      affectedGroupIds.add(command.payload.groupId);
+      return;
+    }
+
+    if (command.type === "group.rotate") {
+      const members = listCanvasObjectsV2(document).filter(
+        (object) => object.groupId === command.payload.groupId,
+      );
+      if (members.length < 2) {
+        throw new ProductCanvasCommandConflictError(
+          "The group does not have enough members to rotate.",
+        );
+      }
+      let group = readCanvasGroupV2(document, command.payload.groupId);
+      if (!group) {
+        const bounds = selectionBoundsForObjects(members);
+        if (!bounds) {
+          throw new ProductCanvasCommandConflictError(
+            "The group has no rotatable bounds.",
+          );
+        }
+        group = {
+          schemaVersion: 2,
+          id: command.payload.groupId,
+          canvasId: command.canvasId,
+          createdBy: members[0]!.createdBy,
+          createdAt: members[0]!.createdAt,
+          updatedAt: command.issuedAt,
+          geometry: { ...bounds, rotation: 0 },
+          parentId: null,
+          parentRelative: null,
+          childLayout: null,
+        };
+        putCanvasGroupV2(document, group);
+      }
+      const rotated = rotateSelectionObjects(
+        members,
+        group.geometry,
+        command.payload.rotation,
+      );
+      for (const member of rotated) {
+        if (member.type === "connector") continue;
+        const previous = members.find(
+          (candidate) => candidate.id === member.id,
+        )!;
+        writeGeometry(document, member.id, member.geometry);
+        touch(document, member.id, command.issuedAt);
+        affectedObjectIds.add(member.id);
+        updateAttachedAnnotationPosition(
+          document,
+          member.id,
+          member.geometry.x - previous.geometry.x,
+          member.geometry.y - previous.geometry.y,
+          command.issuedAt,
+          affectedObjectIds,
+        );
+      }
+      const nextFrame = rotateGeometryAroundCenter(
+        group.geometry,
+        command.payload.rotation,
+      );
+      for (const field of ["x", "y", "rotation"] as const) {
+        setCanvasGroupField(
+          document,
+          group.id,
+          ["geometry", field],
+          nextFrame[field],
+        );
+      }
+      setCanvasGroupField(document, group.id, ["updatedAt"], command.issuedAt);
+      affectedGroupIds.add(group.id);
+      return;
+    }
+
+    if (command.type === "group.transform") {
+      const members = listCanvasObjectsV2(document).filter(
+        (object) => object.groupId === command.payload.groupId,
+      );
+      if (members.length < 2) {
+        throw new ProductCanvasCommandConflictError(
+          "The group does not have enough members to transform.",
+        );
+      }
+      let group = readCanvasGroupV2(document, command.payload.groupId);
+      if (!group) {
+        const bounds = selectionBoundsForObjects(members);
+        if (!bounds) {
+          throw new ProductCanvasCommandConflictError(
+            "The group has no transformable bounds.",
+          );
+        }
+        group = {
+          schemaVersion: 2,
+          id: command.payload.groupId,
+          canvasId: command.canvasId,
+          createdBy: members[0]!.createdBy,
+          createdAt: members[0]!.createdAt,
+          updatedAt: command.issuedAt,
+          geometry: { ...bounds, rotation: 0 },
+          parentId: null,
+          parentRelative: null,
+          childLayout: null,
+        };
+        putCanvasGroupV2(document, group);
+      }
+      const target = {
+        x: command.payload.x,
+        y: command.payload.y,
+        width: command.payload.width,
+        height: command.payload.height,
+      };
+      for (const member of transformSelectionObjects(
+        members,
+        group.geometry,
+        target,
+      )) {
+        if (member.type === "connector") continue;
+        const previous = members.find(
+          (candidate) => candidate.id === member.id,
+        )!;
+        writeGeometry(document, member.id, member.geometry);
+        touch(document, member.id, command.issuedAt);
+        affectedObjectIds.add(member.id);
+        updateAttachedAnnotationPosition(
+          document,
+          member.id,
+          member.geometry.x - previous.geometry.x,
+          member.geometry.y - previous.geometry.y,
+          command.issuedAt,
+          affectedObjectIds,
+        );
+      }
+      for (const field of ["x", "y", "width", "height"] as const) {
+        setCanvasGroupField(
+          document,
+          group.id,
+          ["geometry", field],
+          target[field],
+        );
+      }
+      setCanvasGroupField(document, group.id, ["updatedAt"], command.issuedAt);
+      affectedGroupIds.add(group.id);
       return;
     }
 
@@ -1261,5 +1451,9 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
     touch(document, object.id, command.issuedAt);
   }, command.commandId);
 
-  return { command, affectedObjectIds: [...affectedObjectIds] };
+  return {
+    command,
+    affectedObjectIds: [...affectedObjectIds],
+    affectedGroupIds: [...affectedGroupIds],
+  };
 }

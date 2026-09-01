@@ -1,4 +1,5 @@
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
+import { rotatePoint } from "@/canvas/icon-containment";
 
 export type SelectionBounds = {
   x: number;
@@ -6,6 +7,67 @@ export type SelectionBounds = {
   width: number;
   height: number;
 };
+
+export function selectionBoundsForObjects(objects: CanvasObjectV2[]) {
+  const eligible = objects.filter((object) => object.type !== "connector");
+  if (!eligible.length) return null;
+  const left = Math.min(...eligible.map((object) => object.geometry.x));
+  const top = Math.min(...eligible.map((object) => object.geometry.y));
+  const right = Math.max(
+    ...eligible.map((object) => object.geometry.x + object.geometry.width),
+  );
+  const bottom = Math.max(
+    ...eligible.map((object) => object.geometry.y + object.geometry.height),
+  );
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+export function rotateSelectionObjects(
+  objects: CanvasObjectV2[],
+  frame: SelectionBounds & { rotation?: number },
+  rotation: number,
+) {
+  const previousRotation = frame.rotation ?? 0;
+  const delta = rotation - previousRotation;
+  const previousHalf = rotatePoint(
+    frame.width / 2,
+    frame.height / 2,
+    previousRotation,
+  );
+  const center = { x: frame.x + previousHalf.x, y: frame.y + previousHalf.y };
+  return objects.map((object): CanvasObjectV2 => {
+    if (object.type === "connector") return object;
+    const half = rotatePoint(
+      object.geometry.width / 2,
+      object.geometry.height / 2,
+      object.geometry.rotation,
+    );
+    const objectCenter = {
+      x: object.geometry.x + half.x,
+      y: object.geometry.y + half.y,
+    };
+    const nextCenterOffset = rotatePoint(
+      objectCenter.x - center.x,
+      objectCenter.y - center.y,
+      delta,
+    );
+    const nextRotation = object.geometry.rotation + delta;
+    const nextHalf = rotatePoint(
+      object.geometry.width / 2,
+      object.geometry.height / 2,
+      nextRotation,
+    );
+    return {
+      ...object,
+      geometry: {
+        ...object.geometry,
+        x: center.x + nextCenterOffset.x - nextHalf.x,
+        y: center.y + nextCenterOffset.y - nextHalf.y,
+        rotation: nextRotation,
+      },
+    };
+  });
+}
 
 function mapCoordinate(
   value: number,

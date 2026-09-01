@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
-import { transformSelectionObjects } from "@/canvas/selection-transform";
+import {
+  rotateSelectionObjects,
+  transformSelectionObjects,
+} from "@/canvas/selection-transform";
 
 const shared = {
   schemaVersion: 2 as const,
@@ -80,5 +83,30 @@ describe("combined selection transform", () => {
         { x: 100, y: 200, width: 140, height: 100 },
       )[0],
     ).toMatchObject({ start: connector.start });
+  });
+
+  it("rotates every group member around the frame center", () => {
+    const first: CanvasObjectV2 = {
+      ...shared,
+      id: "33333333-3333-4333-8333-333333333333",
+      type: "shape",
+      shape: "rectangle",
+      text: "One",
+      geometry: { x: 0, y: 0, width: 20, height: 20, rotation: 0 },
+    };
+    const second: CanvasObjectV2 = {
+      ...first,
+      id: "44444444-4444-4444-8444-444444444444",
+      geometry: { x: 80, y: 0, width: 20, height: 20, rotation: 0 },
+    };
+    const result = rotateSelectionObjects(
+      [first, second],
+      { x: 0, y: 0, width: 100, height: 20, rotation: 0 },
+      90,
+    );
+    expect(result.map((object) => object.geometry)).toEqual([
+      { x: 60, y: -40, width: 20, height: 20, rotation: 90 },
+      { x: 60, y: 40, width: 20, height: 20, rotation: 90 },
+    ]);
   });
 });
