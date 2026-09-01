@@ -1446,7 +1446,9 @@ test("anchors one thread to a complete group and preserves it after target delet
   await expect(page.getByTestId("product-object-count")).toHaveText("2");
 
   await page.getByRole("button", { name: "Open Object navigator" }).click();
-  const objects = page.locator('[data-testid^="object-list-item-"]');
+  const objects = page.locator(
+    '[data-testid^="object-list-item-"]:not([data-parent-id])',
+  );
   await objects.first().click();
   await objects.nth(1).click({ modifiers: ["Shift"] });
   await expect(page.getByTestId("selection-status")).toHaveText("2 selected");

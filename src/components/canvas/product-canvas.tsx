@@ -559,6 +559,17 @@ export function ProductCanvas({
     const object = objectsById.get(id);
     return object ? [object] : [];
   });
+  const selectedContainerIds = new Set(
+    selectedObjects.map((object) =>
+      isContainableObject(object) ? (object.parentId ?? null) : null,
+    ),
+  );
+  const selectedContainerId = [...selectedContainerIds][0];
+  const canGroupSelected =
+    selectedObjects.length >= 2 &&
+    !selectedObjects.some((object) => object.groupId != null) &&
+    selectedContainerIds.size === 1 &&
+    (!selectedContainerId || selectedObjects.every(isContainableObject));
   const selectedGroupId =
     selectedObjects.length > 1 &&
     selectedObjects[0]?.groupId &&
@@ -1838,7 +1849,7 @@ export function ProductCanvas({
   }
 
   function groupSelected() {
-    if (selectedIds.length < 2) return;
+    if (!canGroupSelected) return;
     runCommand("selection.group", {
       objectIds: selectedIds,
       groupId: crypto.randomUUID(),
@@ -4218,10 +4229,7 @@ export function ProductCanvas({
       {objectContextMenu && selectedObjects.length ? (
         <ObjectContextMenu
           {...objectContextMenu}
-          canGroup={
-            selectedIds.length >= 2 &&
-            !selectedObjects.some((object) => object.groupId != null)
-          }
+          canGroup={canGroupSelected}
           canUngroup={selectedObjects.some((object) => object.groupId != null)}
           onGroup={groupSelected}
           onUngroup={ungroupSelected}
@@ -4903,10 +4911,7 @@ export function ProductCanvas({
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={
-                        selectedIds.length < 2 ||
-                        selectedObjects.some((object) => object.groupId != null)
-                      }
+                      disabled={!canGroupSelected}
                       aria-keyshortcuts="Control+G Meta+G"
                       onClick={() => completeContextAction(groupSelected)}
                     >
