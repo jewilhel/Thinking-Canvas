@@ -2,6 +2,7 @@ import type * as Y from "yjs";
 
 import {
   deleteCanvasObjectV2,
+  isIntrinsicShapeLabel,
   listCanvasObjectsV2,
   putCanvasObjectV2,
   readCanvasObjectV2,
@@ -34,6 +35,33 @@ function snapshot(document: Y.Doc) {
       object.id,
       structuredClone({ ...object, groupId: object.groupId ?? null }),
     ]),
+  );
+}
+
+function intrinsicLabelForParent(document: Y.Doc, parentId: string) {
+  return listCanvasObjectsV2(document).find(
+    (object) => isIntrinsicShapeLabel(object) && object.parentId === parentId,
+  );
+}
+
+function matchesBeforeState(
+  document: Y.Doc,
+  current: CanvasObjectV2 | null,
+  expected: CanvasObjectV2,
+) {
+  if (equal(current, expected)) return true;
+  if (
+    current?.type !== "shape" ||
+    expected.type !== "shape" ||
+    current.text !== "" ||
+    expected.text === ""
+  )
+    return false;
+  const label = intrinsicLabelForParent(document, current.id);
+  return (
+    label?.type === "text" &&
+    label.text === expected.text &&
+    equal({ ...current, text: label.text }, expected)
   );
 }
 
@@ -138,8 +166,18 @@ export function applyCanvasHistoryEntry(
         continue;
       }
       if (expected !== null && desired === null) {
-        if (equal(current, expected)) deleteCanvasObjectV2(document, objectId);
-        else conflicts.push(`${objectId}:changed`);
+        if (matchesBeforeState(document, current, expected)) {
+          if (current?.type === "shape") {
+            for (const candidate of listCanvasObjectsV2(document)) {
+              if (
+                isIntrinsicShapeLabel(candidate) &&
+                candidate.parentId === current.id
+              )
+                deleteCanvasObjectV2(document, candidate.id);
+            }
+          }
+          deleteCanvasObjectV2(document, objectId);
+        } else conflicts.push(`${objectId}:changed`);
         continue;
       }
       if (!expected || !desired || !current) {
@@ -180,17 +218,24 @@ export function applyCanvasHistoryEntry(
           continue;
         const expectedValue = readPath(expected, path);
         const desiredValue = readPath(desired, path);
-        const currentValue = readPath(
-          readCanvasObjectV2(document, objectId),
-          path,
-        );
+        const label =
+          path.length === 1 &&
+          path[0] === "text" &&
+          expected.type === "shape" &&
+          desired.type === "shape"
+            ? intrinsicLabelForParent(document, objectId)
+            : undefined;
+        const currentValue =
+          label?.type === "text"
+            ? label.text
+            : readPath(readCanvasObjectV2(document, objectId), path);
         if (!equal(currentValue, expectedValue)) {
           conflicts.push(`${objectId}:${path.join(".")}`);
           continue;
         }
         setCanvasObjectField(
           document,
-          objectId,
+          label?.type === "text" ? label.id : objectId,
           path,
           normalizeReplacement(path, desiredValue),
         );
@@ -202,17 +247,21 @@ export function applyCanvasHistoryEntry(
       const currentObjectIds = listCanvasObjectsV2(document)
         .map((object) => object.id)
         .sort();
-      const desiredObjectIds = [...desiredOrder].sort();
+      const currentObjectIdSet = new Set(currentObjectIds);
+      const normalizedDesiredOrder = desiredOrder.filter((id) =>
+        currentObjectIdSet.has(id),
+      );
+      const desiredObjectIds = [...normalizedDesiredOrder].sort();
       const canApplyDesiredOrder = equal(currentObjectIds, desiredObjectIds);
-      if (equal(currentOrder, desiredOrder)) {
+      if (equal(currentOrder, normalizedDesiredOrder)) {
         // Object creation or deletion already produced the desired order.
       } else if (equal(currentOrder, expectedOrder) && canApplyDesiredOrder) {
-        setCanvasOrderV2(document, desiredOrder);
+        setCanvasOrderV2(document, normalizedDesiredOrder);
       } else if (
         equal([...currentOrder].sort(), desiredObjectIds) &&
         canApplyDesiredOrder
       ) {
-        setCanvasOrderV2(document, desiredOrder);
+        setCanvasOrderV2(document, normalizedDesiredOrder);
       } else {
         conflicts.push("canvas:order");
       }

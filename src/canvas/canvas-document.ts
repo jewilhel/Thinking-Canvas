@@ -228,6 +228,28 @@ export const canvasObjectV2Schema = z
 
 export type CanvasObjectV2 = z.infer<typeof canvasObjectV2Schema>;
 
+export function isIntrinsicShapeLabel(
+  object: CanvasObjectV2,
+): object is Extract<CanvasObjectV2, { type: "text" }> {
+  return object.type === "text" && object.childRole === "shape-label";
+}
+
+export function projectCanvasCompositions(objects: CanvasObjectV2[]) {
+  const labelsByParentId = new Map(
+    objects.flatMap((object) =>
+      isIntrinsicShapeLabel(object) && object.parentId
+        ? [[object.parentId, object] as const]
+        : [],
+    ),
+  );
+  return objects.flatMap((object) => {
+    if (isIntrinsicShapeLabel(object)) return [];
+    if (object.type !== "shape" || object.text) return [object];
+    const label = labelsByParentId.get(object.id);
+    return label ? [{ ...object, text: label.text }] : [object];
+  });
+}
+
 function resolveParentRelativeGeometry(
   object: CanvasObjectV2,
   candidates: ReadonlyMap<string, CanvasObjectV2>,
@@ -552,25 +574,37 @@ function legacyShapeLabelId(shapeId: string) {
 
 export function migrateLegacyShapeLabels(document: Y.Doc) {
   const current = listCanvasObjectsV2(document);
-  const existingLabelParents = new Set(
+  const existingLabelsByParent = new Map(
     current.flatMap((object) =>
       object.type === "text" &&
       object.childRole === "shape-label" &&
       object.parentId
-        ? [object.parentId]
+        ? [[object.parentId, object] as const]
         : [],
     ),
   );
   const legacyShapes = current.flatMap((object) =>
     object.type === "shape" &&
     object.text.length > 0 &&
-    !existingLabelParents.has(object.id)
+    !existingLabelsByParent.has(object.id)
       ? [object]
       : [],
   );
-  if (!legacyShapes.length) return 0;
+  const synchronizedShapes = current.flatMap((object) =>
+    object.type === "shape" &&
+    object.text.length > 0 &&
+    existingLabelsByParent.has(object.id)
+      ? [object]
+      : [],
+  );
+  if (!legacyShapes.length && !synchronizedShapes.length) return 0;
 
   document.transact(() => {
+    for (const shape of synchronizedShapes) {
+      const label = existingLabelsByParent.get(shape.id)!;
+      setCanvasObjectField(document, label.id, ["text"], shape.text);
+      setCanvasObjectField(document, shape.id, ["text"], "");
+    }
     for (const shape of legacyShapes) {
       const insetX = Math.min(12, shape.geometry.width / 4);
       const insetY = Math.min(12, shape.geometry.height / 4);

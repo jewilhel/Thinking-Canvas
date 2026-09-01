@@ -35,7 +35,10 @@ import {
   type PromptResponseValue,
 } from "@/comments/comment-model";
 import { useCanvasComments } from "@/comments/use-canvas-comments";
-import type { CanvasObjectV2 } from "@/canvas/canvas-document";
+import {
+  isIntrinsicShapeLabel,
+  type CanvasObjectV2,
+} from "@/canvas/canvas-document";
 import { resolveConnectorPointsV2 } from "@/canvas/geometry";
 import { WorkspacePanel } from "@/components/canvas/workspace-panel";
 import { Button } from "@/components/ui/button";
@@ -1270,7 +1273,11 @@ export function CanvasComments({
       x: (screenPoint.x - viewport.x) / viewport.scale,
       y: (screenPoint.y - viewport.y) / viewport.scale,
     };
-    const object = topmostObjectAtPoint(objects, objectsById, canvasPoint);
+    const hitObject = topmostObjectAtPoint(objects, objectsById, canvasPoint);
+    const object =
+      hitObject && isIntrinsicShapeLabel(hitObject) && hitObject.parentId
+        ? (objectsById.get(hitObject.parentId) ?? hitObject)
+        : hitObject;
     const targetObjectIds = object
       ? targetIds?.includes(object.id)
         ? targetIds

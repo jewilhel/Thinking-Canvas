@@ -1299,6 +1299,22 @@ export function ProductCanvas({
         event.evt.shiftKey ||
         hasContainmentModifier(event.evt, navigator.platform);
       if (
+        object.type === "text" &&
+        object.childRole === "shape-label" &&
+        object.parentId
+      ) {
+        const parent = objectsById.get(object.parentId);
+        if (
+          parent &&
+          (modifier ||
+            (!selectedIds.includes(object.id) &&
+              !selectedIds.includes(parent.id)))
+        ) {
+          updateSelectionForObject(parent, modifier);
+          return;
+        }
+      }
+      if (
         isContainableObject(object) &&
         object.parentId &&
         !modifier &&
@@ -1948,7 +1964,33 @@ export function ProductCanvas({
         additive: event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey,
       });
     } else if (tool === "connector") {
-      finishConnector({ kind: "free", ...point });
+      const hitObject = [...objects].reverse().find((candidate) => {
+        const bounds = objectBounds(candidate);
+        return (
+          point.x >= bounds.x &&
+          point.x <= bounds.x + bounds.width &&
+          point.y >= bounds.y &&
+          point.y <= bounds.y + bounds.height
+        );
+      });
+      const target =
+        hitObject?.type === "text" &&
+        hitObject.childRole === "shape-label" &&
+        hitObject.parentId
+          ? objectsById.get(hitObject.parentId)
+          : hitObject;
+      finishConnector(
+        target &&
+          (target.type === "shape" ||
+            target.type === "icon" ||
+            target.type === "text")
+          ? {
+              kind: "attached",
+              objectId: target.id,
+              anchor: nearestExteriorAnchor(target, point),
+            }
+          : { kind: "free", ...point },
+      );
     } else if (
       tool !== "pan" &&
       tool !== "pen" &&
@@ -4916,9 +4958,11 @@ function ObjectNavigatorContent({
                     : undefined
                 }
                 aria-label={
-                  isContainableObject(object) && object.parentId
-                    ? `Contained ${objectLabel(object, objects)}`
-                    : objectLabel(object, objects)
+                  object.type === "text" && object.childRole === "shape-label"
+                    ? "Contained intrinsic label"
+                    : isContainableObject(object) && object.parentId
+                      ? `Contained ${objectLabel(object, objects)}`
+                      : objectLabel(object, objects)
                 }
                 aria-pressed={selectedIds.includes(object.id)}
                 onClick={(event) =>

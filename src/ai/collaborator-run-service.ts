@@ -29,7 +29,11 @@ import {
   buildRepeatedLayoutResult,
   isRepeatedStraightenAndSpaceRequest,
 } from "@/ai/repeat-layout-continuity";
-import { listCanvasObjectsV2 } from "@/canvas/canvas-document";
+import {
+  isIntrinsicShapeLabel,
+  listCanvasObjectsV2,
+  projectCanvasCompositions,
+} from "@/canvas/canvas-document";
 import {
   buildCanvasObjectDetails,
   commentThreadDetailSchema,
@@ -268,6 +272,13 @@ export async function completeAiRun(
     })),
   );
   const sourceObjects = listCanvasObjectsV2(compacted.document);
+  const compositionParentIds = new Map(
+    sourceObjects.flatMap((object) =>
+      isIntrinsicShapeLabel(object) && object.parentId
+        ? [[object.id, object.parentId] as const]
+        : [],
+    ),
+  );
   const sourceTargetObjectIds = [...commentResult.data.comment_targets]
     .sort((left, right) => left.target_order - right.target_order)
     .map((target) => target.target_object_id);
@@ -733,6 +744,7 @@ export async function completeAiRun(
       assertReviewChangesWithinScope({
         scope: reviewScope,
         changes: reviewStage.objectChanges,
+        parentIdsByObjectId: compositionParentIds,
       });
       const requestedExplanations =
         "shapes" in toolArguments
@@ -742,19 +754,30 @@ export async function completeAiRun(
             : "annotations" in toolArguments
               ? newAnnotationStage!.explanations
               : toolArguments.explanations;
+      const affectedCompositionChildByParentId = new Map(
+        reviewStage.affectedObjectIds.flatMap((objectId) => {
+          const parentId = compositionParentIds.get(objectId);
+          return parentId ? [[parentId, objectId] as const] : [];
+        }),
+      );
       const explanations =
         "layout" in toolArguments
           ? requestedExplanations.filter((explanation) =>
               reviewStage.affectedObjectIds.includes(explanation.objectId),
             )
-          : requestedExplanations;
+          : requestedExplanations.map((explanation) => ({
+              ...explanation,
+              objectId:
+                affectedCompositionChildByParentId.get(explanation.objectId) ??
+                explanation.objectId,
+            }));
       let explainedChanges = validateReviewExplanations({
         reviewStage,
         explanations,
       });
       assertNoNewDeterministicVisualDefects({
-        beforeObjects: sourceObjects,
-        afterObjects: reviewStage.visualObjects,
+        beforeObjects: projectCanvasCompositions(sourceObjects),
+        afterObjects: projectCanvasCompositions(reviewStage.visualObjects),
         targetObjectIds: reviewStage.affectedObjectIds,
       });
       const allFocusObjects = [...sourceObjects, ...reviewStage.visualObjects];
@@ -838,6 +861,7 @@ export async function completeAiRun(
           assertReviewChangesWithinScope({
             scope: reviewScope,
             changes: refinedStage.objectChanges,
+            parentIdsByObjectId: compositionParentIds,
           });
           const originalIds = [...reviewStage.affectedObjectIds].sort();
           const refinedIds = [...refinedStage.affectedObjectIds].sort();
@@ -851,8 +875,8 @@ export async function completeAiRun(
             explanations,
           });
           assertNoNewDeterministicVisualDefects({
-            beforeObjects: sourceObjects,
-            afterObjects: refinedStage.visualObjects,
+            beforeObjects: projectCanvasCompositions(sourceObjects),
+            afterObjects: projectCanvasCompositions(refinedStage.visualObjects),
             targetObjectIds: refinedStage.affectedObjectIds,
           });
           const [refinedAfterCapture, refinedAfterOverview] = await Promise.all(

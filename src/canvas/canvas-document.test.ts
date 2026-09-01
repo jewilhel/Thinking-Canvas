@@ -5,6 +5,7 @@ import {
   createProductCanvasDocument,
   listCanvasObjectsV2,
   migrateLegacyShapeLabels,
+  projectCanvasCompositions,
   putCanvasObjectV2,
   readCanvasOrderV2,
   readCanvasDocumentMetadata,
@@ -103,6 +104,13 @@ describe("production canvas document", () => {
       },
       geometry: { x: 52, y: 72, width: 156, height: 72, rotation: 0 },
     });
+    expect(projectCanvasCompositions(objects)).toEqual([
+      expect.objectContaining({
+        id: objectId,
+        type: "shape",
+        text: "Shared idea",
+      }),
+    ]);
   });
 
   it("deduplicates a stable label order entry after concurrent migration", () => {

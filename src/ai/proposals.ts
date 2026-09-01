@@ -2,6 +2,7 @@ import * as Y from "yjs";
 
 import {
   listCanvasObjectsV2,
+  projectCanvasCompositions,
   readCanvasOrderV2,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
@@ -45,7 +46,7 @@ export type ReviewObjectExplanation = {
 function stateByObjectId(document: Y.Doc) {
   const order = readCanvasOrderV2(document);
   return new Map(
-    listCanvasObjectsV2(document).map((object) => [
+    projectCanvasCompositions(listCanvasObjectsV2(document)).map((object) => [
       object.id,
       {
         object,

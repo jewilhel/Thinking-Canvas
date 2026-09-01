@@ -56,8 +56,12 @@ export function deriveAiReviewScope(input: {
 export function assertReviewChangesWithinScope(input: {
   scope: AiReviewScope;
   changes: StagedCanvasObjectChange[];
+  parentIdsByObjectId?: ReadonlyMap<string, string>;
 }) {
-  const affectedIds = input.changes.map((change) => change.objectId);
+  const affectedIds = input.changes.map(
+    (change) =>
+      input.parentIdsByObjectId?.get(change.objectId) ?? change.objectId,
+  );
   if (new Set(affectedIds).size !== affectedIds.length) {
     throw new AiReviewScopeError("Review changes must have unique object IDs.");
   }
