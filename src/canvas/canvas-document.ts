@@ -490,7 +490,10 @@ export function readCanvasObjectV2(document: Y.Doc, objectId: string) {
 
 export function listCanvasObjectsV2(document: Y.Doc) {
   const objectMap = objects(document);
-  const orderedIds = order(document).toArray();
+  // Concurrent clients can both append the same deterministic object id before
+  // their Y.Array updates converge. The object map correctly converges to one
+  // object, so render and command consumers must likewise expose one order slot.
+  const orderedIds = [...new Set(order(document).toArray())];
   const orphanIds = [...objectMap.keys()]
     .filter((id) => !orderedIds.includes(id))
     .sort();
@@ -622,7 +625,7 @@ export function migrateLegacyShapeLabels(document: Y.Doc) {
 }
 
 export function readCanvasOrderV2(document: Y.Doc) {
-  return order(document).toArray();
+  return [...new Set(order(document).toArray())];
 }
 
 export function setCanvasOrderV2(document: Y.Doc, objectIds: string[]) {
@@ -648,8 +651,10 @@ export function deleteCanvasObjectV2(document: Y.Doc, objectId: string) {
 
   document.transact(() => {
     objects(document).delete(objectId);
-    const index = order(document).toArray().indexOf(objectId);
-    if (index >= 0) order(document).delete(index, 1);
+    const currentOrder = order(document);
+    for (let index = currentOrder.length - 1; index >= 0; index -= 1) {
+      if (currentOrder.get(index) === objectId) currentOrder.delete(index, 1);
+    }
   }, "canvas.object.delete");
 
   return existing;

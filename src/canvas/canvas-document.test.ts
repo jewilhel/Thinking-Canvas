@@ -6,6 +6,7 @@ import {
   listCanvasObjectsV2,
   migrateLegacyShapeLabels,
   putCanvasObjectV2,
+  readCanvasOrderV2,
   readCanvasDocumentMetadata,
   readCanvasObjectV2,
   setCanvasObjectField,
@@ -102,6 +103,26 @@ describe("production canvas document", () => {
       },
       geometry: { x: 52, y: 72, width: 156, height: 72, rotation: 0 },
     });
+  });
+
+  it("deduplicates a stable label order entry after concurrent migration", () => {
+    const source = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(source, makeObject());
+    const initialUpdate = Y.encodeStateAsUpdate(source);
+    const left = new Y.Doc();
+    const right = new Y.Doc();
+    Y.applyUpdate(left, initialUpdate);
+    Y.applyUpdate(right, initialUpdate);
+
+    migrateLegacyShapeLabels(left);
+    migrateLegacyShapeLabels(right);
+    Y.applyUpdate(left, Y.encodeStateAsUpdate(right));
+    Y.applyUpdate(right, Y.encodeStateAsUpdate(left));
+
+    expect(listCanvasObjectsV2(left)).toHaveLength(2);
+    expect(listCanvasObjectsV2(right)).toHaveLength(2);
+    expect(readCanvasOrderV2(left)).toHaveLength(2);
+    expect(readCanvasOrderV2(right)).toHaveLength(2);
   });
 
   it("upgrades a legacy object without changing its identity or geometry", () => {

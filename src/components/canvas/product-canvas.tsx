@@ -297,9 +297,16 @@ function baseStyle(type: CanvasObjectV2["type"]) {
   };
 }
 
-function objectLabel(object: CanvasObjectV2) {
-  if (object.type === "shape")
-    return `${object.shape} — ${object.text || "Untitled"}`;
+function objectLabel(object: CanvasObjectV2, canvasObjects?: CanvasObjectV2[]) {
+  if (object.type === "shape") {
+    const intrinsicLabel = canvasObjects?.find(
+      (candidate): candidate is Extract<CanvasObjectV2, { type: "text" }> =>
+        candidate.type === "text" &&
+        candidate.childRole === "shape-label" &&
+        candidate.parentId === object.id,
+    );
+    return `${object.shape} — ${object.text || intrinsicLabel?.text || "Untitled"}`;
+  }
   if (object.type === "text") return `text — ${object.text || "Untitled"}`;
   if (object.type === "table") return `table — ${object.cells.length} rows`;
   if (object.type === "connector") return "connector";
@@ -1254,6 +1261,17 @@ export function ProductCanvas({
   ) {
     event.cancelBubble = true;
     if (tool === "eraser") return;
+    if (
+      tool !== "select" &&
+      tool !== "pan" &&
+      tool !== "pen" &&
+      tool !== "highlighter" &&
+      tool !== "connector"
+    ) {
+      const point = eventWorldPointer(event);
+      if (point) createObject(tool, point);
+      return;
+    }
     if (
       event.evt instanceof MouseEvent &&
       isControlClickContextMenu(event.evt, navigator.platform)
@@ -3862,7 +3880,7 @@ export function ProductCanvas({
               data-testid="selection-status"
             >
               {selectedIds.length === 1
-                ? objectLabel(selectedObject)
+                ? objectLabel(selectedObject, objects)
                 : `${selectedIds.length} selected`}
             </output>
             {fillObjects.length ? (
@@ -4260,7 +4278,7 @@ export function ProductCanvas({
                                 )
                               }
                             >
-                              Place inside {objectLabel(parent)}
+                              Place inside {objectLabel(parent, objects)}
                             </Button>
                           ) : null;
                         })()
@@ -4899,8 +4917,8 @@ function ObjectNavigatorContent({
                 }
                 aria-label={
                   isContainableObject(object) && object.parentId
-                    ? `Contained ${objectLabel(object)}`
-                    : objectLabel(object)
+                    ? `Contained ${objectLabel(object, objects)}`
+                    : objectLabel(object, objects)
                 }
                 aria-pressed={selectedIds.includes(object.id)}
                 onClick={(event) =>
@@ -4912,7 +4930,7 @@ function ObjectNavigatorContent({
                 className={`min-h-11 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50 ${isContainableObject(object) && object.parentId ? "ml-5 w-[calc(100%-1.25rem)]" : "w-full"}`}
               >
                 {isContainableObject(object) && object.parentId ? "↳ " : ""}
-                {objectLabel(object)}
+                {objectLabel(object, objects)}
               </button>
             </li>
           ))}
