@@ -23,10 +23,7 @@ describe("containment modifier gesture", () => {
 
   it("reserves Control-click for the macOS context-menu convention", () => {
     expect(
-      isControlClickContextMenu(
-        { metaKey: false, ctrlKey: true },
-        "MacIntel",
-      ),
+      isControlClickContextMenu({ metaKey: false, ctrlKey: true }, "MacIntel"),
     ).toBe(true);
     expect(
       isControlClickContextMenu({ metaKey: false, ctrlKey: true }, "Win32"),

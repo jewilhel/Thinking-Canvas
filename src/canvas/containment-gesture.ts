@@ -4,10 +4,7 @@ export function isMacPlatform(platform: string) {
   return /Mac|iPhone|iPad|iPod/i.test(platform);
 }
 
-export function hasContainmentModifier(
-  event: ModifierEvent,
-  platform: string,
-) {
+export function hasContainmentModifier(event: ModifierEvent, platform: string) {
   return isMacPlatform(platform) ? event.metaKey : event.ctrlKey;
 }
 
