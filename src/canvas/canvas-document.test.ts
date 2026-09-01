@@ -98,9 +98,8 @@ describe("production canvas document", () => {
       text: "Shared idea",
       parentId: objectId,
       childLayout: {
-        pinPosition: true,
-        scaleWidth: true,
-        scaleHeight: true,
+        horizontalConstraint: "left-right",
+        verticalConstraint: "top-bottom",
       },
       geometry: { x: 52, y: 72, width: 156, height: 72, rotation: 0 },
     });

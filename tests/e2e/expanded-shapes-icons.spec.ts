@@ -164,46 +164,40 @@ test("places an icon inside a sticky and removes it without a jump", async ({
     /Contained icon — brain/,
   );
   await page.getByRole("button", { name: "More selection actions" }).click();
-  const childLayout = page.getByRole("group", { name: "Child layout" });
-  await expect(
-    childLayout.getByRole("button", { name: "Pin" }).first(),
-  ).toHaveAttribute("aria-pressed", "true");
-  const horizontalPin = childLayout
-    .getByRole("button", { name: "Pin" })
-    .first();
-  const horizontalCenter = childLayout
-    .getByRole("button", { name: "Center" })
-    .first();
-  await horizontalCenter.click();
-  await expect(horizontalCenter).toHaveAttribute("aria-pressed", "true");
-  expect(
-    await horizontalCenter.evaluate(
-      (element) => getComputedStyle(element).backgroundColor,
-    ),
-  ).not.toBe(
-    await horizontalPin.evaluate(
-      (element) => getComputedStyle(element).backgroundColor,
-    ),
-  );
+  const constraints = page.getByRole("group", { name: "Constraints" });
+  const horizontalConstraint = constraints.getByLabel("Horizontal constraint");
+  const verticalConstraint = constraints.getByLabel("Vertical constraint");
+  await expect(horizontalConstraint).toHaveValue("left");
+  await expect(verticalConstraint).toHaveValue("top");
+  await expect(horizontalConstraint.locator("option")).toHaveText([
+    "Left",
+    "Right",
+    "Left + Right",
+    "Center",
+    "Scale",
+  ]);
+  await expect(verticalConstraint.locator("option")).toHaveText([
+    "Top",
+    "Bottom",
+    "Top + Bottom",
+    "Center",
+    "Scale",
+  ]);
+  await horizontalConstraint.selectOption("center");
+  await expect(horizontalConstraint).toHaveValue("center");
   const childWidth = Number(
     await page.getByTestId("selected-width").innerText(),
   );
   await expect(page.getByTestId("selected-position-x")).toHaveText(
     String(Math.round(parentX + (parentWidth - childWidth) / 2)),
   );
-  await childLayout.getByRole("button", { name: "Center" }).nth(1).click();
+  await verticalConstraint.selectOption("center");
   const childHeight = Number(
     await page.getByTestId("selected-height").innerText(),
   );
   await expect(page.getByTestId("selected-position-y")).toHaveText(
     String(Math.round(parentY + (parentHeight - childHeight) / 2)),
   );
-  const scaleWidth = childLayout.getByRole("button", {
-    name: "Scale width",
-  });
-  await expect(scaleWidth).toHaveAttribute("aria-pressed", "true");
-  await scaleWidth.click();
-  await expect(scaleWidth).toHaveAttribute("aria-pressed", "false");
   await page.getByLabel("Rotation").fill("30");
   await expect(page.getByTestId("selected-rotation")).toHaveText("30°");
   const beforeDetachX = await page
@@ -455,6 +449,21 @@ test("keeps grouped selection chrome tight and command-drags the group into a pa
   await expect(
     page.getByRole("button", { name: "Remove group from container" }),
   ).toBeVisible();
+  const constraints = page.getByRole("group", { name: "Constraints" });
+  await expect(constraints.getByLabel("Horizontal constraint")).toHaveValue(
+    "left",
+  );
+  await expect(constraints.getByLabel("Vertical constraint")).toHaveValue(
+    "top",
+  );
+  await constraints.getByLabel("Horizontal constraint").selectOption("center");
+  await constraints.getByLabel("Vertical constraint").selectOption("center");
+  await expect(constraints.getByLabel("Horizontal constraint")).toHaveValue(
+    "center",
+  );
+  await expect(constraints.getByLabel("Vertical constraint")).toHaveValue(
+    "center",
+  );
   await expect(page.getByTestId("visible-connection-anchor-count")).toHaveText(
     "0",
   );

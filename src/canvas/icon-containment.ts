@@ -12,21 +12,53 @@ export type ChildLayout = NonNullable<ContainableObject["childLayout"]>;
 export type IconObject = Extract<CanvasObjectV2, { type: "icon" }>;
 export type IconParent = ObjectParent;
 
+export type HorizontalConstraint =
+  "left" | "right" | "left-right" | "center" | "scale";
+export type VerticalConstraint =
+  "top" | "bottom" | "top-bottom" | "center" | "scale";
+
 export const defaultChildLayout: ChildLayout = {
-  horizontalPosition: "pin",
-  verticalPosition: "pin",
-  scaleWidth: true,
-  scaleHeight: true,
+  horizontalConstraint: "left",
+  verticalConstraint: "top",
 };
 
-export function childPositionMode(
+export const shapeLabelChildLayout: ChildLayout = {
+  horizontalConstraint: "left-right",
+  verticalConstraint: "top-bottom",
+};
+
+export function childConstraints(
   layout: ChildLayout,
-  axis: "horizontal" | "vertical",
+  childRole?: "shape-label" | null,
 ) {
-  const explicit =
-    axis === "horizontal" ? layout.horizontalPosition : layout.verticalPosition;
-  if (explicit) return explicit;
-  return layout.pinPosition === false ? "fixed" : "pin";
+  if (layout.horizontalConstraint && layout.verticalConstraint) {
+    return {
+      horizontal: layout.horizontalConstraint,
+      vertical: layout.verticalConstraint,
+    };
+  }
+  if (childRole === "shape-label") {
+    return { horizontal: "left-right", vertical: "top-bottom" } as const;
+  }
+  const horizontalPosition =
+    layout.horizontalPosition ??
+    (layout.pinPosition === false ? "fixed" : "pin");
+  const verticalPosition =
+    layout.verticalPosition ?? (layout.pinPosition === false ? "fixed" : "pin");
+  return {
+    horizontal:
+      horizontalPosition === "center"
+        ? "center"
+        : layout.scaleWidth
+          ? "scale"
+          : "left",
+    vertical:
+      verticalPosition === "center"
+        ? "center"
+        : layout.scaleHeight
+          ? "scale"
+          : "top",
+  } as const;
 }
 
 export function isContainableObject(
@@ -267,7 +299,12 @@ export function childWorldGeometry(
 }
 
 export function childRelativeAfterParentResize(
-  child: Pick<ContainableObject, "geometry" | "parentRelative" | "childLayout">,
+  child: Pick<
+    ContainableObject,
+    "geometry" | "parentRelative" | "childLayout"
+  > & {
+    childRole?: "shape-label" | null;
+  },
   previousParent: ObjectParent,
   nextParent: ObjectParent,
 ) {
@@ -275,32 +312,54 @@ export function childRelativeAfterParentResize(
     child.parentRelative ??
     parentRelativeGeometry(child.geometry, previousParent);
   const layout = child.childLayout ?? defaultChildLayout;
-  const width = layout.scaleWidth
-    ? relative.width
-    : (relative.width * previousParent.geometry.width) /
-      Math.max(nextParent.geometry.width, Number.EPSILON);
-  const height = layout.scaleHeight
-    ? relative.height
-    : (relative.height * previousParent.geometry.height) /
-      Math.max(nextParent.geometry.height, Number.EPSILON);
-  const horizontal = childPositionMode(layout, "horizontal");
-  const vertical = childPositionMode(layout, "vertical");
+  const constraints = childConstraints(layout, child.childRole);
+  const previousWidth = previousParent.geometry.width;
+  const previousHeight = previousParent.geometry.height;
+  const nextWidth = Math.max(nextParent.geometry.width, Number.EPSILON);
+  const nextHeight = Math.max(nextParent.geometry.height, Number.EPSILON);
+  const absoluteX = relative.x * previousWidth;
+  const absoluteY = relative.y * previousHeight;
+  const absoluteWidth = relative.width * previousWidth;
+  const absoluteHeight = relative.height * previousHeight;
+  const right = previousWidth - absoluteX - absoluteWidth;
+  const bottom = previousHeight - absoluteY - absoluteHeight;
+
+  let x = relative.x;
+  let width = relative.width;
+  if (constraints.horizontal === "left") {
+    x = absoluteX / nextWidth;
+    width = absoluteWidth / nextWidth;
+  } else if (constraints.horizontal === "right") {
+    width = absoluteWidth / nextWidth;
+    x = (nextWidth - right - absoluteWidth) / nextWidth;
+  } else if (constraints.horizontal === "left-right") {
+    x = absoluteX / nextWidth;
+    width = Math.max(0, nextWidth - absoluteX - right) / nextWidth;
+  } else if (constraints.horizontal === "center") {
+    width = absoluteWidth / nextWidth;
+    x = 0.5 - width / 2;
+  }
+
+  let y = relative.y;
+  let height = relative.height;
+  if (constraints.vertical === "top") {
+    y = absoluteY / nextHeight;
+    height = absoluteHeight / nextHeight;
+  } else if (constraints.vertical === "bottom") {
+    height = absoluteHeight / nextHeight;
+    y = (nextHeight - bottom - absoluteHeight) / nextHeight;
+  } else if (constraints.vertical === "top-bottom") {
+    y = absoluteY / nextHeight;
+    height = Math.max(0, nextHeight - absoluteY - bottom) / nextHeight;
+  } else if (constraints.vertical === "center") {
+    height = absoluteHeight / nextHeight;
+    y = 0.5 - height / 2;
+  }
+
   return {
     ...relative,
-    x:
-      horizontal === "center"
-        ? 0.5 - width / 2
-        : horizontal === "pin"
-          ? relative.x
-          : (relative.x * previousParent.geometry.width) /
-            Math.max(nextParent.geometry.width, Number.EPSILON),
-    y:
-      vertical === "center"
-        ? 0.5 - height / 2
-        : vertical === "pin"
-          ? relative.y
-          : (relative.y * previousParent.geometry.height) /
-            Math.max(nextParent.geometry.height, Number.EPSILON),
+    x,
+    y,
     width,
     height,
   };

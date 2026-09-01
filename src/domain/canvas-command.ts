@@ -21,6 +21,7 @@ import {
 import { resolveConnectorEndpointV2 } from "@/canvas/geometry";
 import {
   boundParentGeometryToChildren,
+  childConstraints,
   childRelativeAfterParentResize,
   childWorldGeometry,
   clampObjectGeometryToParent,
@@ -32,7 +33,9 @@ import {
   parentRelativeGeometry,
   rotateGeometryAroundCenter,
   type ContainableObject,
+  type HorizontalConstraint,
   type ObjectParent,
+  type VerticalConstraint,
 } from "@/canvas/icon-containment";
 import { isEligibleAnnotationTarget } from "@/canvas/annotation-attachment";
 import {
@@ -176,24 +179,73 @@ const detachObjectCommand = commandBase.extend({
 });
 const layoutObjectCommand = commandBase.extend({
   type: z.literal("object.layout"),
-  payload: z.strictObject({
-    objectId: uuid,
-    pinPosition: z.boolean().optional(),
-    horizontalPosition: z.enum(["fixed", "pin", "center"]).optional(),
-    verticalPosition: z.enum(["fixed", "pin", "center"]).optional(),
-    scaleWidth: z.boolean(),
-    scaleHeight: z.boolean(),
-  }),
+  payload: z
+    .strictObject({
+      objectId: uuid,
+      horizontalConstraint: z
+        .enum(["left", "right", "left-right", "center", "scale"])
+        .optional(),
+      verticalConstraint: z
+        .enum(["top", "bottom", "top-bottom", "center", "scale"])
+        .optional(),
+      pinPosition: z.boolean().optional(),
+      horizontalPosition: z.enum(["fixed", "pin", "center"]).optional(),
+      verticalPosition: z.enum(["fixed", "pin", "center"]).optional(),
+      scaleWidth: z.boolean().optional(),
+      scaleHeight: z.boolean().optional(),
+    })
+    .superRefine((payload, context) => {
+      const hasConstraints =
+        payload.horizontalConstraint !== undefined &&
+        payload.verticalConstraint !== undefined;
+      const hasLegacyLayout =
+        payload.scaleWidth !== undefined &&
+        payload.scaleHeight !== undefined &&
+        (payload.pinPosition !== undefined ||
+          (payload.horizontalPosition !== undefined &&
+            payload.verticalPosition !== undefined));
+      if (!hasConstraints && !hasLegacyLayout) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Layout requires both constraints or a complete legacy layout.",
+        });
+      }
+    }),
 });
 const layoutGroupCommand = commandBase.extend({
   type: z.literal("group.layout"),
-  payload: z.strictObject({
-    groupId: uuid,
-    horizontalPosition: z.enum(["fixed", "pin", "center"]),
-    verticalPosition: z.enum(["fixed", "pin", "center"]),
-    scaleWidth: z.boolean(),
-    scaleHeight: z.boolean(),
-  }),
+  payload: z
+    .strictObject({
+      groupId: uuid,
+      horizontalConstraint: z
+        .enum(["left", "right", "left-right", "center", "scale"])
+        .optional(),
+      verticalConstraint: z
+        .enum(["top", "bottom", "top-bottom", "center", "scale"])
+        .optional(),
+      horizontalPosition: z.enum(["fixed", "pin", "center"]).optional(),
+      verticalPosition: z.enum(["fixed", "pin", "center"]).optional(),
+      scaleWidth: z.boolean().optional(),
+      scaleHeight: z.boolean().optional(),
+    })
+    .superRefine((payload, context) => {
+      const hasConstraints =
+        payload.horizontalConstraint !== undefined &&
+        payload.verticalConstraint !== undefined;
+      const hasLegacyLayout =
+        payload.horizontalPosition !== undefined &&
+        payload.verticalPosition !== undefined &&
+        payload.scaleWidth !== undefined &&
+        payload.scaleHeight !== undefined;
+      if (!hasConstraints && !hasLegacyLayout) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Layout requires both constraints or a complete legacy layout.",
+        });
+      }
+    }),
 });
 const rotateObjectCommand = commandBase.extend({
   type: z.literal("object.rotate"),
@@ -637,15 +689,40 @@ function tightUnrotatedGroupFrame(
 function relativeGeometryForLayout(
   geometry: CanvasObjectV2["geometry"],
   parent: ObjectParent,
-  horizontalPosition: "fixed" | "pin" | "center",
-  verticalPosition: "fixed" | "pin" | "center",
+  horizontalConstraint: HorizontalConstraint,
+  verticalConstraint: VerticalConstraint,
 ) {
   const relative = parentRelativeGeometry(geometry, parent);
   return {
     ...relative,
-    x: horizontalPosition === "center" ? 0.5 - relative.width / 2 : relative.x,
-    y: verticalPosition === "center" ? 0.5 - relative.height / 2 : relative.y,
+    x:
+      horizontalConstraint === "center" ? 0.5 - relative.width / 2 : relative.x,
+    y: verticalConstraint === "center" ? 0.5 - relative.height / 2 : relative.y,
   };
+}
+
+function constraintsFromLayoutPayload(payload: {
+  horizontalConstraint?: HorizontalConstraint;
+  verticalConstraint?: VerticalConstraint;
+  pinPosition?: boolean;
+  horizontalPosition?: "fixed" | "pin" | "center";
+  verticalPosition?: "fixed" | "pin" | "center";
+  scaleWidth?: boolean;
+  scaleHeight?: boolean;
+}) {
+  if (payload.horizontalConstraint && payload.verticalConstraint) {
+    return {
+      horizontal: payload.horizontalConstraint,
+      vertical: payload.verticalConstraint,
+    };
+  }
+  return childConstraints({
+    pinPosition: payload.pinPosition,
+    horizontalPosition: payload.horizontalPosition,
+    verticalPosition: payload.verticalPosition,
+    scaleWidth: payload.scaleWidth,
+    scaleHeight: payload.scaleHeight,
+  });
 }
 
 export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
@@ -1196,11 +1273,12 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         (object) => object.groupId === group.id,
       );
       const currentFrame = tightUnrotatedGroupFrame(group, members);
+      const constraints = constraintsFromLayoutPayload(command.payload);
       const relative = relativeGeometryForLayout(
         currentFrame,
         parent,
-        command.payload.horizontalPosition,
-        command.payload.verticalPosition,
+        constraints.horizontal,
+        constraints.vertical,
       );
       const nextFrame = childWorldGeometry(
         { geometry: currentFrame, parentRelative: relative },
@@ -1237,10 +1315,8 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
       }
       setCanvasGroupField(document, group.id, ["parentRelative"], relative);
       setCanvasGroupField(document, group.id, ["childLayout"], {
-        horizontalPosition: command.payload.horizontalPosition,
-        verticalPosition: command.payload.verticalPosition,
-        scaleWidth: command.payload.scaleWidth,
-        scaleHeight: command.payload.scaleHeight,
+        horizontalConstraint: constraints.horizontal,
+        verticalConstraint: constraints.vertical,
       });
       setCanvasGroupField(document, group.id, ["updatedAt"], command.issuedAt);
       affectedGroupIds.add(group.id);
@@ -1380,18 +1456,13 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           "Layout properties require a nested shape, icon, or text object.",
         );
       }
-      const horizontalPosition =
-        command.payload.horizontalPosition ??
-        (command.payload.pinPosition === false ? "fixed" : "pin");
-      const verticalPosition =
-        command.payload.verticalPosition ??
-        (command.payload.pinPosition === false ? "fixed" : "pin");
+      const constraints = constraintsFromLayoutPayload(command.payload);
       const parent = requireObjectParent(document, child.parentId);
       const relative = relativeGeometryForLayout(
         child.geometry,
         parent,
-        horizontalPosition,
-        verticalPosition,
+        constraints.horizontal,
+        constraints.vertical,
       );
       const nextChild = childWorldGeometry(
         { ...child, parentRelative: relative },
@@ -1408,10 +1479,8 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         affectedObjectIds,
       );
       setCanvasObjectField(document, child.id, ["childLayout"], {
-        horizontalPosition,
-        verticalPosition,
-        scaleWidth: command.payload.scaleWidth,
-        scaleHeight: command.payload.scaleHeight,
+        horizontalConstraint: constraints.horizontal,
+        verticalConstraint: constraints.vertical,
       });
       touch(document, child.id, command.issuedAt);
       affectedObjectIds.add(child.id);

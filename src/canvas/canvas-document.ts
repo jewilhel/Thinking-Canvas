@@ -85,17 +85,30 @@ const childLayoutSchema = z
     pinPosition: z.boolean().optional(),
     horizontalPosition: z.enum(["fixed", "pin", "center"]).optional(),
     verticalPosition: z.enum(["fixed", "pin", "center"]).optional(),
-    scaleWidth: z.boolean(),
-    scaleHeight: z.boolean(),
+    scaleWidth: z.boolean().optional(),
+    scaleHeight: z.boolean().optional(),
+    horizontalConstraint: z
+      .enum(["left", "right", "left-right", "center", "scale"])
+      .optional(),
+    verticalConstraint: z
+      .enum(["top", "bottom", "top-bottom", "center", "scale"])
+      .optional(),
   })
   .superRefine((layout, context) => {
-    if (
-      layout.pinPosition === undefined &&
-      (!layout.horizontalPosition || !layout.verticalPosition)
-    ) {
+    const hasConstraints =
+      layout.horizontalConstraint !== undefined &&
+      layout.verticalConstraint !== undefined;
+    const hasLegacyLayout =
+      layout.scaleWidth !== undefined &&
+      layout.scaleHeight !== undefined &&
+      (layout.pinPosition !== undefined ||
+        (layout.horizontalPosition !== undefined &&
+          layout.verticalPosition !== undefined));
+    if (!hasConstraints && !hasLegacyLayout) {
       context.addIssue({
         code: "custom",
-        message: "Child layout requires legacy pinning or both axis modes.",
+        message:
+          "Child layout requires both constraints or a complete legacy layout.",
       });
     }
   });
@@ -734,9 +747,8 @@ export function migrateLegacyShapeLabels(document: Y.Doc) {
         parentId: shape.id,
         parentRelative: relative,
         childLayout: {
-          pinPosition: true,
-          scaleWidth: true,
-          scaleHeight: true,
+          horizontalConstraint: "left-right",
+          verticalConstraint: "top-bottom",
         },
         geometry: {
           x: shape.geometry.x + localX,

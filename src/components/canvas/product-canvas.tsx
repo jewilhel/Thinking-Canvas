@@ -94,8 +94,8 @@ import {
   type PhosphorIconCatalog,
 } from "@/canvas/phosphor-icon-catalog";
 import {
+  childConstraints,
   childWorldGeometry,
-  childPositionMode,
   childRelativeAfterParentResize,
   defaultChildLayout,
   fullyContains,
@@ -108,7 +108,10 @@ import {
   parentRelativeGeometry,
   rotateGeometryAroundCenter,
   rotationHandleWorldPoint,
+  shapeLabelChildLayout,
+  type HorizontalConstraint,
   type RotationCorner,
+  type VerticalConstraint,
 } from "@/canvas/icon-containment";
 import {
   applyCanvasHistoryEntry,
@@ -952,7 +955,7 @@ export function ProductCanvas({
               childRole: "shape-label",
               parentId: object.id,
               parentRelative: parentRelativeGeometry(labelGeometry, object),
-              childLayout: defaultChildLayout,
+              childLayout: shapeLabelChildLayout,
               geometry: labelGeometry,
               style: {
                 ...baseStyle("text"),
@@ -4759,17 +4762,16 @@ export function ProductCanvas({
                               ? selectedObject.childLayout
                               : null) ??
                             defaultChildLayout;
-                          const horizontal = childPositionMode(
+                          const constraints = childConstraints(
                             layout,
-                            "horizontal",
+                            !selectedGroup && selectedObject.type === "text"
+                              ? (selectedObject.childRole ?? null)
+                              : null,
                           );
-                          const vertical = childPositionMode(
-                            layout,
-                            "vertical",
-                          );
-                          const updateLayout = (
-                            next: typeof defaultChildLayout,
-                          ) =>
+                          const updateLayout = (next: {
+                            horizontalConstraint: HorizontalConstraint;
+                            verticalConstraint: VerticalConstraint;
+                          }) =>
                             selectedGroup
                               ? runCommand("group.layout", {
                                   groupId: selectedGroup.id,
@@ -4782,93 +4784,62 @@ export function ProductCanvas({
                           return (
                             <fieldset className="col-span-2 rounded-lg border border-white/15 p-2">
                               <legend className="px-1 text-xs text-zinc-300">
-                                Child layout
+                                Constraints
                               </legend>
-                              <div className="grid gap-3 text-xs text-white">
-                                {(
-                                  [
-                                    ["Horizontal", horizontal],
-                                    ["Vertical", vertical],
-                                  ] as const
-                                ).map(([label, value]) => (
-                                  <div key={label}>
-                                    <span className="text-zinc-300">
-                                      {label}
-                                    </span>
-                                    <div className="mt-1 grid grid-cols-3 gap-1">
-                                      {(
-                                        ["fixed", "pin", "center"] as const
-                                      ).map((mode) => (
-                                        <Button
-                                          key={mode}
-                                          type="button"
-                                          size="sm"
-                                          variant={
-                                            value === mode
-                                              ? "secondary"
-                                              : "outline"
-                                          }
-                                          aria-pressed={value === mode}
-                                          className="aria-pressed:border-violet-400! aria-pressed:bg-violet-600! aria-pressed:text-white! aria-pressed:ring-2 aria-pressed:ring-violet-300/70"
-                                          onClick={() =>
-                                            updateLayout({
-                                              horizontalPosition:
-                                                label === "Horizontal"
-                                                  ? mode
-                                                  : horizontal,
-                                              verticalPosition:
-                                                label === "Vertical"
-                                                  ? mode
-                                                  : vertical,
-                                              scaleWidth: layout.scaleWidth,
-                                              scaleHeight: layout.scaleHeight,
-                                            })
-                                          }
-                                        >
-                                          {mode[0]!.toUpperCase() +
-                                            mode.slice(1)}
-                                        </Button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ))}
-                                <div className="grid grid-cols-2 gap-1">
-                                  {(
-                                    [
-                                      ["scaleWidth", "Scale width"],
-                                      ["scaleHeight", "Scale height"],
-                                    ] as const
-                                  ).map(([property, label]) => (
-                                    <Button
-                                      key={property}
-                                      type="button"
-                                      size="sm"
-                                      variant={
-                                        layout[property]
-                                          ? "secondary"
-                                          : "outline"
-                                      }
-                                      aria-pressed={layout[property]}
-                                      className="aria-pressed:border-violet-400! aria-pressed:bg-violet-600! aria-pressed:text-white! aria-pressed:ring-2 aria-pressed:ring-violet-300/70"
-                                      onClick={() =>
-                                        updateLayout({
-                                          horizontalPosition: horizontal,
-                                          verticalPosition: vertical,
-                                          scaleWidth:
-                                            property === "scaleWidth"
-                                              ? !layout.scaleWidth
-                                              : layout.scaleWidth,
-                                          scaleHeight:
-                                            property === "scaleHeight"
-                                              ? !layout.scaleHeight
-                                              : layout.scaleHeight,
-                                        })
-                                      }
-                                    >
-                                      {label}
-                                    </Button>
-                                  ))}
-                                </div>
+                              <div className="grid gap-2 text-xs text-white">
+                                <label className="grid gap-1">
+                                  <span className="text-zinc-300">
+                                    Horizontal
+                                  </span>
+                                  <select
+                                    aria-label="Horizontal constraint"
+                                    value={constraints.horizontal}
+                                    className="h-9 w-full rounded-md border border-white/20 bg-zinc-900 px-3 text-sm text-white outline-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-300/70"
+                                    onChange={(event) =>
+                                      updateLayout({
+                                        horizontalConstraint: event
+                                          .currentTarget
+                                          .value as HorizontalConstraint,
+                                        verticalConstraint:
+                                          constraints.vertical,
+                                      })
+                                    }
+                                  >
+                                    <option value="left">Left</option>
+                                    <option value="right">Right</option>
+                                    <option value="left-right">
+                                      Left + Right
+                                    </option>
+                                    <option value="center">Center</option>
+                                    <option value="scale">Scale</option>
+                                  </select>
+                                </label>
+                                <label className="grid gap-1">
+                                  <span className="text-zinc-300">
+                                    Vertical
+                                  </span>
+                                  <select
+                                    aria-label="Vertical constraint"
+                                    value={constraints.vertical}
+                                    className="h-9 w-full rounded-md border border-white/20 bg-zinc-900 px-3 text-sm text-white outline-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-300/70"
+                                    onChange={(event) =>
+                                      updateLayout({
+                                        horizontalConstraint:
+                                          constraints.horizontal,
+                                        verticalConstraint: event.currentTarget
+                                          .value as VerticalConstraint,
+                                      })
+                                    }
+                                  >
+                                    <option value="top">Top</option>
+                                    <option value="bottom">Bottom</option>
+                                    <option value="top-bottom">
+                                      Top + Bottom
+                                    </option>
+                                    <option value="center">Center</option>
+                                    <option value="scale">Scale</option>
+                                  </select>
+                                </label>
                               </div>
                             </fieldset>
                           );

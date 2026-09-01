@@ -83,76 +83,80 @@ describe("icon containment geometry", () => {
     expect(fullyContains(parent, clamped)).toBe(true);
   });
 
-  it("applies position and dimension layout choices independently", () => {
+  it("applies every horizontal and vertical constraint independently", () => {
     const resizedParent = {
       ...parent,
       geometry: { ...parent.geometry, width: 800, height: 400 },
     };
-    const fixedChild = {
+    const horizontal = {
+      left: { x: 200, width: 100 },
+      right: { x: 600, width: 100 },
+      "left-right": { x: 200, width: 500 },
+      center: { x: 450, width: 100 },
+      scale: { x: 300, width: 200 },
+    } as const;
+    const vertical = {
+      top: { y: 250, height: 100 },
+      bottom: { y: 450, height: 100 },
+      "top-bottom": { y: 250, height: 300 },
+      center: { y: 350, height: 100 },
+      scale: { y: 300, height: 200 },
+    } as const;
+
+    for (const [horizontalConstraint, horizontalExpected] of Object.entries(
+      horizontal,
+    )) {
+      for (const [verticalConstraint, verticalExpected] of Object.entries(
+        vertical,
+      )) {
+        const constrained = {
+          ...child,
+          childLayout: {
+            horizontalConstraint:
+              horizontalConstraint as keyof typeof horizontal,
+            verticalConstraint: verticalConstraint as keyof typeof vertical,
+          },
+        };
+        const relative = childRelativeAfterParentResize(
+          constrained,
+          parent,
+          resizedParent,
+        );
+        expect(
+          childWorldGeometry(
+            { ...constrained, parentRelative: relative },
+            resizedParent,
+          ),
+        ).toMatchObject({ ...horizontalExpected, ...verticalExpected });
+      }
+    }
+  });
+
+  it("maps legacy layout records deterministically", () => {
+    const resizedParent = {
+      ...parent,
+      geometry: { ...parent.geometry, width: 800, height: 400 },
+    };
+    const legacy = {
       ...child,
       childLayout: {
-        pinPosition: false,
+        horizontalPosition: "center" as const,
+        verticalPosition: "pin" as const,
         scaleWidth: false,
-        scaleHeight: false,
+        scaleHeight: true,
       },
     };
     const relative = childRelativeAfterParentResize(
-      fixedChild,
+      legacy,
       parent,
       resizedParent,
     );
     expect(
       childWorldGeometry(
-        { ...fixedChild, parentRelative: relative },
+        { ...legacy, parentRelative: relative },
         resizedParent,
       ),
-    ).toMatchObject({
-      x: 200,
-      y: 250,
-      width: 100,
-      height: 100,
-    });
-
-    const pinnedWidthOnly = {
-      ...fixedChild,
-      childLayout: {
-        pinPosition: true,
-        scaleWidth: true,
-        scaleHeight: false,
-      },
-    };
-    const pinnedRelative = childRelativeAfterParentResize(
-      pinnedWidthOnly,
-      parent,
-      resizedParent,
-    );
-    expect(
-      childWorldGeometry(
-        { ...pinnedWidthOnly, parentRelative: pinnedRelative },
-        resizedParent,
-      ),
-    ).toMatchObject({ x: 300, y: 300, width: 200, height: 100 });
-
-    const centered = {
-      ...fixedChild,
-      childLayout: {
-        horizontalPosition: "center" as const,
-        verticalPosition: "center" as const,
-        scaleWidth: false,
-        scaleHeight: false,
-      },
-    };
-    const centeredRelative = childRelativeAfterParentResize(
-      centered,
-      parent,
-      resizedParent,
-    );
-    expect(
-      childWorldGeometry(
-        { ...centered, parentRelative: centeredRelative },
-        resizedParent,
-      ),
-    ).toMatchObject({ x: 450, y: 350, width: 100, height: 100 });
+    ).toMatchObject({ x: 450, y: 300, width: 100, height: 200 });
   });
 
   it("bounds modifier resize at unchanged child extents", () => {

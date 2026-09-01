@@ -262,7 +262,7 @@ describe("product canvas command boundary", () => {
       }),
     );
     expect(readCanvasObjectV2(document, iconId)).toMatchObject({
-      geometry: { x: 180, y: 180, width: 80, height: 60 },
+      geometry: { x: 140, y: 160, width: 40, height: 30 },
     });
 
     executeProductCanvasCommand(
@@ -272,7 +272,7 @@ describe("product canvas command boundary", () => {
     expect(readCanvasObjectV2(document, iconId)).toMatchObject({
       parentId: null,
       parentRelative: null,
-      geometry: { x: 180, y: 180, width: 80, height: 60 },
+      geometry: { x: 140, y: 160, width: 40, height: 30 },
     });
 
     executeProductCanvasCommand(
@@ -325,9 +325,8 @@ describe("product canvas command boundary", () => {
       document,
       baseCommand("object.layout", {
         objectId: textId,
-        pinPosition: true,
-        scaleWidth: false,
-        scaleHeight: true,
+        horizontalConstraint: "left",
+        verticalConstraint: "scale",
       }),
     );
 
@@ -337,10 +336,8 @@ describe("product canvas command boundary", () => {
     expect(readCanvasObjectV2(document, textId)).toMatchObject({
       parentId: shapeId,
       childLayout: {
-        horizontalPosition: "pin",
-        verticalPosition: "pin",
-        scaleWidth: false,
-        scaleHeight: true,
+        horizontalConstraint: "left",
+        verticalConstraint: "scale",
       },
     });
     expect(() =>
@@ -432,10 +429,8 @@ describe("product canvas command boundary", () => {
       document,
       baseCommand("object.layout", {
         objectId: textId,
-        horizontalPosition: "center",
-        verticalPosition: "center",
-        scaleWidth: false,
-        scaleHeight: false,
+        horizontalConstraint: "center",
+        verticalConstraint: "center",
       }),
     );
     expect(readCanvasObjectV2(document, textId)?.geometry).toMatchObject({
@@ -458,6 +453,37 @@ describe("product canvas command boundary", () => {
       y: 110,
       width: 80,
       height: 40,
+    });
+  });
+
+  it("stretches a text box between opposing edges without scaling its font", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, shape());
+    putCanvasObjectV2(document, text());
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.nest", { objectId: textId, parentId: shapeId }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.layout", {
+        objectId: textId,
+        horizontalConstraint: "left-right",
+        verticalConstraint: "top-bottom",
+      }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.resize", {
+        objectId: shapeId,
+        width: 320,
+        height: 180,
+      }),
+    );
+
+    expect(readCanvasObjectV2(document, textId)).toMatchObject({
+      geometry: { x: 50, y: 60, width: 240, height: 130 },
+      style: { fontSize: 16 },
     });
   });
 
@@ -1198,23 +1224,22 @@ describe("product canvas command boundary", () => {
     );
     expect(readCanvasGroupV2(document, groupId)).toMatchObject({
       parentId: parent.id,
-      childLayout: { scaleWidth: true, scaleHeight: true },
+      childLayout: {
+        horizontalConstraint: "left",
+        verticalConstraint: "top",
+      },
     });
     executeProductCanvasCommand(
       document,
       baseCommand("group.layout", {
         groupId,
-        horizontalPosition: "center",
-        verticalPosition: "pin",
-        scaleWidth: false,
-        scaleHeight: true,
+        horizontalConstraint: "center",
+        verticalConstraint: "scale",
       }),
     );
     expect(readCanvasGroupV2(document, groupId)?.childLayout).toEqual({
-      horizontalPosition: "center",
-      verticalPosition: "pin",
-      scaleWidth: false,
-      scaleHeight: true,
+      horizontalConstraint: "center",
+      verticalConstraint: "scale",
     });
     expect(readCanvasGroupV2(document, groupId)?.geometry).toMatchObject({
       x: 150,
