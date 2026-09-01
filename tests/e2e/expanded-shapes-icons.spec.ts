@@ -202,6 +202,11 @@ test("selects a composition parent first and exposes rotation at every corner", 
   });
   await expect(parentItem).toHaveAttribute("aria-pressed", "true");
   await expect(labelItem).toHaveAttribute("aria-pressed", "false");
+  await surface.dblclick({ position: { x: 390, y: 380 } });
+  const inlineEditor = page.getByLabel("Edit object text on canvas");
+  await expect(inlineEditor).toBeFocused();
+  await inlineEditor.press("Escape");
+  await parentItem.click();
   await surface.click({ position: { x: 390, y: 380 } });
   await expect(labelItem).toHaveAttribute("aria-pressed", "true");
 

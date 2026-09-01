@@ -351,6 +351,7 @@ export function ProductCanvas({
   const transformerRef = useRef<Konva.Transformer>(null);
   const selectionProxyRef = useRef<Konva.Rect>(null);
   const rotationAffordanceHideTimerRef = useRef<number | null>(null);
+  const nestedChildSelectionTimerRef = useRef<number | null>(null);
   const wheelGestureRef = useRef<{
     intent: "pan" | "zoom";
     lastEventAt: number;
@@ -1346,7 +1347,13 @@ export function ProductCanvas({
               )
           : undefined;
         if (nestedChild) {
-          updateSelectionForObject(nestedChild, false);
+          if (nestedChildSelectionTimerRef.current !== null) {
+            window.clearTimeout(nestedChildSelectionTimerRef.current);
+          }
+          nestedChildSelectionTimerRef.current = window.setTimeout(() => {
+            nestedChildSelectionTimerRef.current = null;
+            updateSelectionForObject(nestedChild, false);
+          }, 220);
           return;
         }
       }
@@ -1450,6 +1457,10 @@ export function ProductCanvas({
   }
 
   function updateSelectionForObject(object: CanvasObjectV2, modifier: boolean) {
+    if (nestedChildSelectionTimerRef.current !== null) {
+      window.clearTimeout(nestedChildSelectionTimerRef.current);
+      nestedChildSelectionTimerRef.current = null;
+    }
     setContextPanel(null);
     setObjectContextMenu(null);
     if (object.type === "connector") setHoveredShapeId(null);
@@ -3378,12 +3389,20 @@ export function ProductCanvas({
           onContextMenu={(event) => openObjectContextMenu(event, object)}
           onDblClick={(event) => {
             event.cancelBubble = true;
+            if (nestedChildSelectionTimerRef.current !== null) {
+              window.clearTimeout(nestedChildSelectionTimerRef.current);
+              nestedChildSelectionTimerRef.current = null;
+            }
             if (object.type === "shape" || object.type === "text") {
               startObjectTextEditing(object);
             }
           }}
           onDblTap={(event) => {
             event.cancelBubble = true;
+            if (nestedChildSelectionTimerRef.current !== null) {
+              window.clearTimeout(nestedChildSelectionTimerRef.current);
+              nestedChildSelectionTimerRef.current = null;
+            }
             if (object.type === "shape" || object.type === "text") {
               startObjectTextEditing(object);
             }
