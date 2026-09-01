@@ -134,7 +134,7 @@ test("places an icon inside a sticky and removes it without a jump", async ({
   await page.getByRole("button", { name: "Sticky note", exact: true }).click();
   await surface.click({ position: { x: 540, y: 280 } });
   await expect(
-    page.getByRole("button", { name: /Contained text — Sticky note/ }),
+    page.getByRole("button", { name: "Contained intrinsic label" }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
