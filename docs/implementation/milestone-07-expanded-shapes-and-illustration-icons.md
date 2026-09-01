@@ -144,7 +144,7 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 - [x] Record the approved `PD-014` basic-shape set and `PD-015` containment behavior in the master ledger and this change record.
 - [x] Pin Phosphor Core and add its license notice without installing a runtime Iconify dependency.
 - [x] Add deterministic catalog generation, validation, metadata, search indexing, compatibility versioning, and generation tests.
-- [ ] Extend the shape discriminator and implement normalized geometry, labels, bounds, connection anchors, overlap, selection, rendering, and schema fixtures for every approved basic shape.
+- [x] Extend the shape discriminator and implement normalized geometry, labels, bounds, connection anchors, overlap, selection, rendering, and schema fixtures for every approved basic shape.
 - [x] Add the canonical icon object schema and renderer-independent vector instruction type behind fixtures; do not expose insertion until the catalog and renderer tests pass.
 - [x] Define and test the provider-neutral vector-scene adapter and a non-product conversion seam from catalog-backed geometry to owned vector geometry; do not expose path/node editing or conversion UI.
 - [x] Benchmark catalog generation, metadata payload, the monolithic-versus-lazy-load decision, 100 visible palette tiles, and 1,000 mixed canvas objects; record results before finalizing the asset strategy.
@@ -162,8 +162,8 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 - [x] Add validated nest, detach, and reparent commands with eligibility, cycle/orphan prevention, local/world transform conversion, clipping, and one-step undo/redo.
 - [x] Add containment preview, **Place inside**, **Remove from container**, nested selection entry/exit, keyboard path, object-list representation, and invalid-target feedback.
 - [x] Make parent move, resize, delete, duplicate, group, order, copy/paste, comment markers, connectors, annotations, AI projection/tools, and concurrent edits reference-safe.
-- [ ] Add deterministic concurrency tests for simultaneous child edit and parent transform, reparent versus detach, and parent deletion versus child edit.
-- [ ] Validate that a child remains independently editable but moves and proportionally scales with its parent across zoom, reload, reconnect, and undo/redo.
+- [x] Add deterministic concurrency tests for simultaneous child edit and parent transform, reparent versus detach, and parent deletion versus child edit.
+- [x] Validate that a child remains independently editable but moves and proportionally scales with its parent across zoom, reload, reconnect, and undo/redo.
 
 ### Slice 4 — Regression, hosted acceptance, and evidence
 
@@ -175,27 +175,27 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 
 ### Slice 5 — Generic containment and first-class labels
 
-- [ ] Generalize the icon-only parent reference into one shape/icon/text containment contract while retaining compatibility reads for existing nested icons.
-- [ ] Add generic nest, detach, reparent, and layout commands with one-level eligibility, cycle/orphan prevention, family ordering, and atomic history.
-- [ ] Create new shape and sticky labels as first-class nested text objects with inset bounds and fixed-font responsive text boxes.
-- [ ] Compatibly migrate legacy embedded shape text without losing text, styling, identity-linked comments, connectors, or collaboration state.
+- [x] Generalize the icon-only parent reference into one shape/icon/text containment contract while retaining compatibility reads for existing nested icons.
+- [x] Add generic nest, detach, reparent, and layout commands with one-level eligibility, cycle/orphan prevention, family ordering, and atomic history.
+- [x] Create new shape and sticky labels as first-class nested text objects with inset bounds and fixed-font responsive text boxes.
+- [x] Compatibly migrate legacy embedded shape text without losing text, styling, identity-linked comments, connectors, or collaboration state.
 
 ### Slice 6 — Intentional modifier gestures and child layout
 
-- [ ] Require Command-drag on macOS or Control-drag on Windows/Linux for pointer nesting and reparenting; prove ordinary overlap never nests.
-- [ ] Support modifier-drag detach to empty canvas plus accessible **Place inside** and **Remove from container** equivalents.
-- [ ] Add child **Pin position**, **Scale width**, and **Scale height** controls and apply them independently during normal parent resize.
-- [ ] Make Command/Control parent resize preserve child world transforms while bounding shrink to valid child extents.
+- [x] Require Command-drag on macOS or Control-drag on Windows/Linux for pointer nesting and reparenting; prove ordinary overlap never nests.
+- [x] Support modifier-drag detach to empty canvas plus accessible **Place inside** and **Remove from container** equivalents.
+- [x] Add child **Pin position**, **Scale width**, and **Scale height** controls and apply them independently during normal parent resize.
+- [x] Make Command/Control parent resize preserve child world transforms while bounding shrink to valid child extents.
 
 ### Slice 7 — Parent-local rotation
 
-- [ ] Add matrix-capable parent-local transforms and `object.rotate` history/collaboration support for eligible shapes, icons, and text.
-- [ ] Reveal an outside-corner rotation affordance without taking over the resize handle, add Shift 15-degree snapping, and expose an exact keyboard-accessible rotation control.
-- [ ] Keep child selection, clipping, connectors, comment markers, spatial bounds, AI projection, and detach/reparent stable through parent and child rotation.
+- [x] Add matrix-capable parent-local transforms and `object.rotate` history/collaboration support for eligible shapes, icons, and text.
+- [x] Reveal an outside-corner rotation affordance without taking over the resize handle, add Shift 15-degree snapping, and expose an exact keyboard-accessible rotation control.
+- [x] Keep child selection, clipping, connectors, comment markers, spatial bounds, AI projection, and detach/reparent stable through parent and child rotation.
 
 ### Slice 8 — Expanded regression and hosted acceptance
 
-- [ ] Extend unit/property/convergence coverage for label migration, generic containment, every layout combination, modifier semantics, parent-preserving resize, and nested rotation.
+- [x] Extend unit/property/convergence coverage for label migration, generic containment, every layout combination, modifier semantics, parent-preserving resize, and nested rotation.
 - [ ] Run the complete repository and serialized Chromium/axe gates, then verify the matching immutable preview with the expanded `AS-007` scenario.
 - [ ] Record focused commits, exact-head CI, deploy ID, screenshots, limitations, and product-owner hands-on acceptance before closure.
 
@@ -302,6 +302,8 @@ Retain the exact commit SHA, protected CI run, immutable deploy ID/URL, browser 
 - 2026-08-31 — Product-owner follow-up approved integrating basic shapes into the illustration-icon catalog instead of retaining separate top-level tabs. The palette now provides one search, combined recents, **All** and **Basic** category choices, and a single virtualized result grid while preserving the different canvas object types and insertion handlers. Basic-shape previews opt out of the shared 16-pixel button-icon rule and use an optical size comparable to catalog icons.
 - 2026-08-31 — Product-owner hands-on review accepted the integrated catalog and identified one remaining dismissal detail: clicking the canvas without choosing a result should cancel the browsing interaction and close the Shapes panel. Primary canvas pointer-down now dismisses the dock palette before ordinary canvas handling continues; palette interactions remain isolated above the canvas.
 - 2026-08-31 — Product-owner review superseded icon-only containment with a generic one-level composition model. Shapes, icons, and text may be children of top-level basic shapes; modifier-drag expresses containment intent while ordinary overlap stays independent; children expose Pin position, Scale width, and Scale height; modifier parent resize preserves children; embedded shape labels become first-class text children; and supported objects gain parent-local corner-adjacent rotation. The product owner explicitly approved this revised plan for implementation.
+- 2026-08-31 — Slices 5–7 generalized containment across shapes, icons, and text; added generic nest/detach/reparent/layout/transform/rotation commands; migrated embedded shape text into first-class intrinsic text children; added Command/Control containment intent, independent child layout toggles, parent-preserving resize, and corner-adjacent plus exact rotation controls; and kept clipboard, history, connectors, comments, annotations, collaboration, and AI review/undo composition-aware. The provider-neutral vector-scene and future catalog-to-owned-vector seams remain intact without exposing path editing.
+- 2026-08-31 — Slice 8 local verification completed after hardening deterministic label migration under concurrent Yjs updates and projecting each parent-label pair as one product composition for legacy counts, AI grounding, review scope, visual-quality checks, and undo. Hosted exact-head CI, immutable preview verification, product-owner hands-on acceptance, closure, and merge remain pending.
 
 ## Verification evidence
 
@@ -319,6 +321,14 @@ Implementation evidence on 2026-08-30:
 - Representative catalog searches resolved `tree`, `brain`, `clock`, `sneaker`, and `shoe`; the focused browser scenario inserted and independently styled `brain` and passed axe analysis.
 - The integrated-catalog refinement passed `pnpm check` with 56 test files / 261 tests and a production build. Its focused authenticated Chromium/axe run passed both scenarios in 5.8 seconds, including 1,524 combined results, the 12-result **Basic** filter, shared shape/icon search, comparable preview sizing, bounded layout, icon styling, containment, and detach-without-jump.
 - PR #12 hosted review on immutable Netlify deploy `6a95c3009efbbc0008a2374d` at exact head `02035ac6ff548099666e5d2e4b6f41bcb5ec2b13` exposed two responsive palette defects: icon-browser content bled beyond the panel's right edge, and the basic-shape presentation used horizontal outline previews with an overflowing rounded-rectangle label. The product owner supplied screenshots from the authenticated in-app-browser preview; replacement-preview verification remains pending after the fix.
+
+Expanded-containment evidence on 2026-08-31:
+
+- Focused slice commits are `7a0a6b5` (generic containment model), `6042780` (layout and transform commands), `bec64cb` (layout and rotation controls), `5317dfa` and `155df0d` (gesture formatting and parent interaction), `3862d71` (parent-aware annotation coverage), `82810c1` (insertion and concurrent-label hardening), `43e66af` (composition integration across AI/comments/history), and `2e19c90` (containment accessibility coverage).
+- `pnpm check` passed Prettier, ESLint with zero warnings, strict TypeScript, all 57 Vitest files / 270 tests, and the optimized Next.js production build.
+- After `pnpm db:reset` restored the repository's local Supabase seed, the CI-equivalent serialized Chromium/axe run passed all 61 scenarios in 3.3 minutes. Coverage includes first-class label migration, two-client label convergence, generic containment commands, modifier semantics, layout flags, preserve-child resize, parent-local rotation, connector and comment targeting, AI creation/review/undo compatibility, catalog accessibility, nested icon detach-without-jump, and the complete pre-existing regression suite.
+- A five-worker diagnostic run passed 60 of 61 scenarios; the only miss was Playwright losing a response body after navigation in an existing trusted-AI test. The clean single-worker configuration used by protected CI passed that same scenario and all 60 others.
+- Local automated acceptance is complete. Exact-head protected CI, the matching immutable Netlify preview, the expanded authenticated `AS-007` walkthrough, screenshots, product-owner hands-on acceptance, closure, and merge are still pending and are not claimed by this record.
 
 Research evidence:
 
