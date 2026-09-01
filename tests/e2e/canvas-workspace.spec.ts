@@ -866,7 +866,10 @@ test("attaches overlapping ink, follows movement, disconnects, and detaches on d
     ) {
       await page.getByRole("button", { name: "Open Object navigator" }).click();
     }
-    await page.locator('[data-testid^="object-list-item-"]').nth(index).click();
+    await page
+      .locator('[data-testid^="object-list-item-"]:not([data-parent-id])')
+      .nth(index)
+      .click();
   };
   await selectNavigatorItem(0);
   await surface.focus();
