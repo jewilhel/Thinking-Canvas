@@ -20,6 +20,7 @@ const shapeId = "33333333-3333-4333-8333-333333333333";
 const secondShapeId = "44444444-4444-4444-8444-444444444444";
 const connectorId = "55555555-5555-4555-8555-555555555555";
 const iconId = "66666666-6666-4666-8666-666666666666";
+const textId = "77777777-7777-4777-8777-777777777777";
 const issuedAt = "2026-08-11T20:00:00.000Z";
 
 function baseCommand(type: string, payload: unknown) {
@@ -106,6 +107,27 @@ function icon(): Extract<CanvasObjectV2, { type: "icon" }> {
       fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
       fontSize: 16,
       opacity: 0.8,
+    },
+  };
+}
+
+function text(): Extract<CanvasObjectV2, { type: "text" }> {
+  return {
+    schemaVersion: 2,
+    id: textId,
+    canvasId,
+    createdBy: actorId,
+    createdAt: issuedAt,
+    updatedAt: issuedAt,
+    type: "text",
+    text: "Nested label",
+    geometry: { x: 50, y: 60, width: 80, height: 40, rotation: 0 },
+    style: {
+      fill: null,
+      outline: "#334155",
+      outlineWidth: 0,
+      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+      fontSize: 16,
     },
   };
 }
@@ -273,6 +295,155 @@ describe("product canvas command boundary", () => {
     expect(readCanvasObjectV2(document, iconId)).toMatchObject({
       parentId: secondShapeId,
     });
+  });
+
+  it("nests shapes and text with generic layout commands", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const parent = shape();
+    const childShape = {
+      ...shape(secondShapeId),
+      geometry: { x: 40, y: 50, width: 50, height: 30, rotation: 0 },
+    };
+    putCanvasObjectV2(document, parent);
+    putCanvasObjectV2(document, childShape);
+    putCanvasObjectV2(document, text());
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.nest", {
+        objectId: secondShapeId,
+        parentId: shapeId,
+      }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.nest", { objectId: textId, parentId: shapeId }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.layout", {
+        objectId: textId,
+        pinPosition: true,
+        scaleWidth: false,
+        scaleHeight: true,
+      }),
+    );
+
+    expect(readCanvasObjectV2(document, secondShapeId)).toMatchObject({
+      parentId: shapeId,
+    });
+    expect(readCanvasObjectV2(document, textId)).toMatchObject({
+      parentId: shapeId,
+      childLayout: {
+        pinPosition: true,
+        scaleWidth: false,
+        scaleHeight: true,
+      },
+    });
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("object.nest", {
+          objectId: textId,
+          parentId: secondShapeId,
+        }),
+      ),
+    ).toThrow("top-level");
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.detach", { objectId: textId }),
+    );
+    expect(readCanvasObjectV2(document, textId)).toMatchObject({
+      parentId: null,
+      parentRelative: null,
+      childLayout: null,
+      geometry: { x: 50, y: 60, width: 80, height: 40 },
+    });
+  });
+
+  it("applies child layout during parent resize and preserves children on modifier resize", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const parent = shape();
+    const child = {
+      ...icon(),
+      geometry: { x: 60, y: 60, width: 40, height: 30, rotation: 0 },
+    };
+    putCanvasObjectV2(document, parent);
+    putCanvasObjectV2(document, child);
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.nest", { objectId: iconId, parentId: shapeId }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.layout", {
+        objectId: iconId,
+        pinPosition: false,
+        scaleWidth: false,
+        scaleHeight: false,
+      }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.resize", {
+        objectId: shapeId,
+        width: 320,
+        height: 180,
+      }),
+    );
+    expect(readCanvasObjectV2(document, iconId)).toMatchObject({
+      geometry: { x: 60, y: 60, width: 40, height: 30 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.transform", {
+        objectId: shapeId,
+        x: 20,
+        y: 40,
+        width: 40,
+        height: 40,
+        rotation: 0,
+        preserveChildren: true,
+      }),
+    );
+    expect(readCanvasObjectV2(document, shapeId)).toMatchObject({
+      geometry: { x: 20, y: 40, width: 80, height: 50 },
+    });
+    expect(readCanvasObjectV2(document, iconId)).toMatchObject({
+      geometry: { x: 60, y: 60, width: 40, height: 30 },
+    });
+  });
+
+  it("composes child and parent rotation in parent-local space", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const child = {
+      ...icon(),
+      geometry: { x: 60, y: 60, width: 40, height: 30, rotation: 0 },
+    };
+    putCanvasObjectV2(document, shape());
+    putCanvasObjectV2(document, child);
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.nest", { objectId: iconId, parentId: shapeId }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.rotate", { objectId: iconId, rotation: 30 }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.rotate", { objectId: shapeId, rotation: 90 }),
+    );
+
+    const rotatedChild = readCanvasObjectV2(document, iconId);
+    expect(rotatedChild).toMatchObject({
+      parentId: shapeId,
+      geometry: { y: 80, width: 40, height: 30, rotation: 120 },
+      parentRelative: { rotation: 30 },
+    });
+    expect(rotatedChild?.geometry.x).toBeCloseTo(0);
   });
 
   it("rejects partial containment and cascades parent deletion", () => {

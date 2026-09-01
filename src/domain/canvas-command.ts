@@ -15,11 +15,17 @@ import {
 } from "@/canvas/canvas-document";
 import { resolveConnectorEndpointV2 } from "@/canvas/geometry";
 import {
+  boundParentGeometryToChildren,
+  childRelativeAfterParentResize,
   childWorldGeometry,
-  clampIconGeometryToParent,
+  clampObjectGeometryToParent,
+  defaultChildLayout,
   fullyContains,
-  isIconParent,
+  isContainableObject,
+  isObjectParent,
   parentRelativeGeometry,
+  type ContainableObject,
+  type ObjectParent,
 } from "@/canvas/icon-containment";
 import { isEligibleAnnotationTarget } from "@/canvas/annotation-attachment";
 
@@ -148,6 +154,39 @@ const detachIconCommand = commandBase.extend({
   type: z.literal("icon.detach"),
   payload: z.strictObject({ objectId: uuid }),
 });
+const nestObjectCommand = commandBase.extend({
+  type: z.literal("object.nest"),
+  payload: z.strictObject({ objectId: uuid, parentId: uuid }),
+});
+const detachObjectCommand = commandBase.extend({
+  type: z.literal("object.detach"),
+  payload: z.strictObject({ objectId: uuid }),
+});
+const layoutObjectCommand = commandBase.extend({
+  type: z.literal("object.layout"),
+  payload: z.strictObject({
+    objectId: uuid,
+    pinPosition: z.boolean(),
+    scaleWidth: z.boolean(),
+    scaleHeight: z.boolean(),
+  }),
+});
+const rotateObjectCommand = commandBase.extend({
+  type: z.literal("object.rotate"),
+  payload: z.strictObject({ objectId: uuid, rotation: finiteNumber }),
+});
+const transformObjectCommand = commandBase.extend({
+  type: z.literal("object.transform"),
+  payload: z.strictObject({
+    objectId: uuid,
+    x: finiteNumber,
+    y: finiteNumber,
+    width: finiteNumber.min(24),
+    height: finiteNumber.min(24),
+    rotation: finiteNumber,
+    preserveChildren: z.boolean().optional(),
+  }),
+});
 const reorderCommand = commandBase.extend({
   type: z.literal("object.reorder"),
   payload: z.strictObject({
@@ -195,6 +234,11 @@ export const productCanvasMutationSchema = z.discriminatedUnion("type", [
   disconnectAnnotationCommand.omit(trustedCommandFields),
   nestIconCommand.omit(trustedCommandFields),
   detachIconCommand.omit(trustedCommandFields),
+  nestObjectCommand.omit(trustedCommandFields),
+  detachObjectCommand.omit(trustedCommandFields),
+  layoutObjectCommand.omit(trustedCommandFields),
+  rotateObjectCommand.omit(trustedCommandFields),
+  transformObjectCommand.omit(trustedCommandFields),
   reorderCommand.omit(trustedCommandFields),
   groupCommand.omit(trustedCommandFields),
   ungroupCommand.omit(trustedCommandFields),
@@ -217,6 +261,11 @@ export const productCanvasCommandSchema = z
     disconnectAnnotationCommand,
     nestIconCommand,
     detachIconCommand,
+    nestObjectCommand,
+    detachObjectCommand,
+    layoutObjectCommand,
+    rotateObjectCommand,
+    transformObjectCommand,
     reorderCommand,
     groupCommand,
     ungroupCommand,
@@ -323,7 +372,7 @@ function requireEligibleAnnotationTarget(
   return target;
 }
 
-function requireIconParent(
+function requireObjectParent(
   document: Y.Doc,
   parentId: string,
   pendingObjects: ReadonlyMap<
@@ -333,9 +382,9 @@ function requireIconParent(
 ) {
   const parent =
     pendingObjects.get(parentId) ?? readCanvasObjectV2(document, parentId);
-  if (!parent || !isIconParent(parent)) {
+  if (!parent || !isObjectParent(parent)) {
     throw new ProductCanvasCommandConflictError(
-      "Icons can be placed only inside an existing basic shape or sticky note.",
+      "Objects can be placed only inside an existing top-level basic shape or sticky note.",
     );
   }
   return parent;
@@ -354,6 +403,81 @@ function writeGeometry(
       geometry[field],
     );
   }
+}
+
+function updateAttachedAnnotationPosition(
+  document: Y.Doc,
+  targetId: string,
+  dx: number,
+  dy: number,
+  issuedAt: string,
+  affectedObjectIds: Set<string>,
+  candidates = listCanvasObjectsV2(document),
+) {
+  if (dx === 0 && dy === 0) return;
+  for (const annotation of candidates) {
+    if (
+      annotation.type !== "annotation" ||
+      annotation.attachedObjectId !== targetId
+    ) {
+      continue;
+    }
+    setCanvasObjectField(
+      document,
+      annotation.id,
+      ["geometry", "x"],
+      annotation.geometry.x + dx,
+    );
+    setCanvasObjectField(
+      document,
+      annotation.id,
+      ["geometry", "y"],
+      annotation.geometry.y + dy,
+    );
+    touch(document, annotation.id, issuedAt);
+    affectedObjectIds.add(annotation.id);
+  }
+}
+
+function updateChildrenForParentGeometry(
+  document: Y.Doc,
+  parent: ObjectParent,
+  nextGeometry: CanvasObjectV2["geometry"],
+  preserveChildren: boolean,
+  issuedAt: string,
+  affectedObjectIds: Set<string>,
+) {
+  const allObjects = listCanvasObjectsV2(document);
+  const children = allObjects.filter(
+    (candidate): candidate is ContainableObject =>
+      isContainableObject(candidate) && candidate.parentId === parent.id,
+  );
+  const boundedGeometry = preserveChildren
+    ? boundParentGeometryToChildren(parent, nextGeometry, children)
+    : nextGeometry;
+  const nextParent = { ...parent, geometry: boundedGeometry };
+  for (const child of children) {
+    const relative = preserveChildren
+      ? parentRelativeGeometry(child.geometry, nextParent)
+      : childRelativeAfterParentResize(child, parent, nextParent);
+    const nextChild = childWorldGeometry(
+      { ...child, parentRelative: relative },
+      nextParent,
+    );
+    setCanvasObjectField(document, child.id, ["parentRelative"], relative);
+    touch(document, child.id, issuedAt);
+    affectedObjectIds.add(child.id);
+    updateAttachedAnnotationPosition(
+      document,
+      child.id,
+      nextChild.x - child.geometry.x,
+      nextChild.y - child.geometry.y,
+      issuedAt,
+      affectedObjectIds,
+      allObjects,
+    );
+  }
+  return boundedGeometry;
 }
 
 export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
@@ -395,16 +519,16 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         );
       }
       if (
-        command.payload.object.type === "icon" &&
+        isContainableObject(command.payload.object) &&
         command.payload.object.parentId
       ) {
-        const parent = requireIconParent(
+        const parent = requireObjectParent(
           document,
           command.payload.object.parentId,
         );
         if (!fullyContains(parent, command.payload.object.geometry)) {
           throw new ProductCanvasCommandConflictError(
-            "A nested icon must be fully contained by its parent.",
+            "A nested object must be fully contained by its parent.",
           );
         }
       }
@@ -453,8 +577,8 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
             );
           }
         }
-        if (object.type === "icon" && object.parentId) {
-          requireIconParent(document, object.parentId, pendingObjects);
+        if (isContainableObject(object) && object.parentId) {
+          requireObjectParent(document, object.parentId, pendingObjects);
         }
       }
       for (const object of command.payload.objects) {
@@ -514,10 +638,14 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
     if (command.type === "object.reorder") {
       const object = requireObject(document, command.payload.objectId);
       const currentOrder = readCanvasOrderV2(document);
-      if (isIconParent(object)) {
+      if (isObjectParent(object)) {
         const childIds = currentOrder.filter((id) => {
           const candidate = readCanvasObjectV2(document, id);
-          return candidate?.type === "icon" && candidate.parentId === object.id;
+          return (
+            candidate != null &&
+            isContainableObject(candidate) &&
+            candidate.parentId === object.id
+          );
         });
         if (childIds.length) {
           const familyIds = [object.id, ...childIds];
@@ -550,7 +678,7 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
             : command.payload.direction === "forward"
               ? Math.min(currentOrder.length - 1, currentIndex + 1)
               : Math.max(0, currentIndex - 1);
-      if (object.type === "icon" && object.parentId) {
+      if (isContainableObject(object) && object.parentId) {
         targetIndex = Math.max(
           currentOrder.indexOf(object.parentId) + 1,
           targetIndex,
@@ -564,52 +692,141 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
       return;
     }
 
-    if (command.type === "icon.nest") {
-      const icon = requireObject(document, command.payload.objectId);
-      if (icon.type !== "icon") {
+    if (command.type === "icon.nest" || command.type === "object.nest") {
+      const child = requireObject(document, command.payload.objectId);
+      if (command.type === "icon.nest" && child.type !== "icon") {
         throw new ProductCanvasCommandConflictError(
           "Only icon objects can be placed inside a container.",
         );
       }
-      if (icon.id === command.payload.parentId) {
+      if (!isContainableObject(child)) {
         throw new ProductCanvasCommandConflictError(
-          "An icon cannot contain itself.",
+          "Only shapes, icons, and text can be placed inside a container.",
         );
       }
-      const parent = requireIconParent(document, command.payload.parentId);
-      if (!fullyContains(parent, icon.geometry)) {
+      if (child.id === command.payload.parentId) {
         throw new ProductCanvasCommandConflictError(
-          "Move the icon fully inside the container before placing it inside.",
+          "An object cannot contain itself.",
+        );
+      }
+      const parent = requireObjectParent(document, command.payload.parentId);
+      if (!fullyContains(parent, child.geometry)) {
+        throw new ProductCanvasCommandConflictError(
+          "Move the object fully inside the container before placing it inside.",
         );
       }
       putCanvasObjectV2(document, {
-        ...icon,
+        ...child,
         parentId: parent.id,
-        parentRelative: parentRelativeGeometry(icon.geometry, parent),
+        parentRelative: parentRelativeGeometry(child.geometry, parent),
+        childLayout: child.childLayout ?? defaultChildLayout,
         updatedAt: command.issuedAt,
       });
-      const order = readCanvasOrderV2(document).filter((id) => id !== icon.id);
-      order.splice(order.indexOf(parent.id) + 1, 0, icon.id);
+      const order = readCanvasOrderV2(document).filter((id) => id !== child.id);
+      const siblingEnd = order.reduce((lastIndex, id, index) => {
+        const sibling = readCanvasObjectV2(document, id);
+        return sibling &&
+          isContainableObject(sibling) &&
+          sibling.parentId === parent.id
+          ? index
+          : lastIndex;
+      }, order.indexOf(parent.id));
+      order.splice(siblingEnd + 1, 0, child.id);
       setCanvasOrderV2(document, order);
-      affectedObjectIds.add(icon.id);
+      affectedObjectIds.add(child.id);
       return;
     }
 
-    if (command.type === "icon.detach") {
-      const icon = requireObject(document, command.payload.objectId);
-      if (icon.type !== "icon") {
+    if (command.type === "icon.detach" || command.type === "object.detach") {
+      const child = requireObject(document, command.payload.objectId);
+      if (command.type === "icon.detach" && child.type !== "icon") {
         throw new ProductCanvasCommandConflictError(
           "Only icon objects can be removed from a container.",
         );
       }
-      if (!icon.parentId) return;
+      if (!isContainableObject(child)) {
+        throw new ProductCanvasCommandConflictError(
+          "Only shapes, icons, and text can be removed from a container.",
+        );
+      }
+      if (!child.parentId) return;
       putCanvasObjectV2(document, {
-        ...icon,
+        ...child,
         parentId: null,
         parentRelative: null,
+        childLayout: null,
         updatedAt: command.issuedAt,
       });
-      affectedObjectIds.add(icon.id);
+      affectedObjectIds.add(child.id);
+      return;
+    }
+
+    if (command.type === "object.layout") {
+      const child = requireObject(document, command.payload.objectId);
+      if (!isContainableObject(child) || !child.parentId) {
+        throw new ProductCanvasCommandConflictError(
+          "Layout properties require a nested shape, icon, or text object.",
+        );
+      }
+      setCanvasObjectField(document, child.id, ["childLayout"], {
+        pinPosition: command.payload.pinPosition,
+        scaleWidth: command.payload.scaleWidth,
+        scaleHeight: command.payload.scaleHeight,
+      });
+      touch(document, child.id, command.issuedAt);
+      affectedObjectIds.add(child.id);
+      return;
+    }
+
+    if (command.type === "object.transform") {
+      const object = requireObject(document, command.payload.objectId);
+      if (!isContainableObject(object)) {
+        throw new ProductCanvasCommandConflictError(
+          "Only shapes, icons, and text can use direct transforms.",
+        );
+      }
+      let geometry = {
+        x: command.payload.x,
+        y: command.payload.y,
+        width: command.payload.width,
+        height: command.payload.height,
+        rotation: command.payload.rotation,
+      };
+      if (object.parentId) {
+        geometry = clampObjectGeometryToParent(
+          geometry,
+          requireObjectParent(document, object.parentId),
+        );
+      } else if (isObjectParent(object)) {
+        geometry = updateChildrenForParentGeometry(
+          document,
+          object,
+          geometry,
+          command.payload.preserveChildren === true,
+          command.issuedAt,
+          affectedObjectIds,
+        );
+      }
+      writeGeometry(document, object.id, geometry);
+      if (object.parentId) {
+        const parent = requireObjectParent(document, object.parentId);
+        setCanvasObjectField(
+          document,
+          object.id,
+          ["parentRelative"],
+          parentRelativeGeometry(geometry, parent),
+        );
+      }
+      updateAttachedAnnotationPosition(
+        document,
+        object.id,
+        geometry.x - object.geometry.x,
+        geometry.y - object.geometry.y,
+        command.issuedAt,
+        affectedObjectIds,
+      );
+      touch(document, object.id, command.issuedAt);
+      affectedObjectIds.add(object.id);
       return;
     }
 
@@ -623,10 +840,10 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         y: command.payload.y,
       };
       const movedGeometry =
-        object.type === "icon" && object.parentId
-          ? clampIconGeometryToParent(
+        isContainableObject(object) && object.parentId
+          ? clampObjectGeometryToParent(
               requestedGeometry,
-              requireIconParent(document, object.parentId),
+              requireObjectParent(document, object.parentId),
             )
           : requestedGeometry;
       const dx = movedGeometry.x - object.geometry.x;
@@ -643,8 +860,8 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         ["geometry", "y"],
         movedGeometry.y,
       );
-      if (object.type === "icon" && object.parentId) {
-        const parent = requireIconParent(document, object.parentId);
+      if (isContainableObject(object) && object.parentId) {
+        const parent = requireObjectParent(document, object.parentId);
         setCanvasObjectField(
           document,
           object.id,
@@ -686,10 +903,11 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           affectedObjectIds.add(candidate.id);
         }
       }
-      if (isIconParent(object) && (dx !== 0 || dy !== 0)) {
+      if (isObjectParent(object) && (dx !== 0 || dy !== 0)) {
         const allObjects = listCanvasObjectsV2(document);
         for (const child of allObjects) {
-          if (child.type !== "icon" || child.parentId !== object.id) continue;
+          if (!isContainableObject(child) || child.parentId !== object.id)
+            continue;
           for (const annotation of allObjects) {
             if (
               annotation.type !== "annotation" ||
@@ -729,62 +947,72 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         );
       }
       const resizedGeometry =
-        object.type === "icon" && object.parentId
-          ? clampIconGeometryToParent(
+        isContainableObject(object) && object.parentId
+          ? clampObjectGeometryToParent(
               {
                 ...object.geometry,
                 width: command.payload.width,
                 height: command.payload.height,
               },
-              requireIconParent(document, object.parentId),
+              requireObjectParent(document, object.parentId),
             )
           : {
               ...object.geometry,
               width: command.payload.width,
               height: command.payload.height,
             };
-      const allObjectsBeforeResize = isIconParent(object)
-        ? listCanvasObjectsV2(document)
-        : [];
-      writeGeometry(document, object.id, resizedGeometry);
-      if (object.type === "icon" && object.parentId) {
-        const parent = requireIconParent(document, object.parentId);
+      const nextGeometry = isObjectParent(object)
+        ? updateChildrenForParentGeometry(
+            document,
+            object,
+            resizedGeometry,
+            false,
+            command.issuedAt,
+            affectedObjectIds,
+          )
+        : resizedGeometry;
+      writeGeometry(document, object.id, nextGeometry);
+      if (isContainableObject(object) && object.parentId) {
+        const parent = requireObjectParent(document, object.parentId);
         setCanvasObjectField(
           document,
           object.id,
           ["parentRelative"],
-          parentRelativeGeometry(resizedGeometry, parent),
+          parentRelativeGeometry(nextGeometry, parent),
         );
       }
-      if (isIconParent(object)) {
-        const resizedParent = { ...object, geometry: resizedGeometry };
-        for (const child of allObjectsBeforeResize) {
-          if (child.type !== "icon" || child.parentId !== object.id) continue;
-          const nextGeometry = childWorldGeometry(child, resizedParent);
-          const dx = nextGeometry.x - child.geometry.x;
-          const dy = nextGeometry.y - child.geometry.y;
-          for (const annotation of allObjectsBeforeResize) {
-            if (
-              annotation.type !== "annotation" ||
-              annotation.attachedObjectId !== child.id
-            )
-              continue;
-            setCanvasObjectField(
-              document,
-              annotation.id,
-              ["geometry", "x"],
-              annotation.geometry.x + dx,
-            );
-            setCanvasObjectField(
-              document,
-              annotation.id,
-              ["geometry", "y"],
-              annotation.geometry.y + dy,
-            );
-            touch(document, annotation.id, command.issuedAt);
-            affectedObjectIds.add(annotation.id);
-          }
-        }
+    } else if (command.type === "object.rotate") {
+      if (!isContainableObject(object)) {
+        throw new ProductCanvasCommandConflictError(
+          "Only shapes, icons, and text can be rotated.",
+        );
+      }
+      const geometry = {
+        ...object.geometry,
+        rotation: command.payload.rotation,
+      };
+      if (isObjectParent(object)) {
+        updateChildrenForParentGeometry(
+          document,
+          object,
+          geometry,
+          false,
+          command.issuedAt,
+          affectedObjectIds,
+        );
+      }
+      setCanvasObjectField(
+        document,
+        object.id,
+        ["geometry", "rotation"],
+        geometry.rotation,
+      );
+      if (object.parentId) {
+        const parent = requireObjectParent(document, object.parentId);
+        setCanvasObjectField(document, object.id, ["parentRelative"], {
+          ...object.parentRelative,
+          rotation: command.payload.rotation - parent.geometry.rotation,
+        });
       }
     } else if (command.type === "object.patch") {
       if (object.type !== command.payload.objectType) {
@@ -887,10 +1115,20 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         ]),
       );
       const deleteIds = new Set([object.id]);
-      if (isIconParent(object)) {
-        for (const candidate of objectsById.values()) {
-          if (candidate.type === "icon" && candidate.parentId === object.id) {
-            deleteIds.add(candidate.id);
+      if (isObjectParent(object)) {
+        let added = true;
+        while (added) {
+          added = false;
+          for (const candidate of objectsById.values()) {
+            if (
+              isContainableObject(candidate) &&
+              candidate.parentId &&
+              deleteIds.has(candidate.parentId) &&
+              !deleteIds.has(candidate.id)
+            ) {
+              deleteIds.add(candidate.id);
+              added = true;
+            }
           }
         }
       }
