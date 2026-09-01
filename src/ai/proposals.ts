@@ -89,6 +89,9 @@ function simulateCanvasCommands(input: {
   commands: unknown[];
 }) {
   const stateVector = Y.encodeStateVector(input.document);
+  const beforeObjectsById = new Map(
+    listCanvasObjectsV2(input.document).map((object) => [object.id, object]),
+  );
   const beforeById = stateByObjectId(input.document);
   const proposalDocument = new Y.Doc();
   Y.applyUpdate(proposalDocument, Y.encodeStateAsUpdate(input.document));
@@ -112,7 +115,24 @@ function simulateCanvasCommands(input: {
     return `${index + 1}. ${command.type} — affected ${result.affectedObjectIds.join(", ")}`;
   });
   const afterById = stateByObjectId(proposalDocument);
-  const objectChanges = [...affectedObjectIds].map((objectId) => {
+  const afterObjectsById = new Map(
+    listCanvasObjectsV2(proposalDocument).map((object) => [object.id, object]),
+  );
+  const compositionAffectedObjectIds = new Set<string>();
+  for (const objectId of affectedObjectIds) {
+    const object =
+      afterObjectsById.get(objectId) ?? beforeObjectsById.get(objectId);
+    const compositionId =
+      object?.type === "text" &&
+      object.childRole === "shape-label" &&
+      object.parentId
+        ? object.parentId
+        : objectId;
+    if (beforeById.has(compositionId) || afterById.has(compositionId)) {
+      compositionAffectedObjectIds.add(compositionId);
+    }
+  }
+  const objectChanges = [...compositionAffectedObjectIds].map((objectId) => {
     const beforeState = beforeById.get(objectId) ?? {
       object: null,
       orderIndex: null,
@@ -130,7 +150,7 @@ function simulateCanvasCommands(input: {
 
   return {
     commands,
-    affectedObjectIds: [...affectedObjectIds],
+    affectedObjectIds: [...compositionAffectedObjectIds],
     commandTypes: commands.map((command) => command.type),
     lines,
     objectChanges,
