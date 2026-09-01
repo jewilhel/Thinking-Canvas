@@ -88,6 +88,37 @@ export function geometryCorners(geometry: CanvasObjectV2["geometry"]) {
   });
 }
 
+export function geometryLocalPoint(
+  geometry: CanvasObjectV2["geometry"],
+  x: number,
+  y: number,
+) {
+  return rotatePoint(x - geometry.x, y - geometry.y, -geometry.rotation);
+}
+
+export function geometryContainsPoint(
+  geometry: CanvasObjectV2["geometry"],
+  x: number,
+  y: number,
+) {
+  const local = geometryLocalPoint(geometry, x, y);
+  return (
+    local.x >= 0 &&
+    local.y >= 0 &&
+    local.x <= geometry.width &&
+    local.y <= geometry.height
+  );
+}
+
+export function geometryClipPolygonInLocalSpace(
+  clipGeometry: CanvasObjectV2["geometry"],
+  localGeometry: CanvasObjectV2["geometry"],
+) {
+  return geometryCorners(clipGeometry).map((point) =>
+    geometryLocalPoint(localGeometry, point.x, point.y),
+  );
+}
+
 export function rotateGeometryAroundCenter(
   geometry: CanvasObjectV2["geometry"],
   rotation: number,

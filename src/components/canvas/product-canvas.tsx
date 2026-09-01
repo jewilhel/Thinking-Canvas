@@ -94,6 +94,8 @@ import {
   childWorldGeometry,
   defaultChildLayout,
   fullyContains,
+  geometryClipPolygonInLocalSpace,
+  geometryContainsPoint,
   isContainableObject,
   isObjectParent,
   parentFirstObjectOrder,
@@ -507,6 +509,10 @@ export function ProductCanvas({
     });
     return previewed;
   }, [dragPreviewPositions, orderedObjects, selectionTransformPreviewObjects]);
+  const displayObjectsById = useMemo(
+    () => new Map(displayObjects.map((object) => [object.id, object])),
+    [displayObjects],
+  );
   const connectorLayoutObjectsById = useMemo(
     () =>
       new Map(
@@ -688,7 +694,7 @@ export function ProductCanvas({
         rotationAffordanceHideTimerRef.current = window.setTimeout(() => {
           setRotationAffordanceCorner(null);
           rotationAffordanceHideTimerRef.current = null;
-        }, 120);
+        }, 350);
       });
     }
     return () => {
@@ -1327,6 +1333,23 @@ export function ProductCanvas({
       const modifier =
         event.evt.shiftKey ||
         hasContainmentModifier(event.evt, navigator.platform);
+      if (isObjectParent(object) && !modifier && selectedId === object.id) {
+        const point = eventWorldPointer(event);
+        const nestedChild = point
+          ? [...displayObjects]
+              .reverse()
+              .find(
+                (candidate) =>
+                  isContainableObject(candidate) &&
+                  candidate.parentId === object.id &&
+                  geometryContainsPoint(candidate.geometry, point.x, point.y),
+              )
+          : undefined;
+        if (nestedChild) {
+          updateSelectionForObject(nestedChild, false);
+          return;
+        }
+      }
       if (
         object.type === "text" &&
         object.childRole === "shape-label" &&
@@ -3025,6 +3048,11 @@ export function ProductCanvas({
     if (!selectedObject || !isContainableObject(selectedObject)) return;
     event.preventDefault();
     event.stopPropagation();
+    if (rotationAffordanceHideTimerRef.current !== null) {
+      window.clearTimeout(rotationAffordanceHideTimerRef.current);
+      rotationAffordanceHideTimerRef.current = null;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
     const bounds = containerRef.current?.getBoundingClientRect();
     if (!bounds) return;
     const object = selectedObject;
@@ -3301,8 +3329,18 @@ export function ProductCanvas({
     const nestedChildInteractive =
       !isContainableObject(object) ||
       !object.parentId ||
-      selectedIds.includes(object.parentId) ||
       selectedIds.includes(object.id);
+    const displayedParent =
+      isContainableObject(object) && object.parentId
+        ? displayObjectsById.get(object.parentId)
+        : undefined;
+    const nestedClipPolygon =
+      displayedParent?.type === "shape"
+        ? geometryClipPolygonInLocalSpace(
+            displayedParent.geometry,
+            object.geometry,
+          )
+        : null;
     return (
       <Fragment key={object.id}>
         <Group
@@ -3315,26 +3353,19 @@ export function ProductCanvas({
           y={object.geometry.y}
           rotation={object.geometry.rotation}
           listening={nestedChildInteractive}
-          clipX={
-            isContainableObject(object) && object.parentId
-              ? (objectsById.get(object.parentId)?.geometry.x ??
-                  object.geometry.x) - object.geometry.x
-              : undefined
-          }
-          clipY={
-            isContainableObject(object) && object.parentId
-              ? (objectsById.get(object.parentId)?.geometry.y ??
-                  object.geometry.y) - object.geometry.y
-              : undefined
-          }
-          clipWidth={
-            isContainableObject(object) && object.parentId
-              ? objectsById.get(object.parentId)?.geometry.width
-              : undefined
-          }
-          clipHeight={
-            isContainableObject(object) && object.parentId
-              ? objectsById.get(object.parentId)?.geometry.height
+          clipFunc={
+            nestedClipPolygon
+              ? (context) => {
+                  context.beginPath();
+                  context.moveTo(
+                    nestedClipPolygon[0]!.x,
+                    nestedClipPolygon[0]!.y,
+                  );
+                  for (const point of nestedClipPolygon.slice(1)) {
+                    context.lineTo(point.x, point.y);
+                  }
+                  context.closePath();
+                }
               : undefined
           }
           draggable={
@@ -4808,7 +4839,7 @@ export function ProductCanvas({
                 const handlePoint = rotationHandleWorldPoint(
                   selectedObject.geometry,
                   rotationAffordanceCorner,
-                  18,
+                  10,
                 );
                 return (
                   <button
@@ -4822,7 +4853,7 @@ export function ProductCanvas({
                       top: viewport.y + handlePoint.y * viewport.scale,
                     }}
                     onPointerDown={beginCornerRotation}
-                    onMouseEnter={() => {
+                    onPointerEnter={() => {
                       if (rotationAffordanceHideTimerRef.current !== null) {
                         window.clearTimeout(
                           rotationAffordanceHideTimerRef.current,
@@ -4830,7 +4861,13 @@ export function ProductCanvas({
                         rotationAffordanceHideTimerRef.current = null;
                       }
                     }}
-                    onMouseLeave={() => setRotationAffordanceCorner(null)}
+                    onPointerLeave={() => {
+                      rotationAffordanceHideTimerRef.current =
+                        window.setTimeout(() => {
+                          setRotationAffordanceCorner(null);
+                          rotationAffordanceHideTimerRef.current = null;
+                        }, 350);
+                    }}
                   >
                     ↻
                   </button>

@@ -7,6 +7,8 @@ import {
   childWorldGeometry,
   clampIconGeometryToParent,
   fullyContains,
+  geometryClipPolygonInLocalSpace,
+  geometryContainsPoint,
   parentFirstObjectOrder,
   parentRelativeGeometry,
   rotateGeometryAroundCenter,
@@ -196,5 +198,35 @@ describe("icon containment geometry", () => {
       x: 238,
       y: 298,
     });
+  });
+
+  it("hit-tests rotated children and keeps parent clipping in child-local space", () => {
+    const rotatedParent = {
+      ...parent,
+      geometry: { ...parent.geometry, rotation: 90 },
+    };
+    const rotatedChild = {
+      ...child,
+      geometry: childWorldGeometry(child, rotatedParent),
+    };
+    const center = {
+      x: rotatedChild.geometry.x - rotatedChild.geometry.height / 2,
+      y: rotatedChild.geometry.y + rotatedChild.geometry.width / 2,
+    };
+    expect(
+      geometryContainsPoint(rotatedChild.geometry, center.x, center.y),
+    ).toBe(true);
+    expect(geometryContainsPoint(rotatedChild.geometry, 0, 0)).toBe(false);
+
+    const clip = geometryClipPolygonInLocalSpace(
+      rotatedParent.geometry,
+      rotatedChild.geometry,
+    );
+    expect(clip).toHaveLength(4);
+    expect(clip[0]).toEqual({ x: -100, y: -50 });
+    expect(clip[1]).toEqual({ x: 300, y: -50 });
+    expect(clip[2]).toEqual({ x: 300, y: 150 });
+    expect(clip[3]!.x).toBeCloseTo(-100);
+    expect(clip[3]!.y).toBeCloseTo(150);
   });
 });

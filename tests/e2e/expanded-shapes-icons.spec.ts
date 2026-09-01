@@ -196,7 +196,13 @@ test("selects a composition parent first and exposes rotation at every corner", 
   await surface.click({ position: { x: 350, y: 350 } });
   await expect(parentItem).toHaveAttribute("aria-pressed", "true");
   await expect(labelItem).toHaveAttribute("aria-pressed", "false");
-  await surface.click({ position: { x: 350, y: 350 } });
+  await surface.dragTo(surface, {
+    sourcePosition: { x: 350, y: 350 },
+    targetPosition: { x: 390, y: 380 },
+  });
+  await expect(parentItem).toHaveAttribute("aria-pressed", "true");
+  await expect(labelItem).toHaveAttribute("aria-pressed", "false");
+  await surface.click({ position: { x: 390, y: 380 } });
   await expect(labelItem).toHaveAttribute("aria-pressed", "true");
 
   await parentItem.click();
@@ -239,8 +245,28 @@ test("selects a composition parent first and exposes rotation at every corner", 
     );
   }
 
-  await page.getByRole("button", { name: "More selection actions" }).click();
-  await page.getByLabel("Rotation").fill("90");
+  await page.mouse.move(
+    surfaceBox!.x + viewportX + (objectX + objectWidth) * viewportScale,
+    surfaceBox!.y + viewportY + objectY * viewportScale,
+  );
+  const rotationButtonBox = await rotationButton.boundingBox();
+  expect(rotationButtonBox).not.toBeNull();
+  await page.mouse.move(
+    rotationButtonBox!.x + rotationButtonBox!.width / 2,
+    rotationButtonBox!.y + rotationButtonBox!.height / 2,
+  );
+  await page.mouse.down();
+  await page.keyboard.down("Shift");
+  await page.mouse.move(
+    surfaceBox!.x +
+      viewportX +
+      (objectX + objectWidth / 2 + objectHeight / 2 + 10) * viewportScale,
+    surfaceBox!.y +
+      viewportY +
+      (objectY + objectHeight / 2 + objectWidth / 2 + 10) * viewportScale,
+  );
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
   await expect(page.getByTestId("selected-rotation")).toHaveText("90°");
   await expect(page.getByTestId("selected-position-x")).toHaveText(
     String(objectX + objectWidth / 2 + objectHeight / 2),
