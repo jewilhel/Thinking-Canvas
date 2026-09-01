@@ -7,7 +7,10 @@ import {
   childWorldGeometry,
   clampIconGeometryToParent,
   fullyContains,
+  parentFirstObjectOrder,
   parentRelativeGeometry,
+  rotateGeometryAroundCenter,
+  rotationHandleWorldPoint,
 } from "@/canvas/icon-containment";
 
 const shared = {
@@ -143,5 +146,55 @@ describe("icon containment geometry", () => {
         [child],
       ),
     ).toMatchObject({ x: 200, width: 300 });
+  });
+
+  it("renders each parent before its children while preserving sibling order", () => {
+    const sibling = {
+      ...child,
+      id: "55555555-5555-4555-8555-555555555555",
+      iconName: "clock",
+    };
+    const independent = {
+      ...child,
+      id: "66666666-6666-4666-8666-666666666666",
+      parentId: null,
+      parentRelative: null,
+    };
+    expect(
+      parentFirstObjectOrder([child, independent, parent, sibling]).map(
+        (object) => object.id,
+      ),
+    ).toEqual([independent.id, parent.id, child.id, sibling.id]);
+  });
+
+  it("rotates around the visual center and locates every corner handle", () => {
+    const geometry = {
+      x: 100,
+      y: 200,
+      width: 120,
+      height: 80,
+      rotation: 0,
+    };
+    expect(rotateGeometryAroundCenter(geometry, 180)).toMatchObject({
+      x: 220,
+      y: 280,
+      rotation: 180,
+    });
+    expect(rotationHandleWorldPoint(geometry, "top-left", 18)).toEqual({
+      x: 82,
+      y: 182,
+    });
+    expect(rotationHandleWorldPoint(geometry, "top-right", 18)).toEqual({
+      x: 238,
+      y: 182,
+    });
+    expect(rotationHandleWorldPoint(geometry, "bottom-left", 18)).toEqual({
+      x: 82,
+      y: 298,
+    });
+    expect(rotationHandleWorldPoint(geometry, "bottom-right", 18)).toEqual({
+      x: 238,
+      y: 298,
+    });
   });
 });

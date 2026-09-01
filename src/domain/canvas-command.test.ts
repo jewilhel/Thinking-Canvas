@@ -440,10 +440,42 @@ describe("product canvas command boundary", () => {
     const rotatedChild = readCanvasObjectV2(document, iconId);
     expect(rotatedChild).toMatchObject({
       parentId: shapeId,
-      geometry: { y: 80, width: 40, height: 30, rotation: 120 },
+      geometry: { width: 40, height: 30, rotation: 120 },
       parentRelative: { rotation: 30 },
     });
-    expect(rotatedChild?.geometry.x).toBeCloseTo(0);
+    expect(rotatedChild?.geometry.x).toBeCloseTo(132.990381);
+    expect(rotatedChild?.geometry.y).toBeCloseTo(55.179492);
+    expect(readCanvasObjectV2(document, shapeId)?.geometry).toMatchObject({
+      x: 145,
+      y: 5,
+      rotation: 90,
+    });
+  });
+
+  it("persists child movement with a moved parent", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const child = {
+      ...icon(),
+      geometry: { x: 60, y: 60, width: 40, height: 30, rotation: 0 },
+    };
+    putCanvasObjectV2(document, shape());
+    putCanvasObjectV2(document, child);
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.nest", { objectId: iconId, parentId: shapeId }),
+    );
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.move", { objectId: shapeId, x: 120, y: 140 }),
+    );
+
+    expect(readCanvasObjectV2(document, iconId)?.geometry).toMatchObject({
+      x: 160,
+      y: 160,
+      width: 40,
+      height: 30,
+    });
   });
 
   it("rejects partial containment and cascades parent deletion", () => {

@@ -32,6 +32,26 @@ export function isObjectParent(object: CanvasObjectV2): object is ObjectParent {
 
 export const isIconParent = isObjectParent;
 
+export function parentFirstObjectOrder(objects: CanvasObjectV2[]) {
+  const objectsById = new Map(objects.map((object) => [object.id, object]));
+  const childrenByParent = new Map<string, CanvasObjectV2[]>();
+  const nestedIds = new Set<string>();
+  for (const object of objects) {
+    if (!isContainableObject(object) || !object.parentId) continue;
+    const parent = objectsById.get(object.parentId);
+    if (!parent || !isObjectParent(parent)) continue;
+    nestedIds.add(object.id);
+    const children = childrenByParent.get(parent.id) ?? [];
+    children.push(object);
+    childrenByParent.set(parent.id, children);
+  }
+  return objects.flatMap((object) =>
+    nestedIds.has(object.id)
+      ? []
+      : [object, ...(childrenByParent.get(object.id) ?? [])],
+  );
+}
+
 export function rotatePoint(x: number, y: number, rotation: number) {
   const radians = (rotation * Math.PI) / 180;
   const cos = Math.cos(radians);
@@ -66,6 +86,48 @@ export function geometryCorners(geometry: CanvasObjectV2["geometry"]) {
     const rotated = rotatePoint(x, y, geometry.rotation);
     return { x: geometry.x + rotated.x, y: geometry.y + rotated.y };
   });
+}
+
+export function rotateGeometryAroundCenter(
+  geometry: CanvasObjectV2["geometry"],
+  rotation: number,
+) {
+  const previousHalf = rotatePoint(
+    geometry.width / 2,
+    geometry.height / 2,
+    geometry.rotation,
+  );
+  const center = {
+    x: geometry.x + previousHalf.x,
+    y: geometry.y + previousHalf.y,
+  };
+  const nextHalf = rotatePoint(
+    geometry.width / 2,
+    geometry.height / 2,
+    rotation,
+  );
+  return {
+    ...geometry,
+    x: center.x - nextHalf.x,
+    y: center.y - nextHalf.y,
+    rotation,
+  };
+}
+
+export type RotationCorner =
+  "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+export function rotationHandleWorldPoint(
+  geometry: CanvasObjectV2["geometry"],
+  corner: RotationCorner,
+  offset: number,
+) {
+  const local = {
+    x: corner.endsWith("right") ? geometry.width + offset : -offset,
+    y: corner.startsWith("bottom") ? geometry.height + offset : -offset,
+  };
+  const rotated = rotatePoint(local.x, local.y, geometry.rotation);
+  return { x: geometry.x + rotated.x, y: geometry.y + rotated.y };
 }
 
 export function fullyContains(

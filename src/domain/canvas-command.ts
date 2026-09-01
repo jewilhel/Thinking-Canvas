@@ -24,6 +24,7 @@ import {
   isContainableObject,
   isObjectParent,
   parentRelativeGeometry,
+  rotateGeometryAroundCenter,
   type ContainableObject,
   type ObjectParent,
 } from "@/canvas/icon-containment";
@@ -467,6 +468,7 @@ function updateChildrenForParentGeometry(
       nextParent,
     );
     setCanvasObjectField(document, child.id, ["parentRelative"], relative);
+    writeGeometry(document, child.id, nextChild);
     touch(document, child.id, issuedAt);
     affectedObjectIds.add(child.id);
     updateAttachedAnnotationPosition(
@@ -841,13 +843,23 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         x: command.payload.x,
         y: command.payload.y,
       };
-      const movedGeometry =
+      let movedGeometry =
         isContainableObject(object) && object.parentId
           ? clampObjectGeometryToParent(
               requestedGeometry,
               requireObjectParent(document, object.parentId),
             )
           : requestedGeometry;
+      if (isObjectParent(object)) {
+        movedGeometry = updateChildrenForParentGeometry(
+          document,
+          object,
+          movedGeometry,
+          false,
+          command.issuedAt,
+          affectedObjectIds,
+        );
+      }
       const dx = movedGeometry.x - object.geometry.x;
       const dy = movedGeometry.y - object.geometry.y;
       setCanvasObjectField(
@@ -903,34 +915,6 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           );
           touch(document, candidate.id, command.issuedAt);
           affectedObjectIds.add(candidate.id);
-        }
-      }
-      if (isObjectParent(object) && (dx !== 0 || dy !== 0)) {
-        const allObjects = listCanvasObjectsV2(document);
-        for (const child of allObjects) {
-          if (!isContainableObject(child) || child.parentId !== object.id)
-            continue;
-          for (const annotation of allObjects) {
-            if (
-              annotation.type !== "annotation" ||
-              annotation.attachedObjectId !== child.id
-            )
-              continue;
-            setCanvasObjectField(
-              document,
-              annotation.id,
-              ["geometry", "x"],
-              annotation.geometry.x + dx,
-            );
-            setCanvasObjectField(
-              document,
-              annotation.id,
-              ["geometry", "y"],
-              annotation.geometry.y + dy,
-            );
-            touch(document, annotation.id, command.issuedAt);
-            affectedObjectIds.add(annotation.id);
-          }
         }
       }
     } else if (command.type === "object.resize") {
@@ -989,10 +973,10 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           "Only shapes, icons, and text can be rotated.",
         );
       }
-      const geometry = {
-        ...object.geometry,
-        rotation: command.payload.rotation,
-      };
+      const geometry = rotateGeometryAroundCenter(
+        object.geometry,
+        command.payload.rotation,
+      );
       if (isObjectParent(object)) {
         updateChildrenForParentGeometry(
           document,
@@ -1003,19 +987,24 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           affectedObjectIds,
         );
       }
-      setCanvasObjectField(
-        document,
-        object.id,
-        ["geometry", "rotation"],
-        geometry.rotation,
-      );
+      writeGeometry(document, object.id, geometry);
       if (object.parentId) {
         const parent = requireObjectParent(document, object.parentId);
-        setCanvasObjectField(document, object.id, ["parentRelative"], {
-          ...object.parentRelative,
-          rotation: command.payload.rotation - parent.geometry.rotation,
-        });
+        setCanvasObjectField(
+          document,
+          object.id,
+          ["parentRelative"],
+          parentRelativeGeometry(geometry, parent),
+        );
       }
+      updateAttachedAnnotationPosition(
+        document,
+        object.id,
+        geometry.x - object.geometry.x,
+        geometry.y - object.geometry.y,
+        command.issuedAt,
+        affectedObjectIds,
+      );
     } else if (command.type === "object.patch") {
       if (object.type !== command.payload.objectType) {
         throw new ProductCanvasCommandConflictError(

@@ -145,8 +145,6 @@ test("places an icon inside a sticky and removes it without a jump", async ({
   });
   await iconItem.click();
 
-  const beforeX = await page.getByTestId("selected-position-x").innerText();
-  const beforeY = await page.getByTestId("selected-position-y").innerText();
   await page.getByRole("button", { name: "More selection actions" }).click();
   await page.getByRole("button", { name: /Place inside rectangle/ }).click();
   await expect(iconItem).toHaveAttribute(
@@ -160,11 +158,94 @@ test("places an icon inside a sticky and removes it without a jump", async ({
   await expect(page.getByLabel("Scale width")).not.toBeChecked();
   await page.getByLabel("Rotation").fill("30");
   await expect(page.getByTestId("selected-rotation")).toHaveText("30°");
+  const beforeDetachX = await page
+    .getByTestId("selected-position-x")
+    .innerText();
+  const beforeDetachY = await page
+    .getByTestId("selected-position-y")
+    .innerText();
 
   await iconItem.click();
   await page.getByRole("button", { name: "More selection actions" }).click();
   await page.getByRole("button", { name: "Remove from container" }).click();
   await expect(iconItem).toHaveAttribute("aria-label", "icon — brain");
-  await expect(page.getByTestId("selected-position-x")).toHaveText(beforeX);
-  await expect(page.getByTestId("selected-position-y")).toHaveText(beforeY);
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    beforeDetachX,
+  );
+  await expect(page.getByTestId("selected-position-y")).toHaveText(
+    beforeDetachY,
+  );
+});
+
+test("selects a composition parent first and exposes rotation at every corner", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  const surface = page.getByTestId("product-canvas-surface");
+  await page.getByRole("button", { name: "Sticky note", exact: true }).click();
+  await surface.click({ position: { x: 300, y: 300 } });
+
+  const parentItem = page.getByRole("button", {
+    name: "rectangle — Sticky note",
+    exact: true,
+  });
+  const labelItem = page.getByRole("button", {
+    name: "Contained intrinsic label",
+  });
+  await surface.click({ position: { x: 70, y: 200 } });
+  await surface.click({ position: { x: 350, y: 350 } });
+  await expect(parentItem).toHaveAttribute("aria-pressed", "true");
+  await expect(labelItem).toHaveAttribute("aria-pressed", "false");
+  await surface.click({ position: { x: 350, y: 350 } });
+  await expect(labelItem).toHaveAttribute("aria-pressed", "true");
+
+  await parentItem.click();
+  const surfaceBox = await surface.boundingBox();
+  expect(surfaceBox).not.toBeNull();
+  const viewportX = Number(await surface.getAttribute("data-viewport-x"));
+  const viewportY = Number(await surface.getAttribute("data-viewport-y"));
+  const viewportScale = Number(
+    await surface.getAttribute("data-viewport-scale"),
+  );
+  const objectX = Number(
+    await page.getByTestId("selected-position-x").innerText(),
+  );
+  const objectY = Number(
+    await page.getByTestId("selected-position-y").innerText(),
+  );
+  const objectWidth = Number(
+    await page.getByTestId("selected-width").innerText(),
+  );
+  const objectHeight = Number(
+    await page.getByTestId("selected-height").innerText(),
+  );
+  const corners = [
+    ["top-left", objectX, objectY],
+    ["top-right", objectX + objectWidth, objectY],
+    ["bottom-left", objectX, objectY + objectHeight],
+    ["bottom-right", objectX + objectWidth, objectY + objectHeight],
+  ] as const;
+  const rotationButton = page.getByRole("button", {
+    name: "Rotate selected object",
+  });
+  for (const [corner, x, y] of corners) {
+    await page.mouse.move(
+      surfaceBox!.x + viewportX + x * viewportScale,
+      surfaceBox!.y + viewportY + y * viewportScale,
+    );
+    await expect(rotationButton).toHaveAttribute(
+      "data-rotation-corner",
+      corner,
+    );
+  }
+
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await page.getByLabel("Rotation").fill("90");
+  await expect(page.getByTestId("selected-rotation")).toHaveText("90°");
+  await expect(page.getByTestId("selected-position-x")).toHaveText(
+    String(objectX + objectWidth / 2 + objectHeight / 2),
+  );
+  await expect(page.getByTestId("selected-position-y")).toHaveText(
+    String(objectY + objectHeight / 2 - objectWidth / 2),
+  );
 });

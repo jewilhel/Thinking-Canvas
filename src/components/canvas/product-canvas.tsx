@@ -96,7 +96,11 @@ import {
   fullyContains,
   isContainableObject,
   isObjectParent,
+  parentFirstObjectOrder,
   parentRelativeGeometry,
+  rotateGeometryAroundCenter,
+  rotationHandleWorldPoint,
+  type RotationCorner,
 } from "@/canvas/icon-containment";
 import {
   applyCanvasHistoryEntry,
@@ -344,6 +348,7 @@ export function ProductCanvas({
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const selectionProxyRef = useRef<Konva.Rect>(null);
+  const rotationAffordanceHideTimerRef = useRef<number | null>(null);
   const wheelGestureRef = useRef<{
     intent: "pan" | "zoom";
     lastEventAt: number;
@@ -423,8 +428,8 @@ export function ProductCanvas({
   const [resizePreviewGeometries, setResizePreviewGeometries] = useState<
     Record<string, CanvasObjectV2["geometry"]>
   >({});
-  const [rotationAffordanceVisible, setRotationAffordanceVisible] =
-    useState(false);
+  const [rotationAffordanceCorner, setRotationAffordanceCorner] =
+    useState<RotationCorner | null>(null);
   const [
     selectionTransformPreviewObjects,
     setSelectionTransformPreviewObjects,
@@ -477,28 +482,31 @@ export function ProductCanvas({
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
   );
+  const orderedObjects = useMemo(
+    () => parentFirstObjectOrder(objects),
+    [objects],
+  );
   const productObjectCount = objects.filter(
     (object) => object.type !== "text" || object.childRole !== "shape-label",
   ).length;
-  const displayObjects = useMemo(
-    () =>
-      objects.map((object) => {
-        const selectionPreview = selectionTransformPreviewObjects[object.id];
-        if (selectionPreview) return selectionPreview;
-        const preview = dragPreviewPositions[object.id];
-        return preview && object.type !== "connector"
-          ? {
-              ...object,
-              geometry: {
-                ...object.geometry,
-                x: preview.x,
-                y: preview.y,
-              },
-            }
-          : object;
-      }),
-    [dragPreviewPositions, objects, selectionTransformPreviewObjects],
-  );
+  const displayObjects = useMemo(() => {
+    const previewed = orderedObjects.map((object) => {
+      const selectionPreview = selectionTransformPreviewObjects[object.id];
+      if (selectionPreview) return selectionPreview;
+      const preview = dragPreviewPositions[object.id];
+      return preview && object.type !== "connector"
+        ? {
+            ...object,
+            geometry: {
+              ...object.geometry,
+              x: preview.x,
+              y: preview.y,
+            },
+          }
+        : object;
+    });
+    return previewed;
+  }, [dragPreviewPositions, orderedObjects, selectionTransformPreviewObjects]);
   const connectorLayoutObjectsById = useMemo(
     () =>
       new Map(
@@ -659,16 +667,39 @@ export function ProductCanvas({
   useEffect(() => {
     const transformer = transformerRef.current;
     if (!transformer || useSelectionProxy) {
-      setRotationAffordanceVisible(false);
+      setRotationAffordanceCorner(null);
       return;
     }
-    const corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
-      .map((name) => transformer.findOne(`.${name}`))
-      .filter((node): node is Konva.Node => node != null);
-    const show = () => setRotationAffordanceVisible(true);
-    for (const corner of corners) corner.on("mouseenter.rotation", show);
+    const corners = (
+      ["top-left", "top-right", "bottom-left", "bottom-right"] as const
+    ).flatMap((name) => {
+      const node = transformer.findOne(`.${name}`);
+      return node ? [[name, node] as const] : [];
+    });
+    for (const [name, corner] of corners) {
+      corner.on("mouseenter.rotation", () => {
+        if (rotationAffordanceHideTimerRef.current !== null) {
+          window.clearTimeout(rotationAffordanceHideTimerRef.current);
+          rotationAffordanceHideTimerRef.current = null;
+        }
+        setRotationAffordanceCorner(name);
+      });
+      corner.on("mouseleave.rotation", () => {
+        rotationAffordanceHideTimerRef.current = window.setTimeout(() => {
+          setRotationAffordanceCorner(null);
+          rotationAffordanceHideTimerRef.current = null;
+        }, 120);
+      });
+    }
     return () => {
-      for (const corner of corners) corner.off("mouseenter.rotation", show);
+      if (rotationAffordanceHideTimerRef.current !== null) {
+        window.clearTimeout(rotationAffordanceHideTimerRef.current);
+        rotationAffordanceHideTimerRef.current = null;
+      }
+      for (const [, corner] of corners) {
+        corner.off("mouseenter.rotation");
+        corner.off("mouseleave.rotation");
+      }
     };
   }, [selectedId, selectedObject, useSelectionProxy]);
 
@@ -1383,7 +1414,7 @@ export function ProductCanvas({
       x: (clientX - bounds.left - viewport.x) / viewport.scale,
       y: (clientY - bounds.top - viewport.y) / viewport.scale,
     };
-    return [...objects].reverse().find((candidate) => {
+    return [...orderedObjects].reverse().find((candidate) => {
       const objectBox = objectBounds(candidate);
       const padding = candidate.type === "connector" ? 12 : 0;
       return (
@@ -1528,14 +1559,32 @@ export function ProductCanvas({
         .filter((candidate) => candidate.type !== "annotation")
         .map((candidate) => candidate.id),
     );
+    const familyTargets = objects.filter(
+      (candidate) =>
+        isContainableObject(candidate) &&
+        typeof candidate.parentId === "string" &&
+        movingTargetIds.has(candidate.parentId),
+    );
+    for (const child of familyTargets) movingTargetIds.add(child.id);
+    const targetsById = new Map(
+      [...selectedTargets, ...familyTargets].map((target) => [
+        target.id,
+        target,
+      ]),
+    );
+    for (const annotation of objects.filter(
+      (candidate) =>
+        candidate.type === "annotation" &&
+        candidate.attachedObjectId !== null &&
+        movingTargetIds.has(candidate.attachedObjectId),
+    )) {
+      targetsById.set(annotation.id, annotation);
+    }
     const targets = [
       ...selectedTargets,
-      ...objects.filter(
-        (candidate) =>
-          candidate.type === "annotation" &&
-          candidate.attachedObjectId !== null &&
-          movingTargetIds.has(candidate.attachedObjectId) &&
-          !selectedTargets.some((selected) => selected.id === candidate.id),
+      ...[...targetsById.values()].filter(
+        (target) =>
+          !selectedTargets.some((selected) => selected.id === target.id),
       ),
     ];
     setDragPreviewPositions(
@@ -3010,9 +3059,13 @@ export function ProductCanvas({
       if (pointerEvent.shiftKey) {
         nextRotation = Math.round(nextRotation / 15) * 15;
       }
+      const nextGeometry = rotateGeometryAroundCenter(
+        object.geometry,
+        nextRotation,
+      );
       const nextObject = {
         ...object,
-        geometry: { ...object.geometry, rotation: nextRotation },
+        geometry: nextGeometry,
       };
       const previews: Record<string, CanvasObjectV2> = {
         [object.id]: nextObject,
@@ -3020,7 +3073,7 @@ export function ProductCanvas({
       if (isObjectParent(object)) {
         const nextParent = {
           ...object,
-          geometry: { ...object.geometry, rotation: nextRotation },
+          geometry: nextGeometry,
         };
         for (const child of objects) {
           if (!isContainableObject(child) || child.parentId !== object.id)
@@ -3245,6 +3298,11 @@ export function ProductCanvas({
       );
     }
     if (object.type === "document") return null;
+    const nestedChildInteractive =
+      !isContainableObject(object) ||
+      !object.parentId ||
+      selectedIds.includes(object.parentId) ||
+      selectedIds.includes(object.id);
     return (
       <Fragment key={object.id}>
         <Group
@@ -3256,6 +3314,7 @@ export function ProductCanvas({
           x={object.geometry.x}
           y={object.geometry.y}
           rotation={object.geometry.rotation}
+          listening={nestedChildInteractive}
           clipX={
             isContainableObject(object) && object.parentId
               ? (objectsById.get(object.parentId)?.geometry.x ??
@@ -3279,7 +3338,9 @@ export function ProductCanvas({
               : undefined
           }
           draggable={
-            tool === "select" && inlineTextEditor?.objectId !== object.id
+            tool === "select" &&
+            nestedChildInteractive &&
+            inlineTextEditor?.objectId !== object.id
           }
           onClick={(event) => selectObject(event, object)}
           onTap={(event) => selectObject(event, object)}
@@ -4739,35 +4800,37 @@ export function ProductCanvas({
               />
             </Layer>
           </Stage>
-          {rotationAffordanceVisible &&
+          {rotationAffordanceCorner &&
           selectedObject &&
           selectedIds.length === 1 &&
           isContainableObject(selectedObject)
             ? (() => {
-                const radians =
-                  (selectedObject.geometry.rotation * Math.PI) / 180;
-                const localX = selectedObject.geometry.width + 18;
-                const localY = -18;
-                const worldX =
-                  selectedObject.geometry.x +
-                  localX * Math.cos(radians) -
-                  localY * Math.sin(radians);
-                const worldY =
-                  selectedObject.geometry.y +
-                  localX * Math.sin(radians) +
-                  localY * Math.cos(radians);
+                const handlePoint = rotationHandleWorldPoint(
+                  selectedObject.geometry,
+                  rotationAffordanceCorner,
+                  18,
+                );
                 return (
                   <button
                     type="button"
                     aria-label="Rotate selected object"
+                    data-rotation-corner={rotationAffordanceCorner}
                     title="Drag to rotate. Hold Shift to snap to 15° increments."
                     className="absolute z-20 grid size-8 -translate-x-1/2 -translate-y-1/2 cursor-grab place-items-center rounded-full border-2 border-sky-500 bg-white text-sm font-bold text-sky-600 shadow-md active:cursor-grabbing"
                     style={{
-                      left: viewport.x + worldX * viewport.scale,
-                      top: viewport.y + worldY * viewport.scale,
+                      left: viewport.x + handlePoint.x * viewport.scale,
+                      top: viewport.y + handlePoint.y * viewport.scale,
                     }}
                     onPointerDown={beginCornerRotation}
-                    onMouseLeave={() => setRotationAffordanceVisible(false)}
+                    onMouseEnter={() => {
+                      if (rotationAffordanceHideTimerRef.current !== null) {
+                        window.clearTimeout(
+                          rotationAffordanceHideTimerRef.current,
+                        );
+                        rotationAffordanceHideTimerRef.current = null;
+                      }
+                    }}
+                    onMouseLeave={() => setRotationAffordanceCorner(null)}
                   >
                     ↻
                   </button>
