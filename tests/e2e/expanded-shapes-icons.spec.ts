@@ -467,6 +467,46 @@ test("keeps grouped selection chrome tight and command-drags the group into a pa
   await expect(page.getByTestId("visible-connection-anchor-count")).toHaveText(
     "0",
   );
+
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await page
+    .locator('[data-testid^="object-list-item-"]:not([data-parent-id])')
+    .first()
+    .click();
+
+  const frame = (await page.getByTestId("selection-frame-geometry").innerText())
+    .split(",")
+    .map(Number);
+  const viewportX = Number(await surface.getAttribute("data-viewport-x"));
+  const viewportY = Number(await surface.getAttribute("data-viewport-y"));
+  const viewportScale = Number(
+    await surface.getAttribute("data-viewport-scale"),
+  );
+  const parentPoint = {
+    x: surfaceBox!.x + viewportX + (frame[0]! + frame[2]! - 20) * viewportScale,
+    y: surfaceBox!.y + viewportY + (frame[1]! + frame[3]! - 20) * viewportScale,
+  };
+  await page.mouse.move(parentPoint.x, parentPoint.y);
+  await page.mouse.down();
+  await page.mouse.move(parentPoint.x + 32, parentPoint.y + 24);
+  await expect(page.getByTestId("live-drag-family-preview-count")).toHaveText(
+    "4",
+  );
+  await page.mouse.up();
+
+  const rotationZone = page.getByTestId("rotation-cursor-zone").first();
+  const rotationBox = await rotationZone.boundingBox();
+  expect(rotationBox).not.toBeNull();
+  await page.mouse.move(
+    rotationBox!.x + rotationBox!.width / 2,
+    rotationBox!.y + rotationBox!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(rotationBox!.x + 44, rotationBox!.y + 44);
+  await expect(page.getByTestId("live-descendant-preview-count")).toHaveText(
+    "4",
+  );
+  await page.mouse.up();
 });
 
 test("keeps the contextual properties palette outside the selected frame", async ({

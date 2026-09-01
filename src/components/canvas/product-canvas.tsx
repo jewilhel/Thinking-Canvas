@@ -1736,11 +1736,25 @@ export function ProductCanvas({
         movingTargetIds.has(candidate.parentId),
     );
     for (const child of familyTargets) movingTargetIds.add(child.id);
+    const nestedGroupIds = new Set(
+      groups
+        .filter(
+          (group) =>
+            typeof group.parentId === "string" &&
+            movingTargetIds.has(group.parentId),
+        )
+        .map((group) => group.id),
+    );
+    const nestedGroupMembers = objects.filter(
+      (candidate) =>
+        typeof candidate.groupId === "string" &&
+        nestedGroupIds.has(candidate.groupId),
+    );
+    for (const member of nestedGroupMembers) movingTargetIds.add(member.id);
     const targetsById = new Map(
-      [...selectedTargets, ...familyTargets].map((target) => [
-        target.id,
-        target,
-      ]),
+      [...selectedTargets, ...familyTargets, ...nestedGroupMembers].map(
+        (target) => [target.id, target],
+      ),
     );
     for (const annotation of objects.filter(
       (candidate) =>
@@ -3425,6 +3439,30 @@ export function ProductCanvas({
             ...child,
             geometry: childWorldGeometry(child, nextParent),
           };
+        }
+        for (const group of groups.filter(
+          (candidate) => candidate.parentId === object!.id,
+        )) {
+          const nextGroupGeometry = childWorldGeometry(group, nextParent);
+          const members = objects.filter(
+            (candidate) => candidate.groupId === group.id,
+          );
+          const rotatedMembers = rotateSelectionObjects(
+            members,
+            group.geometry,
+            nextGroupGeometry.rotation,
+          );
+          const rotatedFrame = rotateGeometryAroundCenter(
+            group.geometry,
+            nextGroupGeometry.rotation,
+          );
+          for (const member of transformSelectionObjects(
+            rotatedMembers,
+            rotatedFrame,
+            nextGroupGeometry,
+          )) {
+            previews[member.id] = member;
+          }
         }
       }
       setSelectionTransformPreviewObjects(previews);
@@ -5544,6 +5582,12 @@ export function ProductCanvas({
                 <dt className="text-zinc-400">Live descendants</dt>
                 <dd data-testid="live-descendant-preview-count">
                   {Object.keys(selectionTransformPreviewObjects).length}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-400">Live drag family</dt>
+                <dd data-testid="live-drag-family-preview-count">
+                  {Object.keys(dragPreviewPositions).length}
                 </dd>
               </div>
               <div>
