@@ -83,6 +83,7 @@ import {
 import {
   hasContainmentModifier,
   isControlClickContextMenu,
+  isDeferredControlClickContextMenu,
 } from "@/canvas/containment-gesture";
 import {
   iconVectorScene,
@@ -3453,6 +3454,7 @@ export function ProductCanvas({
     const container = containerRef.current;
     if (!container) return;
     const canvasContainer = container;
+    let deferredControlClickStart: { x: number; y: number } | null = null;
     function openFromMouse(event: MouseEvent) {
       if (
         !(event.target instanceof Node) ||
@@ -3467,15 +3469,50 @@ export function ProductCanvas({
     }
     function onMouseDown(event: MouseEvent) {
       if (
+        event.button === 0 &&
+        isDeferredControlClickContextMenu(event, navigator.platform)
+      ) {
+        deferredControlClickStart = { x: event.clientX, y: event.clientY };
+      } else {
+        deferredControlClickStart = null;
+      }
+      if (
         event.button === 2 ||
         isControlClickContextMenu(event, navigator.platform)
       )
         openFromMouse(event);
     }
+    function onMouseMove(event: MouseEvent) {
+      if (
+        deferredControlClickStart &&
+        Math.hypot(
+          event.clientX - deferredControlClickStart.x,
+          event.clientY - deferredControlClickStart.y,
+        ) > 4
+      ) {
+        deferredControlClickStart = null;
+      }
+    }
+    function onMouseUp(event: MouseEvent) {
+      const start = deferredControlClickStart;
+      deferredControlClickStart = null;
+      if (
+        start &&
+        event.button === 0 &&
+        isDeferredControlClickContextMenu(event, navigator.platform) &&
+        Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 4
+      ) {
+        openFromMouse(event);
+      }
+    }
     window.addEventListener("mousedown", onMouseDown, true);
+    window.addEventListener("mousemove", onMouseMove, true);
+    window.addEventListener("mouseup", onMouseUp, true);
     window.addEventListener("contextmenu", openFromMouse, true);
     return () => {
       window.removeEventListener("mousedown", onMouseDown, true);
+      window.removeEventListener("mousemove", onMouseMove, true);
+      window.removeEventListener("mouseup", onMouseUp, true);
       window.removeEventListener("contextmenu", openFromMouse, true);
     };
   });

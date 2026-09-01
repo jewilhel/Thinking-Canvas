@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasContainmentModifier,
   isControlClickContextMenu,
+  isDeferredControlClickContextMenu,
 } from "@/canvas/containment-gesture";
 
 describe("containment modifier gesture", () => {
@@ -27,6 +28,21 @@ describe("containment modifier gesture", () => {
     ).toBe(true);
     expect(
       isControlClickContextMenu({ metaKey: false, ctrlKey: true }, "Win32"),
+    ).toBe(false);
+  });
+
+  it("defers non-Apple Control-click until the gesture proves it was not a drag", () => {
+    expect(
+      isDeferredControlClickContextMenu(
+        { metaKey: false, ctrlKey: true },
+        "Win32",
+      ),
+    ).toBe(true);
+    expect(
+      isDeferredControlClickContextMenu(
+        { metaKey: false, ctrlKey: true },
+        "MacIntel",
+      ),
     ).toBe(false);
   });
 });

@@ -14,3 +14,10 @@ export function isControlClickContextMenu(
 ) {
   return isMacPlatform(platform) && event.ctrlKey && !event.metaKey;
 }
+
+export function isDeferredControlClickContextMenu(
+  event: ModifierEvent,
+  platform: string,
+) {
+  return !isMacPlatform(platform) && event.ctrlKey && !event.metaKey;
+}
