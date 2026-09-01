@@ -1141,7 +1141,11 @@ export function ProductCanvas({
   ) {
     if (endpoint.kind === "attached") {
       const target = connectorLayoutObjectsById.get(endpoint.objectId);
-      if (target?.type === "shape" || target?.type === "icon")
+      if (
+        target?.type === "shape" ||
+        target?.type === "icon" ||
+        target?.type === "text"
+      )
         return connectionHandlePoint(target, endpoint.anchor);
     }
     return fallback;
@@ -1163,7 +1167,9 @@ export function ProductCanvas({
     let nearest: { endpoint: ConnectorEndpoint; distance: number } | undefined;
     for (const object of objects) {
       if (
-        (object.type !== "shape" && object.type !== "icon") ||
+        (object.type !== "shape" &&
+          object.type !== "icon" &&
+          object.type !== "text") ||
         object.id === excludedObjectId
       )
         continue;
@@ -1186,7 +1192,7 @@ export function ProductCanvas({
 
   function beginConnectorDrag(
     event: Konva.KonvaEventObject<DragEvent>,
-    object: Extract<CanvasObjectV2, { type: "shape" | "icon" }>,
+    object: Extract<CanvasObjectV2, { type: "shape" | "icon" | "text" }>,
     anchor: CanvasAnchor,
   ) {
     event.cancelBubble = true;
@@ -1257,10 +1263,16 @@ export function ProductCanvas({
     }
     if (tool === "connector" && object.type !== "connector") {
       const point = eventWorldPointer(event);
+      const connectorTarget =
+        object.type === "text" &&
+        object.childRole === "shape-label" &&
+        object.parentId
+          ? (objectsById.get(object.parentId) ?? object)
+          : object;
       finishConnector({
         kind: "attached",
-        objectId: object.id,
-        anchor: point ? nearestExteriorAnchor(object, point) : "right",
+        objectId: connectorTarget.id,
+        anchor: point ? nearestExteriorAnchor(connectorTarget, point) : "right",
       });
       return;
     }
@@ -1548,6 +1560,7 @@ export function ProductCanvas({
     const containedCount = objects.filter(
       (object) =>
         isContainableObject(object) &&
+        !(object.type === "text" && object.childRole === "shape-label") &&
         object.parentId &&
         selectedParentIds.has(object.parentId) &&
         !selectedIds.includes(object.id),
@@ -2433,7 +2446,7 @@ export function ProductCanvas({
     const y = Math.min(marquee.start.y, marquee.current.y);
     const width = Math.abs(marquee.current.x - marquee.start.x);
     const height = Math.abs(marquee.current.y - marquee.start.y);
-    const directMatches =
+    const rawDirectMatches =
       width < 3 && height < 3
         ? []
         : objects
@@ -2447,6 +2460,15 @@ export function ProductCanvas({
               );
             })
             .map((object) => object.id);
+    const directMatches = rawDirectMatches.filter((id) => {
+      const object = objectsById.get(id);
+      return !(
+        object?.type === "text" &&
+        object.childRole === "shape-label" &&
+        object.parentId &&
+        rawDirectMatches.includes(object.parentId)
+      );
+    });
     const matchedGroupIds = new Set(
       directMatches.flatMap((id) => {
         const groupId = objectsById.get(id)?.groupId;
@@ -2504,7 +2526,13 @@ export function ProductCanvas({
     }
     if (accelerator && event.key.toLowerCase() === "a") {
       event.preventDefault();
-      setSelectedIds(objects.map((object) => object.id));
+      setSelectedIds(
+        objects.flatMap((object) =>
+          object.type === "text" && object.childRole === "shape-label"
+            ? []
+            : [object.id],
+        ),
+      );
       return;
     }
     if (accelerator && event.key.toLowerCase() === "c") {
@@ -3296,7 +3324,9 @@ export function ProductCanvas({
           ) : null}
         </Group>
         {selectionAffordancesVisible &&
-        (object.type === "shape" || object.type === "icon") &&
+        (object.type === "shape" ||
+          object.type === "icon" ||
+          object.type === "text") &&
         (selectedIds.includes(object.id) ||
           hoveredShapeId === object.id ||
           connectorStart) ? (
@@ -3922,6 +3952,7 @@ export function ProductCanvas({
               (object) =>
                 object.type === "shape" ||
                 object.type === "icon" ||
+                object.type === "text" ||
                 object.type === "connector",
             ) ? (
               <Button
@@ -4079,7 +4110,8 @@ export function ProductCanvas({
                 {contextPanel === "connector" ? (
                   <div className="space-y-3">
                     {(selectedObject.type === "shape" ||
-                      selectedObject.type === "icon") &&
+                      selectedObject.type === "icon" ||
+                      selectedObject.type === "text") &&
                     selectedIds.length === 1 ? (
                       <fieldset>
                         <legend className="text-xs text-zinc-300">
@@ -4860,6 +4892,11 @@ function ObjectNavigatorContent({
               <button
                 type="button"
                 data-testid={`object-list-item-${object.id}`}
+                data-parent-id={
+                  isContainableObject(object) && object.parentId
+                    ? object.parentId
+                    : undefined
+                }
                 aria-label={
                   isContainableObject(object) && object.parentId
                     ? `Contained ${objectLabel(object)}`

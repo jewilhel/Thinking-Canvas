@@ -349,11 +349,13 @@ function assertEligibleEndpoint(
     readCanvasObjectV2(document, endpoint.objectId);
   if (
     !target ||
-    (target.type !== "shape" && target.type !== "icon") ||
+    (target.type !== "shape" &&
+      target.type !== "icon" &&
+      target.type !== "text") ||
     target.id === connectorId
   ) {
     throw new ProductCanvasCommandConflictError(
-      "Attached connector endpoints require an existing eligible shape or icon.",
+      "Attached connector endpoints require an existing eligible shape, icon, or text object.",
     );
   }
 }
