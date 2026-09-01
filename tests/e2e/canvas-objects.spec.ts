@@ -460,6 +460,12 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
 test("uses dark contextual controls and opens selection actions from right-click, Control-click, and keyboard", async ({
   page,
 }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window.navigator, "platform", {
+      configurable: true,
+      get: () => "Linux x86_64",
+    });
+  });
   const surface = await openFreshCanvas(page);
   await createLabeledShape(page, "Rectangle", "Menu alpha", {
     x: 180,
