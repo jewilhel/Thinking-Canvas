@@ -7,6 +7,7 @@ import {
   childWorldGeometry,
   clampIconGeometryToParent,
   fullyContains,
+  flipGeometryWithinParent,
   geometryClipPolygonInLocalSpace,
   geometryContainsPoint,
   parentFirstObjectOrder,
@@ -198,6 +199,25 @@ describe("icon containment geometry", () => {
       x: 238,
       y: 298,
     });
+  });
+
+  it("mirrors child geometry through a parent-local axis", () => {
+    const horizontal = flipGeometryWithinParent(
+      child.geometry,
+      parent,
+      "horizontal",
+    );
+    expect(horizontal).toMatchObject({
+      x: 300,
+      y: 250,
+      width: 100,
+      height: 100,
+      rotation: 0,
+      flipX: true,
+    });
+    expect(
+      flipGeometryWithinParent(horizontal, parent, "horizontal"),
+    ).toMatchObject(child.geometry);
   });
 
   it("hit-tests rotated children and keeps parent clipping in child-local space", () => {

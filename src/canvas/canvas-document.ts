@@ -27,6 +27,8 @@ const geometrySchema = z.strictObject({
   width: finiteNumber.nonnegative(),
   height: finiteNumber.nonnegative(),
   rotation: finiteNumber.default(0),
+  flipX: z.boolean().optional(),
+  flipY: z.boolean().optional(),
 });
 
 const styleSchema = z.strictObject({

@@ -452,6 +452,74 @@ describe("product canvas command boundary", () => {
     });
   });
 
+  it("flips an object and mirrors a contained family with its parent", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const parent = shape();
+    const child = {
+      ...icon(),
+      geometry: { x: 40, y: 55, width: 32, height: 24, rotation: 15 },
+    };
+    putCanvasObjectV2(document, parent);
+    putCanvasObjectV2(document, child);
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.nest", { objectId: iconId, parentId: shapeId }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.flip", { objectId: shapeId, axis: "horizontal" }),
+    );
+
+    expect(readCanvasObjectV2(document, shapeId)?.geometry.flipX).toBe(true);
+    const flippedChild = readCanvasObjectV2(document, iconId);
+    expect(flippedChild?.geometry.flipX).toBe(true);
+    expect(flippedChild?.geometry.rotation).toBeCloseTo(-15);
+    expect(flippedChild?.geometry.x).not.toBe(child.geometry.x);
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.flip", { objectId: shapeId, axis: "horizontal" }),
+    );
+    expect(readCanvasObjectV2(document, shapeId)?.geometry.flipX).toBe(false);
+    expect(readCanvasObjectV2(document, iconId)?.geometry).toMatchObject(
+      child.geometry,
+    );
+  });
+
+  it("allows compact icons without lowering the shape minimum", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, icon());
+    putCanvasObjectV2(document, shape());
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.transform", {
+        objectId: iconId,
+        x: 200,
+        y: 80,
+        width: 8,
+        height: 8,
+        rotation: 0,
+      }),
+    );
+    expect(readCanvasObjectV2(document, iconId)?.geometry).toMatchObject({
+      width: 8,
+      height: 8,
+    });
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("object.transform", {
+          objectId: shapeId,
+          x: 20,
+          y: 40,
+          width: 8,
+          height: 8,
+          rotation: 0,
+        }),
+      ),
+    ).toThrow(ProductCanvasCommandConflictError);
+  });
+
   it("persists child movement with a moved parent", () => {
     const document = createProductCanvasDocument(canvasId);
     const child = {

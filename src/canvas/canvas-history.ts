@@ -124,6 +124,15 @@ function readPath(value: unknown, path: string[]) {
   return current;
 }
 
+function historyPathValue(value: unknown, path: string[]) {
+  const result = readPath(value, path);
+  return result === undefined &&
+    path[0] === "geometry" &&
+    (path[1] === "flipX" || path[1] === "flipY")
+    ? false
+    : result;
+}
+
 function normalizeReplacement(path: string[], value: unknown): JsonValue {
   if (value === undefined && path.at(-1) === "groupId") return null;
   if (
@@ -216,8 +225,8 @@ export function applyCanvasHistoryEntry(
             path[0] === "childLayout")
         )
           continue;
-        const expectedValue = readPath(expected, path);
-        const desiredValue = readPath(desired, path);
+        const expectedValue = historyPathValue(expected, path);
+        const desiredValue = historyPathValue(desired, path);
         const label =
           path.length === 1 &&
           path[0] === "text" &&
@@ -228,7 +237,7 @@ export function applyCanvasHistoryEntry(
         const currentValue =
           label?.type === "text"
             ? label.text
-            : readPath(readCanvasObjectV2(document, objectId), path);
+            : historyPathValue(readCanvasObjectV2(document, objectId), path);
         if (!equal(currentValue, expectedValue)) {
           conflicts.push(`${objectId}:${path.join(".")}`);
           continue;

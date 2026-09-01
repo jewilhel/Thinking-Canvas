@@ -145,6 +145,47 @@ export function rotateGeometryAroundCenter(
   };
 }
 
+export function flipGeometryWithinParent(
+  geometry: CanvasObjectV2["geometry"],
+  parent: ObjectParent,
+  axis: "horizontal" | "vertical",
+) {
+  const half = rotatePoint(
+    geometry.width / 2,
+    geometry.height / 2,
+    geometry.rotation,
+  );
+  const center = {
+    x: geometry.x + half.x,
+    y: geometry.y + half.y,
+  };
+  const localCenter = parentLocalPoint(parent, center.x, center.y);
+  const mirroredCenter = worldPoint(
+    parent,
+    axis === "horizontal"
+      ? parent.geometry.width - localCenter.x
+      : localCenter.x,
+    axis === "vertical"
+      ? parent.geometry.height - localCenter.y
+      : localCenter.y,
+  );
+  const relativeRotation = geometry.rotation - parent.geometry.rotation;
+  const rotation = parent.geometry.rotation - relativeRotation;
+  const nextHalf = rotatePoint(
+    geometry.width / 2,
+    geometry.height / 2,
+    rotation,
+  );
+  return {
+    ...geometry,
+    x: mirroredCenter.x - nextHalf.x,
+    y: mirroredCenter.y - nextHalf.y,
+    rotation,
+    ...(axis === "horizontal" ? { flipX: !geometry.flipX } : {}),
+    ...(axis === "vertical" ? { flipY: !geometry.flipY } : {}),
+  };
+}
+
 export type RotationCorner =
   "top-left" | "top-right" | "bottom-left" | "bottom-right";
 

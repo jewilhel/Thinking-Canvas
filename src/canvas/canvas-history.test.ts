@@ -180,6 +180,25 @@ describe("actor-local canvas history", () => {
     expect(readCanvasObjectV2(document, objectId)).toEqual(annotation());
   });
 
+  it("undoes and redoes a flip added to legacy geometry", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, shape());
+    const { history } = executeProductCanvasCommandWithHistory(
+      document,
+      command("object.flip", { objectId, axis: "horizontal" }),
+    );
+
+    expect(readCanvasObjectV2(document, objectId)?.geometry.flipX).toBe(true);
+    expect(applyCanvasHistoryEntry(document, history, "undo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, objectId)?.geometry.flipX).toBe(false);
+    expect(applyCanvasHistoryEntry(document, history, "redo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, objectId)?.geometry.flipX).toBe(true);
+  });
+
   it("continues valid styling and annotation creation beside a malformed entry", () => {
     const document = createProductCanvasDocument(canvasId);
     const malformedId = "33333333-3333-4333-8333-333333333399";

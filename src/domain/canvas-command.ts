@@ -21,6 +21,7 @@ import {
   clampObjectGeometryToParent,
   defaultChildLayout,
   fullyContains,
+  flipGeometryWithinParent,
   isContainableObject,
   isObjectParent,
   parentRelativeGeometry,
@@ -85,8 +86,8 @@ const resizeCommand = commandBase.extend({
   type: z.literal("object.resize"),
   payload: z.strictObject({
     objectId: uuid,
-    width: finiteNumber.min(24),
-    height: finiteNumber.min(24),
+    width: finiteNumber.min(8),
+    height: finiteNumber.min(8),
   }),
 });
 const deleteCommand = commandBase.extend({
@@ -176,14 +177,21 @@ const rotateObjectCommand = commandBase.extend({
   type: z.literal("object.rotate"),
   payload: z.strictObject({ objectId: uuid, rotation: finiteNumber }),
 });
+const flipObjectCommand = commandBase.extend({
+  type: z.literal("object.flip"),
+  payload: z.strictObject({
+    objectId: uuid,
+    axis: z.enum(["horizontal", "vertical"]),
+  }),
+});
 const transformObjectCommand = commandBase.extend({
   type: z.literal("object.transform"),
   payload: z.strictObject({
     objectId: uuid,
     x: finiteNumber,
     y: finiteNumber,
-    width: finiteNumber.min(24),
-    height: finiteNumber.min(24),
+    width: finiteNumber.min(8),
+    height: finiteNumber.min(8),
     rotation: finiteNumber,
     preserveChildren: z.boolean().optional(),
   }),
@@ -239,6 +247,7 @@ export const productCanvasMutationSchema = z.discriminatedUnion("type", [
   detachObjectCommand.omit(trustedCommandFields),
   layoutObjectCommand.omit(trustedCommandFields),
   rotateObjectCommand.omit(trustedCommandFields),
+  flipObjectCommand.omit(trustedCommandFields),
   transformObjectCommand.omit(trustedCommandFields),
   reorderCommand.omit(trustedCommandFields),
   groupCommand.omit(trustedCommandFields),
@@ -266,6 +275,7 @@ export const productCanvasCommandSchema = z
     detachObjectCommand,
     layoutObjectCommand,
     rotateObjectCommand,
+    flipObjectCommand,
     transformObjectCommand,
     reorderCommand,
     groupCommand,
@@ -398,7 +408,21 @@ function writeGeometry(
   objectId: string,
   geometry: CanvasObjectV2["geometry"],
 ) {
-  for (const field of ["x", "y", "width", "height", "rotation"] as const) {
+  for (const field of [
+    "x",
+    "y",
+    "width",
+    "height",
+    "rotation",
+    "flipX",
+    "flipY",
+  ] as const) {
+    if (field === "flipX" || field === "flipY") {
+      const value = geometry[field];
+      if (value === undefined) continue;
+      setCanvasObjectField(document, objectId, ["geometry", field], value);
+      continue;
+    }
     setCanvasObjectField(
       document,
       objectId,
@@ -789,7 +813,17 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           "Only shapes, icons, and text can use direct transforms.",
         );
       }
+      const minimumSize = object.type === "icon" ? 8 : 24;
+      if (
+        command.payload.width < minimumSize ||
+        command.payload.height < minimumSize
+      ) {
+        throw new ProductCanvasCommandConflictError(
+          `This object must remain at least ${minimumSize}px wide and high.`,
+        );
+      }
       let geometry = {
+        ...object.geometry,
         x: command.payload.x,
         y: command.payload.y,
         width: command.payload.width,
@@ -836,6 +870,53 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
 
     const object = requireObject(document, command.payload.objectId);
     affectedObjectIds.add(object.id);
+
+    if (command.type === "object.flip") {
+      if (!isContainableObject(object)) {
+        throw new ProductCanvasCommandConflictError(
+          "Only shapes, icons, and text can be flipped.",
+        );
+      }
+      const axisField =
+        command.payload.axis === "horizontal" ? "flipX" : "flipY";
+      const nextGeometry = {
+        ...object.geometry,
+        [axisField]: !object.geometry[axisField],
+      };
+      if (isObjectParent(object)) {
+        const allObjects = listCanvasObjectsV2(document);
+        for (const child of allObjects) {
+          if (!isContainableObject(child) || child.parentId !== object.id)
+            continue;
+          const nextChild = flipGeometryWithinParent(
+            child.geometry,
+            object,
+            command.payload.axis,
+          );
+          writeGeometry(document, child.id, nextChild);
+          setCanvasObjectField(
+            document,
+            child.id,
+            ["parentRelative"],
+            parentRelativeGeometry(nextChild, object),
+          );
+          touch(document, child.id, command.issuedAt);
+          affectedObjectIds.add(child.id);
+          updateAttachedAnnotationPosition(
+            document,
+            child.id,
+            nextChild.x - child.geometry.x,
+            nextChild.y - child.geometry.y,
+            command.issuedAt,
+            affectedObjectIds,
+            allObjects,
+          );
+        }
+      }
+      writeGeometry(document, object.id, nextGeometry);
+      touch(document, object.id, command.issuedAt);
+      return;
+    }
 
     if (command.type === "object.move") {
       const requestedGeometry = {
@@ -918,6 +999,15 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         }
       }
     } else if (command.type === "object.resize") {
+      const minimumSize = object.type === "icon" ? 8 : 24;
+      if (
+        command.payload.width < minimumSize ||
+        command.payload.height < minimumSize
+      ) {
+        throw new ProductCanvasCommandConflictError(
+          `This object must remain at least ${minimumSize}px wide and high.`,
+        );
+      }
       if (object.type === "annotation" && !object.baseWidth) {
         setCanvasObjectField(
           document,

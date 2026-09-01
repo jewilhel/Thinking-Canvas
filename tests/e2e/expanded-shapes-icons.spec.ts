@@ -214,7 +214,6 @@ test("selects a composition parent first and exposes rotation at every corner", 
   const surfaceBox = await surface.boundingBox();
   expect(surfaceBox).not.toBeNull();
   const viewportX = Number(await surface.getAttribute("data-viewport-x"));
-  const viewportY = Number(await surface.getAttribute("data-viewport-y"));
   const viewportScale = Number(
     await surface.getAttribute("data-viewport-scale"),
   );
@@ -230,29 +229,62 @@ test("selects a composition parent first and exposes rotation at every corner", 
   const objectHeight = Number(
     await page.getByTestId("selected-height").innerText(),
   );
-  const corners = [
-    ["top-left", objectX, objectY],
-    ["top-right", objectX + objectWidth, objectY],
-    ["bottom-left", objectX, objectY + objectHeight],
-    ["bottom-right", objectX + objectWidth, objectY + objectHeight],
-  ] as const;
-  const rotationButton = page.getByRole("button", {
-    name: "Rotate selected object",
-  });
-  for (const [corner, x, y] of corners) {
-    await page.mouse.move(
-      surfaceBox!.x + viewportX + x * viewportScale,
-      surfaceBox!.y + viewportY + y * viewportScale,
+  const rotationZones = page.getByTestId("rotation-cursor-zone");
+  await expect(rotationZones).toHaveCount(4);
+  for (const corner of [
+    "top-left",
+    "top-right",
+    "bottom-left",
+    "bottom-right",
+  ]) {
+    const exactZone = page.locator(
+      `[data-testid="rotation-cursor-zone"][data-rotation-corner="${corner}"]`,
     );
-    await expect(rotationButton).toHaveAttribute(
-      "data-rotation-corner",
-      corner,
-    );
+    await expect(exactZone).toHaveCSS("width", "28px");
+    await expect(exactZone).toHaveCSS("height", "28px");
+    await expect(exactZone).toHaveCSS("cursor", /data:image\/svg\+xml/);
   }
 
-  await page.mouse.move(
-    surfaceBox!.x + viewportX + (objectX + objectWidth) * viewportScale,
-    surfaceBox!.y + viewportY + objectY * viewportScale,
+  const topRightZone = page.locator(
+    '[data-testid="rotation-cursor-zone"][data-rotation-corner="top-right"]',
+  );
+  const initialTopRightBox = await topRightZone.boundingBox();
+  expect(initialTopRightBox).not.toBeNull();
+  expect(
+    initialTopRightBox!.x +
+      initialTopRightBox!.width / 2 -
+      (surfaceBox!.x + viewportX + (objectX + objectWidth) * viewportScale),
+  ).toBeCloseTo(18, 0);
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  const zoomedTopRightBox = await topRightZone.boundingBox();
+  expect(zoomedTopRightBox).not.toBeNull();
+  expect(zoomedTopRightBox!.width).toBe(initialTopRightBox!.width);
+  expect(zoomedTopRightBox!.height).toBe(initialTopRightBox!.height);
+  const zoomedViewportX = Number(await surface.getAttribute("data-viewport-x"));
+  const zoomedViewportY = Number(await surface.getAttribute("data-viewport-y"));
+  const zoomedViewportScale = Number(
+    await surface.getAttribute("data-viewport-scale"),
+  );
+  expect(
+    zoomedTopRightBox!.x +
+      zoomedTopRightBox!.width / 2 -
+      (surfaceBox!.x +
+        zoomedViewportX +
+        (objectX + objectWidth) * zoomedViewportScale),
+  ).toBeCloseTo(18, 0);
+
+  await parentItem.click();
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  const flipHorizontal = page.getByRole("button", { name: "Flip horizontal" });
+  await flipHorizontal.click();
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await expect(
+    page.getByRole("button", { name: "Flip horizontal" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+
+  const rotationButton = page.locator(
+    '[data-testid="rotation-cursor-zone"][data-rotation-corner="top-right"]',
   );
   const rotationButtonBox = await rotationButton.boundingBox();
   expect(rotationButtonBox).not.toBeNull();
@@ -264,11 +296,11 @@ test("selects a composition parent first and exposes rotation at every corner", 
   await page.keyboard.down("Shift");
   await page.mouse.move(
     surfaceBox!.x +
-      viewportX +
-      (objectX + objectWidth / 2 + objectHeight / 2 + 10) * viewportScale,
+      zoomedViewportX +
+      (objectX + objectWidth / 2 + objectHeight / 2 + 10) * zoomedViewportScale,
     surfaceBox!.y +
-      viewportY +
-      (objectY + objectHeight / 2 + objectWidth / 2 + 10) * viewportScale,
+      zoomedViewportY +
+      (objectY + objectHeight / 2 + objectWidth / 2 + 10) * zoomedViewportScale,
   );
   await page.mouse.up();
   await page.keyboard.up("Shift");

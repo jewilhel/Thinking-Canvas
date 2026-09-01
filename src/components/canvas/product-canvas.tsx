@@ -9,6 +9,8 @@ import {
   Copy,
   Ellipsis,
   ExternalLink,
+  FlipHorizontal,
+  FlipVertical,
   Link2,
   ListTree,
   LogOut,
@@ -214,6 +216,25 @@ const connectionAnchorHitWidthPx = 28;
 const connectionAnchorHoverDistancePx = 44;
 const selectionHandleSizePx = 14;
 const selectionHandleStrokeWidthPx = 3;
+const rotationZoneSizePx = 28;
+const rotationZoneOffsetPx = 18;
+const rotationCorners: RotationCorner[] = [
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+];
+const rotationCursorAngles: Record<RotationCorner, number> = {
+  "top-left": -90,
+  "top-right": 0,
+  "bottom-right": 90,
+  "bottom-left": 180,
+};
+
+function rotationCursor(corner: RotationCorner) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><g transform="rotate(${rotationCursorAngles[corner]} 16 16)" fill="none" stroke="#111827" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 20a9 9 0 0 1 15-8"/><path d="m21 7 3 5-6 1"/><path d="M24 12a9 9 0 0 1-15 8"/><path d="m11 25-3-5 6-1"/></g></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 16 16, grab`;
+}
 
 function formatListText(
   text: string,
@@ -350,7 +371,6 @@ export function ProductCanvas({
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const selectionProxyRef = useRef<Konva.Rect>(null);
-  const rotationAffordanceHideTimerRef = useRef<number | null>(null);
   const nestedChildSelectionTimerRef = useRef<number | null>(null);
   const wheelGestureRef = useRef<{
     intent: "pan" | "zoom";
@@ -431,8 +451,6 @@ export function ProductCanvas({
   const [resizePreviewGeometries, setResizePreviewGeometries] = useState<
     Record<string, CanvasObjectV2["geometry"]>
   >({});
-  const [rotationAffordanceCorner, setRotationAffordanceCorner] =
-    useState<RotationCorner | null>(null);
   const [
     selectionTransformPreviewObjects,
     setSelectionTransformPreviewObjects,
@@ -670,45 +688,6 @@ export function ProductCanvas({
     selectionTransformAffordancesVisible,
     useSelectionProxy,
   ]);
-
-  useEffect(() => {
-    const transformer = transformerRef.current;
-    if (!transformer || useSelectionProxy) {
-      setRotationAffordanceCorner(null);
-      return;
-    }
-    const corners = (
-      ["top-left", "top-right", "bottom-left", "bottom-right"] as const
-    ).flatMap((name) => {
-      const node = transformer.findOne(`.${name}`);
-      return node ? [[name, node] as const] : [];
-    });
-    for (const [name, corner] of corners) {
-      corner.on("mouseenter.rotation", () => {
-        if (rotationAffordanceHideTimerRef.current !== null) {
-          window.clearTimeout(rotationAffordanceHideTimerRef.current);
-          rotationAffordanceHideTimerRef.current = null;
-        }
-        setRotationAffordanceCorner(name);
-      });
-      corner.on("mouseleave.rotation", () => {
-        rotationAffordanceHideTimerRef.current = window.setTimeout(() => {
-          setRotationAffordanceCorner(null);
-          rotationAffordanceHideTimerRef.current = null;
-        }, 350);
-      });
-    }
-    return () => {
-      if (rotationAffordanceHideTimerRef.current !== null) {
-        window.clearTimeout(rotationAffordanceHideTimerRef.current);
-        rotationAffordanceHideTimerRef.current = null;
-      }
-      for (const [, corner] of corners) {
-        corner.off("mouseenter.rotation");
-        corner.off("mouseleave.rotation");
-      }
-    };
-  }, [selectedId, selectedObject, useSelectionProxy]);
 
   useEffect(() => {
     if (!inlineEditorObjectId) return;
@@ -1760,6 +1739,23 @@ export function ProductCanvas({
     );
   }
 
+  function flipSelected(axis: "horizontal" | "vertical") {
+    const selectedSet = new Set(selectedIds);
+    runCommandBatch(
+      selectedObjects.flatMap((object) =>
+        isContainableObject(object) &&
+        !(object.parentId && selectedSet.has(object.parentId))
+          ? [
+              {
+                type: "object.flip",
+                payload: { objectId: object.id, axis },
+              },
+            ]
+          : [],
+      ),
+    );
+  }
+
   function reorderSelected(
     direction: "front" | "forward" | "backward" | "back",
   ) {
@@ -2732,8 +2728,14 @@ export function ProductCanvas({
             type: "object.resize",
             payload: {
               objectId: object.id,
-              width: Math.max(24, object.geometry.width + dx),
-              height: Math.max(24, object.geometry.height + dy),
+              width: Math.max(
+                object.type === "icon" ? 8 : 24,
+                object.geometry.width + dx,
+              ),
+              height: Math.max(
+                object.type === "icon" ? 8 : 24,
+                object.geometry.height + dy,
+              ),
             },
           });
         } else if (object.type === "connector")
@@ -2971,12 +2973,16 @@ export function ProductCanvas({
     }
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
-    const geometry = previewGeometryDuringTransform(object.geometry, {
-      x: node.x(),
-      y: node.y(),
-      scaleX,
-      scaleY,
-    });
+    const geometry = previewGeometryDuringTransform(
+      object.geometry,
+      {
+        x: node.x(),
+        y: node.y(),
+        scaleX,
+        scaleY,
+      },
+      object.type === "icon" ? 8 : 24,
+    );
     geometry.rotation = node.rotation();
     setResizePreviewGeometries((current) => ({
       ...current,
@@ -2999,12 +3005,16 @@ export function ProductCanvas({
     const node = event.target;
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
-    const geometry = previewGeometryDuringTransform(object.geometry, {
-      x: node.x(),
-      y: node.y(),
-      scaleX,
-      scaleY,
-    });
+    const geometry = previewGeometryDuringTransform(
+      object.geometry,
+      {
+        x: node.x(),
+        y: node.y(),
+        scaleX,
+        scaleY,
+      },
+      object.type === "icon" ? 8 : 24,
+    );
     geometry.rotation = node.rotation();
     node.scaleX(1);
     node.scaleY(1);
@@ -3059,11 +3069,6 @@ export function ProductCanvas({
     if (!selectedObject || !isContainableObject(selectedObject)) return;
     event.preventDefault();
     event.stopPropagation();
-    if (rotationAffordanceHideTimerRef.current !== null) {
-      window.clearTimeout(rotationAffordanceHideTimerRef.current);
-      rotationAffordanceHideTimerRef.current = null;
-    }
-    event.currentTarget.setPointerCapture(event.pointerId);
     const bounds = containerRef.current?.getBoundingClientRect();
     if (!bounds) return;
     const object = selectedObject;
@@ -3448,49 +3453,58 @@ export function ProductCanvas({
           onTransformEnd={(event) => finishSingleObjectTransform(event, object)}
           onTransform={(event) => previewSingleObjectTransform(event, object)}
         >
-          {object.type === "shape" ? (
-            <>
-              {shapeNode(object)}
+          <Group
+            scaleX={object.geometry.flipX ? -1 : 1}
+            scaleY={object.geometry.flipY ? -1 : 1}
+            offsetX={object.geometry.flipX ? object.geometry.width : 0}
+            offsetY={object.geometry.flipY ? object.geometry.height : 0}
+          >
+            {object.type === "shape" ? (
+              <>
+                {shapeNode(object)}
+                <Text
+                  name="resizable-object-text"
+                  x={12}
+                  y={12}
+                  width={object.geometry.width - 24}
+                  height={object.geometry.height - 24}
+                  text={formatListText(object.text, object.style.listStyle)}
+                  fill={object.style.textColor ?? "#18181b"}
+                  align={object.style.textAlign ?? "center"}
+                  verticalAlign="middle"
+                  fontFamily={object.style.fontFamily}
+                  fontSize={object.style.fontSize}
+                  fontStyle={
+                    object.style.fontWeight === "bold" ? "bold" : "normal"
+                  }
+                  textDecoration={object.style.linkUrl ? "underline" : ""}
+                  opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
+                  listening={false}
+                />
+              </>
+            ) : object.type === "icon" ? (
+              iconNode(object)
+            ) : object.type === "text" ? (
               <Text
                 name="resizable-object-text"
-                x={12}
-                y={12}
-                width={object.geometry.width - 24}
-                height={object.geometry.height - 24}
+                width={object.geometry.width}
+                height={object.geometry.height}
                 text={formatListText(object.text, object.style.listStyle)}
                 fill={object.style.textColor ?? "#18181b"}
-                align={object.style.textAlign ?? "center"}
-                verticalAlign="middle"
                 fontFamily={object.style.fontFamily}
                 fontSize={object.style.fontSize}
                 fontStyle={
                   object.style.fontWeight === "bold" ? "bold" : "normal"
                 }
+                align={object.style.textAlign ?? "left"}
                 textDecoration={object.style.linkUrl ? "underline" : ""}
+                verticalAlign="middle"
                 opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
-                listening={false}
               />
-            </>
-          ) : object.type === "icon" ? (
-            iconNode(object)
-          ) : object.type === "text" ? (
-            <Text
-              name="resizable-object-text"
-              width={object.geometry.width}
-              height={object.geometry.height}
-              text={formatListText(object.text, object.style.listStyle)}
-              fill={object.style.textColor ?? "#18181b"}
-              fontFamily={object.style.fontFamily}
-              fontSize={object.style.fontSize}
-              fontStyle={object.style.fontWeight === "bold" ? "bold" : "normal"}
-              align={object.style.textAlign ?? "left"}
-              textDecoration={object.style.linkUrl ? "underline" : ""}
-              verticalAlign="middle"
-              opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
-            />
-          ) : object.type === "table" ? (
-            renderTable(object)
-          ) : null}
+            ) : object.type === "table" ? (
+              renderTable(object)
+            ) : null}
+          </Group>
         </Group>
         {selectionAffordancesVisible &&
         (object.type === "shape" ||
@@ -4550,6 +4564,40 @@ export function ProductCanvas({
                       type="button"
                       size="sm"
                       variant="outline"
+                      disabled={!selectedObjects.some(isContainableObject)}
+                      aria-pressed={
+                        selectedObjects.length === 1 &&
+                        isContainableObject(selectedObjects[0]!)
+                          ? (selectedObjects[0]!.geometry.flipX ?? false)
+                          : undefined
+                      }
+                      onClick={() =>
+                        completeContextAction(() => flipSelected("horizontal"))
+                      }
+                    >
+                      <FlipHorizontal aria-hidden="true" /> Flip horizontal
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!selectedObjects.some(isContainableObject)}
+                      aria-pressed={
+                        selectedObjects.length === 1 &&
+                        isContainableObject(selectedObjects[0]!)
+                          ? (selectedObjects[0]!.geometry.flipY ?? false)
+                          : undefined
+                      }
+                      onClick={() =>
+                        completeContextAction(() => flipSelected("vertical"))
+                      }
+                    >
+                      <FlipVertical aria-hidden="true" /> Flip vertical
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
                       onClick={() =>
                         completeContextAction(() => reorderSelected("front"))
                       }
@@ -4845,53 +4893,43 @@ export function ProductCanvas({
                 anchorCornerRadius={selectionAffordanceWorldSize(3)}
                 padding={selectionAffordanceWorldSize(2)}
                 boundBoxFunc={(oldBox, newBox) =>
-                  newBox.width < 24 || newBox.height < 24 ? oldBox : newBox
+                  newBox.width < (selectedObject?.type === "icon" ? 8 : 24) ||
+                  newBox.height < (selectedObject?.type === "icon" ? 8 : 24)
+                    ? oldBox
+                    : newBox
                 }
               />
             </Layer>
           </Stage>
-          {rotationAffordanceCorner &&
-          selectedObject &&
+          {selectedObject &&
           selectedIds.length === 1 &&
           isContainableObject(selectedObject)
-            ? (() => {
+            ? rotationCorners.map((corner) => {
                 const handlePoint = rotationHandleWorldPoint(
                   selectedObject.geometry,
-                  rotationAffordanceCorner,
-                  10,
+                  corner,
+                  rotationZoneOffsetPx / viewport.scale,
                 );
                 return (
                   <button
+                    key={corner}
                     type="button"
-                    aria-label="Rotate selected object"
-                    data-rotation-corner={rotationAffordanceCorner}
+                    aria-label={`Rotate selected object from ${corner.replace("-", " ")} corner`}
+                    data-testid="rotation-cursor-zone"
+                    data-rotation-corner={corner}
                     title="Drag to rotate. Hold Shift to snap to 15° increments."
-                    className="absolute z-20 grid size-8 -translate-x-1/2 -translate-y-1/2 cursor-grab place-items-center rounded-full border-2 border-sky-500 bg-white text-sm font-bold text-sky-600 shadow-md active:cursor-grabbing"
+                    className="absolute z-20 -translate-x-1/2 -translate-y-1/2 border-0 bg-transparent p-0"
                     style={{
                       left: viewport.x + handlePoint.x * viewport.scale,
                       top: viewport.y + handlePoint.y * viewport.scale,
+                      width: rotationZoneSizePx,
+                      height: rotationZoneSizePx,
+                      cursor: rotationCursor(corner),
                     }}
                     onPointerDown={beginCornerRotation}
-                    onPointerEnter={() => {
-                      if (rotationAffordanceHideTimerRef.current !== null) {
-                        window.clearTimeout(
-                          rotationAffordanceHideTimerRef.current,
-                        );
-                        rotationAffordanceHideTimerRef.current = null;
-                      }
-                    }}
-                    onPointerLeave={() => {
-                      rotationAffordanceHideTimerRef.current =
-                        window.setTimeout(() => {
-                          setRotationAffordanceCorner(null);
-                          rotationAffordanceHideTimerRef.current = null;
-                        }, 350);
-                    }}
-                  >
-                    ↻
-                  </button>
+                  />
                 );
-              })()
+              })
             : null}
           {inlineTextEditor && inlineEditorLayout ? (
             <textarea
