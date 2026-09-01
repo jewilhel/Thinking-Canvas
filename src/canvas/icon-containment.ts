@@ -235,7 +235,7 @@ export function parentRelativeGeometry(
 }
 
 export function childWorldGeometry(
-  child: ContainableObject,
+  child: Pick<ContainableObject, "geometry" | "parentRelative">,
   parent: ObjectParent,
 ) {
   const relative = child.parentRelative;
@@ -256,7 +256,7 @@ export function childWorldGeometry(
 }
 
 export function childRelativeAfterParentResize(
-  child: ContainableObject,
+  child: Pick<ContainableObject, "geometry" | "parentRelative" | "childLayout">,
   previousParent: ObjectParent,
   nextParent: ObjectParent,
 ) {
@@ -288,7 +288,7 @@ export function childRelativeAfterParentResize(
 export function boundParentGeometryToChildren(
   previousParent: ObjectParent,
   proposedGeometry: CanvasObjectV2["geometry"],
-  children: ContainableObject[],
+  children: Array<Pick<ContainableObject, "geometry">>,
 ) {
   if (
     !children.length ||

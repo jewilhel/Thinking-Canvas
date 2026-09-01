@@ -2,10 +2,14 @@ import { z } from "zod";
 
 import {
   canvasObjectV2Schema,
+  type CanvasGroupV2,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
 import { resolveConnectorEndpointV2 } from "@/canvas/geometry";
-import { isContainableObject } from "@/canvas/icon-containment";
+import {
+  isContainableObject,
+  parentRelativeGeometry,
+} from "@/canvas/icon-containment";
 
 export const canvasClipboardSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -18,6 +22,7 @@ export type CanvasClipboardPayload = z.infer<typeof canvasClipboardSchema>;
 export function createCanvasClipboardPayload(
   allObjects: CanvasObjectV2[],
   selectedObjectIds: string[],
+  groups: CanvasGroupV2[] = [],
 ) {
   const selectedIds = new Set(selectedObjectIds);
   let addedChild = true;
@@ -32,6 +37,15 @@ export function createCanvasClipboardPayload(
       ) {
         selectedIds.add(object.id);
         addedChild = true;
+      }
+    }
+    for (const group of groups) {
+      if (!group.parentId || !selectedIds.has(group.parentId)) continue;
+      for (const member of allObjects) {
+        if (member.groupId === group.id && !selectedIds.has(member.id)) {
+          selectedIds.add(member.id);
+          addedChild = true;
+        }
       }
     }
   }
@@ -68,6 +82,25 @@ export function createCanvasClipboardPayload(
         : { ...object, groupId };
     }
     if (isContainableObject(object)) {
+      const group = object.groupId
+        ? groups.find((candidate) => candidate.id === object.groupId)
+        : undefined;
+      const copiedGroupParent =
+        group?.parentId && selectedIds.has(group.parentId)
+          ? objectsById.get(group.parentId)
+          : undefined;
+      if (copiedGroupParent?.type === "shape") {
+        return {
+          ...object,
+          groupId,
+          parentId: copiedGroupParent.id,
+          parentRelative: parentRelativeGeometry(
+            object.geometry,
+            copiedGroupParent,
+          ),
+          childLayout: group?.childLayout,
+        };
+      }
       return object.parentId && !selectedIds.has(object.parentId)
         ? {
             ...object,

@@ -5,6 +5,7 @@ import {
   canvasObjectV2Schema,
   deleteCanvasGroupV2,
   deleteCanvasObjectV2,
+  listCanvasGroupsV2,
   listCanvasObjectsV2,
   putCanvasGroupV2,
   putCanvasObjectV2,
@@ -237,6 +238,14 @@ const transformGroupCommand = commandBase.extend({
     height: finiteNumber.min(1),
   }),
 });
+const nestGroupCommand = commandBase.extend({
+  type: z.literal("group.nest"),
+  payload: z.strictObject({ groupId: uuid, parentId: uuid }),
+});
+const detachGroupCommand = commandBase.extend({
+  type: z.literal("group.detach"),
+  payload: z.strictObject({ groupId: uuid }),
+});
 const duplicateCommand = commandBase.extend({
   type: z.literal("selection.duplicate"),
   payload: z.strictObject({
@@ -277,6 +286,8 @@ export const productCanvasMutationSchema = z.discriminatedUnion("type", [
   ungroupCommand.omit(trustedCommandFields),
   rotateGroupCommand.omit(trustedCommandFields),
   transformGroupCommand.omit(trustedCommandFields),
+  nestGroupCommand.omit(trustedCommandFields),
+  detachGroupCommand.omit(trustedCommandFields),
   duplicateCommand.omit(trustedCommandFields),
 ]);
 
@@ -307,6 +318,8 @@ export const productCanvasCommandSchema = z
     ungroupCommand,
     rotateGroupCommand,
     transformGroupCommand,
+    nestGroupCommand,
+    detachGroupCommand,
     duplicateCommand,
   ])
   .superRefine((command, context) => {
@@ -500,14 +513,21 @@ function updateChildrenForParentGeometry(
   preserveChildren: boolean,
   issuedAt: string,
   affectedObjectIds: Set<string>,
+  affectedGroupIds: Set<string>,
 ) {
   const allObjects = listCanvasObjectsV2(document);
   const children = allObjects.filter(
     (candidate): candidate is ContainableObject =>
       isContainableObject(candidate) && candidate.parentId === parent.id,
   );
+  const childGroups = listCanvasGroupsV2(document).filter(
+    (candidate) => candidate.parentId === parent.id,
+  );
   const boundedGeometry = preserveChildren
-    ? boundParentGeometryToChildren(parent, nextGeometry, children)
+    ? boundParentGeometryToChildren(parent, nextGeometry, [
+        ...children,
+        ...childGroups,
+      ])
     : nextGeometry;
   const nextParent = { ...parent, geometry: boundedGeometry };
   for (const child of children) {
@@ -531,6 +551,58 @@ function updateChildrenForParentGeometry(
       affectedObjectIds,
       allObjects,
     );
+  }
+  for (const group of childGroups) {
+    const relative = preserveChildren
+      ? parentRelativeGeometry(group.geometry, nextParent)
+      : childRelativeAfterParentResize(group, parent, nextParent);
+    const nextGroupGeometry = childWorldGeometry(
+      { ...group, parentRelative: relative },
+      nextParent,
+    );
+    const members = allObjects.filter(
+      (candidate) => candidate.groupId === group.id,
+    );
+    const rotatedMembers = rotateSelectionObjects(
+      members,
+      group.geometry,
+      nextGroupGeometry.rotation,
+    );
+    const rotatedFrame = rotateGeometryAroundCenter(
+      group.geometry,
+      nextGroupGeometry.rotation,
+    );
+    for (const member of transformSelectionObjects(
+      rotatedMembers,
+      rotatedFrame,
+      nextGroupGeometry,
+    )) {
+      if (member.type === "connector") continue;
+      const previous = members.find((candidate) => candidate.id === member.id)!;
+      writeGeometry(document, member.id, member.geometry);
+      touch(document, member.id, issuedAt);
+      affectedObjectIds.add(member.id);
+      updateAttachedAnnotationPosition(
+        document,
+        member.id,
+        member.geometry.x - previous.geometry.x,
+        member.geometry.y - previous.geometry.y,
+        issuedAt,
+        affectedObjectIds,
+        allObjects,
+      );
+    }
+    setCanvasGroupField(document, group.id, ["parentRelative"], relative);
+    for (const field of ["x", "y", "width", "height", "rotation"] as const) {
+      setCanvasGroupField(
+        document,
+        group.id,
+        ["geometry", field],
+        nextGroupGeometry[field],
+      );
+    }
+    setCanvasGroupField(document, group.id, ["updatedAt"], issuedAt);
+    affectedGroupIds.add(group.id);
   }
   return boundedGeometry;
 }
@@ -641,6 +713,56 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         putCanvasObjectV2(document, object);
         affectedObjectIds.add(object.id);
       }
+      const duplicatedGroupIds = new Set(
+        command.payload.objects.flatMap((object) =>
+          object.groupId ? [object.groupId] : [],
+        ),
+      );
+      for (const groupId of duplicatedGroupIds) {
+        if (readCanvasGroupV2(document, groupId)) continue;
+        const members = command.payload.objects.filter(
+          (object) => object.groupId === groupId,
+        );
+        if (members.length < 2) continue;
+        const bounds = selectionBoundsForObjects(members);
+        if (!bounds) continue;
+        const memberParentIds = new Set(
+          members.map((member) =>
+            isContainableObject(member) ? (member.parentId ?? null) : null,
+          ),
+        );
+        const sharedParentId =
+          memberParentIds.size === 1 ? [...memberParentIds][0] : null;
+        const parent = sharedParentId
+          ? requireObjectParent(document, sharedParentId, pendingObjects)
+          : null;
+        if (parent) {
+          for (const member of members) {
+            if (!isContainableObject(member)) continue;
+            putCanvasObjectV2(document, {
+              ...member,
+              parentId: null,
+              parentRelative: null,
+              childLayout: null,
+            });
+          }
+        }
+        putCanvasGroupV2(document, {
+          schemaVersion: 2,
+          id: groupId,
+          canvasId: command.canvasId,
+          createdBy: command.actor.id,
+          createdAt: command.issuedAt,
+          updatedAt: command.issuedAt,
+          geometry: { ...bounds, rotation: 0 },
+          parentId: parent?.id ?? null,
+          parentRelative: parent
+            ? parentRelativeGeometry({ ...bounds, rotation: 0 }, parent)
+            : null,
+          childLayout: parent ? defaultChildLayout : null,
+        });
+        affectedGroupIds.add(groupId);
+      }
       return;
     }
 
@@ -661,6 +783,25 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           "Nested groups are not supported.",
         );
       }
+      const parentIds = new Set(
+        selected.map((object) =>
+          isContainableObject(object) ? (object.parentId ?? null) : null,
+        ),
+      );
+      if (parentIds.size !== 1) {
+        throw new ProductCanvasCommandConflictError(
+          "Grouped objects must share the same container level.",
+        );
+      }
+      const sharedParentId = [...parentIds][0];
+      if (
+        sharedParentId &&
+        selected.some((object) => !isContainableObject(object))
+      ) {
+        throw new ProductCanvasCommandConflictError(
+          "Only shapes, icons, and text can be grouped inside a container.",
+        );
+      }
       for (const object of selected) {
         setCanvasObjectField(
           document,
@@ -677,6 +818,22 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           "A group requires at least one spatial canvas object.",
         );
       }
+      const parent = sharedParentId
+        ? requireObjectParent(document, sharedParentId)
+        : null;
+      if (parent) {
+        for (const object of selected) {
+          if (!isContainableObject(object)) continue;
+          putCanvasObjectV2(document, {
+            ...object,
+            groupId: command.payload.groupId,
+            parentId: null,
+            parentRelative: null,
+            childLayout: null,
+            updatedAt: command.issuedAt,
+          });
+        }
+      }
       putCanvasGroupV2(document, {
         schemaVersion: 2,
         id: command.payload.groupId,
@@ -685,15 +842,18 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         createdAt: command.issuedAt,
         updatedAt: command.issuedAt,
         geometry: { ...bounds, rotation: 0 },
-        parentId: null,
-        parentRelative: null,
-        childLayout: null,
+        parentId: parent?.id ?? null,
+        parentRelative: parent
+          ? parentRelativeGeometry({ ...bounds, rotation: 0 }, parent)
+          : null,
+        childLayout: parent ? defaultChildLayout : null,
       });
       affectedGroupIds.add(command.payload.groupId);
       return;
     }
 
     if (command.type === "selection.ungroup") {
+      const frame = readCanvasGroupV2(document, command.payload.groupId);
       const grouped = listCanvasObjectsV2(document).filter(
         (object) => object.groupId === command.payload.groupId,
       );
@@ -703,7 +863,18 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         );
       }
       for (const object of grouped) {
-        setCanvasObjectField(document, object.id, ["groupId"], null);
+        if (frame?.parentId && isContainableObject(object)) {
+          const parent = requireObjectParent(document, frame.parentId);
+          putCanvasObjectV2(document, {
+            ...object,
+            groupId: null,
+            parentId: parent.id,
+            parentRelative: parentRelativeGeometry(object.geometry, parent),
+            childLayout: frame.childLayout ?? defaultChildLayout,
+          });
+        } else {
+          setCanvasObjectField(document, object.id, ["groupId"], null);
+        }
         touch(document, object.id, command.issuedAt);
         affectedObjectIds.add(object.id);
       }
@@ -778,6 +949,15 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         );
       }
       setCanvasGroupField(document, group.id, ["updatedAt"], command.issuedAt);
+      if (group.parentId) {
+        const parent = requireObjectParent(document, group.parentId);
+        setCanvasGroupField(
+          document,
+          group.id,
+          ["parentRelative"],
+          parentRelativeGeometry(nextFrame, parent),
+        );
+      }
       affectedGroupIds.add(group.id);
       return;
     }
@@ -813,12 +993,18 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         };
         putCanvasGroupV2(document, group);
       }
-      const target = {
+      let target = {
         x: command.payload.x,
         y: command.payload.y,
         width: command.payload.width,
         height: command.payload.height,
       };
+      if (group.parentId) {
+        target = clampObjectGeometryToParent(
+          { ...group.geometry, ...target },
+          requireObjectParent(document, group.parentId),
+        );
+      }
       for (const member of transformSelectionObjects(
         members,
         group.geometry,
@@ -848,6 +1034,99 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           target[field],
         );
       }
+      setCanvasGroupField(document, group.id, ["updatedAt"], command.issuedAt);
+      if (group.parentId) {
+        setCanvasGroupField(
+          document,
+          group.id,
+          ["parentRelative"],
+          parentRelativeGeometry(
+            { ...group.geometry, ...target },
+            requireObjectParent(document, group.parentId),
+          ),
+        );
+      }
+      affectedGroupIds.add(group.id);
+      return;
+    }
+
+    if (command.type === "group.nest") {
+      const group = readCanvasGroupV2(document, command.payload.groupId);
+      if (!group) {
+        throw new ProductCanvasCommandConflictError(
+          "The group does not have a durable frame.",
+        );
+      }
+      const parent = requireObjectParent(document, command.payload.parentId);
+      const members = listCanvasObjectsV2(document).filter(
+        (object) => object.groupId === group.id,
+      );
+      if (
+        members.length < 2 ||
+        members.some(
+          (member) => !isContainableObject(member) || member.parentId,
+        )
+      ) {
+        throw new ProductCanvasCommandConflictError(
+          "Only a complete top-level shape, icon, and text group can be nested.",
+        );
+      }
+      if (!fullyContains(parent, group.geometry)) {
+        throw new ProductCanvasCommandConflictError(
+          "Move the complete group fully inside the container before placing it inside.",
+        );
+      }
+      setCanvasGroupField(document, group.id, ["parentId"], parent.id);
+      setCanvasGroupField(
+        document,
+        group.id,
+        ["parentRelative"],
+        parentRelativeGeometry(group.geometry, parent),
+      );
+      setCanvasGroupField(
+        document,
+        group.id,
+        ["childLayout"],
+        group.childLayout ?? defaultChildLayout,
+      );
+      setCanvasGroupField(document, group.id, ["updatedAt"], command.issuedAt);
+      const memberIds = new Set(members.map((member) => member.id));
+      const siblingGroupIds = new Set(
+        listCanvasGroupsV2(document)
+          .filter(
+            (candidate) =>
+              candidate.id !== group.id && candidate.parentId === parent.id,
+          )
+          .map((candidate) => candidate.id),
+      );
+      const order = readCanvasOrderV2(document).filter(
+        (id) => !memberIds.has(id),
+      );
+      const siblingEnd = order.reduce((lastIndex, id, index) => {
+        const sibling = readCanvasObjectV2(document, id);
+        return sibling &&
+          ((isContainableObject(sibling) && sibling.parentId === parent.id) ||
+            (sibling.groupId && siblingGroupIds.has(sibling.groupId)))
+          ? index
+          : lastIndex;
+      }, order.indexOf(parent.id));
+      order.splice(siblingEnd + 1, 0, ...members.map((member) => member.id));
+      setCanvasOrderV2(document, order);
+      affectedGroupIds.add(group.id);
+      return;
+    }
+
+    if (command.type === "group.detach") {
+      const group = readCanvasGroupV2(document, command.payload.groupId);
+      if (!group) {
+        throw new ProductCanvasCommandConflictError(
+          "The group does not exist.",
+        );
+      }
+      if (!group.parentId) return;
+      setCanvasGroupField(document, group.id, ["parentId"], null);
+      setCanvasGroupField(document, group.id, ["parentRelative"], null);
+      setCanvasGroupField(document, group.id, ["childLayout"], null);
       setCanvasGroupField(document, group.id, ["updatedAt"], command.issuedAt);
       affectedGroupIds.add(group.id);
       return;
@@ -1033,6 +1312,7 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           command.payload.preserveChildren === true,
           command.issuedAt,
           affectedObjectIds,
+          affectedGroupIds,
         );
       }
       writeGeometry(document, object.id, geometry);
@@ -1102,6 +1382,67 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
             allObjects,
           );
         }
+        for (const group of listCanvasGroupsV2(document).filter(
+          (candidate) => candidate.parentId === object.id,
+        )) {
+          const nextGroup = flipGeometryWithinParent(
+            group.geometry,
+            object,
+            command.payload.axis,
+          );
+          for (const member of allObjects.filter(
+            (candidate) => candidate.groupId === group.id,
+          )) {
+            if (!isContainableObject(member)) continue;
+            const nextMember = flipGeometryWithinParent(
+              member.geometry,
+              object,
+              command.payload.axis,
+            );
+            writeGeometry(document, member.id, nextMember);
+            touch(document, member.id, command.issuedAt);
+            affectedObjectIds.add(member.id);
+            updateAttachedAnnotationPosition(
+              document,
+              member.id,
+              nextMember.x - member.geometry.x,
+              nextMember.y - member.geometry.y,
+              command.issuedAt,
+              affectedObjectIds,
+              allObjects,
+            );
+          }
+          for (const field of [
+            "x",
+            "y",
+            "rotation",
+            "flipX",
+            "flipY",
+          ] as const) {
+            const value = nextGroup[field];
+            if (value !== undefined) {
+              setCanvasGroupField(
+                document,
+                group.id,
+                ["geometry", field],
+                value,
+              );
+            }
+          }
+          setCanvasGroupField(
+            document,
+            group.id,
+            ["parentRelative"],
+            parentRelativeGeometry(nextGroup, object),
+          );
+          setCanvasGroupField(
+            document,
+            group.id,
+            ["updatedAt"],
+            command.issuedAt,
+          );
+          affectedGroupIds.add(group.id);
+        }
       }
       writeGeometry(document, object.id, nextGeometry);
       touch(document, object.id, command.issuedAt);
@@ -1129,6 +1470,7 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           false,
           command.issuedAt,
           affectedObjectIds,
+          affectedGroupIds,
         );
       }
       const dx = movedGeometry.x - object.geometry.x;
@@ -1235,6 +1577,7 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
             false,
             command.issuedAt,
             affectedObjectIds,
+            affectedGroupIds,
           )
         : resizedGeometry;
       writeGeometry(document, object.id, nextGeometry);
@@ -1265,6 +1608,7 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           false,
           command.issuedAt,
           affectedObjectIds,
+          affectedGroupIds,
         );
       }
       writeGeometry(document, object.id, geometry);
@@ -1387,6 +1731,16 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
       );
       const deleteIds = new Set([object.id]);
       if (isObjectParent(object)) {
+        const nestedGroups = listCanvasGroupsV2(document).filter(
+          (group) => group.parentId === object.id,
+        );
+        for (const group of nestedGroups) {
+          for (const member of objectsById.values()) {
+            if (member.groupId === group.id) deleteIds.add(member.id);
+          }
+          deleteCanvasGroupV2(document, group.id);
+          affectedGroupIds.add(group.id);
+        }
         let added = true;
         while (added) {
           added = false;

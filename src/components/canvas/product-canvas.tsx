@@ -1372,7 +1372,10 @@ export function ProductCanvas({
               .find(
                 (candidate) =>
                   isContainableObject(candidate) &&
-                  candidate.parentId === object.id &&
+                  (candidate.parentId === object.id ||
+                    (candidate.groupId &&
+                      groupsById.get(candidate.groupId)?.parentId ===
+                        object.id)) &&
                   geometryContainsPoint(candidate.geometry, point.x, point.y),
               )
           : undefined;
@@ -1405,11 +1408,17 @@ export function ProductCanvas({
       }
       if (
         isContainableObject(object) &&
-        object.parentId &&
+        (object.parentId ||
+          (object.groupId && groupsById.get(object.groupId)?.parentId)) &&
         !modifier &&
         !selectedIds.includes(object.id)
       ) {
-        const parent = objectsById.get(object.parentId);
+        const parentId =
+          object.parentId ??
+          (object.groupId
+            ? groupsById.get(object.groupId)?.parentId
+            : undefined);
+        const parent = parentId ? objectsById.get(parentId) : undefined;
         if (parent && !selectedIds.includes(parent.id)) {
           updateSelectionForObject(parent, false);
           return;
@@ -1516,14 +1525,52 @@ export function ProductCanvas({
   ) {
     const dx = x - object.geometry.x;
     const dy = y - object.geometry.y;
-    if (selectedGroup && !containmentIntent) {
-      runCommand("group.transform", {
-        groupId: selectedGroup.id,
+    if (selectedGroup) {
+      const nextGeometry = {
+        ...selectedGroup.geometry,
         x: selectedGroup.geometry.x + dx,
         y: selectedGroup.geometry.y + dy,
-        width: selectedGroup.geometry.width,
-        height: selectedGroup.geometry.height,
+      };
+      const nextParent = [...objects]
+        .reverse()
+        .find(
+          (candidate) =>
+            isObjectParent(candidate) &&
+            !selectedIds.includes(candidate.id) &&
+            fullyContains(candidate, nextGeometry),
+        );
+      const commands: CommandDefinition[] = [];
+      if (
+        containmentIntent &&
+        selectedGroup.parentId &&
+        nextParent?.id !== selectedGroup.parentId
+      ) {
+        commands.push({
+          type: "group.detach",
+          payload: { groupId: selectedGroup.id },
+        });
+      }
+      commands.push({
+        type: "group.transform",
+        payload: {
+          groupId: selectedGroup.id,
+          x: nextGeometry.x,
+          y: nextGeometry.y,
+          width: selectedGroup.geometry.width,
+          height: selectedGroup.geometry.height,
+        },
       });
+      if (
+        containmentIntent &&
+        nextParent &&
+        nextParent.id !== selectedGroup.parentId
+      ) {
+        commands.push({
+          type: "group.nest",
+          payload: { groupId: selectedGroup.id, parentId: nextParent.id },
+        });
+      }
+      runCommandBatch(commands);
       setContainmentPreviewParentId(null);
       return;
     }
@@ -1607,7 +1654,22 @@ export function ProductCanvas({
       : object.groupId
         ? objects.filter((candidate) => candidate.groupId === object.groupId)
         : [durableObject];
-    if (
+    if (containmentIntent && selectedGroup) {
+      const nextFrame = {
+        ...selectedGroup.geometry,
+        x: selectedGroup.geometry.x + dx,
+        y: selectedGroup.geometry.y + dy,
+      };
+      const parent = [...objects]
+        .reverse()
+        .find(
+          (candidate) =>
+            isObjectParent(candidate) &&
+            !selectedIds.includes(candidate.id) &&
+            fullyContains(candidate, nextFrame),
+        );
+      setContainmentPreviewParentId(parent?.id ?? null);
+    } else if (
       containmentIntent &&
       isContainableObject(durableObject) &&
       selectedTargets.length === 1
@@ -1831,7 +1893,7 @@ export function ProductCanvas({
 
   function duplicatedSelection(offset = 32) {
     if (!selectedIds.length) return [];
-    const payload = createCanvasClipboardPayload(objects, selectedIds);
+    const payload = createCanvasClipboardPayload(objects, selectedIds, groups);
     return remapCanvasClipboard(payload, {
       canvasId,
       actorId: userId,
@@ -1850,7 +1912,7 @@ export function ProductCanvas({
   async function copySelected() {
     if (!selectedIds.length) return "";
     const value = serializeCanvasClipboard(
-      createCanvasClipboardPayload(objects, selectedIds),
+      createCanvasClipboardPayload(objects, selectedIds, groups),
     );
     setClipboardText(value);
     try {
@@ -3435,13 +3497,20 @@ export function ProductCanvas({
       );
     }
     if (object.type === "document") return null;
+    const groupParentId = object.groupId
+      ? groupsById.get(object.groupId)?.parentId
+      : null;
+    const nestedParentId =
+      isContainableObject(object) && object.parentId
+        ? object.parentId
+        : groupParentId;
     const nestedChildInteractive =
       !isContainableObject(object) ||
-      !object.parentId ||
+      !nestedParentId ||
       selectedIds.includes(object.id);
     const displayedParent =
-      isContainableObject(object) && object.parentId
-        ? displayObjectsById.get(object.parentId)
+      isContainableObject(object) && nestedParentId
+        ? displayObjectsById.get(nestedParentId)
         : undefined;
     const nestedClipPolygon =
       displayedParent?.type === "shape"
@@ -4447,6 +4516,57 @@ export function ProductCanvas({
                 ) : null}
                 {contextPanel === "more" ? (
                   <div className="grid grid-cols-2 gap-2">
+                    {selectedGroup?.parentId ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="col-span-2"
+                        onClick={() =>
+                          completeContextAction(() =>
+                            runCommand("group.detach", {
+                              groupId: selectedGroup.id,
+                            }),
+                          )
+                        }
+                      >
+                        <Unlink aria-hidden="true" /> Remove group from
+                        container
+                      </Button>
+                    ) : null}
+                    {selectedGroup && !selectedGroup.parentId
+                      ? (() => {
+                          const parent = [...objects]
+                            .reverse()
+                            .find(
+                              (candidate) =>
+                                isObjectParent(candidate) &&
+                                !selectedIds.includes(candidate.id) &&
+                                fullyContains(
+                                  candidate,
+                                  selectedGroup.geometry,
+                                ),
+                            );
+                          return parent ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="col-span-2"
+                              onClick={() =>
+                                completeContextAction(() =>
+                                  runCommand("group.nest", {
+                                    groupId: selectedGroup.id,
+                                    parentId: parent.id,
+                                  }),
+                                )
+                              }
+                            >
+                              Place group inside {objectLabel(parent, objects)}
+                            </Button>
+                          ) : null;
+                        })()
+                      : null}
                     {isContainableObject(selectedObject) &&
                     selectedIds.length === 1 &&
                     selectedObject.parentId ? (

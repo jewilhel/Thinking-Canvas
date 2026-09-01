@@ -5,6 +5,7 @@ import {
   createProductCanvasDocument,
   listCanvasObjectsV2,
   putCanvasObjectV2,
+  readCanvasGroupV2,
   readCanvasObjectV2,
   readCanvasOrderV2,
   type CanvasObjectV2,
@@ -197,6 +198,31 @@ describe("actor-local canvas history", () => {
       "applied",
     );
     expect(readCanvasObjectV2(document, objectId)?.geometry.flipX).toBe(true);
+  });
+
+  it("undoes and redoes a durable group frame and its membership", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, shape());
+    putCanvasObjectV2(document, icon());
+    const groupId = "55555555-5555-4555-8555-555555555555";
+    const { history } = executeProductCanvasCommandWithHistory(
+      document,
+      command("selection.group", {
+        objectIds: [shape().id, icon().id],
+        groupId,
+      }),
+    );
+    expect(readCanvasGroupV2(document, groupId)).toBeDefined();
+    expect(applyCanvasHistoryEntry(document, history, "undo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasGroupV2(document, groupId)).toBeUndefined();
+    expect(readCanvasObjectV2(document, objectId)?.groupId).toBeNull();
+    expect(applyCanvasHistoryEntry(document, history, "redo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasGroupV2(document, groupId)).toBeDefined();
+    expect(readCanvasObjectV2(document, objectId)?.groupId).toBe(groupId);
   });
 
   it("continues valid styling and annotation creation beside a malformed entry", () => {

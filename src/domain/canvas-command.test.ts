@@ -10,6 +10,7 @@ import {
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
 import { resolveConnectorPointsV2 } from "@/canvas/geometry";
+import { isContainableObject } from "@/canvas/icon-containment";
 import {
   executeProductCanvasCommand,
   ProductCanvasCommandConflictError,
@@ -37,7 +38,7 @@ function baseCommand(type: string, payload: unknown) {
   };
 }
 
-function shape(id = shapeId): CanvasObjectV2 {
+function shape(id = shapeId): Extract<CanvasObjectV2, { type: "shape" }> {
   return {
     schemaVersion: 2,
     id,
@@ -1009,5 +1010,118 @@ describe("product canvas command boundary", () => {
     expect(readCanvasObjectV2(document, shapeId)?.groupId).toBeNull();
     expect(readCanvasObjectV2(document, secondShapeId)?.groupId).toBeNull();
     expect(readCanvasGroupV2(document, groupId)).toBeUndefined();
+  });
+
+  it("groups same-parent children and moves the nested group with its parent", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const parent = {
+      ...shape(),
+      geometry: { x: 0, y: 0, width: 400, height: 300, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const first = {
+      ...shape(secondShapeId),
+      parentId: parent.id,
+      parentRelative: { x: 0.1, y: 0.2, width: 0.2, height: 0.2 },
+      childLayout: {
+        pinPosition: true,
+        scaleWidth: true,
+        scaleHeight: true,
+      },
+      geometry: { x: 40, y: 60, width: 80, height: 60, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const second = {
+      ...icon(),
+      parentId: parent.id,
+      parentRelative: { x: 0.4, y: 0.2, width: 0.15, height: 0.2 },
+      childLayout: {
+        pinPosition: true,
+        scaleWidth: true,
+        scaleHeight: true,
+      },
+      geometry: { x: 160, y: 60, width: 60, height: 60, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    putCanvasObjectV2(document, parent);
+    putCanvasObjectV2(document, first);
+    putCanvasObjectV2(document, second);
+    const groupId = "99999999-9999-4999-8999-999999999991";
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("selection.group", {
+        objectIds: [first.id, second.id],
+        groupId,
+      }),
+    );
+    expect(readCanvasGroupV2(document, groupId)).toMatchObject({
+      parentId: parent.id,
+    });
+    const groupedFirst = readCanvasObjectV2(document, first.id);
+    expect(
+      groupedFirst && isContainableObject(groupedFirst)
+        ? groupedFirst.parentId
+        : undefined,
+    ).toBeNull();
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.move", { objectId: parent.id, x: 50, y: 25 }),
+    );
+    expect(readCanvasObjectV2(document, first.id)?.geometry).toMatchObject({
+      x: 90,
+      y: 85,
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("selection.ungroup", { groupId }),
+    );
+    expect(readCanvasObjectV2(document, first.id)).toMatchObject({
+      groupId: null,
+      parentId: parent.id,
+    });
+  });
+
+  it("nests and detaches a complete top-level group as one child", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const parent = {
+      ...shape(),
+      geometry: { x: 0, y: 0, width: 500, height: 400, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const first = {
+      ...shape(secondShapeId),
+      geometry: { x: 80, y: 90, width: 100, height: 70, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const second = {
+      ...icon(),
+      geometry: { x: 210, y: 90, width: 70, height: 70, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    putCanvasObjectV2(document, parent);
+    putCanvasObjectV2(document, first);
+    putCanvasObjectV2(document, second);
+    const groupId = "99999999-9999-4999-8999-999999999992";
+    executeProductCanvasCommand(
+      document,
+      baseCommand("selection.group", {
+        objectIds: [first.id, second.id],
+        groupId,
+      }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("group.nest", { groupId, parentId: parent.id }),
+    );
+    expect(readCanvasGroupV2(document, groupId)).toMatchObject({
+      parentId: parent.id,
+      childLayout: { scaleWidth: true, scaleHeight: true },
+    });
+    executeProductCanvasCommand(
+      document,
+      baseCommand("group.detach", { groupId }),
+    );
+    expect(readCanvasGroupV2(document, groupId)).toMatchObject({
+      parentId: null,
+      parentRelative: null,
+      childLayout: null,
+    });
   });
 });

@@ -233,9 +233,9 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 
 ### Slice 11 — Nested groups and grouped children
 
-- [ ] Command/Control-drag a complete group into or out of an eligible top-level basic shape as one child while ordinary overlap remains independent.
-- [ ] Group children that share one parent, transfer containment/layout to their group frame, and reject cross-parent or mixed-level grouping without changing the selection.
-- [ ] Apply parent move, resize, rotation, flip, duplicate, delete, order, clipboard, detach, history, collaboration, reconnect, and reload to the nested group as one reference-safe family.
+- [x] Command/Control-drag a complete group into or out of an eligible top-level basic shape as one child while ordinary overlap remains independent.
+- [x] Group children that share one parent, transfer containment/layout to their group frame, and reject cross-parent or mixed-level grouping without changing the selection.
+- [x] Apply parent move, resize, rotation, flip, duplicate, delete, order, clipboard, detach, history, collaboration, reconnect, and reload to the nested group as one reference-safe family.
 
 ### Slice 12 — Axis-aware layout and live resize previews
 
@@ -359,6 +359,7 @@ Retain the exact commit SHA, protected CI run, immutable deploy ID/URL, browser 
 - 2026-08-31 — The first exact-head CI attempt after that refinement exposed an AI-review projection mismatch: moving a parent now correctly moves its intrinsic label, but the proposal validator initially treated the hidden label as a separate user-facing affected object. Proposal/review validation now maps intrinsic-label effects back to the parent composition while retaining the label's canonical transform in the tentative update and undoable change set.
 - 2026-08-31 — A second product-owner preview pass found that child-local rectangular clip offsets drifted while a parent was dragged or rotated, that selecting a parent immediately made its intrinsic label draggable, and that the corner-to-rotation-control hover gap dismissed the control before pointer-down. Child clipping now derives the current parent polygon in each child's local coordinate space, nested children remain non-listening until a deliberate second click enters them, and the overlapping rotation control retains pointer capture through the drag. The second-click entry is briefly deferred and canceled by double-click so the established inline label editor remains available without making the label draggable during a parent gesture.
 - 2026-09-01 — Slice 10 added strict transparent group frames in a dedicated collaborative Yjs map, atomic creation/ungroup/history handling, compatibility-derived frames for legacy or pasted `groupId`-only groups, and frame-backed group move/resize. Complete groups now use the existing four screen-space rotation zones and exact rotation field, preview every member around the frame center, and commit one group rotation transaction with annotation following and reload-safe geometry.
+- 2026-09-01 — Slice 11 added validated `group.nest` and `group.detach` commands, Command/Control-drag containment for complete groups, accessible place/remove actions, and same-parent grouping that transfers ownership and layout to the frame. Parent move, resize, rotation, flip, deletion, ungroup, ordering, and clipboard duplication now preserve the nested group family; cross-parent or mixed-level grouping is rejected without mutation.
 
 ## Verification evidence
 
@@ -391,6 +392,7 @@ Expanded-containment evidence on 2026-08-31:
 - A targeted compatibility rerun passed the two existing essential-object and inline-editing scenarios plus the updated composition-interaction scenario, 3 of 3 in 11.8 seconds. This proves deliberate child entry does not regress double-click editing for shapes, sticky notes, or standalone text.
 - The Slice 9 transform-affordance refinement passed `pnpm check`: formatting, ESLint with zero warnings, strict TypeScript, all 57 Vitest files / 280 tests, and the optimized Next.js production build. Focused authenticated Chromium checks passed 4 of 4 scenarios, including all four fixed 28px rotation cursor zones before and after zoom, a real center-based rotation drag, palette flipping, legacy flip-field undo/redo, and the existing annotation group-transform history path.
 - Slice 10 passed ESLint with zero warnings, strict TypeScript, and all 57 Vitest files / 281 tests. New coverage proves group-frame creation/removal, center-based member rotation, frame-backed transform persistence, and legacy-compatible group geometry; focused browser and complete repository gates remain part of Slice 12 delivery verification.
+- Slice 11 passed ESLint with zero warnings, strict TypeScript, and all 57 Vitest files / 283 tests before the focused history addition. New command coverage proves whole-group nest/detach, same-parent child grouping, parent-following movement, and safe ungroup back to independent parent children; final focused and complete counts are recorded with Slice 12.
 - After a clean local Supabase reset, the CI-equivalent serialized Chromium/axe run passed all 62 scenarios in 3.3 minutes. The first full attempt exposed that optional flip fields needed a compatibility-aware history default; the correction preserves absent legacy fields as semantic `false` without adding unrelated history changes. Exact-head CI and the matching replacement preview remain pending.
 
 Research evidence:
