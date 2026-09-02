@@ -17,7 +17,10 @@ async function chooseShape(
   shape: "Rectangle" | "Ellipse" | "Diamond",
 ) {
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
-  await page.getByRole("menuitemradio", { name: shape, exact: true }).click();
+  await page
+    .getByTestId("catalog-results")
+    .getByRole("button", { name: `${shape} — basic shape`, exact: true })
+    .click();
 }
 
 async function dispatchPointerStroke(
@@ -559,7 +562,10 @@ test("keeps drawing tools active, dismisses the palette, drag-erases whole strok
   await expect(page.getByTestId("product-annotation-count")).toHaveText("3");
 
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
-  await page.getByRole("menuitemradio", { name: "Rectangle" }).click();
+  await page
+    .getByTestId("catalog-results")
+    .getByRole("button", { name: "Rectangle — basic shape", exact: true })
+    .click();
   await surface.click({ position: { x: 560, y: 320 } });
   await page.getByRole("button", { name: "Open Object navigator" }).click();
   await page.getByRole("button", { name: "Stroke", exact: true }).click();
@@ -860,7 +866,10 @@ test("attaches overlapping ink, follows movement, disconnects, and detaches on d
     ) {
       await page.getByRole("button", { name: "Open Object navigator" }).click();
     }
-    await page.locator('[data-testid^="object-list-item-"]').nth(index).click();
+    await page
+      .locator('[data-testid^="object-list-item-"]:not([data-parent-id])')
+      .nth(index)
+      .click();
   };
   await selectNavigatorItem(0);
   await surface.focus();

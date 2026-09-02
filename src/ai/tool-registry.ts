@@ -45,7 +45,20 @@ export const reviewLayoutArgumentsSchema = z.strictObject({
 });
 const newShapeSpecSchema = z.strictObject({
   key: z.string().trim().min(1).max(120),
-  shape: z.enum(["rectangle", "ellipse", "diamond"]),
+  shape: z.enum([
+    "rectangle",
+    "rounded-rectangle",
+    "ellipse",
+    "diamond",
+    "triangle",
+    "pentagon",
+    "hexagon",
+    "octagon",
+    "star",
+    "cloud",
+    "speech-bubble",
+    "cylinder",
+  ]),
   layer: z.enum(["front", "back"]).default("front"),
   text: z.string().max(10_000),
   x: z.number().finite(),

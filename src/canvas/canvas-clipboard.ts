@@ -2,9 +2,14 @@ import { z } from "zod";
 
 import {
   canvasObjectV2Schema,
+  type CanvasGroupV2,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
 import { resolveConnectorEndpointV2 } from "@/canvas/geometry";
+import {
+  isContainableObject,
+  parentRelativeGeometry,
+} from "@/canvas/icon-containment";
 
 export const canvasClipboardSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -17,8 +22,33 @@ export type CanvasClipboardPayload = z.infer<typeof canvasClipboardSchema>;
 export function createCanvasClipboardPayload(
   allObjects: CanvasObjectV2[],
   selectedObjectIds: string[],
+  groups: CanvasGroupV2[] = [],
 ) {
   const selectedIds = new Set(selectedObjectIds);
+  let addedChild = true;
+  while (addedChild) {
+    addedChild = false;
+    for (const object of allObjects) {
+      if (
+        isContainableObject(object) &&
+        object.parentId &&
+        selectedIds.has(object.parentId) &&
+        !selectedIds.has(object.id)
+      ) {
+        selectedIds.add(object.id);
+        addedChild = true;
+      }
+    }
+    for (const group of groups) {
+      if (!group.parentId || !selectedIds.has(group.parentId)) continue;
+      for (const member of allObjects) {
+        if (member.groupId === group.id && !selectedIds.has(member.id)) {
+          selectedIds.add(member.id);
+          addedChild = true;
+        }
+      }
+    }
+  }
   const objectsById = new Map(allObjects.map((object) => [object.id, object]));
   const selected = allObjects.filter((object) => selectedIds.has(object.id));
   if (!selected.length) throw new Error("Select at least one object to copy.");
@@ -48,6 +78,36 @@ export function createCanvasClipboardPayload(
             groupId,
             attachedObjectId: null,
             attachmentOffset: null,
+          }
+        : { ...object, groupId };
+    }
+    if (isContainableObject(object)) {
+      const group = object.groupId
+        ? groups.find((candidate) => candidate.id === object.groupId)
+        : undefined;
+      const copiedGroupParent =
+        group?.parentId && selectedIds.has(group.parentId)
+          ? objectsById.get(group.parentId)
+          : undefined;
+      if (copiedGroupParent?.type === "shape") {
+        return {
+          ...object,
+          groupId,
+          parentId: copiedGroupParent.id,
+          parentRelative: parentRelativeGeometry(
+            object.geometry,
+            copiedGroupParent,
+          ),
+          childLayout: group?.childLayout,
+        };
+      }
+      return object.parentId && !selectedIds.has(object.parentId)
+        ? {
+            ...object,
+            groupId,
+            parentId: null,
+            parentRelative: null,
+            childLayout: null,
           }
         : { ...object, groupId };
     }
@@ -135,6 +195,13 @@ export function remapCanvasClipboard(
         ...shared,
         attachedObjectId,
       });
+    }
+    if (isContainableObject(object)) {
+      const parentId = object.parentId ? objectIds.get(object.parentId) : null;
+      if (object.parentId && !parentId) {
+        throw new Error("Clipboard object references an external parent.");
+      }
+      return canvasObjectV2Schema.parse({ ...shared, parentId });
     }
     if (object.type !== "connector") {
       return canvasObjectV2Schema.parse(shared);

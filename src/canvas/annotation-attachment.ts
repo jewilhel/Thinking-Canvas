@@ -5,7 +5,7 @@ import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 
 type EligibleAttachmentTarget = Extract<
   CanvasObjectV2,
-  { type: "shape" | "text" | "table" }
+  { type: "shape" | "icon" | "text" | "table" }
 >;
 
 type IndexedTarget = {
@@ -21,7 +21,10 @@ export function isEligibleAnnotationTarget(
   object: CanvasObjectV2,
 ): object is EligibleAttachmentTarget {
   return (
-    object.type === "shape" || object.type === "text" || object.type === "table"
+    object.type === "shape" ||
+    object.type === "text" ||
+    object.type === "table" ||
+    object.type === "icon"
   );
 }
 
@@ -34,7 +37,11 @@ function pointInTarget(
   const { geometry } = target;
   const centerX = geometry.x + geometry.width / 2;
   const centerY = geometry.y + geometry.height / 2;
-  if (target.type !== "shape" || target.shape === "rectangle") {
+  if (
+    target.type !== "shape" ||
+    target.shape === "rectangle" ||
+    target.shape === "rounded-rectangle"
+  ) {
     return (
       x >= geometry.x - tolerance &&
       x <= geometry.x + geometry.width + tolerance &&

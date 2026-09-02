@@ -282,10 +282,10 @@ Retain the immutable deploy ID and URL, exact commit, CI run, browser and viewpo
 - Real OpenAI reasoning, full-canvas inspection, connected-path interpretation, AI permissions, constructive challenge, or production AI comment creation (`FR-015` through `FR-022`, Milestone 4).
 - Reviewable AI changes, explanations, keep/revise/discard review decisions, or guided review (`FR-031` through `FR-035`, Milestone 5). The `approve/revise/discard` comment prompt records feedback only and does not operate an AI change set.
 - Freeform vector pen creation, stroke editing, automatic overlap attachment, disconnection, or promotion (`FR-036` through `FR-043`, Milestone 6). Milestone 3 only provides the hide/show boundary that the later temporary annotation overlay will share.
-- First-class document comments, text-range targets, or document-internal visual targets (`FR-044` through `FR-053`, Milestone 7).
-- Guided stories, story-scoped comments, narration, and playback (`FR-054` through `FR-062`, Milestone 8).
-- Live voice, typed AI messaging, or remote-human voice (`FR-008` through `FR-014`, Milestone 9).
-- Conversational starter structures and reusable templates (`FR-063` through `FR-066`, Milestone 10).
+- First-class document comments, text-range targets, or document-internal visual targets (`FR-044` through `FR-053`, Milestone 8).
+- Guided stories, story-scoped comments, narration, and playback (`FR-054` through `FR-062`, Milestone 9).
+- Live voice, typed AI messaging, or remote-human voice (`FR-008` through `FR-014`, Milestone 10).
+- Conversational starter structures and reusable templates (`FR-063` through `FR-066`, Milestone 11).
 - Invitations or membership-management UI, comment mentions/notifications, attachments, reactions, freeform polls, anonymous responses, per-response discussion, comment export, configurable retention policy, production launch, cross-browser release matrix, and production observability unless separately promoted in the master ledger.
 - Deleting comment history as the implementation of dismiss or resolve.
 - Arbitrary ungrouped multiselection as one group target, document targets, connector-segment-specific targets, or viewport-region targets larger than one world-space point.

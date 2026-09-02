@@ -2,8 +2,6 @@
 
 import {
   Check,
-  Circle,
-  Diamond,
   Eraser,
   Hand,
   Highlighter,
@@ -12,7 +10,6 @@ import {
   MousePointer2,
   PenLine,
   Puzzle,
-  RectangleHorizontal,
   Shapes,
   StickyNote,
   Table2,
@@ -23,6 +20,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CustomColorPicker } from "@/components/canvas/custom-color-picker";
 import { drawingColorPairs } from "@/components/canvas/canvas-colors";
+import { IconBrowser } from "@/components/canvas/icon-browser";
 import { StrokeThicknessOptions } from "@/components/canvas/stroke-thickness-options";
 
 export type CanvasTool =
@@ -33,15 +31,35 @@ export type CanvasTool =
   | "eraser"
   | "sticky"
   | "rectangle"
+  | "rounded-rectangle"
   | "ellipse"
   | "diamond"
+  | "triangle"
+  | "pentagon"
+  | "hexagon"
+  | "octagon"
+  | "star"
+  | "cloud"
+  | "speech-bubble"
+  | "cylinder"
   | "text"
   | "connector"
   | "table";
 
 export type CanvasShapeTool = Extract<
   CanvasTool,
-  "rectangle" | "ellipse" | "diamond"
+  | "rectangle"
+  | "rounded-rectangle"
+  | "ellipse"
+  | "diamond"
+  | "triangle"
+  | "pentagon"
+  | "hexagon"
+  | "octagon"
+  | "star"
+  | "cloud"
+  | "speech-bubble"
+  | "cylinder"
 >;
 
 export type CanvasDrawingTool = Extract<
@@ -57,6 +75,7 @@ type Props = {
   simulatedAiEnabled: boolean;
   onChooseTool: (tool: CanvasTool) => void;
   onChooseShape: (shape: CanvasShapeTool) => void;
+  onChooseIcon: (iconName: string) => void;
   onAddSimulatedAiIdea: () => void;
   commentPlacementActive: boolean;
   onChooseComments: () => void;
@@ -76,9 +95,18 @@ const drawingTools = [
 ] as const;
 
 const shapeOptions = [
-  { value: "rectangle", label: "Rectangle", icon: RectangleHorizontal },
-  { value: "ellipse", label: "Ellipse", icon: Circle },
-  { value: "diamond", label: "Diamond", icon: Diamond },
+  { value: "rectangle", label: "Rectangle" },
+  { value: "rounded-rectangle", label: "Rounded rectangle" },
+  { value: "ellipse", label: "Ellipse" },
+  { value: "diamond", label: "Diamond" },
+  { value: "triangle", label: "Triangle" },
+  { value: "pentagon", label: "Pentagon" },
+  { value: "hexagon", label: "Hexagon" },
+  { value: "octagon", label: "Octagon" },
+  { value: "star", label: "Star" },
+  { value: "cloud", label: "Cloud" },
+  { value: "speech-bubble", label: "Speech bubble" },
+  { value: "cylinder", label: "Cylinder" },
 ] as const;
 
 const directTools = [
@@ -120,6 +148,7 @@ export function WorkspacePrimaryDock({
   simulatedAiEnabled,
   onChooseTool,
   onChooseShape,
+  onChooseIcon,
   onAddSimulatedAiIdea,
   commentPlacementActive,
   onChooseComments,
@@ -211,7 +240,7 @@ export function WorkspacePrimaryDock({
       {openPalette ? (
         <div
           id={`workspace-${openPalette}-palette`}
-          className="absolute bottom-[calc(100%+0.75rem)] left-1/2 w-max max-w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome-solid)] p-3 text-zinc-800 shadow-[var(--workspace-shadow-strong)]"
+          className="absolute bottom-[calc(100%+0.75rem)] left-1/2 w-[min(28rem,calc(100vw-2rem))] max-w-full -translate-x-1/2 overflow-hidden rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome-solid)] p-3 text-zinc-800 shadow-[var(--workspace-shadow-strong)]"
           data-testid={`workspace-${openPalette}-palette`}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
@@ -222,28 +251,25 @@ export function WorkspacePrimaryDock({
         >
           {openPalette === "shape" ? (
             <>
-              <p className="px-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+              <p className="mb-2 px-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
                 Choose a shape
               </p>
-              <div className="mt-2 flex gap-2" role="menu">
-                {shapeOptions.map(({ value, label, icon: Icon }) => (
-                  <Button
-                    key={value}
-                    type="button"
-                    variant="outline"
-                    role="menuitemradio"
-                    aria-checked={activeTool === value}
-                    className="h-11 border-zinc-200 bg-white px-3 text-zinc-700 hover:bg-violet-50 aria-checked:border-violet-600 aria-checked:bg-violet-50 aria-checked:text-violet-800 dark:border-zinc-200 dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50 dark:aria-checked:border-violet-600 dark:aria-checked:bg-violet-50 dark:aria-checked:text-violet-800"
-                    onClick={() => {
-                      onChooseShape(value);
-                      setOpenPalette(null);
-                    }}
-                  >
-                    <Icon aria-hidden="true" />
-                    {label}
-                  </Button>
-                ))}
-              </div>
+              <IconBrowser
+                activeShape={
+                  shapeOptions.some((option) => option.value === activeTool)
+                    ? (activeTool as CanvasShapeTool)
+                    : null
+                }
+                shapes={shapeOptions}
+                onChooseShape={(shape) => {
+                  onChooseShape(shape);
+                  setOpenPalette(null);
+                }}
+                onChooseIcon={(icon) => {
+                  onChooseIcon(icon.name);
+                  setOpenPalette(null);
+                }}
+              />
             </>
           ) : null}
 

@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 
 import {
   expect,
@@ -40,7 +41,10 @@ async function createAt(
 ) {
   if (["Rectangle", "Ellipse", "Diamond"].includes(tool)) {
     await page.getByRole("button", { name: "Shapes", exact: true }).click();
-    await page.getByRole("menuitemradio", { name: tool, exact: true }).click();
+    await page
+      .getByTestId("catalog-results")
+      .getByRole("button", { name: `${tool} — basic shape`, exact: true })
+      .click();
   } else {
     await page.getByRole("button", { name: tool, exact: true }).click();
   }
@@ -90,6 +94,21 @@ async function createLabeledShape(
 ) {
   await createAt(page, tool, position);
   await editSelectedText(page, label);
+  await selectShapeByLabel(page, label);
+}
+
+async function selectShapeByLabel(
+  page: Page,
+  label: string,
+  modifiers: ("Shift" | "Meta" | "Control")[] = [],
+) {
+  const labelObject = page
+    .locator('[data-testid^="object-list-item-"][data-parent-id]')
+    .filter({ hasText: label })
+    .first();
+  const parentId = await labelObject.getAttribute("data-parent-id");
+  if (!parentId) throw new Error(`Shape label ${label} has no parent.`);
+  await page.getByTestId(`object-list-item-${parentId}`).click({ modifiers });
 }
 
 async function editSelectedText(page: Page, text: string) {
@@ -119,12 +138,12 @@ async function connectLabels(
   startAnchor = "right",
   targetAnchor = "left",
 ) {
-  await page.getByRole("button", { name: new RegExp(source) }).click();
+  await selectShapeByLabel(page, source);
   await openContextPanel(page, "Connector controls");
   await page
     .getByRole("button", { name: `Start ${startAnchor}`, exact: true })
     .click();
-  await page.getByRole("button", { name: new RegExp(target) }).click();
+  await selectShapeByLabel(page, target);
   await openContextPanel(page, "Connector controls");
   await page
     .getByRole("button", { name: `Attach ${targetAnchor}`, exact: true })
@@ -149,6 +168,36 @@ async function retainArrangement(
   });
 }
 
+async function canvasPixelHex(
+  surface: Locator,
+  position: { x: number; y: number },
+) {
+  const image = sharp(await surface.screenshot());
+  const { data } = await image
+    .extract({
+      left: Math.round(position.x),
+      top: Math.round(position.y),
+      width: 1,
+      height: 1,
+    })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  return `#${[data[0], data[1], data[2]]
+    .map((channel) => channel!.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+async function canvasPixelDominance(
+  surface: Locator,
+  position: { x: number; y: number },
+) {
+  const color = await canvasPixelHex(surface, position);
+  const red = Number.parseInt(color.slice(1, 3), 16);
+  const blue = Number.parseInt(color.slice(5, 7), 16);
+  return red > blue ? "red" : "blue";
+}
+
 test("creates, selects, moves, resizes, styles, edits, persists, and deletes essential objects", async ({
   page,
 }) => {
@@ -156,6 +205,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
 
   await createAt(page, "Rectangle", { x: 180, y: 140 });
   await editSelectedText(page, "Styled planning idea");
+  await selectShapeByLabel(page, "Styled planning idea");
   await setFill(page, "#fef3c7");
   await openContextPanel(page, "Stroke");
   const solidStrokeStyle = page.getByRole("button", {
@@ -202,7 +252,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   const box = await surface.boundingBox();
   if (!box) throw new Error("Canvas surface bounds are unavailable.");
   const pointerStart = {
-    x: box.x + 80 + xBeforePointer + (widthBeforeKeyboard + 1) / 4,
+    x: box.x + 80 + xBeforePointer + 4,
     y: box.y + 80 + yBeforePointer + 30,
   };
   await page.mouse.move(pointerStart.x, pointerStart.y);
@@ -254,7 +304,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await page.reload();
   await ensureObjectNavigator(page);
   await expect(page.getByTestId("product-object-count")).toHaveText("5");
-  await page.getByRole("button", { name: /Styled planning idea/ }).click();
+  await selectShapeByLabel(page, "Styled planning idea");
   await openContextPanel(page, "Fill");
   await page.getByLabel("Custom fill color").click();
   await expect(page.getByLabel("Custom fill color hex")).toHaveValue("#FEF3C7");
@@ -277,8 +327,9 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   );
   await expect(page.getByLabel("Custom text size")).toHaveValue("22");
 
+  await selectShapeByLabel(page, "Styled planning idea");
+  await deleteSelection(page);
   for (const label of [
-    /Styled planning idea/,
     /A text primitive/,
     /table — 2 rows/,
     /ellipse/,
@@ -341,10 +392,8 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
     y: 320,
   });
 
-  await page.getByRole("button", { name: /Context alpha/ }).click();
-  await page
-    .getByRole("button", { name: /Context beta/ })
-    .click({ modifiers: ["Shift"] });
+  await selectShapeByLabel(page, "Context alpha");
+  await selectShapeByLabel(page, "Context beta", ["Shift"]);
   const toolbar = page.getByTestId("contextual-selection-controls");
   await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
   const [surfaceBox, toolbarBox] = await Promise.all([
@@ -418,7 +467,7 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
   );
   await page.getByRole("button", { name: "Close color picker" }).click();
   await setCustomColor(page, "Custom stroke color", "#1d4ed8");
-  await page.getByRole("button", { name: /Context alpha/ }).click();
+  await selectShapeByLabel(page, "Context alpha");
   await openContextPanel(page, "Fill");
   await page.getByLabel("Custom fill color").click();
   await expect(page.getByLabel("Custom fill color hex")).toHaveValue("#DBEAFE");
@@ -442,6 +491,12 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
 test("uses dark contextual controls and opens selection actions from right-click, Control-click, and keyboard", async ({
   page,
 }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window.navigator, "platform", {
+      configurable: true,
+      get: () => "Linux x86_64",
+    });
+  });
   const surface = await openFreshCanvas(page);
   await createLabeledShape(page, "Rectangle", "Menu alpha", {
     x: 180,
@@ -452,10 +507,8 @@ test("uses dark contextual controls and opens selection actions from right-click
     y: 140,
   });
 
-  await page.getByRole("button", { name: /Menu alpha/ }).click();
-  await page
-    .getByRole("button", { name: /Menu beta/ })
-    .click({ modifiers: ["Shift"] });
+  await selectShapeByLabel(page, "Menu alpha");
+  await selectShapeByLabel(page, "Menu beta", ["Shift"]);
   const contextualToolbar = page.getByTestId("contextual-selection-controls");
   await expect(contextualToolbar.getByRole("toolbar")).toHaveClass(
     /bg-zinc-900/,
@@ -605,7 +658,9 @@ test("creates, reattaches, and detaches connectors with direct pointer gestures"
   await editSelectedText(page, "Drag source");
   await createAt(page, "Rectangle", { x: 520, y: 180 });
   await editSelectedText(page, "Drag target");
-  await page.getByRole("button", { name: /Drag source/ }).click();
+  await createAt(page, "Rectangle", { x: 820, y: 180 });
+  await editSelectedText(page, "Unrelated shape");
+  await selectShapeByLabel(page, "Drag source");
 
   const box = await surface.boundingBox();
   if (!box) throw new Error("Canvas surface bounds are unavailable.");
@@ -614,23 +669,33 @@ test("creates, reattaches, and detaches connectors with direct pointer gestures"
   await surface.click({ position: { x: 40, y: 400 } });
   await page.mouse.move(box.x + 350, box.y + 235);
   await page.mouse.move(sourceRightHandle.x, sourceRightHandle.y, { steps: 6 });
+  await expect(page.getByTestId("visible-connection-anchor-count")).toHaveText(
+    "4",
+  );
   await page.mouse.down();
+  await page.mouse.move(box.x + 440, box.y + 235, { steps: 4 });
+  await expect(page.getByTestId("visible-connection-anchor-count")).toHaveText(
+    "4",
+  );
   await page.mouse.move(targetLeftHandle.x, targetLeftHandle.y, { steps: 8 });
+  await expect(page.getByTestId("visible-connection-anchor-count")).toHaveText(
+    "8",
+  );
   await page.mouse.up();
 
   await ensureObjectNavigator(page);
-  await expect(page.getByTestId("product-object-count")).toHaveText("3");
+  await expect(page.getByTestId("product-object-count")).toHaveText("4");
   await expect(page.getByTestId("selected-connector-points")).toHaveText(
     "280,155,440,155",
   );
 
-  await page.getByRole("button", { name: /Drag source/ }).click();
+  await selectShapeByLabel(page, "Drag source");
   const livePointsBeforeDrag = await page
     .getByTestId("live-connector-points")
     .innerText();
-  await page.mouse.move(box.x + 270, box.y + 235);
+  await page.mouse.move(box.x + 190, box.y + 235);
   await page.mouse.down();
-  await page.mouse.move(box.x + 320, box.y + 275, { steps: 6 });
+  await page.mouse.move(box.x + 240, box.y + 275, { steps: 6 });
   await expect(page.getByTestId("live-connector-points")).not.toHaveText(
     livePointsBeforeDrag,
   );
@@ -673,13 +738,13 @@ test("attaches connectors to anchors, follows geometry, detaches safely, and sup
   await createAt(page, "Ellipse", { x: 520, y: 180 });
   await editSelectedText(page, "Target");
 
-  await page.getByRole("button", { name: /Source/ }).click();
+  await selectShapeByLabel(page, "Source");
   await openContextPanel(page, "Connector controls");
   await expect(
     page.getByRole("button", { name: "Start center", exact: true }),
   ).not.toBeVisible();
   await page.getByRole("button", { name: "Start right", exact: true }).click();
-  await page.getByRole("button", { name: /Target/ }).click();
+  await selectShapeByLabel(page, "Target");
   await page.getByRole("button", { name: "Connector", exact: true }).click();
   const surfaceBox = await surface.boundingBox();
   if (!surfaceBox) throw new Error("Canvas surface bounds are unavailable.");
@@ -693,7 +758,7 @@ test("attaches connectors to anchors, follows geometry, detaches safely, and sup
     .getByTestId("selected-connector-points")
     .innerText();
 
-  await page.getByRole("button", { name: /Source/ }).click();
+  await selectShapeByLabel(page, "Source");
   await surface.focus();
   await surface.press("Shift+ArrowRight");
   await page.getByRole("button", { name: "connector", exact: true }).click();
@@ -729,7 +794,7 @@ test("attaches connectors to anchors, follows geometry, detaches safely, and sup
   const detachedPoints = await page
     .getByTestId("selected-connector-points")
     .innerText();
-  await page.getByRole("button", { name: /Source/ }).click();
+  await selectShapeByLabel(page, "Source");
   await surface.focus();
   await surface.press("Shift+ArrowDown");
   await page.getByRole("button", { name: "connector", exact: true }).click();
@@ -837,10 +902,8 @@ test("multiselects, marquees, groups, orders, duplicates, uses the clipboard, an
   await createLabeledShape(page, "Rectangle", "Beta", { x: 380, y: 140 });
   await createLabeledShape(page, "Rectangle", "Gamma", { x: 680, y: 140 });
 
-  await page.getByRole("button", { name: /Alpha/ }).click();
-  await page
-    .getByRole("button", { name: /Beta/ })
-    .click({ modifiers: ["Shift"] });
+  await selectShapeByLabel(page, "Alpha");
+  await selectShapeByLabel(page, "Beta", ["Shift"]);
   await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
   await expect(
     page.getByRole("heading", { name: /Mixed selection/ }),
@@ -848,7 +911,7 @@ test("multiselects, marquees, groups, orders, duplicates, uses the clipboard, an
   await openContextPanel(page, "More selection actions");
   await page.getByRole("button", { name: "Group", exact: true }).click();
 
-  await page.getByRole("button", { name: /Alpha/ }).click();
+  await selectShapeByLabel(page, "Alpha");
   await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
   await openContextPanel(page, "More selection actions");
   await page.getByRole("button", { name: "Ungroup", exact: true }).click();
@@ -868,15 +931,46 @@ test("multiselects, marquees, groups, orders, duplicates, uses the clipboard, an
     String(primaryX + 1),
   );
 
-  await page.getByRole("button", { name: /Alpha/ }).click();
-  await openContextPanel(page, "More selection actions");
-  await page
-    .getByRole("button", { name: "Bring to front", exact: true })
-    .click();
-  const orderedLabels = await page
-    .locator('[data-testid^="object-list-item-"]')
-    .allTextContents();
-  expect(orderedLabels.at(-1)).toContain("Alpha");
+  await selectShapeByLabel(page, "Alpha");
+  const layerMenu = page.getByRole("menu", { name: "Selection actions" });
+  const topLevelLabels = () =>
+    page
+      .locator('[data-testid^="object-list-item-"]:not([data-parent-id])')
+      .allTextContents();
+  const reorderFromMenu = async (
+    action:
+      "Bring to front" | "Bring forward" | "Send backward" | "Send to back",
+  ) => {
+    await surface.focus();
+    await surface.press("Shift+F10");
+    await layerMenu.getByRole("menuitem", { name: action }).click();
+  };
+
+  await reorderFromMenu("Bring to front");
+  expect(await topLevelLabels()).toEqual([
+    expect.stringContaining("Beta"),
+    expect.stringContaining("Gamma"),
+    expect.stringContaining("Alpha"),
+  ]);
+  await reorderFromMenu("Send backward");
+  expect(await topLevelLabels()).toEqual([
+    expect.stringContaining("Beta"),
+    expect.stringContaining("Alpha"),
+    expect.stringContaining("Gamma"),
+  ]);
+  await reorderFromMenu("Send to back");
+  expect(await topLevelLabels()).toEqual([
+    expect.stringContaining("Alpha"),
+    expect.stringContaining("Beta"),
+    expect.stringContaining("Gamma"),
+  ]);
+  await reorderFromMenu("Bring forward");
+  expect(await topLevelLabels()).toEqual([
+    expect.stringContaining("Beta"),
+    expect.stringContaining("Alpha"),
+    expect.stringContaining("Gamma"),
+  ]);
+  await reorderFromMenu("Bring to front");
 
   await openContextPanel(page, "More selection actions");
   await page.getByRole("button", { name: "Duplicate", exact: true }).click();
@@ -906,4 +1000,69 @@ test("multiselects, marquees, groups, orders, duplicates, uses the clipboard, an
   await page.reload();
   await ensureObjectNavigator(page);
   await expect(page.getByTestId("product-object-count")).toHaveText("4");
+});
+
+test("layer commands change the painted stacking of overlapping objects", async ({
+  page,
+}) => {
+  const surface = await openFreshCanvas(page);
+  await createLabeledShape(page, "Rectangle", "Red layer", {
+    x: 260,
+    y: 500,
+  });
+  await setFill(page, "#dc2626");
+  await createLabeledShape(page, "Rectangle", "Blue layer", {
+    x: 560,
+    y: 500,
+  });
+  await setFill(page, "#2563eb");
+  await openContextPanel(page, "Fill");
+  await surface.focus();
+  for (let index = 0; index < 30; index += 1) {
+    await surface.press("Shift+ArrowLeft");
+  }
+
+  const [viewportX, viewportY, objectX, objectY, objectWidth] =
+    await Promise.all([
+      surface.getAttribute("data-viewport-x").then(Number),
+      surface.getAttribute("data-viewport-y").then(Number),
+      selectedNumber(page, "selected-position-x"),
+      selectedNumber(page, "selected-position-y"),
+      selectedNumber(page, "selected-width"),
+    ]);
+  const samplePoint = {
+    x: viewportX + objectX + objectWidth / 2,
+    y: viewportY + objectY + 15,
+  };
+  await expect
+    .poll(() => canvasPixelDominance(surface, samplePoint))
+    .toBe("blue");
+
+  await selectShapeByLabel(page, "Red layer");
+  const layerMenu = page.getByRole("menu", { name: "Selection actions" });
+  const reorder = async (
+    action:
+      "Bring to front" | "Bring forward" | "Send backward" | "Send to back",
+  ) => {
+    await surface.focus();
+    await surface.press("Shift+F10");
+    await layerMenu.getByRole("menuitem", { name: action }).click();
+  };
+
+  await reorder("Bring to front");
+  await expect
+    .poll(() => canvasPixelDominance(surface, samplePoint))
+    .toBe("red");
+  await reorder("Send backward");
+  await expect
+    .poll(() => canvasPixelDominance(surface, samplePoint))
+    .toBe("blue");
+  await reorder("Send to back");
+  await expect
+    .poll(() => canvasPixelDominance(surface, samplePoint))
+    .toBe("blue");
+  await reorder("Bring forward");
+  await expect
+    .poll(() => canvasPixelDominance(surface, samplePoint))
+    .toBe("red");
 });

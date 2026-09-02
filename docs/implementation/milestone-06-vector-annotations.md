@@ -51,7 +51,7 @@ The product owner added and approved this exact Milestone 6 supporting work on 2
 - **Unified Stroke palette.** Applicable annotations and canvas objects use the same expandable floating **Stroke** palette. Shared controls include stroke color and thickness; supported object borders and connectors also expose `Solid`, `Dashed`, and `Dotted` stroke styles through the same palette.
 - **Contextual styling parity.** Annotation and object palettes share placement, focus, responsive, accessible-name, mixed-value, and batch-application behavior. A mixed selection exposes only properties valid for every applicable selected item and does not overwrite a mixed property until the participant chooses a value.
 
-The milestone does not complete `AS-004`, which requires annotations inside first-class documents and remains Milestone 7 work.
+The milestone does not complete `AS-004`, which requires annotations inside first-class documents and remains Milestone 8 work.
 
 ## Decisions required
 
@@ -314,7 +314,7 @@ The emulated touch/stylus pass proves the browser event and application contract
 | Adding annotations can regress closed `FR-018` because current AI creation helpers focus on shapes/connectors. | High / high         | Add bounded server-identified annotation creation, projection, authority, scope, undo, and provider/tool regression in Slice 3.                                              | Engineering                   | Required preservation work.                 |
 | Annotation selection or overlap may introduce full-canvas scans on pointer frames.                             | Medium / high       | Use `rbush` for completion-time overlap and existing indexed/derived bounds; capture candidate counts and frame measurements.                                                | Engineering                   | Open.                                       |
 | Comment visibility currently lives inside `CanvasComments`, not the canvas owner.                              | Confirmed / medium  | Lift one backward-compatible state owner and key; pass state into both comments and annotations; prove toggle emits no durable update.                                       | Engineering                   | Planned in Slice 2.                         |
-| Playwright is Chromium-only and emulation is not physical stylus proof.                                        | Confirmed / medium  | Use Chromium for milestone automation, explicitly retain emulation details, and leave the production cross-browser/device matrix to Milestone 11.                            | Product owner and engineering | Known limitation.                           |
+| Playwright is Chromium-only and emulation is not physical stylus proof.                                        | Confirmed / medium  | Use Chromium for milestone automation, explicitly retain emulation details, and leave the production cross-browser/device matrix to Milestone 12.                            | Product owner and engineering | Known limitation.                           |
 | One multi-selection frame can break connector endpoints or double-apply attached annotation movement.          | Medium / critical   | Transform from one immutable pre-gesture snapshot, define reference-aware mapping by object type, commit one batch, and test mixed selections with Undo/reload/two contexts. | Engineering                   | Added by approved plan revision.            |
 | A shared palette can silently overwrite mixed or unsupported properties.                                       | Medium / high       | Represent mixed values explicitly, expose only common valid controls, make opening non-mutating, and batch only a deliberately chosen value.                                 | Engineering                   | Added by approved plan revision.            |
 
@@ -341,7 +341,7 @@ The emulated touch/stylus pass proves the browser event and application contract
 
 ## Explicitly excluded work
 
-- First-class documents, document-internal annotations, clipping/ownership inside documents, document comments, and `AS-004` (`FR-044` through `FR-053`, Milestone 7).
+- First-class documents, document-internal annotations, clipping/ownership inside documents, document comments, and `AS-004` (`FR-044` through `FR-053`, Milestone 8).
 - Additional pen types beyond Pen and Highlighter, segment/lasso erasing, handwriting recognition, shape recognition, arrow/circle/underline autocorrection, or annotation-to-text conversion. The approved Eraser deletes complete annotation objects only.
 - Node-by-node point editing, segment insertion/removal, path boolean operations, or Bezier control handles; the approved first-version model uses whole-stroke and combined-selection transforms.
 - Dashed or dotted pressure-rendered freeform annotations. Annotations share color and thickness with the unified Stroke palette; Solid, Dashed, and Dotted patterns apply to supported object borders and connectors in this milestone.

@@ -62,6 +62,84 @@ describe("validated canvas proposals", () => {
     expect(listCanvasObjectsV2(document)[0]?.geometry.x).not.toBe(240);
   });
 
+  it("projects an intrinsic label transform into its parent composition", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const labelId = "61000000-0000-4000-8000-000000000002";
+    putCanvasObjectV2(document, {
+      schemaVersion: 2,
+      id: objectId,
+      canvasId,
+      createdBy: actorId,
+      createdAt: "2026-08-24T00:00:00.000Z",
+      updatedAt: "2026-08-24T00:00:00.000Z",
+      type: "shape",
+      shape: "rectangle",
+      text: "",
+      geometry: { x: 0, y: 0, width: 160, height: 96, rotation: 0 },
+      style: {
+        fill: "#ffffff",
+        outline: "#334155",
+        outlineWidth: 2,
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        fontSize: 16,
+      },
+    });
+    putCanvasObjectV2(document, {
+      schemaVersion: 2,
+      id: labelId,
+      canvasId,
+      createdBy: actorId,
+      createdAt: "2026-08-24T00:00:00.000Z",
+      updatedAt: "2026-08-24T00:00:00.000Z",
+      type: "text",
+      text: "Evidence",
+      childRole: "shape-label",
+      parentId: objectId,
+      parentRelative: {
+        x: 0.075,
+        y: 0.125,
+        width: 0.85,
+        height: 0.75,
+      },
+      childLayout: {
+        pinPosition: true,
+        scaleWidth: true,
+        scaleHeight: true,
+      },
+      geometry: { x: 12, y: 12, width: 136, height: 72, rotation: 0 },
+      style: {
+        fill: null,
+        outline: "#334155",
+        outlineWidth: 0,
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        fontSize: 16,
+      },
+    });
+
+    const review = validateCanvasReviewStage({
+      document,
+      canvasId,
+      actorId,
+      commands: [
+        {
+          type: "object.move",
+          payload: { objectId, x: 80, y: 40 },
+        },
+      ],
+    });
+
+    expect(review.affectedObjectIds).toEqual([objectId]);
+    expect(review.objectChanges).toHaveLength(1);
+    const tentativeDocument = new Y.Doc();
+    Y.applyUpdate(tentativeDocument, Y.encodeStateAsUpdate(document));
+    Y.applyUpdate(tentativeDocument, review.tentativeUpdate);
+    expect(
+      listCanvasObjectsV2(tentativeDocument).find(
+        (object) => object.id === labelId,
+      )?.geometry,
+    ).toMatchObject({ x: 92, y: 52 });
+  });
+
   it("rejects nonexistent targets through the product command invariant", () => {
     const document = createProductCanvasDocument(canvasId);
     expect(() =>

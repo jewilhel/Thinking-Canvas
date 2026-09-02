@@ -120,13 +120,14 @@ export function previewGeometryDuringTransform(
     rotation: number;
   },
   transform: { x: number; y: number; scaleX: number; scaleY: number },
+  minimumSize = 24,
 ) {
   return {
     ...geometry,
     x: transform.x,
     y: transform.y,
-    width: Math.max(24, geometry.width * Math.abs(transform.scaleX)),
-    height: Math.max(24, geometry.height * Math.abs(transform.scaleY)),
+    width: Math.max(minimumSize, geometry.width * Math.abs(transform.scaleX)),
+    height: Math.max(minimumSize, geometry.height * Math.abs(transform.scaleY)),
   };
 }
 

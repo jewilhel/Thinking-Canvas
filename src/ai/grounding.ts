@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import {
   canvasObjectV2Schema,
+  isIntrinsicShapeLabel,
+  projectCanvasCompositions,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
 import {
@@ -91,6 +93,7 @@ function summarizeObject(object: CanvasObjectV2) {
     return object.cells.flat().join(" | ").slice(0, 10_000);
   if (object.type === "document") return object.title.slice(0, 10_000);
   if (object.type === "connector") return "Connector";
+  if (object.type === "icon") return `Phosphor icon: ${object.iconName}`;
   return `${object.temporary ? "Temporary" : "Promoted"} ${object.ink === "highlighter" ? "highlighter" : "pen"} annotation · ${object.style.outline} · ${object.style.outlineWidth}px${object.attachedObjectId ? " · attached" : ""}`;
 }
 
@@ -116,12 +119,22 @@ export function buildCanvasObjectDetails(
   canvasId: string,
   objects: CanvasObjectV2[],
 ) {
+  const compositionTargetById = new Map(
+    objects.flatMap((object) =>
+      isIntrinsicShapeLabel(object) && object.parentId
+        ? [[object.id, object.parentId] as const]
+        : [],
+    ),
+  );
+  objects = projectCanvasCompositions(objects);
   const adjacency = new Map<string, Set<string>>();
   for (const object of objects) adjacency.set(object.id, new Set());
   for (const connector of objects) {
     if (connector.type !== "connector") continue;
     const endpoints = [connector.start, connector.end].flatMap((endpoint) =>
-      endpoint.kind === "attached" ? [endpoint.objectId] : [],
+      endpoint.kind === "attached"
+        ? [compositionTargetById.get(endpoint.objectId) ?? endpoint.objectId]
+        : [],
     );
     for (const endpointId of endpoints) {
       adjacency.get(connector.id)?.add(endpointId);
@@ -137,6 +150,11 @@ export function buildCanvasObjectDetails(
       continue;
     adjacency.get(annotation.id)?.add(annotation.attachedObjectId);
     adjacency.get(annotation.attachedObjectId)?.add(annotation.id);
+  }
+  for (const icon of objects) {
+    if (icon.type !== "icon" || !icon.parentId) continue;
+    adjacency.get(icon.id)?.add(icon.parentId);
+    adjacency.get(icon.parentId)?.add(icon.id);
   }
   return objects.map((object, orderIndex) =>
     canvasObjectDetailSchema.parse({
@@ -209,6 +227,12 @@ export function validateConnectedPath(input: {
   const objectsById = new Map(
     input.objects.map((object) => [object.id, object]),
   );
+  const compositionObjectId = (objectId: string) => {
+    const object = objectsById.get(objectId);
+    return object && isIntrinsicShapeLabel(object) && object.parentId
+      ? object.parentId
+      : objectId;
+  };
   const seen = new Set<string>();
   for (const objectId of input.orderedObjectIds) {
     if (seen.has(objectId)) {
@@ -239,7 +263,9 @@ export function validateConnectedPath(input: {
     const connectors = input.objects.filter((object) => {
       if (object.type !== "connector") return false;
       const endpoints = [object.start, object.end].flatMap((endpoint) =>
-        endpoint.kind === "attached" ? [endpoint.objectId] : [],
+        endpoint.kind === "attached"
+          ? [compositionObjectId(endpoint.objectId)]
+          : [],
       );
       return endpoints.includes(previousId) && endpoints.includes(currentId);
     });

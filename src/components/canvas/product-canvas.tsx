@@ -9,6 +9,8 @@ import {
   Copy,
   Ellipsis,
   ExternalLink,
+  FlipHorizontal,
+  FlipVertical,
   Link2,
   ListTree,
   LogOut,
@@ -28,6 +30,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -39,6 +42,7 @@ import {
   Group,
   Layer,
   Line,
+  Path,
   Rect,
   Stage,
   Text,
@@ -64,6 +68,10 @@ import {
 } from "@/canvas/annotation-stroke";
 import { findAnnotationAttachmentTarget } from "@/canvas/annotation-attachment";
 import {
+  basicShapePath,
+  basicShapePoints,
+} from "@/canvas/basic-shape-geometry";
+import {
   createCanvasClipboardPayload,
   parseCanvasClipboard,
   remapCanvasClipboard,
@@ -71,9 +79,42 @@ import {
 } from "@/canvas/canvas-clipboard";
 import {
   createProductCanvasDocument,
+  listCanvasGroupsV2,
   listCanvasObjectsV2,
+  migrateLegacyShapeLabels,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
+import {
+  hasContainmentModifier,
+  isControlClickGesture,
+  isControlClickContextMenu,
+} from "@/canvas/containment-gesture";
+import {
+  iconVectorScene,
+  loadPhosphorIconCatalog,
+  type PhosphorIconCatalog,
+} from "@/canvas/phosphor-icon-catalog";
+import {
+  childConstraints,
+  childWorldGeometry,
+  childRelativeAfterParentResize,
+  defaultChildLayout,
+  fullyContains,
+  geometryCorners,
+  geometryClipPolygonInLocalSpace,
+  geometryContainsPoint,
+  isContainableObject,
+  isObjectParent,
+  parentFirstObjectOrder,
+  parentRelativeGeometry,
+  rotatePoint,
+  rotateGeometryAroundCenter,
+  rotationHandleWorldPoint,
+  shapeLabelChildLayout,
+  type HorizontalConstraint,
+  type RotationCorner,
+  type VerticalConstraint,
+} from "@/canvas/icon-containment";
 import {
   applyCanvasHistoryEntry,
   executeProductCanvasCommandWithHistory,
@@ -98,6 +139,8 @@ import {
   type Viewport,
 } from "@/canvas/geometry";
 import {
+  rotateSelectionObjects,
+  selectionBoundsForObjects,
   transformSelectionObjects,
   type SelectionBounds,
 } from "@/canvas/selection-transform";
@@ -184,6 +227,25 @@ const connectionAnchorHitWidthPx = 28;
 const connectionAnchorHoverDistancePx = 44;
 const selectionHandleSizePx = 14;
 const selectionHandleStrokeWidthPx = 3;
+const rotationZoneSizePx = 28;
+const rotationZoneOffsetPx = 18;
+const rotationCorners: RotationCorner[] = [
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+];
+const rotationCursorAngles: Record<RotationCorner, number> = {
+  "top-left": -90,
+  "top-right": 0,
+  "bottom-right": 90,
+  "bottom-left": 180,
+};
+
+function rotationCursor(corner: RotationCorner) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><g transform="rotate(${rotationCursorAngles[corner]} 16 16)" fill="none" stroke="#111827" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 20a9 9 0 0 1 15-8"/><path d="m21 7 3 5-6 1"/><path d="M24 12a9 9 0 0 1-15 8"/><path d="m11 25-3-5 6-1"/></g></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 16 16, grab`;
+}
 
 function formatListText(
   text: string,
@@ -252,14 +314,18 @@ function baseStyle(type: CanvasObjectV2["type"]) {
     fill:
       type === "connector" || type === "text" || type === "annotation"
         ? null
-        : "#ffffff",
+        : type === "icon"
+          ? "#18181b"
+          : "#ffffff",
     outline: type === "annotation" ? defaultAnnotationColor : "#475569",
     outlineWidth:
       type === "text"
         ? 0
         : type === "annotation"
           ? defaultAnnotationThickness
-          : 2,
+          : type === "icon"
+            ? 0
+            : 2,
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
     fontSize: 16,
     fontWeight: "normal" as const,
@@ -270,12 +336,20 @@ function baseStyle(type: CanvasObjectV2["type"]) {
   };
 }
 
-function objectLabel(object: CanvasObjectV2) {
-  if (object.type === "shape")
-    return `${object.shape} — ${object.text || "Untitled"}`;
+function objectLabel(object: CanvasObjectV2, canvasObjects?: CanvasObjectV2[]) {
+  if (object.type === "shape") {
+    const intrinsicLabel = canvasObjects?.find(
+      (candidate): candidate is Extract<CanvasObjectV2, { type: "text" }> =>
+        candidate.type === "text" &&
+        candidate.childRole === "shape-label" &&
+        candidate.parentId === object.id,
+    );
+    return `${object.shape} — ${object.text || intrinsicLabel?.text || "Untitled"}`;
+  }
   if (object.type === "text") return `text — ${object.text || "Untitled"}`;
   if (object.type === "table") return `table — ${object.cells.length} rows`;
   if (object.type === "connector") return "connector";
+  if (object.type === "icon") return `icon — ${object.iconName}`;
   if (object.type === "annotation")
     return object.ink === "highlighter" ? "highlighter" : "pen stroke";
   return object.type;
@@ -308,6 +382,7 @@ export function ProductCanvas({
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const selectionProxyRef = useRef<Konva.Rect>(null);
+  const nestedChildSelectionTimerRef = useRef<number | null>(null);
   const wheelGestureRef = useRef<{
     intent: "pan" | "zoom";
     lastEventAt: number;
@@ -334,9 +409,14 @@ export function ProductCanvas({
         window.localStorage.removeItem(documentStorageKey);
       }
     }
+    migrateLegacyShapeLabels(next);
     return next;
   }, [canvasId, documentStorageKey]);
   const [objects, setObjects] = useState(() => listCanvasObjectsV2(document));
+  const [groups, setGroups] = useState(() => listCanvasGroupsV2(document));
+  const [iconCatalog, setIconCatalog] = useState<PhosphorIconCatalog | null>(
+    null,
+  );
   const [size, setSize] = useState({ width: 960, height: 640 });
   const [tool, setTool] = useState<CanvasTool>("select");
   const [dismissDockPaletteSignal, setDismissDockPaletteSignal] = useState(0);
@@ -365,7 +445,13 @@ export function ProductCanvas({
   const [pointerPreview, setPointerPreview] = useState<Point | null>(null);
   const [inlineTextEditor, setInlineTextEditor] =
     useState<InlineTextEditor | null>(null);
+  const [inlineEditorMeasuredHeight, setInlineEditorMeasuredHeight] = useState<
+    number | null
+  >(null);
   const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
+  const [containmentPreviewParentId, setContainmentPreviewParentId] = useState<
+    string | null
+  >(null);
   const [contextPanel, setContextPanel] = useState<ContextPanel | null>(null);
   const [objectContextMenu, setObjectContextMenu] =
     useState<ObjectContextMenuPosition | null>(null);
@@ -432,25 +518,35 @@ export function ProductCanvas({
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
   );
-  const displayObjects = useMemo(
-    () =>
-      objects.map((object) => {
-        const selectionPreview = selectionTransformPreviewObjects[object.id];
-        if (selectionPreview) return selectionPreview;
-        const preview = dragPreviewPositions[object.id];
-        return preview && object.type !== "connector"
-          ? {
-              ...object,
-              geometry: {
-                ...object.geometry,
-                x: preview.x,
-                y: preview.y,
-              },
-            }
-          : object;
-      }),
-    [dragPreviewPositions, objects, selectionTransformPreviewObjects],
+  const groupsById = useMemo(
+    () => new Map(groups.map((group) => [group.id, group])),
+    [groups],
   );
+  const orderedObjects = useMemo(
+    () => parentFirstObjectOrder(objects, groups),
+    [groups, objects],
+  );
+  const productObjectCount = objects.filter(
+    (object) => object.type !== "text" || object.childRole !== "shape-label",
+  ).length;
+  const displayObjects = useMemo(() => {
+    const previewed = orderedObjects.map((object) => {
+      const selectionPreview = selectionTransformPreviewObjects[object.id];
+      if (selectionPreview) return selectionPreview;
+      const preview = dragPreviewPositions[object.id];
+      return preview && object.type !== "connector"
+        ? {
+            ...object,
+            geometry: {
+              ...object.geometry,
+              x: preview.x,
+              y: preview.y,
+            },
+          }
+        : object;
+    });
+    return previewed;
+  }, [dragPreviewPositions, orderedObjects, selectionTransformPreviewObjects]);
   const connectorLayoutObjectsById = useMemo(
     () =>
       new Map(
@@ -472,6 +568,67 @@ export function ProductCanvas({
     const object = objectsById.get(id);
     return object ? [object] : [];
   });
+  const selectedNestedParentIds = new Set(
+    selectedObjects.flatMap((object) => {
+      if (!isContainableObject(object)) return [];
+      const parentId =
+        object.parentId ??
+        (object.groupId ? groupsById.get(object.groupId)?.parentId : null);
+      return parentId ? [parentId] : [];
+    }),
+  );
+  const selectedContainerIds = new Set(
+    selectedObjects.map((object) =>
+      isContainableObject(object) ? (object.parentId ?? null) : null,
+    ),
+  );
+  const selectedContainerId = [...selectedContainerIds][0];
+  const canGroupSelected =
+    selectedObjects.length >= 2 &&
+    !selectedObjects.some((object) => object.groupId != null) &&
+    selectedContainerIds.size === 1 &&
+    (!selectedContainerId || selectedObjects.every(isContainableObject));
+  const selectedGroupId =
+    selectedObjects.length > 1 &&
+    selectedObjects[0]?.groupId &&
+    selectedObjects.every(
+      (object) => object.groupId === selectedObjects[0]!.groupId,
+    ) &&
+    objects.filter((object) => object.groupId === selectedObjects[0]!.groupId)
+      .length === selectedObjects.length
+      ? selectedObjects[0].groupId
+      : null;
+  const persistedSelectedGroup = selectedGroupId
+    ? groupsById.get(selectedGroupId)
+    : undefined;
+  const selectedGroupBounds = selectedGroupId
+    ? selectionBoundsForObjects(selectedObjects)
+    : null;
+  const selectedGroup =
+    (persistedSelectedGroup
+      ? {
+          ...persistedSelectedGroup,
+          geometry:
+            selectedGroupBounds &&
+            Math.abs(persistedSelectedGroup.geometry.rotation % 360) < 0.001
+              ? { ...persistedSelectedGroup.geometry, ...selectedGroupBounds }
+              : persistedSelectedGroup.geometry,
+        }
+      : undefined) ??
+    (selectedGroupId && selectedGroupBounds && selectedObjects[0]
+      ? {
+          schemaVersion: 2 as const,
+          id: selectedGroupId,
+          canvasId,
+          createdBy: selectedObjects[0].createdBy,
+          createdAt: selectedObjects[0].createdAt,
+          updatedAt: selectedObjects[0].updatedAt,
+          geometry: { ...selectedGroupBounds, rotation: 0 },
+          parentId: null,
+          parentRelative: null,
+          childLayout: null,
+        }
+      : undefined);
   const selectedObject = selectedId ? objectsById.get(selectedId) : undefined;
   const selectedBounds = selectedObjects.length
     ? selectedObjects.reduce(
@@ -496,29 +653,45 @@ export function ProductCanvas({
       )
     : null;
   const contextualToolbarPosition = selectedBounds
-    ? {
-        left: Math.min(
-          Math.max(
-            viewport.x +
-              ((selectedBounds.x + selectedBounds.right) / 2) * viewport.scale,
-            190,
+    ? (() => {
+        const selectedTop = viewport.y + selectedBounds.y * viewport.scale;
+        const selectedBottom =
+          viewport.y + selectedBounds.bottom * viewport.scale;
+        const preferredAbove = selectedTop - 66;
+        const top =
+          preferredAbove >= 112
+            ? preferredAbove
+            : Math.min(Math.max(112, selectedBottom + 12), size.height - 64);
+        return {
+          left: Math.min(
+            Math.max(
+              viewport.x +
+                ((selectedBounds.x + selectedBounds.right) / 2) *
+                  viewport.scale,
+              190,
+            ),
+            Math.max(190, size.width - 190),
           ),
-          Math.max(190, size.width - 190),
-        ),
-        top: Math.max(112, viewport.y + selectedBounds.y * viewport.scale - 66),
-      }
+          top,
+        };
+      })()
     : null;
-  const selectedFrame: SelectionBounds | null = selectedBounds
-    ? {
-        x: selectedBounds.x,
-        y: selectedBounds.y,
-        width: Math.max(1, selectedBounds.right - selectedBounds.x),
-        height: Math.max(1, selectedBounds.bottom - selectedBounds.y),
-      }
-    : null;
+  const selectedFrame: SelectionBounds | null = selectedGroup
+    ? selectedGroup.geometry
+    : selectedBounds
+      ? {
+          x: selectedBounds.x,
+          y: selectedBounds.y,
+          width: Math.max(1, selectedBounds.right - selectedBounds.x),
+          height: Math.max(1, selectedBounds.bottom - selectedBounds.y),
+        }
+      : null;
   const useSelectionProxy = selectedObjects.length > 1;
   const fillObjects = selectedObjects.filter(
-    (object) => object.type === "shape" || object.type === "table",
+    (object) =>
+      object.type === "shape" ||
+      object.type === "table" ||
+      object.type === "icon",
   );
   const outlineObjects = selectedObjects.filter(
     (object) => object.type !== "text" && object.type !== "document",
@@ -531,8 +704,20 @@ export function ProductCanvas({
   );
 
   useEffect(() => {
+    let active = true;
+    void loadPhosphorIconCatalog().then((catalog) => {
+      if (active) setIconCatalog(catalog);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     function synchronize() {
+      migrateLegacyShapeLabels(document);
       setObjects(listCanvasObjectsV2(document));
+      setGroups(listCanvasGroupsV2(document));
       window.localStorage.setItem(
         documentStorageKey,
         encodeUpdate(Y.encodeStateAsUpdate(document)),
@@ -637,17 +822,25 @@ export function ProductCanvas({
     if (!first || !last) return;
     const beforeObjects: CanvasHistoryEntry["beforeObjects"] = {};
     const afterObjects: CanvasHistoryEntry["afterObjects"] = {};
+    const beforeGroups: NonNullable<CanvasHistoryEntry["beforeGroups"]> = {};
+    const afterGroups: NonNullable<CanvasHistoryEntry["afterGroups"]> = {};
     for (const entry of entries) {
       for (const [id, object] of Object.entries(entry.beforeObjects)) {
         if (!(id in beforeObjects)) beforeObjects[id] = object;
       }
       Object.assign(afterObjects, entry.afterObjects);
+      for (const [id, group] of Object.entries(entry.beforeGroups ?? {})) {
+        if (!(id in beforeGroups)) beforeGroups[id] = group;
+      }
+      Object.assign(afterGroups, entry.afterGroups ?? {});
     }
     const history: CanvasHistoryEntry = {
       commandId: first.commandId,
       actorId: first.actorId,
       beforeObjects,
       afterObjects,
+      beforeGroups,
+      afterGroups,
       beforeOrder: first.beforeOrder,
       afterOrder: last.afterOrder,
     };
@@ -752,9 +945,43 @@ export function ProductCanvas({
               ...shared,
               type: "shape",
               shape: activeTool === "sticky" ? "rectangle" : activeTool,
-              text: activeTool === "sticky" ? "Sticky note" : "New idea",
+              text: "",
             };
-    runCommand("object.create", { object });
+    if (object.type === "shape") {
+      const labelId = crypto.randomUUID();
+      const labelGeometry = {
+        x: object.geometry.x + 12,
+        y: object.geometry.y + 12,
+        width: Math.max(24, object.geometry.width - 24),
+        height: Math.max(24, object.geometry.height - 24),
+        rotation: object.geometry.rotation,
+      };
+      runCommandBatch([
+        { type: "object.create", payload: { object } },
+        {
+          type: "object.create",
+          payload: {
+            object: {
+              ...shared,
+              id: labelId,
+              type: "text",
+              text: activeTool === "sticky" ? "Sticky note" : "New idea",
+              childRole: "shape-label",
+              parentId: object.id,
+              parentRelative: parentRelativeGeometry(labelGeometry, object),
+              childLayout: shapeLabelChildLayout,
+              geometry: labelGeometry,
+              style: {
+                ...baseStyle("text"),
+                textAlign: "center",
+              },
+            },
+          },
+        },
+      ]);
+    } else {
+      runCommand("object.create", { object });
+    }
     setSelectedIds([id]);
     setTool("select");
   }
@@ -786,6 +1013,46 @@ export function ProductCanvas({
   function chooseShape(shape: CanvasShapeTool) {
     setRecentShape(shape);
     chooseTool(shape);
+  }
+
+  function addIcon(iconName: string, point?: Point) {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const width = 112;
+    const height = 112;
+    const center =
+      point ??
+      ({
+        x: (size.width / 2 - viewport.x) / viewport.scale,
+        y: (size.height / 2 - viewport.y) / viewport.scale,
+      } satisfies Point);
+    runCommand("object.create", {
+      object: {
+        schemaVersion: 2,
+        id,
+        canvasId,
+        createdBy: userId,
+        createdAt: now,
+        updatedAt: now,
+        type: "icon",
+        catalog: "phosphor",
+        catalogVersion: "2.1.1",
+        iconName,
+        iconVariant: "fill",
+        parentId: null,
+        parentRelative: null,
+        geometry: {
+          x: Math.round(center.x - width / 2),
+          y: Math.round(center.y - height / 2),
+          width,
+          height,
+          rotation: 0,
+        },
+        style: baseStyle("icon"),
+      },
+    });
+    setSelectedIds([id]);
+    setTool("select");
   }
 
   function addSimulatedAiIdea() {
@@ -848,6 +1115,7 @@ export function ProductCanvas({
     runCommand("object.create", { object });
     setConnectorStart(null);
     setPointerPreview(null);
+    setHoveredShapeId(null);
     setSelectedIds([id]);
     setTool("select");
   }
@@ -859,6 +1127,7 @@ export function ProductCanvas({
     setTool("select");
     const listStyle = object.style.listStyle ?? "none";
     const editableText = formatListText(object.text, listStyle);
+    setInlineEditorMeasuredHeight(null);
     setInlineTextEditor({
       objectId: object.id,
       objectType: object.type,
@@ -867,6 +1136,28 @@ export function ProductCanvas({
       listStyle,
       initialListStyle: listStyle,
     });
+  }
+
+  function startObjectTextEditing(
+    object: Extract<CanvasObjectV2, { type: "shape" | "text" }>,
+  ) {
+    if (object.type === "text") {
+      startInlineEditing(object);
+      return;
+    }
+    const label = objects.find(
+      (candidate) =>
+        candidate.type === "text" &&
+        candidate.parentId === object.id &&
+        candidate.childRole === "shape-label",
+    );
+    if (label?.type === "text") {
+      startInlineEditing(label);
+    } else if (object.text.length > 0) {
+      // Preserve inline access to an unmigrated legacy shape label, but honor
+      // deliberate deletion of a first-class label child on modern shapes.
+      startInlineEditing(object);
+    }
   }
 
   function finishInlineEditing(commit: boolean) {
@@ -903,6 +1194,7 @@ export function ProductCanvas({
       if (commands.length) runCommandBatch(commands);
     }
     setInlineTextEditor(null);
+    setInlineEditorMeasuredHeight(null);
     requestAnimationFrame(() => containerRef.current?.focus());
   }
 
@@ -931,6 +1223,7 @@ export function ProductCanvas({
       outline?: string;
       outlineWidth?: number;
       outlinePattern?: OutlinePattern;
+      opacity?: number;
     },
   ) {
     if (!targets.length) return;
@@ -980,7 +1273,11 @@ export function ProductCanvas({
   ) {
     if (endpoint.kind === "attached") {
       const target = connectorLayoutObjectsById.get(endpoint.objectId);
-      if (target?.type === "shape")
+      if (
+        target?.type === "shape" ||
+        target?.type === "icon" ||
+        target?.type === "text"
+      )
         return connectionHandlePoint(target, endpoint.anchor);
     }
     return fallback;
@@ -1001,7 +1298,13 @@ export function ProductCanvas({
     const snapDistance = 24 / viewport.scale;
     let nearest: { endpoint: ConnectorEndpoint; distance: number } | undefined;
     for (const object of objects) {
-      if (object.type !== "shape" || object.id === excludedObjectId) continue;
+      if (
+        (object.type !== "shape" &&
+          object.type !== "icon" &&
+          object.type !== "text") ||
+        object.id === excludedObjectId
+      )
+        continue;
       for (const anchor of anchors) {
         const handle = connectionHandlePoint(object, anchor);
         const distance = Math.hypot(handle.x - point.x, handle.y - point.y);
@@ -1021,7 +1324,7 @@ export function ProductCanvas({
 
   function beginConnectorDrag(
     event: Konva.KonvaEventObject<DragEvent>,
-    object: Extract<CanvasObjectV2, { type: "shape" }>,
+    object: Extract<CanvasObjectV2, { type: "shape" | "icon" | "text" }>,
     anchor: CanvasAnchor,
   ) {
     event.cancelBubble = true;
@@ -1083,21 +1386,100 @@ export function ProductCanvas({
   ) {
     event.cancelBubble = true;
     if (tool === "eraser") return;
-    if (event.evt instanceof MouseEvent && event.evt.ctrlKey) {
+    if (
+      tool !== "select" &&
+      tool !== "pan" &&
+      tool !== "pen" &&
+      tool !== "highlighter" &&
+      tool !== "connector"
+    ) {
+      const point = eventWorldPointer(event);
+      if (point) createObject(tool, point);
+      return;
+    }
+    if (event.evt instanceof MouseEvent && isControlClickGesture(event.evt)) {
       openObjectContextMenu(event, object);
       return;
     }
     if (tool === "connector" && object.type !== "connector") {
       const point = eventWorldPointer(event);
+      const connectorTarget =
+        object.type === "text" &&
+        object.childRole === "shape-label" &&
+        object.parentId
+          ? (objectsById.get(object.parentId) ?? object)
+          : object;
       finishConnector({
         kind: "attached",
-        objectId: object.id,
-        anchor: point ? nearestExteriorAnchor(object, point) : "right",
+        objectId: connectorTarget.id,
+        anchor: point ? nearestExteriorAnchor(connectorTarget, point) : "right",
       });
       return;
     }
     if (tool === "select") {
-      const modifier = event.evt.shiftKey || event.evt.metaKey;
+      const modifier =
+        event.evt.shiftKey ||
+        hasContainmentModifier(event.evt, navigator.platform);
+      if (isObjectParent(object) && !modifier && selectedId === object.id) {
+        const point = eventWorldPointer(event);
+        const nestedChild = point
+          ? [...displayObjects]
+              .reverse()
+              .find(
+                (candidate) =>
+                  isContainableObject(candidate) &&
+                  (candidate.parentId === object.id ||
+                    (candidate.groupId &&
+                      groupsById.get(candidate.groupId)?.parentId ===
+                        object.id)) &&
+                  geometryContainsPoint(candidate.geometry, point.x, point.y),
+              )
+          : undefined;
+        if (nestedChild) {
+          if (nestedChildSelectionTimerRef.current !== null) {
+            window.clearTimeout(nestedChildSelectionTimerRef.current);
+          }
+          nestedChildSelectionTimerRef.current = window.setTimeout(() => {
+            nestedChildSelectionTimerRef.current = null;
+            updateSelectionForObject(nestedChild, false);
+          }, 220);
+          return;
+        }
+      }
+      if (
+        object.type === "text" &&
+        object.childRole === "shape-label" &&
+        object.parentId
+      ) {
+        const parent = objectsById.get(object.parentId);
+        if (
+          parent &&
+          (modifier ||
+            (!selectedIds.includes(object.id) &&
+              !selectedIds.includes(parent.id)))
+        ) {
+          updateSelectionForObject(parent, modifier);
+          return;
+        }
+      }
+      if (
+        isContainableObject(object) &&
+        (object.parentId ||
+          (object.groupId && groupsById.get(object.groupId)?.parentId)) &&
+        !modifier &&
+        !selectedIds.includes(object.id)
+      ) {
+        const parentId =
+          object.parentId ??
+          (object.groupId
+            ? groupsById.get(object.groupId)?.parentId
+            : undefined);
+        const parent = parentId ? objectsById.get(parentId) : undefined;
+        if (parent && !selectedIds.includes(parent.id)) {
+          updateSelectionForObject(parent, false);
+          return;
+        }
+      }
       updateSelectionForObject(object, modifier);
     }
   }
@@ -1157,7 +1539,7 @@ export function ProductCanvas({
       x: (clientX - bounds.left - viewport.x) / viewport.scale,
       y: (clientY - bounds.top - viewport.y) / viewport.scale,
     };
-    return [...objects].reverse().find((candidate) => {
+    return [...orderedObjects].reverse().find((candidate) => {
       const objectBox = objectBounds(candidate);
       const padding = candidate.type === "connector" ? 12 : 0;
       return (
@@ -1170,6 +1552,10 @@ export function ProductCanvas({
   }
 
   function updateSelectionForObject(object: CanvasObjectV2, modifier: boolean) {
+    if (nestedChildSelectionTimerRef.current !== null) {
+      window.clearTimeout(nestedChildSelectionTimerRef.current);
+      nestedChildSelectionTimerRef.current = null;
+    }
     setContextPanel(null);
     setObjectContextMenu(null);
     if (object.type === "connector") setHoveredShapeId(null);
@@ -1187,14 +1573,158 @@ export function ProductCanvas({
     });
   }
 
-  function moveSelectionFromDrag(object: CanvasObjectV2, x: number, y: number) {
+  function supportsIndependentContainment(targets: CanvasObjectV2[]) {
+    if (
+      targets.length === 0 ||
+      targets.some(
+        (target) => !isContainableObject(target) || target.groupId != null,
+      )
+    ) {
+      return false;
+    }
+    const targetIds = new Set(targets.map((target) => target.id));
+    const containerIds = new Set(
+      targets.map((target) =>
+        isContainableObject(target) ? (target.parentId ?? null) : null,
+      ),
+    );
+    return (
+      containerIds.size === 1 &&
+      !targets.some(
+        (target) =>
+          isContainableObject(target) &&
+          target.parentId != null &&
+          targetIds.has(target.parentId),
+      )
+    );
+  }
+
+  function independentContainmentTarget(
+    targets: CanvasObjectV2[],
+    dx: number,
+    dy: number,
+  ) {
+    if (!supportsIndependentContainment(targets)) return null;
+    const bounds = selectionBoundsForObjects(targets);
+    if (!bounds) return null;
+    const targetIds = new Set(targets.map((target) => target.id));
+    const nextFrame = {
+      ...bounds,
+      x: bounds.x + dx,
+      y: bounds.y + dy,
+      rotation: 0,
+    };
+    return (
+      [...objects]
+        .reverse()
+        .find(
+          (candidate) =>
+            isObjectParent(candidate) &&
+            !targetIds.has(candidate.id) &&
+            fullyContains(candidate, nextFrame),
+        ) ?? null
+    );
+  }
+
+  function moveSelectionFromDrag(
+    object: CanvasObjectV2,
+    x: number,
+    y: number,
+    containmentIntent = false,
+  ) {
     const dx = x - object.geometry.x;
     const dy = y - object.geometry.y;
+    if (selectedGroup) {
+      const nextGeometry = {
+        ...selectedGroup.geometry,
+        x: selectedGroup.geometry.x + dx,
+        y: selectedGroup.geometry.y + dy,
+      };
+      const nextParent = [...objects]
+        .reverse()
+        .find(
+          (candidate) =>
+            isObjectParent(candidate) &&
+            !selectedIds.includes(candidate.id) &&
+            fullyContains(candidate, nextGeometry),
+        );
+      const commands: CommandDefinition[] = [];
+      if (
+        containmentIntent &&
+        selectedGroup.parentId &&
+        nextParent?.id !== selectedGroup.parentId
+      ) {
+        commands.push({
+          type: "group.detach",
+          payload: { groupId: selectedGroup.id },
+        });
+      }
+      commands.push({
+        type: "group.transform",
+        payload: {
+          groupId: selectedGroup.id,
+          x: nextGeometry.x,
+          y: nextGeometry.y,
+          width: selectedGroup.geometry.width,
+          height: selectedGroup.geometry.height,
+        },
+      });
+      if (
+        containmentIntent &&
+        nextParent &&
+        nextParent.id !== selectedGroup.parentId
+      ) {
+        commands.push({
+          type: "group.nest",
+          payload: { groupId: selectedGroup.id, parentId: nextParent.id },
+        });
+      }
+      runCommandBatch(commands);
+      setContainmentPreviewParentId(null);
+      return;
+    }
     const commands: CommandDefinition[] = [];
+    const selectedIdSet = new Set(selectedIds);
+    const independentContainment =
+      containmentIntent && supportsIndependentContainment(selectedObjects);
+    const nextParent = independentContainment
+      ? independentContainmentTarget(selectedObjects, dx, dy)
+      : null;
     for (const selected of referenceSafeSelectionOrder(selectedObjects)) {
+      if (
+        isContainableObject(selected) &&
+        selected.parentId &&
+        selectedIdSet.has(selected.parentId)
+      )
+        continue;
       if (selected.type === "connector")
         commands.push(...moveConnectorCommands(selected, dx, dy, true));
-      else
+      else if (isContainableObject(selected) && independentContainment) {
+        const geometry = {
+          ...selected.geometry,
+          x: selected.geometry.x + dx,
+          y: selected.geometry.y + dy,
+        };
+        const currentParent = selected.parentId
+          ? objectsById.get(selected.parentId)
+          : null;
+        if (selected.parentId && nextParent?.id !== selected.parentId) {
+          commands.push({
+            type: "object.detach",
+            payload: { objectId: selected.id },
+          });
+        }
+        commands.push({
+          type: "object.move",
+          payload: { objectId: selected.id, x: geometry.x, y: geometry.y },
+        });
+        if (nextParent && nextParent.id !== currentParent?.id) {
+          commands.push({
+            type: "object.nest",
+            payload: { objectId: selected.id, parentId: nextParent.id },
+          });
+        }
+      } else
         commands.push({
           type: "object.move",
           payload: {
@@ -1205,12 +1735,14 @@ export function ProductCanvas({
         });
     }
     runCommandBatch(commands);
+    setContainmentPreviewParentId(null);
   }
 
   function previewSelectionFromDrag(
     object: CanvasObjectV2,
     x: number,
     y: number,
+    containmentIntent = false,
   ) {
     const durableObject = objectsById.get(object.id) ?? object;
     const dx = x - durableObject.geometry.x;
@@ -1220,19 +1752,72 @@ export function ProductCanvas({
       : object.groupId
         ? objects.filter((candidate) => candidate.groupId === object.groupId)
         : [durableObject];
+    if (containmentIntent && selectedGroup) {
+      const nextFrame = {
+        ...selectedGroup.geometry,
+        x: selectedGroup.geometry.x + dx,
+        y: selectedGroup.geometry.y + dy,
+      };
+      const parent = [...objects]
+        .reverse()
+        .find(
+          (candidate) =>
+            isObjectParent(candidate) &&
+            !selectedIds.includes(candidate.id) &&
+            fullyContains(candidate, nextFrame),
+        );
+      setContainmentPreviewParentId(parent?.id ?? null);
+    } else if (containmentIntent) {
+      const parent = independentContainmentTarget(selectedTargets, dx, dy);
+      setContainmentPreviewParentId(parent?.id ?? null);
+    } else {
+      setContainmentPreviewParentId(null);
+    }
     const movingTargetIds = new Set(
       selectedTargets
         .filter((candidate) => candidate.type !== "annotation")
         .map((candidate) => candidate.id),
     );
+    const familyTargets = objects.filter(
+      (candidate) =>
+        isContainableObject(candidate) &&
+        typeof candidate.parentId === "string" &&
+        movingTargetIds.has(candidate.parentId),
+    );
+    for (const child of familyTargets) movingTargetIds.add(child.id);
+    const nestedGroupIds = new Set(
+      groups
+        .filter(
+          (group) =>
+            typeof group.parentId === "string" &&
+            movingTargetIds.has(group.parentId),
+        )
+        .map((group) => group.id),
+    );
+    const nestedGroupMembers = objects.filter(
+      (candidate) =>
+        typeof candidate.groupId === "string" &&
+        nestedGroupIds.has(candidate.groupId),
+    );
+    for (const member of nestedGroupMembers) movingTargetIds.add(member.id);
+    const targetsById = new Map(
+      [...selectedTargets, ...familyTargets, ...nestedGroupMembers].map(
+        (target) => [target.id, target],
+      ),
+    );
+    for (const annotation of objects.filter(
+      (candidate) =>
+        candidate.type === "annotation" &&
+        candidate.attachedObjectId !== null &&
+        movingTargetIds.has(candidate.attachedObjectId),
+    )) {
+      targetsById.set(annotation.id, annotation);
+    }
     const targets = [
       ...selectedTargets,
-      ...objects.filter(
-        (candidate) =>
-          candidate.type === "annotation" &&
-          candidate.attachedObjectId !== null &&
-          movingTargetIds.has(candidate.attachedObjectId) &&
-          !selectedTargets.some((selected) => selected.id === candidate.id),
+      ...[...targetsById.values()].filter(
+        (target) =>
+          !selectedTargets.some((selected) => selected.id === target.id),
       ),
     ];
     setDragPreviewPositions(
@@ -1281,6 +1866,26 @@ export function ProductCanvas({
 
   function deleteSelected() {
     if (!selectedObjects.length) return;
+    const selectedParentIds = new Set(
+      selectedObjects
+        .filter((object) => object.type === "shape")
+        .map((object) => object.id),
+    );
+    const containedCount = objects.filter(
+      (object) =>
+        isContainableObject(object) &&
+        !(object.type === "text" && object.childRole === "shape-label") &&
+        object.parentId &&
+        selectedParentIds.has(object.parentId) &&
+        !selectedIds.includes(object.id),
+    ).length;
+    if (
+      containedCount > 0 &&
+      !window.confirm(
+        `Delete the selected container and ${containedCount} contained object${containedCount === 1 ? "" : "s"}? This can be undone.`,
+      )
+    )
+      return;
     runCommandBatch(
       [...selectedObjects].reverse().map((object) => ({
         type: "object.delete",
@@ -1331,7 +1936,7 @@ export function ProductCanvas({
   }
 
   function groupSelected() {
-    if (selectedIds.length < 2) return;
+    if (!canGroupSelected) return;
     runCommand("selection.group", {
       objectIds: selectedIds,
       groupId: crypto.randomUUID(),
@@ -1354,20 +1959,46 @@ export function ProductCanvas({
     );
   }
 
+  function flipSelected(axis: "horizontal" | "vertical") {
+    const selectedSet = new Set(selectedIds);
+    runCommandBatch(
+      selectedObjects.flatMap((object) =>
+        isContainableObject(object) &&
+        !(object.parentId && selectedSet.has(object.parentId))
+          ? [
+              {
+                type: "object.flip",
+                payload: { objectId: object.id, axis },
+              },
+            ]
+          : [],
+      ),
+    );
+  }
+
   function reorderSelected(
     direction: "front" | "forward" | "backward" | "back",
   ) {
+    const seenGroups = new Set<string>();
     runCommandBatch(
-      selectedIds.map((objectId) => ({
-        type: "object.reorder",
-        payload: { objectId, direction },
-      })),
+      selectedObjects.flatMap((object) => {
+        if (object.groupId) {
+          if (seenGroups.has(object.groupId)) return [];
+          seenGroups.add(object.groupId);
+        }
+        return [
+          {
+            type: "object.reorder",
+            payload: { objectId: object.id, direction },
+          },
+        ];
+      }),
     );
   }
 
   function duplicatedSelection(offset = 32) {
     if (!selectedIds.length) return [];
-    const payload = createCanvasClipboardPayload(objects, selectedIds);
+    const payload = createCanvasClipboardPayload(objects, selectedIds, groups);
     return remapCanvasClipboard(payload, {
       canvasId,
       actorId: userId,
@@ -1386,7 +2017,7 @@ export function ProductCanvas({
   async function copySelected() {
     if (!selectedIds.length) return "";
     const value = serializeCanvasClipboard(
-      createCanvasClipboardPayload(objects, selectedIds),
+      createCanvasClipboardPayload(objects, selectedIds, groups),
     );
     setClipboardText(value);
     try {
@@ -1639,7 +2270,33 @@ export function ProductCanvas({
         additive: event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey,
       });
     } else if (tool === "connector") {
-      finishConnector({ kind: "free", ...point });
+      const hitObject = [...objects].reverse().find((candidate) => {
+        const bounds = objectBounds(candidate);
+        return (
+          point.x >= bounds.x &&
+          point.x <= bounds.x + bounds.width &&
+          point.y >= bounds.y &&
+          point.y <= bounds.y + bounds.height
+        );
+      });
+      const target =
+        hitObject?.type === "text" &&
+        hitObject.childRole === "shape-label" &&
+        hitObject.parentId
+          ? objectsById.get(hitObject.parentId)
+          : hitObject;
+      finishConnector(
+        target &&
+          (target.type === "shape" ||
+            target.type === "icon" ||
+            target.type === "text")
+          ? {
+              kind: "attached",
+              objectId: target.id,
+              anchor: nearestExteriorAnchor(target, point),
+            }
+          : { kind: "free", ...point },
+      );
     } else if (
       tool !== "pan" &&
       tool !== "pen" &&
@@ -1650,23 +2307,52 @@ export function ProductCanvas({
     }
   }
 
+  function updateConnectorHoverTarget(point: Point) {
+    const hovered = [...displayObjects].reverse().find((candidate) => {
+      if (
+        candidate.type !== "shape" &&
+        candidate.type !== "icon" &&
+        candidate.type !== "text"
+      ) {
+        return false;
+      }
+      return pointWithinObjectHoverZone(
+        candidate,
+        point,
+        connectionAnchorHoverDistancePx / viewport.scale,
+      );
+    });
+    const hoverTarget =
+      hovered?.type === "text" &&
+      hovered.childRole === "shape-label" &&
+      hovered.parentId
+        ? objectsById.get(hovered.parentId)
+        : hovered;
+    setHoveredShapeId(hoverTarget?.id ?? null);
+  }
+
   function onStagePointerMove() {
     const point = worldPointer();
     if (connectorStart) setPointerPreview(point);
     if (point) {
-      setHoveredShapeId((current) => {
-        if (!current) return null;
-        const hovered = objectsById.get(current);
-        return hovered &&
-          hovered.type === "shape" &&
-          pointWithinObjectHoverZone(
-            hovered,
-            point,
-            connectionAnchorHoverDistancePx / viewport.scale,
-          )
-          ? current
-          : null;
-      });
+      if (connectorStart) updateConnectorHoverTarget(point);
+      else {
+        setHoveredShapeId((current) => {
+          if (!current) return null;
+          const hovered = objectsById.get(current);
+          return hovered &&
+            (hovered.type === "shape" ||
+              hovered.type === "icon" ||
+              hovered.type === "text") &&
+            pointWithinObjectHoverZone(
+              hovered,
+              point,
+              connectionAnchorHoverDistancePx / viewport.scale,
+            )
+            ? current
+            : null;
+        });
+      }
     }
     if (!marquee) return;
     if (point)
@@ -1821,6 +2507,12 @@ export function ProductCanvas({
 
   function onSurfacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (
+      event.isPrimary &&
+      (event.pointerType !== "mouse" || event.button === 0)
+    ) {
+      setDismissDockPaletteSignal((current) => current + 1);
+    }
+    if (
       (tool === "pen" || tool === "highlighter" || tool === "eraser") &&
       event.pointerType === "touch"
     ) {
@@ -1869,7 +2561,6 @@ export function ProductCanvas({
     const points = pointerWorldPoints(event);
     const firstPoint = points[0];
     if (!firstPoint) return;
-    setDismissDockPaletteSignal((current) => current + 1);
     if (tool === "eraser") {
       const active: ActiveEraserGesture = {
         pointerId: event.pointerId,
@@ -2052,20 +2743,7 @@ export function ProductCanvas({
     };
   }
 
-  function previewSelectionProxy(node: Konva.Rect) {
-    if (!selectedFrame) return;
-    const target = selectionProxyTarget(node);
-    if (!target) return;
-    setSelectionTransformPreviewObjects(
-      Object.fromEntries(
-        transformSelectionObjects(selectedObjects, selectedFrame, target).map(
-          (object) => [object.id, object],
-        ),
-      ),
-    );
-  }
-
-  function finishSelectionProxy(node: Konva.Rect) {
+  function previewSelectionProxy(node: Konva.Rect, containmentIntent = false) {
     if (!selectedFrame) return;
     const target = selectionProxyTarget(node);
     if (!target) return;
@@ -2074,8 +2752,93 @@ export function ProductCanvas({
       selectedFrame,
       target,
     );
+    if (containmentIntent && selectedGroup) {
+      const parent = [...objects].reverse().find(
+        (candidate) =>
+          isObjectParent(candidate) &&
+          !selectedIds.includes(candidate.id) &&
+          fullyContains(candidate, {
+            ...selectedGroup.geometry,
+            ...target,
+          }),
+      );
+      setContainmentPreviewParentId(parent?.id ?? null);
+    } else if (containmentIntent) {
+      const parent = independentContainmentTarget(transformed, 0, 0);
+      setContainmentPreviewParentId(parent?.id ?? null);
+    } else {
+      setContainmentPreviewParentId(null);
+    }
+    setSelectionTransformPreviewObjects(
+      Object.fromEntries(transformed.map((object) => [object.id, object])),
+    );
+  }
+
+  function finishSelectionProxy(node: Konva.Rect, containmentIntent = false) {
+    if (!selectedFrame) return;
+    const target = selectionProxyTarget(node);
+    if (!target) return;
+    if (selectedGroup) {
+      node.position({ x: target.x, y: target.y });
+      node.scale({ x: 1, y: 1 });
+      setSelectionTransformPreviewObjects({});
+      const nextParent = [...objects].reverse().find(
+        (candidate) =>
+          isObjectParent(candidate) &&
+          !selectedIds.includes(candidate.id) &&
+          fullyContains(candidate, {
+            ...selectedGroup.geometry,
+            ...target,
+          }),
+      );
+      const commands: CommandDefinition[] = [];
+      if (
+        containmentIntent &&
+        selectedGroup.parentId &&
+        nextParent?.id !== selectedGroup.parentId
+      ) {
+        commands.push({
+          type: "group.detach",
+          payload: { groupId: selectedGroup.id },
+        });
+      }
+      commands.push({
+        type: "group.transform",
+        payload: { groupId: selectedGroup.id, ...target },
+      });
+      if (
+        containmentIntent &&
+        nextParent &&
+        nextParent.id !== selectedGroup.parentId
+      ) {
+        commands.push({
+          type: "group.nest",
+          payload: { groupId: selectedGroup.id, parentId: nextParent.id },
+        });
+      }
+      runCommandBatch(commands);
+      setContainmentPreviewParentId(null);
+      return;
+    }
+    const transformed = transformSelectionObjects(
+      selectedObjects,
+      selectedFrame,
+      target,
+    );
+    const transformedIds = new Set(transformed.map((object) => object.id));
     const commands: CommandDefinition[] = [];
+    const nextParent = containmentIntent
+      ? independentContainmentTarget(transformed, 0, 0)
+      : null;
+    const independentContainment =
+      containmentIntent && supportsIndependentContainment(transformed);
     for (const object of referenceSafeSelectionOrder(transformed)) {
+      if (
+        isContainableObject(object) &&
+        object.parentId &&
+        transformedIds.has(object.parentId)
+      )
+        continue;
       if (object.type === "connector") {
         const original = objectsById.get(object.id);
         if (original?.type !== "connector") continue;
@@ -2097,6 +2860,19 @@ export function ProductCanvas({
         }
         continue;
       }
+      const original = objectsById.get(object.id);
+      if (
+        independentContainment &&
+        original &&
+        isContainableObject(original) &&
+        original.parentId &&
+        nextParent?.id !== original.parentId
+      ) {
+        commands.push({
+          type: "object.detach",
+          payload: { objectId: object.id },
+        });
+      }
       commands.push(
         {
           type: "object.move",
@@ -2115,15 +2891,40 @@ export function ProductCanvas({
           },
         },
       );
+      if (
+        independentContainment &&
+        nextParent &&
+        original &&
+        isContainableObject(original) &&
+        nextParent.id !== original.parentId
+      ) {
+        commands.push({
+          type: "object.nest",
+          payload: { objectId: object.id, parentId: nextParent.id },
+        });
+      }
     }
     node.position({ x: target.x, y: target.y });
     node.scale({ x: 1, y: 1 });
     setSelectionTransformPreviewObjects({});
     if (commands.length) runCommandBatch(commands);
+    setContainmentPreviewParentId(null);
   }
 
   function objectBounds(object: CanvasObjectV2) {
-    if (object.type !== "connector") return object.geometry;
+    if (object.type !== "connector") {
+      const corners = geometryCorners(object.geometry);
+      const xs = corners.map((corner) => corner.x);
+      const ys = corners.map((corner) => corner.y);
+      const x = Math.min(...xs);
+      const y = Math.min(...ys);
+      return {
+        x,
+        y,
+        width: Math.max(1, Math.max(...xs) - x),
+        height: Math.max(1, Math.max(...ys) - y),
+      };
+    }
     const points = resolveConnectorPointsV2(object, objectsById);
     const xs = [points[0]!, points[2]!];
     const ys = [points[1]!, points[3]!];
@@ -2143,7 +2944,7 @@ export function ProductCanvas({
     const y = Math.min(marquee.start.y, marquee.current.y);
     const width = Math.abs(marquee.current.x - marquee.start.x);
     const height = Math.abs(marquee.current.y - marquee.start.y);
-    const directMatches =
+    const rawDirectMatches =
       width < 3 && height < 3
         ? []
         : objects
@@ -2157,6 +2958,15 @@ export function ProductCanvas({
               );
             })
             .map((object) => object.id);
+    const directMatches = rawDirectMatches.filter((id) => {
+      const object = objectsById.get(id);
+      return !(
+        object?.type === "text" &&
+        object.childRole === "shape-label" &&
+        object.parentId &&
+        rawDirectMatches.includes(object.parentId)
+      );
+    });
     const matchedGroupIds = new Set(
       directMatches.flatMap((id) => {
         const groupId = objectsById.get(id)?.groupId;
@@ -2214,7 +3024,13 @@ export function ProductCanvas({
     }
     if (accelerator && event.key.toLowerCase() === "a") {
       event.preventDefault();
-      setSelectedIds(objects.map((object) => object.id));
+      setSelectedIds(
+        objects.flatMap((object) =>
+          object.type === "text" && object.childRole === "shape-label"
+            ? []
+            : [object.id],
+        ),
+      );
       return;
     }
     if (accelerator && event.key.toLowerCase() === "c") {
@@ -2273,8 +3089,14 @@ export function ProductCanvas({
             type: "object.resize",
             payload: {
               objectId: object.id,
-              width: Math.max(24, object.geometry.width + dx),
-              height: Math.max(24, object.geometry.height + dy),
+              width: Math.max(
+                object.type === "icon" ? 8 : 24,
+                object.geometry.width + dx,
+              ),
+              height: Math.max(
+                object.type === "icon" ? 8 : 24,
+                object.geometry.height + dy,
+              ),
             },
           });
         } else if (object.type === "connector")
@@ -2372,25 +3194,84 @@ export function ProductCanvas({
         />
       );
     }
-    if (object.shape === "diamond") {
+    const points = basicShapePoints(
+      object.shape,
+      object.geometry.width,
+      object.geometry.height,
+    );
+    if (points) {
+      return <Line points={points} closed {...common} />;
+    }
+    const path = basicShapePath(
+      object.shape,
+      object.geometry.width,
+      object.geometry.height,
+    );
+    if (path) return <Path data={path} {...common} />;
+    if (object.shape === "cylinder") {
+      const capHeight = Math.min(24, object.geometry.height * 0.22);
       return (
-        <Line
-          points={[
-            object.geometry.width / 2,
-            0,
-            object.geometry.width,
-            object.geometry.height / 2,
-            object.geometry.width / 2,
-            object.geometry.height,
-            0,
-            object.geometry.height / 2,
-          ]}
-          closed
-          {...common}
-        />
+        <Group>
+          <Rect
+            {...common}
+            y={capHeight / 2}
+            height={Math.max(0, object.geometry.height - capHeight)}
+          />
+          <Ellipse
+            {...common}
+            x={object.geometry.width / 2}
+            y={capHeight / 2}
+            radiusX={object.geometry.width / 2}
+            radiusY={capHeight / 2}
+          />
+          <Ellipse
+            x={object.geometry.width / 2}
+            y={object.geometry.height - capHeight / 2}
+            radiusX={object.geometry.width / 2}
+            radiusY={capHeight / 2}
+            fill="transparent"
+            stroke={object.style.outline}
+            strokeWidth={object.style.outlineWidth}
+            dash={common.dash}
+          />
+        </Group>
       );
     }
-    return <Rect {...common} cornerRadius={12} />;
+    return (
+      <Rect
+        {...common}
+        cornerRadius={object.shape === "rounded-rectangle" ? 24 : 0}
+      />
+    );
+  }
+
+  function iconNode(object: Extract<CanvasObjectV2, { type: "icon" }>) {
+    const scene = iconCatalog
+      ? iconVectorScene(iconCatalog, object.iconName)
+      : null;
+    if (!scene) return null;
+    const scaleX = object.geometry.width / scene.viewBox;
+    const scaleY = object.geometry.height / scene.viewBox;
+    const strokeScale = Math.max(scaleX, scaleY, Number.EPSILON);
+    return (
+      <Group opacity={object.style.opacity ?? 1}>
+        {scene.paths.map((data, index) => (
+          <Path
+            key={`${object.iconName}-${index}`}
+            data={data}
+            scaleX={scaleX}
+            scaleY={scaleY}
+            fill={object.style.fill ?? "transparent"}
+            stroke={object.style.outline}
+            strokeWidth={object.style.outlineWidth / strokeScale}
+            dash={konvaStrokeDash(
+              object.style.outlinePattern,
+              object.style.outlineWidth / strokeScale,
+            )}
+          />
+        ))}
+      </Group>
+    );
   }
 
   function updateLiveResizeTextLayout(
@@ -2444,18 +3325,89 @@ export function ProductCanvas({
     object: CanvasObjectV2,
   ) {
     const node = event.target;
+    if (
+      "shiftKey" in event.evt &&
+      event.evt.shiftKey &&
+      Math.abs(node.rotation() - object.geometry.rotation) > 0.01
+    ) {
+      node.rotation(Math.round(node.rotation() / 15) * 15);
+    }
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
-    const geometry = previewGeometryDuringTransform(object.geometry, {
-      x: node.x(),
-      y: node.y(),
-      scaleX,
-      scaleY,
-    });
+    const geometry = previewGeometryDuringTransform(
+      object.geometry,
+      {
+        x: node.x(),
+        y: node.y(),
+        scaleX,
+        scaleY,
+      },
+      object.type === "icon" ? 8 : 24,
+    );
+    geometry.rotation = node.rotation();
     setResizePreviewGeometries((current) => ({
       ...current,
       [object.id]: geometry,
     }));
+    if (isObjectParent(object)) {
+      const nextParent = { ...object, geometry };
+      const preserveChildren =
+        "metaKey" in event.evt &&
+        "ctrlKey" in event.evt &&
+        hasContainmentModifier(
+          {
+            metaKey: event.evt.metaKey === true,
+            ctrlKey: event.evt.ctrlKey === true,
+          },
+          navigator.platform,
+        );
+      const previews: Record<string, CanvasObjectV2> = {};
+      for (const child of objects) {
+        if (!isContainableObject(child) || child.parentId !== object.id)
+          continue;
+        const relative = preserveChildren
+          ? parentRelativeGeometry(child.geometry, nextParent)
+          : childRelativeAfterParentResize(child, object, nextParent);
+        previews[child.id] = {
+          ...child,
+          geometry: childWorldGeometry(
+            { ...child, parentRelative: relative },
+            nextParent,
+          ),
+        };
+      }
+      for (const group of groups.filter(
+        (candidate) => candidate.parentId === object.id,
+      )) {
+        const relative = preserveChildren
+          ? parentRelativeGeometry(group.geometry, nextParent)
+          : childRelativeAfterParentResize(group, object, nextParent);
+        const nextGroupGeometry = childWorldGeometry(
+          { ...group, parentRelative: relative },
+          nextParent,
+        );
+        const members = objects.filter(
+          (candidate) => candidate.groupId === group.id,
+        );
+        const rotatedMembers = rotateSelectionObjects(
+          members,
+          group.geometry,
+          nextGroupGeometry.rotation,
+        );
+        const rotatedFrame = rotateGeometryAroundCenter(
+          group.geometry,
+          nextGroupGeometry.rotation,
+        );
+        for (const member of transformSelectionObjects(
+          rotatedMembers,
+          rotatedFrame,
+          nextGroupGeometry,
+        )) {
+          previews[member.id] = member;
+        }
+      }
+      setSelectionTransformPreviewObjects(previews);
+    }
     updateLiveResizeTextLayout(
       node,
       object,
@@ -2473,12 +3425,17 @@ export function ProductCanvas({
     const node = event.target;
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
-    const geometry = previewGeometryDuringTransform(object.geometry, {
-      x: node.x(),
-      y: node.y(),
-      scaleX,
-      scaleY,
-    });
+    const geometry = previewGeometryDuringTransform(
+      object.geometry,
+      {
+        x: node.x(),
+        y: node.y(),
+        scaleX,
+        scaleY,
+      },
+      object.type === "icon" ? 8 : 24,
+    );
+    geometry.rotation = node.rotation();
     node.scaleX(1);
     node.scaleY(1);
     updateLiveResizeTextLayout(
@@ -2489,25 +3446,175 @@ export function ProductCanvas({
       1,
       1,
     );
-    runCommandBatch([
-      {
-        type: "object.move",
-        payload: { objectId: object.id, x: geometry.x, y: geometry.y },
-      },
-      {
-        type: "object.resize",
-        payload: {
-          objectId: object.id,
-          width: geometry.width,
-          height: geometry.height,
+    if (isContainableObject(object)) {
+      runCommand("object.transform", {
+        objectId: object.id,
+        ...geometry,
+        preserveChildren:
+          isObjectParent(object) &&
+          "metaKey" in event.evt &&
+          "ctrlKey" in event.evt &&
+          hasContainmentModifier(
+            {
+              metaKey: event.evt.metaKey === true,
+              ctrlKey: event.evt.ctrlKey === true,
+            },
+            navigator.platform,
+          ),
+      });
+    } else {
+      runCommandBatch([
+        {
+          type: "object.move",
+          payload: { objectId: object.id, x: geometry.x, y: geometry.y },
         },
-      },
-    ]);
+        {
+          type: "object.resize",
+          payload: {
+            objectId: object.id,
+            width: geometry.width,
+            height: geometry.height,
+          },
+        },
+      ]);
+    }
     setResizePreviewGeometries((current) => {
       const next = { ...current };
       delete next[object.id];
       return next;
     });
+    setSelectionTransformPreviewObjects({});
+  }
+
+  function beginCornerRotation(event: React.PointerEvent<HTMLButtonElement>) {
+    if (
+      (!selectedObject || !isContainableObject(selectedObject)) &&
+      !selectedGroup
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const object = selectedObject;
+    const rotationGeometry = selectedGroup?.geometry ?? object!.geometry;
+    const radians = (rotationGeometry.rotation * Math.PI) / 180;
+    const center = {
+      x:
+        rotationGeometry.x +
+        (rotationGeometry.width / 2) * Math.cos(radians) -
+        (rotationGeometry.height / 2) * Math.sin(radians),
+      y:
+        rotationGeometry.y +
+        (rotationGeometry.width / 2) * Math.sin(radians) +
+        (rotationGeometry.height / 2) * Math.cos(radians),
+    };
+    const pointerAngle = (clientX: number, clientY: number) => {
+      const world = {
+        x: (clientX - bounds.left - viewport.x) / viewport.scale,
+        y: (clientY - bounds.top - viewport.y) / viewport.scale,
+      };
+      return Math.atan2(world.y - center.y, world.x - center.x);
+    };
+    const startPointerAngle = pointerAngle(event.clientX, event.clientY);
+    const startRotation = rotationGeometry.rotation;
+    let nextRotation = startRotation;
+    function move(pointerEvent: PointerEvent) {
+      const delta =
+        ((pointerAngle(pointerEvent.clientX, pointerEvent.clientY) -
+          startPointerAngle) *
+          180) /
+        Math.PI;
+      nextRotation = startRotation + delta;
+      if (pointerEvent.shiftKey) {
+        nextRotation = Math.round(nextRotation / 15) * 15;
+      }
+      if (selectedGroup) {
+        setSelectionTransformPreviewObjects(
+          Object.fromEntries(
+            rotateSelectionObjects(
+              selectedObjects,
+              selectedGroup.geometry,
+              nextRotation,
+            ).map((member) => [member.id, member]),
+          ),
+        );
+        return;
+      }
+      const nextGeometry = rotateGeometryAroundCenter(
+        object!.geometry,
+        nextRotation,
+      );
+      const nextObject = { ...object!, geometry: nextGeometry };
+      const previews: Record<string, CanvasObjectV2> = {
+        [object!.id]: nextObject,
+      };
+      if (isObjectParent(object!)) {
+        const nextParent = {
+          ...object!,
+          geometry: nextGeometry,
+        };
+        for (const child of objects) {
+          if (!isContainableObject(child) || child.parentId !== object!.id)
+            continue;
+          previews[child.id] = {
+            ...child,
+            geometry: childWorldGeometry(child, nextParent),
+          };
+        }
+        for (const group of groups.filter(
+          (candidate) => candidate.parentId === object!.id,
+        )) {
+          const nextGroupGeometry = childWorldGeometry(group, nextParent);
+          const members = objects.filter(
+            (candidate) => candidate.groupId === group.id,
+          );
+          const rotatedMembers = rotateSelectionObjects(
+            members,
+            group.geometry,
+            nextGroupGeometry.rotation,
+          );
+          const rotatedFrame = rotateGeometryAroundCenter(
+            group.geometry,
+            nextGroupGeometry.rotation,
+          );
+          for (const member of transformSelectionObjects(
+            rotatedMembers,
+            rotatedFrame,
+            nextGroupGeometry,
+          )) {
+            previews[member.id] = member;
+          }
+        }
+      }
+      setSelectionTransformPreviewObjects(previews);
+    }
+    function finish() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+      setSelectionTransformPreviewObjects({});
+      if (selectedGroup) {
+        runCommand("group.rotate", {
+          groupId: selectedGroup.id,
+          rotation: nextRotation,
+        });
+      } else {
+        runCommand("object.rotate", {
+          objectId: object!.id,
+          rotation: nextRotation,
+        });
+      }
+    }
+    function cancel() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+      setSelectionTransformPreviewObjects({});
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
   }
 
   function renderTable(object: Extract<CanvasObjectV2, { type: "table" }>) {
@@ -2604,6 +3711,7 @@ export function ProductCanvas({
               objectsById.get(object.id) ?? object,
               event.target.x(),
               event.target.y(),
+              hasContainmentModifier(event.evt, navigator.platform),
             )
           }
           onDragEnd={(event) => {
@@ -2613,6 +3721,7 @@ export function ProductCanvas({
               durableObject,
               event.target.x(),
               event.target.y(),
+              hasContainmentModifier(event.evt, navigator.platform),
             );
           }}
           onTransform={(event) => previewSingleObjectTransform(event, object)}
@@ -2699,6 +3808,29 @@ export function ProductCanvas({
       );
     }
     if (object.type === "document") return null;
+    const groupParentId = object.groupId
+      ? groupsById.get(object.groupId)?.parentId
+      : null;
+    const nestedParentId =
+      isContainableObject(object) && object.parentId
+        ? object.parentId
+        : groupParentId;
+    const nestedChildInteractive =
+      !isContainableObject(object) ||
+      !nestedParentId ||
+      selectedIds.includes(object.id) ||
+      selectedNestedParentIds.has(nestedParentId);
+    const displayedParent =
+      isContainableObject(object) && nestedParentId
+        ? connectorLayoutObjectsById.get(nestedParentId)
+        : undefined;
+    const nestedClipPolygon =
+      displayedParent?.type === "shape"
+        ? geometryClipPolygonInLocalSpace(
+            displayedParent.geometry,
+            object.geometry,
+          )
+        : null;
     return (
       <Fragment key={object.id}>
         <Group
@@ -2710,32 +3842,68 @@ export function ProductCanvas({
           x={object.geometry.x}
           y={object.geometry.y}
           rotation={object.geometry.rotation}
+          listening={nestedChildInteractive}
+          clipFunc={
+            nestedClipPolygon
+              ? (context) => {
+                  context.beginPath();
+                  context.moveTo(
+                    nestedClipPolygon[0]!.x,
+                    nestedClipPolygon[0]!.y,
+                  );
+                  for (const point of nestedClipPolygon.slice(1)) {
+                    context.lineTo(point.x, point.y);
+                  }
+                  context.closePath();
+                }
+              : undefined
+          }
           draggable={
-            tool === "select" && inlineTextEditor?.objectId !== object.id
+            tool === "select" &&
+            nestedChildInteractive &&
+            inlineTextEditor?.objectId !== object.id
           }
           onClick={(event) => selectObject(event, object)}
           onTap={(event) => selectObject(event, object)}
           onContextMenu={(event) => openObjectContextMenu(event, object)}
           onDblClick={(event) => {
             event.cancelBubble = true;
+            if (nestedChildSelectionTimerRef.current !== null) {
+              window.clearTimeout(nestedChildSelectionTimerRef.current);
+              nestedChildSelectionTimerRef.current = null;
+            }
             if (object.type === "shape" || object.type === "text") {
-              startInlineEditing(object);
+              startObjectTextEditing(object);
             }
           }}
           onDblTap={(event) => {
             event.cancelBubble = true;
+            if (nestedChildSelectionTimerRef.current !== null) {
+              window.clearTimeout(nestedChildSelectionTimerRef.current);
+              nestedChildSelectionTimerRef.current = null;
+            }
             if (object.type === "shape" || object.type === "text") {
-              startInlineEditing(object);
+              startObjectTextEditing(object);
             }
           }}
           onMouseEnter={() => {
-            if (object.type === "shape") setHoveredShapeId(object.id);
+            if (
+              object.type === "shape" ||
+              object.type === "icon" ||
+              object.type === "text"
+            ) {
+              setHoveredShapeId(object.id);
+            }
           }}
           onMouseLeave={() => {
             // The stage-level proximity zone keeps anchors visible while the
             // pointer crosses the intentional gap between the object and handle.
           }}
           onDragStart={() => {
+            if (nestedChildSelectionTimerRef.current !== null) {
+              window.clearTimeout(nestedChildSelectionTimerRef.current);
+              nestedChildSelectionTimerRef.current = null;
+            }
             if (!selectedIds.includes(object.id)) {
               setSelectedIds(
                 object.groupId
@@ -2753,6 +3921,7 @@ export function ProductCanvas({
               objectsById.get(object.id) ?? object,
               event.target.x(),
               event.target.y(),
+              hasContainmentModifier(event.evt, navigator.platform),
             )
           }
           onDragEnd={(event) => {
@@ -2762,58 +3931,75 @@ export function ProductCanvas({
               durableObject,
               event.target.x(),
               event.target.y(),
+              hasContainmentModifier(event.evt, navigator.platform),
             );
           }}
           onTransformEnd={(event) => finishSingleObjectTransform(event, object)}
           onTransform={(event) => previewSingleObjectTransform(event, object)}
         >
-          {object.type === "shape" ? (
-            <>
-              {shapeNode(object)}
+          <Group
+            scaleX={object.geometry.flipX ? -1 : 1}
+            scaleY={object.geometry.flipY ? -1 : 1}
+            offsetX={object.geometry.flipX ? object.geometry.width : 0}
+            offsetY={object.geometry.flipY ? object.geometry.height : 0}
+          >
+            {object.type === "shape" ? (
+              <>
+                {shapeNode(object)}
+                <Text
+                  name="resizable-object-text"
+                  x={12}
+                  y={12}
+                  width={object.geometry.width - 24}
+                  height={object.geometry.height - 24}
+                  text={formatListText(object.text, object.style.listStyle)}
+                  fill={object.style.textColor ?? "#18181b"}
+                  align={object.style.textAlign ?? "center"}
+                  verticalAlign="middle"
+                  fontFamily={object.style.fontFamily}
+                  fontSize={object.style.fontSize}
+                  fontStyle={
+                    object.style.fontWeight === "bold" ? "bold" : "normal"
+                  }
+                  textDecoration={object.style.linkUrl ? "underline" : ""}
+                  opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
+                  listening={false}
+                />
+              </>
+            ) : object.type === "icon" ? (
+              iconNode(object)
+            ) : object.type === "text" ? (
               <Text
                 name="resizable-object-text"
-                x={12}
-                y={12}
-                width={object.geometry.width - 24}
-                height={object.geometry.height - 24}
+                width={object.geometry.width}
+                height={object.geometry.height}
                 text={formatListText(object.text, object.style.listStyle)}
                 fill={object.style.textColor ?? "#18181b"}
-                align={object.style.textAlign ?? "center"}
-                verticalAlign="middle"
                 fontFamily={object.style.fontFamily}
                 fontSize={object.style.fontSize}
                 fontStyle={
                   object.style.fontWeight === "bold" ? "bold" : "normal"
                 }
+                align={object.style.textAlign ?? "left"}
                 textDecoration={object.style.linkUrl ? "underline" : ""}
+                verticalAlign="middle"
                 opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
-                listening={false}
               />
-            </>
-          ) : object.type === "text" ? (
-            <Text
-              name="resizable-object-text"
-              width={object.geometry.width}
-              height={object.geometry.height}
-              text={formatListText(object.text, object.style.listStyle)}
-              fill={object.style.textColor ?? "#18181b"}
-              fontFamily={object.style.fontFamily}
-              fontSize={object.style.fontSize}
-              fontStyle={object.style.fontWeight === "bold" ? "bold" : "normal"}
-              align={object.style.textAlign ?? "left"}
-              textDecoration={object.style.linkUrl ? "underline" : ""}
-              verticalAlign="middle"
-              opacity={inlineTextEditor?.objectId === object.id ? 0 : 1}
-            />
-          ) : (
-            renderTable(object)
-          )}
+            ) : object.type === "table" ? (
+              renderTable(object)
+            ) : null}
+          </Group>
         </Group>
         {selectionAffordancesVisible &&
-        object.type === "shape" &&
-        (selectedIds.includes(object.id) ||
-          hoveredShapeId === object.id ||
-          connectorStart) ? (
+        selectedIds.length <= 1 &&
+        (object.type === "shape" ||
+          object.type === "icon" ||
+          object.type === "text") &&
+        (connectorStart
+          ? (connectorStart.kind === "attached" &&
+              connectorStart.objectId === object.id) ||
+            hoveredShapeId === object.id
+          : selectedIds.includes(object.id) || hoveredShapeId === object.id) ? (
           <Group
             x={object.geometry.x}
             y={object.geometry.y}
@@ -2853,7 +4039,10 @@ export function ProductCanvas({
                   }
                   onDragMove={(event) => {
                     const point = eventWorldPointer(event);
-                    if (point) setPointerPreview(point);
+                    if (point) {
+                      setPointerPreview(point);
+                      updateConnectorHoverTarget(point);
+                    }
                   }}
                   onDragEnd={(event) => finishConnectorDrag(event, object.id)}
                   onClick={(event) => {
@@ -2890,7 +4079,11 @@ export function ProductCanvas({
       openObjectContextMenuFromPointer(object, event.clientX, event.clientY);
     }
     function onMouseDown(event: MouseEvent) {
-      if (event.button === 2 || event.ctrlKey) openFromMouse(event);
+      if (
+        event.button === 2 ||
+        isControlClickContextMenu(event, navigator.platform)
+      )
+        openFromMouse(event);
     }
     window.addEventListener("mousedown", onMouseDown, true);
     window.addEventListener("contextmenu", openFromMouse, true);
@@ -2920,36 +4113,82 @@ export function ProductCanvas({
     : undefined;
   const inlineEditorLayout =
     inlineEditorObject?.type === "shape" || inlineEditorObject?.type === "text"
-      ? {
-          left:
-            viewport.x +
-            (inlineEditorObject.geometry.x +
-              (inlineEditorObject.type === "shape" ? 12 : 0)) *
-              viewport.scale,
-          top:
-            viewport.y +
-            (inlineEditorObject.geometry.y +
-              (inlineEditorObject.type === "shape" ? 12 : 0)) *
-              viewport.scale,
-          width:
-            (inlineEditorObject.geometry.width -
-              (inlineEditorObject.type === "shape" ? 24 : 0)) *
-            viewport.scale,
-          height:
-            (inlineEditorObject.geometry.height -
-              (inlineEditorObject.type === "shape" ? 24 : 0)) *
-            viewport.scale,
-          transform: `rotate(${inlineEditorObject.geometry.rotation}deg)`,
-          transformOrigin: "top left" as const,
-          fontFamily: inlineEditorObject.style.fontFamily,
-          fontSize: inlineEditorObject.style.fontSize * viewport.scale,
-          fontWeight: inlineEditorObject.style.fontWeight ?? "normal",
-          color: inlineEditorObject.style.textColor ?? "#18181b",
-          textAlign:
-            inlineEditorObject.style.textAlign ??
-            (inlineEditorObject.type === "shape" ? "center" : "left"),
-        }
+      ? (() => {
+          const inset = inlineEditorObject.type === "shape" ? 12 : 0;
+          const contentWidth = inlineEditorObject.geometry.width - inset * 2;
+          const contentHeight = inlineEditorObject.geometry.height - inset * 2;
+          const lineHeight = inlineEditorObject.style.fontSize * 1.25;
+          const estimatedHeight = Math.min(
+            contentHeight * viewport.scale,
+            Math.max(
+              lineHeight * viewport.scale,
+              (inlineTextEditor?.draft.split("\n").length ?? 1) *
+                lineHeight *
+                viewport.scale,
+            ),
+          );
+          const editorHeight = Math.min(
+            contentHeight * viewport.scale,
+            inlineEditorMeasuredHeight ?? estimatedHeight,
+          );
+          const verticalOffset =
+            inset +
+            Math.max(0, (contentHeight - editorHeight / viewport.scale) / 2);
+          const rotatedOffset = rotatePoint(
+            inset,
+            verticalOffset,
+            inlineEditorObject.geometry.rotation,
+          );
+          return {
+            left:
+              viewport.x +
+              (inlineEditorObject.geometry.x + rotatedOffset.x) *
+                viewport.scale,
+            top:
+              viewport.y +
+              (inlineEditorObject.geometry.y + rotatedOffset.y) *
+                viewport.scale,
+            width: contentWidth * viewport.scale,
+            height: editorHeight,
+            transform: `rotate(${inlineEditorObject.geometry.rotation}deg)`,
+            transformOrigin: "top left" as const,
+            fontFamily: inlineEditorObject.style.fontFamily,
+            fontSize: inlineEditorObject.style.fontSize * viewport.scale,
+            lineHeight: `${lineHeight * viewport.scale}px`,
+            fontWeight: inlineEditorObject.style.fontWeight ?? "normal",
+            color: inlineEditorObject.style.textColor ?? "#18181b",
+            textAlign:
+              inlineEditorObject.style.textAlign ??
+              (inlineEditorObject.type === "shape" ? "center" : "left"),
+          };
+        })()
       : null;
+
+  useLayoutEffect(() => {
+    const editor = inlineEditorRef.current;
+    if (
+      !editor ||
+      !inlineTextEditor ||
+      (inlineEditorObject?.type !== "shape" &&
+        inlineEditorObject?.type !== "text")
+    ) {
+      return;
+    }
+    const inset = inlineEditorObject.type === "shape" ? 12 : 0;
+    const maxHeight =
+      (inlineEditorObject.geometry.height - inset * 2) * viewport.scale;
+    const minHeight = inlineEditorObject.style.fontSize * 1.25 * viewport.scale;
+    const previousHeight = editor.style.height;
+    editor.style.height = "1px";
+    const measuredHeight = Math.min(
+      maxHeight,
+      Math.max(minHeight, editor.scrollHeight),
+    );
+    editor.style.height = previousHeight;
+    setInlineEditorMeasuredHeight((current) =>
+      current === measuredHeight ? current : measuredHeight,
+    );
+  }, [inlineEditorObject, inlineTextEditor, viewport.scale]);
 
   return (
     <section
@@ -2989,29 +4228,67 @@ export function ProductCanvas({
         </output>
       ) : null}
       {instrumentationEnabled ? (
-        <output
-          aria-hidden="true"
-          data-testid="live-connector-points"
-          className="hidden"
-        >
-          {displayObjects
-            .filter(
-              (
-                object,
-              ): object is Extract<CanvasObjectV2, { type: "connector" }> =>
-                object.type === "connector",
-            )
-            .map((connector) =>
-              [
-                connector.id,
-                ...resolveConnectorPointsV2(
-                  connector,
-                  connectorLayoutObjectsById,
-                ).map(Math.round),
-              ].join(":"),
-            )
-            .join(";")}
-        </output>
+        <>
+          <output
+            aria-hidden="true"
+            data-testid="live-connector-points"
+            className="hidden"
+          >
+            {displayObjects
+              .filter(
+                (
+                  object,
+                ): object is Extract<CanvasObjectV2, { type: "connector" }> =>
+                  object.type === "connector",
+              )
+              .map((connector) =>
+                [
+                  connector.id,
+                  ...resolveConnectorPointsV2(
+                    connector,
+                    connectorLayoutObjectsById,
+                  ).map(Math.round),
+                ].join(":"),
+              )
+              .join(";")}
+          </output>
+          <output
+            aria-hidden="true"
+            data-testid="selection-frame-geometry"
+            className="hidden"
+          >
+            {selectedFrame
+              ? [
+                  selectedFrame.x,
+                  selectedFrame.y,
+                  selectedFrame.width,
+                  selectedFrame.height,
+                ]
+                  .map(Math.round)
+                  .join(",")
+              : ""}
+          </output>
+          <output
+            aria-hidden="true"
+            data-testid="visible-connection-anchor-count"
+            className="hidden"
+          >
+            {selectedIds.length > 1
+              ? 0
+              : displayObjects.filter(
+                  (object) =>
+                    (object.type === "shape" ||
+                      object.type === "icon" ||
+                      object.type === "text") &&
+                    (connectorStart
+                      ? (connectorStart.kind === "attached" &&
+                          connectorStart.objectId === object.id) ||
+                        hoveredShapeId === object.id
+                      : selectedIds.includes(object.id) ||
+                        hoveredShapeId === object.id),
+                ).length * 4}
+          </output>
+        </>
       ) : null}
       <div
         className="pointer-events-none absolute inset-x-4 top-4 z-30 flex items-start justify-between gap-4"
@@ -3166,6 +4443,7 @@ export function ProductCanvas({
         simulatedAiEnabled={simulatedAiEnabled}
         onChooseTool={chooseTool}
         onChooseShape={chooseShape}
+        onChooseIcon={addIcon}
         onAddSimulatedAiIdea={addSimulatedAiIdea}
         commentPlacementActive={commentPlacementActive}
         onChooseComments={chooseComments}
@@ -3294,10 +4572,7 @@ export function ProductCanvas({
       {objectContextMenu && selectedObjects.length ? (
         <ObjectContextMenu
           {...objectContextMenu}
-          canGroup={
-            selectedIds.length >= 2 &&
-            !selectedObjects.some((object) => object.groupId != null)
-          }
+          canGroup={canGroupSelected}
           canUngroup={selectedObjects.some((object) => object.groupId != null)}
           onGroup={groupSelected}
           onUngroup={ungroupSelected}
@@ -3341,7 +4616,7 @@ export function ProductCanvas({
               data-testid="selection-status"
             >
               {selectedIds.length === 1
-                ? objectLabel(selectedObject)
+                ? objectLabel(selectedObject, objects)
                 : `${selectedIds.length} selected`}
             </output>
             {fillObjects.length ? (
@@ -3429,7 +4704,10 @@ export function ProductCanvas({
             ) : null}
             {selectedObjects.some(
               (object) =>
-                object.type === "shape" || object.type === "connector",
+                object.type === "shape" ||
+                object.type === "icon" ||
+                object.type === "text" ||
+                object.type === "connector",
             ) ? (
               <Button
                 type="button"
@@ -3585,7 +4863,9 @@ export function ProductCanvas({
                 ) : null}
                 {contextPanel === "connector" ? (
                   <div className="space-y-3">
-                    {selectedObject.type === "shape" &&
+                    {(selectedObject.type === "shape" ||
+                      selectedObject.type === "icon" ||
+                      selectedObject.type === "text") &&
                     selectedIds.length === 1 ? (
                       <fieldset>
                         <legend className="text-xs text-zinc-300">
@@ -3645,6 +4925,269 @@ export function ProductCanvas({
                 ) : null}
                 {contextPanel === "more" ? (
                   <div className="grid grid-cols-2 gap-2">
+                    {selectedGroup?.parentId ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="col-span-2"
+                        onClick={() =>
+                          completeContextAction(() =>
+                            runCommand("group.detach", {
+                              groupId: selectedGroup.id,
+                            }),
+                          )
+                        }
+                      >
+                        <Unlink aria-hidden="true" /> Remove group from
+                        container
+                      </Button>
+                    ) : null}
+                    {selectedGroup && !selectedGroup.parentId
+                      ? (() => {
+                          const parent = [...objects]
+                            .reverse()
+                            .find(
+                              (candidate) =>
+                                isObjectParent(candidate) &&
+                                !selectedIds.includes(candidate.id) &&
+                                fullyContains(
+                                  candidate,
+                                  selectedGroup.geometry,
+                                ),
+                            );
+                          return parent ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="col-span-2"
+                              onClick={() =>
+                                completeContextAction(() =>
+                                  runCommand("group.nest", {
+                                    groupId: selectedGroup.id,
+                                    parentId: parent.id,
+                                  }),
+                                )
+                              }
+                            >
+                              Place group inside {objectLabel(parent, objects)}
+                            </Button>
+                          ) : null;
+                        })()
+                      : null}
+                    {selectedGroup?.parentId ||
+                    (isContainableObject(selectedObject) &&
+                      selectedIds.length === 1 &&
+                      selectedObject.parentId)
+                      ? (() => {
+                          const layout =
+                            selectedGroup?.childLayout ??
+                            (isContainableObject(selectedObject)
+                              ? selectedObject.childLayout
+                              : null) ??
+                            defaultChildLayout;
+                          const constraints = childConstraints(
+                            layout,
+                            !selectedGroup && selectedObject.type === "text"
+                              ? (selectedObject.childRole ?? null)
+                              : null,
+                          );
+                          const updateLayout = (next: {
+                            horizontalConstraint: HorizontalConstraint;
+                            verticalConstraint: VerticalConstraint;
+                          }) =>
+                            selectedGroup
+                              ? runCommand("group.layout", {
+                                  groupId: selectedGroup.id,
+                                  ...next,
+                                })
+                              : runCommand("object.layout", {
+                                  objectId: selectedObject.id,
+                                  ...next,
+                                });
+                          return (
+                            <fieldset className="col-span-2 rounded-lg border border-white/15 p-2">
+                              <legend className="px-1 text-xs text-zinc-300">
+                                Constraints
+                              </legend>
+                              <div className="grid gap-2 text-xs text-white">
+                                <label className="grid gap-1">
+                                  <span className="text-zinc-300">
+                                    Horizontal
+                                  </span>
+                                  <select
+                                    aria-label="Horizontal constraint"
+                                    value={constraints.horizontal}
+                                    className="h-9 w-full rounded-md border border-white/20 bg-zinc-900 px-3 text-sm text-white outline-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-300/70"
+                                    onChange={(event) =>
+                                      updateLayout({
+                                        horizontalConstraint: event
+                                          .currentTarget
+                                          .value as HorizontalConstraint,
+                                        verticalConstraint:
+                                          constraints.vertical,
+                                      })
+                                    }
+                                  >
+                                    <option value="left">Left</option>
+                                    <option value="right">Right</option>
+                                    <option value="left-right">
+                                      Left + Right
+                                    </option>
+                                    <option value="center">Center</option>
+                                    <option value="scale">Scale</option>
+                                  </select>
+                                </label>
+                                <label className="grid gap-1">
+                                  <span className="text-zinc-300">
+                                    Vertical
+                                  </span>
+                                  <select
+                                    aria-label="Vertical constraint"
+                                    value={constraints.vertical}
+                                    className="h-9 w-full rounded-md border border-white/20 bg-zinc-900 px-3 text-sm text-white outline-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-300/70"
+                                    onChange={(event) =>
+                                      updateLayout({
+                                        horizontalConstraint:
+                                          constraints.horizontal,
+                                        verticalConstraint: event.currentTarget
+                                          .value as VerticalConstraint,
+                                      })
+                                    }
+                                  >
+                                    <option value="top">Top</option>
+                                    <option value="bottom">Bottom</option>
+                                    <option value="top-bottom">
+                                      Top + Bottom
+                                    </option>
+                                    <option value="center">Center</option>
+                                    <option value="scale">Scale</option>
+                                  </select>
+                                </label>
+                              </div>
+                            </fieldset>
+                          );
+                        })()
+                      : null}
+                    {isContainableObject(selectedObject) &&
+                    selectedIds.length === 1 &&
+                    selectedObject.parentId ? (
+                      <>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="col-span-2"
+                          onClick={() =>
+                            completeContextAction(() =>
+                              runCommand("object.detach", {
+                                objectId: selectedObject.id,
+                              }),
+                            )
+                          }
+                        >
+                          <Unlink aria-hidden="true" /> Remove from container
+                        </Button>
+                      </>
+                    ) : null}
+                    {isContainableObject(selectedObject) &&
+                    selectedIds.length === 1 &&
+                    !selectedObject.parentId
+                      ? (() => {
+                          const parent = [...objects]
+                            .reverse()
+                            .find(
+                              (candidate) =>
+                                isObjectParent(candidate) &&
+                                candidate.id !== selectedObject.id &&
+                                fullyContains(
+                                  candidate,
+                                  selectedObject.geometry,
+                                ),
+                            );
+                          return parent ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="col-span-2"
+                              onClick={() =>
+                                completeContextAction(() =>
+                                  runCommand("object.nest", {
+                                    objectId: selectedObject.id,
+                                    parentId: parent.id,
+                                  }),
+                                )
+                              }
+                            >
+                              Place inside {objectLabel(parent, objects)}
+                            </Button>
+                          ) : null;
+                        })()
+                      : null}
+                    {selectedGroup ||
+                    (isContainableObject(selectedObject) &&
+                      selectedIds.length === 1) ? (
+                      <label className="col-span-2 text-xs text-zinc-300">
+                        Rotation
+                        <div className="mt-1 flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="-360"
+                            max="360"
+                            step="1"
+                            value={Math.round(
+                              selectedGroup?.geometry.rotation ??
+                                selectedObject.geometry.rotation,
+                            )}
+                            className="min-h-9 w-full rounded-md border border-white/15 bg-zinc-800 px-2 text-sm text-white"
+                            onChange={(event) =>
+                              selectedGroup
+                                ? runCommand("group.rotate", {
+                                    groupId: selectedGroup.id,
+                                    rotation: Number(event.currentTarget.value),
+                                  })
+                                : runCommand("object.rotate", {
+                                    objectId: selectedObject.id,
+                                    rotation: Number(event.currentTarget.value),
+                                  })
+                            }
+                          />
+                          <span aria-hidden="true">°</span>
+                        </div>
+                      </label>
+                    ) : null}
+                    {selectedObjects.some(
+                      (object) => object.type === "icon",
+                    ) ? (
+                      <label className="col-span-2 text-xs text-zinc-300">
+                        Opacity
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={
+                            commonStyleValue(
+                              selectedObjects.filter(
+                                (object) => object.type === "icon",
+                              ),
+                              "opacity",
+                            ) ?? 1
+                          }
+                          className="mt-2 w-full accent-violet-500"
+                          onChange={(event) =>
+                            applyStyleToObjects(
+                              selectedObjects.filter(
+                                (object) => object.type === "icon",
+                              ),
+                              { opacity: Number(event.currentTarget.value) },
+                            )
+                          }
+                        />
+                      </label>
+                    ) : null}
                     {selectedObjects.some(
                       (object) =>
                         object.type === "annotation" && object.attachedObjectId,
@@ -3681,10 +5224,7 @@ export function ProductCanvas({
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={
-                        selectedIds.length < 2 ||
-                        selectedObjects.some((object) => object.groupId != null)
-                      }
+                      disabled={!canGroupSelected}
                       aria-keyshortcuts="Control+G Meta+G"
                       onClick={() => completeContextAction(groupSelected)}
                     >
@@ -3703,6 +5243,40 @@ export function ProductCanvas({
                       onClick={() => completeContextAction(ungroupSelected)}
                     >
                       Ungroup
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!selectedObjects.some(isContainableObject)}
+                      aria-pressed={
+                        selectedObjects.length === 1 &&
+                        isContainableObject(selectedObjects[0]!)
+                          ? (selectedObjects[0]!.geometry.flipX ?? false)
+                          : undefined
+                      }
+                      onClick={() =>
+                        completeContextAction(() => flipSelected("horizontal"))
+                      }
+                    >
+                      <FlipHorizontal aria-hidden="true" /> Flip horizontal
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!selectedObjects.some(isContainableObject)}
+                      aria-pressed={
+                        selectedObjects.length === 1 &&
+                        isContainableObject(selectedObjects[0]!)
+                          ? (selectedObjects[0]!.geometry.flipY ?? false)
+                          : undefined
+                      }
+                      onClick={() =>
+                        completeContextAction(() => flipSelected("vertical"))
+                      }
+                    >
+                      <FlipVertical aria-hidden="true" /> Flip vertical
                     </Button>
                     <Button
                       type="button"
@@ -3823,6 +5397,28 @@ export function ProductCanvas({
           onPointerUp={onSurfacePointerUp}
           onPointerCancel={cancelAnnotationStroke}
           onPointerLeave={() => setHoveredShapeId(null)}
+          onDragOver={(event) => {
+            if (
+              event.dataTransfer.types.includes(
+                "application/x-thinking-canvas-icon",
+              )
+            ) {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+            }
+          }}
+          onDrop={(event) => {
+            const iconName = event.dataTransfer.getData(
+              "application/x-thinking-canvas-icon",
+            );
+            if (!iconName) return;
+            event.preventDefault();
+            const bounds = event.currentTarget.getBoundingClientRect();
+            addIcon(iconName, {
+              x: (event.clientX - bounds.left - viewport.x) / viewport.scale,
+              y: (event.clientY - bounds.top - viewport.y) / viewport.scale,
+            });
+          }}
           className="absolute inset-0 overflow-hidden bg-[var(--workspace-canvas)] focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none focus-visible:ring-inset"
           style={{
             touchAction:
@@ -3871,6 +5467,24 @@ export function ProductCanvas({
                   ? null
                   : renderObject(object),
               )}
+              {containmentPreviewParentId
+                ? (() => {
+                    const parent = objectsById.get(containmentPreviewParentId);
+                    return parent?.type === "shape" ? (
+                      <Rect
+                        x={parent.geometry.x - 4}
+                        y={parent.geometry.y - 4}
+                        width={parent.geometry.width + 8}
+                        height={parent.geometry.height + 8}
+                        rotation={parent.geometry.rotation}
+                        stroke="#8b5cf6"
+                        strokeWidth={3 / viewport.scale}
+                        dash={[8 / viewport.scale, 5 / viewport.scale]}
+                        listening={false}
+                      />
+                    ) : null;
+                  })()
+                : null}
               {annotationPreview.length > 1 ? (
                 <Line
                   points={annotationOutlinePoints(
@@ -3931,14 +5545,41 @@ export function ProductCanvas({
                   y={selectedFrame.y}
                   width={selectedFrame.width}
                   height={selectedFrame.height}
+                  rotation={selectedGroup?.geometry.rotation ?? 0}
                   fill="rgba(0,0,0,0.001)"
                   draggable={tool === "select"}
-                  onDragMove={(event) =>
-                    previewSelectionProxy(event.target as Konva.Rect)
-                  }
-                  onDragEnd={(event) =>
-                    finishSelectionProxy(event.target as Konva.Rect)
-                  }
+                  onDragMove={(event) => {
+                    const containmentIntent =
+                      "metaKey" in event.evt &&
+                      "ctrlKey" in event.evt &&
+                      hasContainmentModifier(
+                        {
+                          metaKey: event.evt.metaKey === true,
+                          ctrlKey: event.evt.ctrlKey === true,
+                        },
+                        navigator.platform,
+                      );
+                    previewSelectionProxy(
+                      event.target as Konva.Rect,
+                      containmentIntent,
+                    );
+                  }}
+                  onDragEnd={(event) => {
+                    const containmentIntent =
+                      "metaKey" in event.evt &&
+                      "ctrlKey" in event.evt &&
+                      hasContainmentModifier(
+                        {
+                          metaKey: event.evt.metaKey === true,
+                          ctrlKey: event.evt.ctrlKey === true,
+                        },
+                        navigator.platform,
+                      );
+                    finishSelectionProxy(
+                      event.target as Konva.Rect,
+                      containmentIntent,
+                    );
+                  }}
                   onTransform={(event) =>
                     previewSelectionProxy(event.target as Konva.Rect)
                   }
@@ -3963,14 +5604,49 @@ export function ProductCanvas({
                 anchorCornerRadius={selectionAffordanceWorldSize(3)}
                 padding={selectionAffordanceWorldSize(2)}
                 boundBoxFunc={(oldBox, newBox) =>
-                  newBox.width < 24 || newBox.height < 24 ? oldBox : newBox
+                  newBox.width < (selectedObject?.type === "icon" ? 8 : 24) ||
+                  newBox.height < (selectedObject?.type === "icon" ? 8 : 24)
+                    ? oldBox
+                    : newBox
                 }
               />
             </Layer>
           </Stage>
+          {selectedGroup ||
+          (selectedObject &&
+            selectedIds.length === 1 &&
+            isContainableObject(selectedObject))
+            ? rotationCorners.map((corner) => {
+                const handlePoint = rotationHandleWorldPoint(
+                  selectedGroup?.geometry ?? selectedObject!.geometry,
+                  corner,
+                  rotationZoneOffsetPx / viewport.scale,
+                );
+                return (
+                  <button
+                    key={corner}
+                    type="button"
+                    aria-label={`Rotate selected object from ${corner.replace("-", " ")} corner`}
+                    data-testid="rotation-cursor-zone"
+                    data-rotation-corner={corner}
+                    title="Drag to rotate. Hold Shift to snap to 15° increments."
+                    className="absolute z-20 -translate-x-1/2 -translate-y-1/2 border-0 bg-transparent p-0"
+                    style={{
+                      left: viewport.x + handlePoint.x * viewport.scale,
+                      top: viewport.y + handlePoint.y * viewport.scale,
+                      width: rotationZoneSizePx,
+                      height: rotationZoneSizePx,
+                      cursor: rotationCursor(corner),
+                    }}
+                    onPointerDown={beginCornerRotation}
+                  />
+                );
+              })
+            : null}
           {inlineTextEditor && inlineEditorLayout ? (
             <textarea
               ref={inlineEditorRef}
+              rows={1}
               aria-label="Edit object text on canvas"
               data-testid="inline-object-text-editor"
               value={inlineTextEditor.draft}
@@ -4046,7 +5722,7 @@ export function ProductCanvas({
             <dl className="pointer-events-none absolute top-24 left-4 grid grid-cols-2 gap-x-4 rounded-lg border border-zinc-200 bg-white/90 px-3 py-2 text-xs text-zinc-700 shadow-lg backdrop-blur">
               <div>
                 <dt className="text-zinc-400">Objects</dt>
-                <dd data-testid="product-object-count">{objects.length}</dd>
+                <dd data-testid="product-object-count">{productObjectCount}</dd>
               </div>
               <div>
                 <dt className="text-zinc-400">Annotations</dt>
@@ -4088,6 +5764,18 @@ export function ProductCanvas({
                 <dt className="text-zinc-400">Frame</dt>
                 <dd data-testid="product-frame-time">
                   {frameTime === null ? "—" : `${frameTime} ms`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-400">Live descendants</dt>
+                <dd data-testid="live-descendant-preview-count">
+                  {Object.keys(selectionTransformPreviewObjects).length}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-400">Live drag family</dt>
+                <dd data-testid="live-drag-family-preview-count">
+                  {Object.keys(dragPreviewPositions).length}
                 </dd>
               </div>
               <div>
@@ -4144,6 +5832,18 @@ function ObjectNavigatorContent({
               <button
                 type="button"
                 data-testid={`object-list-item-${object.id}`}
+                data-parent-id={
+                  isContainableObject(object) && object.parentId
+                    ? object.parentId
+                    : undefined
+                }
+                aria-label={
+                  object.type === "text" && object.childRole === "shape-label"
+                    ? "Contained intrinsic label"
+                    : isContainableObject(object) && object.parentId
+                      ? `Contained ${objectLabel(object, objects)}`
+                      : objectLabel(object, objects)
+                }
                 aria-pressed={selectedIds.includes(object.id)}
                 onClick={(event) =>
                   onSelect(
@@ -4151,9 +5851,10 @@ function ObjectNavigatorContent({
                     event.shiftKey || event.metaKey || event.ctrlKey,
                   )
                 }
-                className="min-h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50"
+                className={`min-h-11 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50 ${isContainableObject(object) && object.parentId ? "ml-5 w-[calc(100%-1.25rem)]" : "w-full"}`}
               >
-                {objectLabel(object)}
+                {isContainableObject(object) && object.parentId ? "↳ " : ""}
+                {objectLabel(object, objects)}
               </button>
             </li>
           ))}
@@ -4195,6 +5896,12 @@ function ObjectNavigatorContent({
               <dt>Height</dt>
               <dd data-testid="selected-height">
                 {Math.round(selectedObject.geometry.height)}
+              </dd>
+            </div>
+            <div>
+              <dt>Rotation</dt>
+              <dd data-testid="selected-rotation">
+                {Math.round(selectedObject.geometry.rotation)}°
               </dd>
             </div>
             <div>
