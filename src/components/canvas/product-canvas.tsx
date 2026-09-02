@@ -1151,7 +1151,13 @@ export function ProductCanvas({
         candidate.parentId === object.id &&
         candidate.childRole === "shape-label",
     );
-    startInlineEditing(label?.type === "text" ? label : object);
+    if (label?.type === "text") {
+      startInlineEditing(label);
+    } else if (object.text.length > 0) {
+      // Preserve inline access to an unmigrated legacy shape label, but honor
+      // deliberate deletion of a first-class label child on modern shapes.
+      startInlineEditing(object);
+    }
   }
 
   function finishInlineEditing(commit: boolean) {

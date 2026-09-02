@@ -696,6 +696,37 @@ test("keeps inline text vertically aligned while editing", async ({ page }) => {
   await editor.press("Escape");
 });
 
+test("does not recreate an intrinsic label after the child is deleted", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  const surface = page.getByTestId("product-canvas-surface");
+  await page.getByRole("button", { name: "Sticky note", exact: true }).click();
+  await surface.click({ position: { x: 360, y: 320 } });
+
+  const label = page.getByRole("button", {
+    name: "Contained intrinsic label",
+  });
+  const objectItems = page.locator('[data-testid^="object-list-item-"]');
+  await expect(objectItems).toHaveCount(2);
+  await label.click();
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(label).toHaveCount(0);
+  await expect(objectItems).toHaveCount(1);
+
+  const emptyParent = page.getByRole("button", {
+    name: "rectangle — Untitled",
+    exact: true,
+  });
+  await expect(emptyParent).toBeVisible();
+  await emptyParent.click();
+  await surface.dblclick({ position: { x: 410, y: 370 } });
+  await expect(page.getByLabel("Edit object text on canvas")).toHaveCount(0);
+  await expect(objectItems).toHaveCount(1);
+  await expect(label).toHaveCount(0);
+});
+
 test("keeps the contextual properties palette outside the selected frame", async ({
   page,
 }) => {
