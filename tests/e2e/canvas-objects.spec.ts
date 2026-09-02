@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 
 import {
   expect,
@@ -165,6 +166,36 @@ async function retainArrangement(
   await surface.screenshot({
     path: path.join(directory, `slice-02-${name}.png`),
   });
+}
+
+async function canvasPixelHex(
+  surface: Locator,
+  position: { x: number; y: number },
+) {
+  const image = sharp(await surface.screenshot());
+  const { data } = await image
+    .extract({
+      left: Math.round(position.x),
+      top: Math.round(position.y),
+      width: 1,
+      height: 1,
+    })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  return `#${[data[0], data[1], data[2]]
+    .map((channel) => channel!.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+async function canvasPixelDominance(
+  surface: Locator,
+  position: { x: number; y: number },
+) {
+  const color = await canvasPixelHex(surface, position);
+  const red = Number.parseInt(color.slice(1, 3), 16);
+  const blue = Number.parseInt(color.slice(5, 7), 16);
+  return red > blue ? "red" : "blue";
 }
 
 test("creates, selects, moves, resizes, styles, edits, persists, and deletes essential objects", async ({
@@ -957,4 +988,69 @@ test("multiselects, marquees, groups, orders, duplicates, uses the clipboard, an
   await page.reload();
   await ensureObjectNavigator(page);
   await expect(page.getByTestId("product-object-count")).toHaveText("4");
+});
+
+test("layer commands change the painted stacking of overlapping objects", async ({
+  page,
+}) => {
+  const surface = await openFreshCanvas(page);
+  await createLabeledShape(page, "Rectangle", "Red layer", {
+    x: 260,
+    y: 500,
+  });
+  await setFill(page, "#dc2626");
+  await createLabeledShape(page, "Rectangle", "Blue layer", {
+    x: 560,
+    y: 500,
+  });
+  await setFill(page, "#2563eb");
+  await openContextPanel(page, "Fill");
+  await surface.focus();
+  for (let index = 0; index < 30; index += 1) {
+    await surface.press("Shift+ArrowLeft");
+  }
+
+  const [viewportX, viewportY, objectX, objectY, objectWidth] =
+    await Promise.all([
+      surface.getAttribute("data-viewport-x").then(Number),
+      surface.getAttribute("data-viewport-y").then(Number),
+      selectedNumber(page, "selected-position-x"),
+      selectedNumber(page, "selected-position-y"),
+      selectedNumber(page, "selected-width"),
+    ]);
+  const samplePoint = {
+    x: viewportX + objectX + objectWidth / 2,
+    y: viewportY + objectY + 15,
+  };
+  await expect
+    .poll(() => canvasPixelDominance(surface, samplePoint))
+    .toBe("blue");
+
+  await selectShapeByLabel(page, "Red layer");
+  const layerMenu = page.getByRole("menu", { name: "Selection actions" });
+  const reorder = async (
+    action:
+      "Bring to front" | "Bring forward" | "Send backward" | "Send to back",
+  ) => {
+    await surface.focus();
+    await surface.press("Shift+F10");
+    await layerMenu.getByRole("menuitem", { name: action }).click();
+  };
+
+  await reorder("Bring to front");
+  await expect
+    .poll(() => canvasPixelDominance(surface, samplePoint))
+    .toBe("red");
+  await reorder("Send backward");
+  await expect
+    .poll(() => canvasPixelDominance(surface, samplePoint))
+    .toBe("blue");
+  await reorder("Send to back");
+  await expect
+    .poll(() => canvasPixelDominance(surface, samplePoint))
+    .toBe("blue");
+  await reorder("Bring forward");
+  await expect
+    .poll(() => canvasPixelDominance(surface, samplePoint))
+    .toBe("red");
 });
