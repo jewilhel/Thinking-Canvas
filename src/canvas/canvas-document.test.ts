@@ -257,6 +257,126 @@ describe("production canvas document", () => {
     expect(() => readCanvasObjectV2(document, malformedId)).toThrow();
   });
 
+  it("reads retained rotated children whose unrotated dimensions cross a normalized edge", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const parent = {
+      ...makeObject(),
+      text: "",
+      geometry: { x: 0, y: 0, width: 200, height: 100, rotation: 0 },
+    };
+    const child: Extract<CanvasObjectV2, { type: "text" }> = {
+      schemaVersion: 2,
+      id: "50000000-0000-4000-8000-000000000002",
+      canvasId,
+      createdBy: userId,
+      createdAt: "2026-08-11T00:00:00.000Z",
+      updatedAt: "2026-08-11T00:00:00.000Z",
+      type: "text",
+      text: "Rotated child",
+      parentId: parent.id,
+      parentRelative: {
+        x: 0.95,
+        y: 0.1,
+        width: 0.2,
+        height: 0.2,
+        rotation: 90,
+      },
+      childLayout: {
+        horizontalConstraint: "left",
+        verticalConstraint: "top",
+      },
+      geometry: { x: 190, y: 10, width: 40, height: 20, rotation: 90 },
+      style: {
+        fill: null,
+        outline: "#334155",
+        outlineWidth: 0,
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        fontSize: 16,
+      },
+    };
+
+    putCanvasObjectV2(document, parent);
+    expect(() => putCanvasObjectV2(document, child)).not.toThrow();
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      parentId: parent.id,
+      parentRelative: child.parentRelative,
+      geometry: child.geometry,
+    });
+    expect(listCanvasObjectsV2(document)).toHaveLength(2);
+  });
+
+  it("keeps rejecting unrotated nested geometry outside normalized bounds", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const child: Extract<CanvasObjectV2, { type: "text" }> = {
+      schemaVersion: 2,
+      id: "50000000-0000-4000-8000-000000000002",
+      canvasId,
+      createdBy: userId,
+      createdAt: "2026-08-11T00:00:00.000Z",
+      updatedAt: "2026-08-11T00:00:00.000Z",
+      type: "text",
+      text: "Outside child",
+      parentId: objectId,
+      parentRelative: { x: 0.95, y: 0.1, width: 0.2, height: 0.2 },
+      childLayout: {
+        horizontalConstraint: "left",
+        verticalConstraint: "top",
+      },
+      geometry: { x: 190, y: 10, width: 40, height: 20, rotation: 0 },
+      style: {
+        fill: null,
+        outline: "#334155",
+        outlineWidth: 0,
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        fontSize: 16,
+      },
+    };
+
+    expect(() => putCanvasObjectV2(document, child)).toThrow(
+      "Nested object geometry must remain inside its parent.",
+    );
+  });
+
+  it("tolerates insignificant retained transform drift at a normalized edge", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const parent = { ...makeObject(), text: "" };
+    const child: Extract<CanvasObjectV2, { type: "text" }> = {
+      schemaVersion: 2,
+      id: "50000000-0000-4000-8000-000000000002",
+      canvasId,
+      createdBy: userId,
+      createdAt: "2026-08-11T00:00:00.000Z",
+      updatedAt: "2026-08-11T00:00:00.000Z",
+      type: "text",
+      text: "Edge child",
+      parentId: parent.id,
+      parentRelative: {
+        x: -Number.EPSILON,
+        y: 0.25,
+        width: 0.5,
+        height: 0.5,
+      },
+      childLayout: {
+        horizontalConstraint: "left",
+        verticalConstraint: "top",
+      },
+      geometry: { x: 40, y: 84, width: 90, height: 48, rotation: 0 },
+      style: {
+        fill: null,
+        outline: "#334155",
+        outlineWidth: 0,
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        fontSize: 16,
+      },
+    };
+
+    putCanvasObjectV2(document, parent);
+    expect(() => putCanvasObjectV2(document, child)).not.toThrow();
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      parentRelative: child.parentRelative,
+    });
+  });
+
   it("omits undefined optional fields when writing shared objects", () => {
     const document = createProductCanvasDocument(canvasId);
     const object: CanvasObjectV2 = {

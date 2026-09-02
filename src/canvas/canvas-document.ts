@@ -80,6 +80,35 @@ const parentRelativeSchema = z.strictObject({
   rotation: finiteNumber.optional(),
 });
 
+const normalizedContainmentEpsilon = 1e-9;
+
+function isLocallyPlausibleParentRelativeGeometry(
+  relative: z.infer<typeof parentRelativeSchema>,
+) {
+  const rotation = (((relative.rotation ?? 0) % 360) + 360) % 360;
+  const hasForwardAxisAlignment =
+    rotation <= normalizedContainmentEpsilon ||
+    360 - rotation <= normalizedContainmentEpsilon;
+
+  if (
+    relative.x < -normalizedContainmentEpsilon ||
+    relative.y < -normalizedContainmentEpsilon ||
+    relative.x > 1 + normalizedContainmentEpsilon ||
+    relative.y > 1 + normalizedContainmentEpsilon
+  ) {
+    return false;
+  }
+
+  // For a rotated child, width and height are not parent-axis extents. Actual
+  // corner containment is enforced by the command boundary while it has the
+  // parent geometry and aspect ratio available.
+  return (
+    !hasForwardAxisAlignment ||
+    (relative.x + relative.width <= 1 + normalizedContainmentEpsilon &&
+      relative.y + relative.height <= 1 + normalizedContainmentEpsilon)
+  );
+}
+
 const childLayoutSchema = z
   .strictObject({
     pinPosition: z.boolean().optional(),
@@ -238,10 +267,7 @@ export const canvasObjectV2Schema = z
       }
       if (
         parentRelative &&
-        (parentRelative.x < 0 ||
-          parentRelative.y < 0 ||
-          parentRelative.x + parentRelative.width > 1 ||
-          parentRelative.y + parentRelative.height > 1)
+        !isLocallyPlausibleParentRelativeGeometry(parentRelative)
       ) {
         context.addIssue({
           code: "custom",
