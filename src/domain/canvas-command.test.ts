@@ -1054,7 +1054,7 @@ describe("product canvas command boundary", () => {
       document,
       baseCommand("object.reorder", { objectId: shapeId, direction: "front" }),
     );
-    expect(readCanvasOrderV2(document)).toEqual([secondShapeId, shapeId]);
+    expect(readCanvasOrderV2(document)).toEqual([shapeId, secondShapeId]);
 
     const duplicatedId = "77777777-7777-4777-8777-777777777777";
     executeProductCanvasCommand(
@@ -1079,6 +1079,16 @@ describe("product canvas command boundary", () => {
     expect(readCanvasObjectV2(document, shapeId)?.groupId).toBeNull();
     expect(readCanvasObjectV2(document, secondShapeId)?.groupId).toBeNull();
     expect(readCanvasGroupV2(document, groupId)).toBeUndefined();
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.reorder", { objectId: shapeId, direction: "front" }),
+    );
+    expect(readCanvasOrderV2(document)).toEqual([
+      secondShapeId,
+      duplicatedId,
+      shapeId,
+    ]);
   });
 
   it("reconciles an unrotated group frame to its current member geometry", () => {

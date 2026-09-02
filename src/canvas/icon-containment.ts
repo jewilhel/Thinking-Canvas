@@ -1,4 +1,4 @@
-import type { CanvasObjectV2 } from "@/canvas/canvas-document";
+import type { CanvasGroupV2, CanvasObjectV2 } from "@/canvas/canvas-document";
 
 export type ContainableObject = Extract<
   CanvasObjectV2,
@@ -75,24 +75,117 @@ export function isObjectParent(object: CanvasObjectV2): object is ObjectParent {
 
 export const isIconParent = isObjectParent;
 
-export function parentFirstObjectOrder(objects: CanvasObjectV2[]) {
+type CanvasLayerDirection = "front" | "forward" | "backward" | "back";
+
+type CanvasLayerUnit = {
+  id: string;
+  objectIds: string[];
+  parentId: string | null;
+};
+
+function canvasLayerModel(objects: CanvasObjectV2[], groups: CanvasGroupV2[]) {
   const objectsById = new Map(objects.map((object) => [object.id, object]));
-  const childrenByParent = new Map<string, CanvasObjectV2[]>();
-  const nestedIds = new Set<string>();
+  const groupsById = new Map(groups.map((group) => [group.id, group]));
+  const unitsById = new Map<string, CanvasLayerUnit>();
+  const unitOrder: string[] = [];
+  const objectUnitIds = new Map<string, string>();
+
   for (const object of objects) {
-    if (!isContainableObject(object) || !object.parentId) continue;
-    const parent = objectsById.get(object.parentId);
-    if (!parent || !isObjectParent(parent)) continue;
-    nestedIds.add(object.id);
-    const children = childrenByParent.get(parent.id) ?? [];
-    children.push(object);
-    childrenByParent.set(parent.id, children);
+    const group = object.groupId ? groupsById.get(object.groupId) : undefined;
+    const unitId = group ? `group:${group.id}` : `object:${object.id}`;
+    objectUnitIds.set(object.id, unitId);
+    const existing = unitsById.get(unitId);
+    if (existing) {
+      existing.objectIds.push(object.id);
+      continue;
+    }
+    unitOrder.push(unitId);
+    unitsById.set(unitId, {
+      id: unitId,
+      objectIds: [object.id],
+      parentId:
+        group?.parentId ??
+        (isContainableObject(object) ? (object.parentId ?? null) : null),
+    });
   }
-  return objects.flatMap((object) =>
-    nestedIds.has(object.id)
-      ? []
-      : [object, ...(childrenByParent.get(object.id) ?? [])],
+
+  const unitsByParent = new Map<string | null, string[]>();
+  for (const unitId of unitOrder) {
+    const unit = unitsById.get(unitId)!;
+    const parent = unit.parentId ? objectsById.get(unit.parentId) : undefined;
+    const parentId = parent && isObjectParent(parent) ? parent.id : null;
+    unit.parentId = parentId;
+    const siblings = unitsByParent.get(parentId) ?? [];
+    siblings.push(unitId);
+    unitsByParent.set(parentId, siblings);
+  }
+
+  return { objectsById, unitsById, unitsByParent, objectUnitIds };
+}
+
+function flattenCanvasLayerModel(model: ReturnType<typeof canvasLayerModel>) {
+  const orderedIds: string[] = [];
+  const emittedUnits = new Set<string>();
+
+  function emitUnit(unitId: string) {
+    if (emittedUnits.has(unitId)) return;
+    emittedUnits.add(unitId);
+    const unit = model.unitsById.get(unitId);
+    if (!unit) return;
+    for (const objectId of unit.objectIds) {
+      orderedIds.push(objectId);
+      const object = model.objectsById.get(objectId);
+      if (!object || !isObjectParent(object)) continue;
+      for (const childUnitId of model.unitsByParent.get(object.id) ?? []) {
+        emitUnit(childUnitId);
+      }
+    }
+  }
+
+  for (const unitId of model.unitsByParent.get(null) ?? []) emitUnit(unitId);
+  for (const unitId of model.unitsById.keys()) emitUnit(unitId);
+  return orderedIds;
+}
+
+export function parentFirstObjectOrder(
+  objects: CanvasObjectV2[],
+  groups: CanvasGroupV2[] = [],
+) {
+  const objectsById = new Map(objects.map((object) => [object.id, object]));
+  return flattenCanvasLayerModel(canvasLayerModel(objects, groups)).flatMap(
+    (id) => {
+      const object = objectsById.get(id);
+      return object ? [object] : [];
+    },
   );
+}
+
+export function reorderCanvasObjectLayer(
+  objects: CanvasObjectV2[],
+  groups: CanvasGroupV2[],
+  objectId: string,
+  direction: CanvasLayerDirection,
+) {
+  const model = canvasLayerModel(objects, groups);
+  const unitId = model.objectUnitIds.get(objectId);
+  if (!unitId) return objects.map((object) => object.id);
+  const unit = model.unitsById.get(unitId)!;
+  const siblings = model.unitsByParent.get(unit.parentId) ?? [];
+  const currentIndex = siblings.indexOf(unitId);
+  if (currentIndex < 0) return flattenCanvasLayerModel(model);
+  const targetIndex =
+    direction === "front"
+      ? siblings.length - 1
+      : direction === "back"
+        ? 0
+        : direction === "forward"
+          ? Math.min(siblings.length - 1, currentIndex + 1)
+          : Math.max(0, currentIndex - 1);
+  if (targetIndex !== currentIndex) {
+    siblings.splice(currentIndex, 1);
+    siblings.splice(targetIndex, 0, unitId);
+  }
+  return flattenCanvasLayerModel(model);
 }
 
 export function rotatePoint(x: number, y: number, rotation: number) {

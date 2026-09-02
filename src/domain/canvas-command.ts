@@ -31,6 +31,7 @@ import {
   isContainableObject,
   isObjectParent,
   parentRelativeGeometry,
+  reorderCanvasObjectLayer,
   rotateGeometryAroundCenter,
   type ContainableObject,
   type HorizontalConstraint,
@@ -1325,58 +1326,43 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
 
     if (command.type === "object.reorder") {
       const object = requireObject(document, command.payload.objectId);
-      const currentOrder = readCanvasOrderV2(document);
-      if (isObjectParent(object)) {
-        const childIds = currentOrder.filter((id) => {
-          const candidate = readCanvasObjectV2(document, id);
-          return (
-            candidate != null &&
-            isContainableObject(candidate) &&
-            candidate.parentId === object.id
-          );
-        });
-        if (childIds.length) {
-          const familyIds = [object.id, ...childIds];
-          const familySet = new Set(familyIds);
-          const remaining = currentOrder.filter((id) => !familySet.has(id));
-          const currentIndex = currentOrder.indexOf(object.id);
-          const targetIndex =
-            command.payload.direction === "front"
-              ? remaining.length
-              : command.payload.direction === "back"
-                ? 0
-                : command.payload.direction === "forward"
-                  ? Math.min(remaining.length, currentIndex + 1)
-                  : Math.max(0, currentIndex - 1);
-          remaining.splice(targetIndex, 0, ...familyIds);
-          setCanvasOrderV2(document, remaining);
-          for (const id of familyIds) {
-            touch(document, id, command.issuedAt);
-            affectedObjectIds.add(id);
-          }
-          return;
-        }
+      const allObjects = listCanvasObjectsV2(document);
+      const allGroups = listCanvasGroupsV2(document);
+      const nextOrder = reorderCanvasObjectLayer(
+        allObjects,
+        allGroups,
+        object.id,
+        command.payload.direction,
+      );
+      setCanvasOrderV2(document, nextOrder);
+      const targetGroup = object.groupId
+        ? readCanvasGroupV2(document, object.groupId)
+        : undefined;
+      const affectedIds = targetGroup
+        ? allObjects
+            .filter((candidate) => candidate.groupId === targetGroup.id)
+            .map((candidate) => candidate.id)
+        : isObjectParent(object)
+          ? nextOrder.filter((id) => {
+              const candidate = readCanvasObjectV2(document, id);
+              if (id === object.id) return true;
+              if (
+                candidate &&
+                isContainableObject(candidate) &&
+                candidate.parentId === object.id
+              ) {
+                return true;
+              }
+              return candidate?.groupId
+                ? readCanvasGroupV2(document, candidate.groupId)?.parentId ===
+                    object.id
+                : false;
+            })
+          : [object.id];
+      for (const id of affectedIds) {
+        touch(document, id, command.issuedAt);
+        affectedObjectIds.add(id);
       }
-      const currentIndex = currentOrder.indexOf(command.payload.objectId);
-      let targetIndex =
-        command.payload.direction === "front"
-          ? currentOrder.length - 1
-          : command.payload.direction === "back"
-            ? 0
-            : command.payload.direction === "forward"
-              ? Math.min(currentOrder.length - 1, currentIndex + 1)
-              : Math.max(0, currentIndex - 1);
-      if (isContainableObject(object) && object.parentId) {
-        targetIndex = Math.max(
-          currentOrder.indexOf(object.parentId) + 1,
-          targetIndex,
-        );
-      }
-      currentOrder.splice(currentIndex, 1);
-      currentOrder.splice(targetIndex, 0, command.payload.objectId);
-      setCanvasOrderV2(document, currentOrder);
-      touch(document, command.payload.objectId, command.issuedAt);
-      affectedObjectIds.add(command.payload.objectId);
       return;
     }
 

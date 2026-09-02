@@ -889,14 +889,45 @@ test("multiselects, marquees, groups, orders, duplicates, uses the clipboard, an
   );
 
   await selectShapeByLabel(page, "Alpha");
-  await openContextPanel(page, "More selection actions");
-  await page
-    .getByRole("button", { name: "Bring to front", exact: true })
-    .click();
-  const orderedLabels = await page
-    .locator('[data-testid^="object-list-item-"]')
-    .allTextContents();
-  expect(orderedLabels.at(-1)).toContain("Alpha");
+  const layerMenu = page.getByRole("menu", { name: "Selection actions" });
+  const topLevelLabels = () =>
+    page
+      .locator('[data-testid^="object-list-item-"]:not([data-parent-id])')
+      .allTextContents();
+  const reorderFromMenu = async (
+    action:
+      "Bring to front" | "Bring forward" | "Send backward" | "Send to back",
+  ) => {
+    await surface.focus();
+    await surface.press("Shift+F10");
+    await layerMenu.getByRole("menuitem", { name: action }).click();
+  };
+
+  await reorderFromMenu("Bring to front");
+  expect(await topLevelLabels()).toEqual([
+    expect.stringContaining("Beta"),
+    expect.stringContaining("Gamma"),
+    expect.stringContaining("Alpha"),
+  ]);
+  await reorderFromMenu("Send backward");
+  expect(await topLevelLabels()).toEqual([
+    expect.stringContaining("Beta"),
+    expect.stringContaining("Alpha"),
+    expect.stringContaining("Gamma"),
+  ]);
+  await reorderFromMenu("Send to back");
+  expect(await topLevelLabels()).toEqual([
+    expect.stringContaining("Alpha"),
+    expect.stringContaining("Beta"),
+    expect.stringContaining("Gamma"),
+  ]);
+  await reorderFromMenu("Bring forward");
+  expect(await topLevelLabels()).toEqual([
+    expect.stringContaining("Beta"),
+    expect.stringContaining("Alpha"),
+    expect.stringContaining("Gamma"),
+  ]);
+  await reorderFromMenu("Bring to front");
 
   await openContextPanel(page, "More selection actions");
   await page.getByRole("button", { name: "Duplicate", exact: true }).click();

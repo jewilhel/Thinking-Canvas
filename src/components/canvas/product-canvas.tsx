@@ -518,8 +518,8 @@ export function ProductCanvas({
     [groups],
   );
   const orderedObjects = useMemo(
-    () => parentFirstObjectOrder(objects),
-    [objects],
+    () => parentFirstObjectOrder(objects, groups),
+    [groups, objects],
   );
   const productObjectCount = objects.filter(
     (object) => object.type !== "text" || object.childRole !== "shape-label",
@@ -1930,11 +1930,20 @@ export function ProductCanvas({
   function reorderSelected(
     direction: "front" | "forward" | "backward" | "back",
   ) {
+    const seenGroups = new Set<string>();
     runCommandBatch(
-      selectedIds.map((objectId) => ({
-        type: "object.reorder",
-        payload: { objectId, direction },
-      })),
+      selectedObjects.flatMap((object) => {
+        if (object.groupId) {
+          if (seenGroups.has(object.groupId)) return [];
+          seenGroups.add(object.groupId);
+        }
+        return [
+          {
+            type: "object.reorder",
+            payload: { objectId: object.id, direction },
+          },
+        ];
+      }),
     );
   }
 

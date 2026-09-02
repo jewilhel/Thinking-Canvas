@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { CanvasObjectV2 } from "@/canvas/canvas-document";
+import type { CanvasGroupV2, CanvasObjectV2 } from "@/canvas/canvas-document";
 import {
   boundParentGeometryToChildren,
   childRelativeAfterParentResize,
@@ -12,6 +12,7 @@ import {
   geometryContainsPoint,
   parentFirstObjectOrder,
   parentRelativeGeometry,
+  reorderCanvasObjectLayer,
   rotateGeometryAroundCenter,
   rotationHandleWorldPoint,
 } from "@/canvas/icon-containment";
@@ -193,6 +194,82 @@ describe("icon containment geometry", () => {
         (object) => object.id,
       ),
     ).toEqual([independent.id, parent.id, child.id, sibling.id]);
+  });
+
+  it("reorders visual layer units without splitting parents or groups", () => {
+    const sibling = {
+      ...parent,
+      id: "55555555-5555-4555-8555-555555555555",
+      geometry: { ...parent.geometry, x: 500 },
+    };
+    const siblingChild = {
+      ...child,
+      id: "66666666-6666-4666-8666-666666666666",
+      parentId: sibling.id,
+    };
+    const groupedA = {
+      ...child,
+      id: "77777777-7777-4777-8777-777777777777",
+      parentId: null,
+      parentRelative: null,
+      groupId: "99999999-9999-4999-8999-999999999999",
+    };
+    const groupedB = {
+      ...groupedA,
+      id: "88888888-8888-4888-8888-888888888888",
+    };
+    const group = {
+      schemaVersion: 2,
+      id: groupedA.groupId,
+      canvasId: shared.canvasId,
+      createdBy: shared.createdBy,
+      createdAt: shared.createdAt,
+      updatedAt: shared.updatedAt,
+      geometry: { x: 300, y: 200, width: 100, height: 80, rotation: 0 },
+      parentId: null,
+      parentRelative: null,
+      childLayout: null,
+    } satisfies CanvasGroupV2;
+    const objects = [parent, child, groupedA, groupedB, sibling, siblingChild];
+
+    expect(
+      reorderCanvasObjectLayer(objects, [group], parent.id, "front"),
+    ).toEqual([
+      groupedA.id,
+      groupedB.id,
+      sibling.id,
+      siblingChild.id,
+      parent.id,
+      child.id,
+    ]);
+    expect(
+      reorderCanvasObjectLayer(objects, [group], groupedA.id, "back"),
+    ).toEqual([
+      groupedA.id,
+      groupedB.id,
+      parent.id,
+      child.id,
+      sibling.id,
+      siblingChild.id,
+    ]);
+    expect(
+      reorderCanvasObjectLayer(objects, [group], parent.id, "forward"),
+    ).toEqual([
+      groupedA.id,
+      groupedB.id,
+      parent.id,
+      child.id,
+      sibling.id,
+      siblingChild.id,
+    ]);
+    expect(
+      reorderCanvasObjectLayer(
+        [parent, child, siblingChild, sibling],
+        [],
+        siblingChild.id,
+        "back",
+      ),
+    ).toEqual([parent.id, child.id, sibling.id, siblingChild.id]);
   });
 
   it("rotates around the visual center and locates every corner handle", () => {
