@@ -377,6 +377,56 @@ describe("production canvas document", () => {
     });
   });
 
+  it("keeps a structurally valid retained child editable when its old relative bounds are invalid", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const parent = { ...makeObject(), text: "" };
+    const child: Extract<CanvasObjectV2, { type: "text" }> = {
+      schemaVersion: 2,
+      id: "50000000-0000-4000-8000-000000000002",
+      canvasId,
+      createdBy: userId,
+      createdAt: "2026-08-11T00:00:00.000Z",
+      updatedAt: "2026-08-11T00:00:00.000Z",
+      type: "text",
+      text: "Retained child",
+      parentId: parent.id,
+      parentRelative: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+      childLayout: {
+        horizontalConstraint: "left",
+        verticalConstraint: "top",
+      },
+      geometry: { x: 85, y: 84, width: 90, height: 48, rotation: 0 },
+      style: {
+        fill: null,
+        outline: "#334155",
+        outlineWidth: 0,
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        fontSize: 16,
+      },
+    };
+
+    putCanvasObjectV2(document, parent);
+    putCanvasObjectV2(document, child);
+    const childMap = document
+      .getMap<Y.Map<unknown>>("canvas-objects-v2")
+      .get(child.id)!;
+    const relativeMap = childMap.get("parentRelative");
+    expect(relativeMap).toBeInstanceOf(Y.Map);
+    (relativeMap as Y.Map<unknown>).set("x", 1.2);
+
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      parentRelative: { x: 1.2 },
+    });
+    expect(listCanvasObjectsV2(document)).toHaveLength(2);
+    expect(() =>
+      setCanvasObjectField(document, child.id, ["text"], "Editable child"),
+    ).not.toThrow();
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      text: "Editable child",
+      parentRelative: { x: 1.2 },
+    });
+  });
+
   it("omits undefined optional fields when writing shared objects", () => {
     const document = createProductCanvasDocument(canvasId);
     const object: CanvasObjectV2 = {

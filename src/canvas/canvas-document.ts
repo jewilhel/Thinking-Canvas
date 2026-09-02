@@ -240,7 +240,7 @@ const legacyAnnotationObjectSchema = canvasObjectBaseSchema.extend({
     .optional(),
 });
 
-export const canvasObjectV2Schema = z
+const storedCanvasObjectV2Schema = z
   .discriminatedUnion("type", [
     shapeObjectSchema,
     iconObjectSchema,
@@ -265,16 +265,6 @@ export const canvasObjectV2Schema = z
           message: "Parented objects require normalized parent geometry.",
         });
       }
-      if (
-        parentRelative &&
-        !isLocallyPlausibleParentRelativeGeometry(parentRelative)
-      ) {
-        context.addIssue({
-          code: "custom",
-          path: ["parentRelative"],
-          message: "Nested object geometry must remain inside its parent.",
-        });
-      }
       return;
     }
     if (object.type !== "annotation") return;
@@ -296,6 +286,24 @@ export const canvasObjectV2Schema = z
       });
     }
   });
+
+export const canvasObjectV2Schema = storedCanvasObjectV2Schema.superRefine(
+  (object, context) => {
+    if (
+      (object.type === "shape" ||
+        object.type === "icon" ||
+        object.type === "text") &&
+      object.parentRelative &&
+      !isLocallyPlausibleParentRelativeGeometry(object.parentRelative)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["parentRelative"],
+        message: "Nested object geometry must remain inside its parent.",
+      });
+    }
+  },
+);
 
 export type CanvasObjectV2 = z.infer<typeof canvasObjectV2Schema>;
 
@@ -612,7 +620,9 @@ export function putCanvasObjectV2(
 export function readCanvasObjectV2(document: Y.Doc, objectId: string) {
   const initialValue = objects(document).get(objectId);
   if (!initialValue) return undefined;
-  const initial = canvasObjectV2Schema.parse(fromSharedValue(initialValue));
+  const initial = storedCanvasObjectV2Schema.parse(
+    fromSharedValue(initialValue),
+  );
   const candidates = new Map<string, CanvasObjectV2>();
   candidates.set(initial.id, initial);
   let nextId: string | null =
@@ -625,7 +635,7 @@ export function readCanvasObjectV2(document: Y.Doc, objectId: string) {
   while (nextId && !candidates.has(nextId)) {
     const value = objects(document).get(nextId);
     if (!value) break;
-    const parsed = canvasObjectV2Schema.safeParse(fromSharedValue(value));
+    const parsed = storedCanvasObjectV2Schema.safeParse(fromSharedValue(value));
     if (!parsed.success) break;
     candidates.set(parsed.data.id, parsed.data);
     nextId =
@@ -662,7 +672,9 @@ export function listCanvasObjectsV2(document: Y.Doc) {
     const value = objectMap.get(id);
     if (!value) return [];
     try {
-      const object = canvasObjectV2Schema.safeParse(fromSharedValue(value));
+      const object = storedCanvasObjectV2Schema.safeParse(
+        fromSharedValue(value),
+      );
       return object.success ? [object.data] : [];
     } catch {
       return [];
@@ -860,7 +872,7 @@ export function setCanvasObjectField(
   const current = readCanvasObjectV2(document, objectId);
   if (!current) throw new Error("Canvas object does not exist.");
 
-  const next = canvasObjectV2Schema.parse(
+  const next = storedCanvasObjectV2Schema.parse(
     patchRecord(current, path, replacement),
   );
   let target: Y.Map<unknown> = objects(document).get(objectId)!;
