@@ -1,12 +1,12 @@
 # Milestone 7 — Expanded shapes and illustration icons
 
-Status: Approved for implementation
+Status: Closed
 
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 
 Plan owner: Product owner
 
-Last updated: 2026-09-01
+Last updated: 2026-09-02
 
 ## Goal and user-visible outcome
 
@@ -187,11 +187,11 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 
 ### Slice 4 — Regression, hosted acceptance, and evidence
 
-- [ ] Run the complete static, unit, integration, migration/RLS, accessibility, Chromium end-to-end, build, and secret-scan gates.
-- [ ] Run catalog and canvas performance checks at the approved desktop/tablet viewports and with 1,000 mixed objects.
-- [ ] Push and create or update a pull request only after separate authorization; require protected CI for the exact implementation head.
-- [ ] Verify the matching immutable Netlify preview in Codex's in-app browser, including two authenticated collaborators and `AS-007`.
-- [ ] Retain commands, run IDs, commit SHA, deploy ID, browser/environment, screenshots, and known limitations; request product-owner closure only after every exit criterion passes.
+- [x] Run the complete static, unit, integration, migration/RLS, accessibility, Chromium end-to-end, build, and secret-scan gates.
+- [x] Run catalog and canvas performance checks at the approved desktop/tablet viewports and with 1,000 mixed objects.
+- [x] Push and create or update a pull request only after separate authorization; require protected CI for the exact implementation head.
+- [x] Verify the matching immutable Netlify preview in Codex's in-app browser, including two authenticated collaborators and `AS-007`.
+- [x] Retain commands, run IDs, commit SHA, deploy ID, browser/environment, screenshots, and known limitations; request product-owner closure only after every exit criterion passes.
 
 ### Slice 5 — Generic containment and first-class labels
 
@@ -216,8 +216,8 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 ### Slice 8 — Expanded regression and hosted acceptance
 
 - [x] Extend unit/property/convergence coverage for label migration, generic containment, every layout combination, modifier semantics, parent-preserving resize, and nested rotation.
-- [ ] Run the complete repository and serialized Chromium/axe gates, then verify the matching immutable preview with the expanded `AS-007` scenario.
-- [ ] Record focused commits, exact-head CI, deploy ID, screenshots, limitations, and product-owner hands-on acceptance before closure.
+- [x] Run the complete repository and serialized Chromium/axe gates, then verify the matching immutable preview with the expanded `AS-007` scenario.
+- [x] Record focused commits, exact-head CI, deploy ID, screenshots, limitations, and product-owner hands-on acceptance before closure.
 
 ### Slice 9 — Transform affordance refinement
 
@@ -298,7 +298,7 @@ No relational migration is planned. Canvas objects remain in the shared Yjs docu
 - [x] Treat deleting a first-class `shape-label` child as an intentional removal rather than an invitation to recreate embedded shape text.
 - [x] Keep double-click inline editing routed to an existing label child and retain a compatibility fallback only for a legacy shape that still contains non-empty embedded text.
 - [x] Prove that deleting a label, double-clicking its now-empty parent, and leaving the interaction does not open an editor or add another canvas object; preserve existing shape-label, sticky-note, and standalone-text editing regressions.
-- [ ] Pass the focused browser scenario, complete repository gate, exact-head CI, and matching hosted preview before requesting hands-on confirmation.
+- [x] Pass the focused browser scenario, complete repository gate, exact-head CI, and matching hosted preview before requesting hands-on confirmation.
 
 ## Pull-request slices
 
@@ -378,27 +378,27 @@ Retain the exact commit SHA, protected CI run, immutable deploy ID/URL, browser 
 
 - [x] `PD-013` is explicitly approved and reflected in both documents; this does not mark implementation complete.
 - [x] `PD-014` and `PD-015` are explicitly approved and reflected in both documents; this does not mark implementation complete.
-- [ ] `FR-072`: every approved basic shape passes the complete applicable ordinary-object lifecycle, connection, style, comment, history, persistence, and collaboration matrix.
-- [ ] `FR-073`: the pinned local catalog is searchable by accessible name/tag and browsable by category with responsive, virtualized, keyboard-accessible results and no third-party runtime request.
-- [ ] `FR-074`: independent icons pass the ordinary object lifecycle plus permission, AI, collaboration, reconnect, reload, connector, comment, and annotation integration.
-- [ ] `FR-075`: independent fill and stroke color, no-fill/no-stroke, stroke thickness/pattern, opacity, supported visual-variant preservation, mixed-selection, batch, and zoom-fidelity behavior passes automated and hosted manual checks.
-- [ ] `FR-076`: modifier-drag and **Place inside** containment for shapes, icons, and text plus detach/reparent are understandable, validated, and visually stable; ordinary overlap never nests.
-- [ ] `FR-077`: every nested child type is independently selectable, movable, resizable, rotatable where supported, styleable, commentable, connector-targetable, keyboard-operable, undoable, and governed by one explicit horizontal and one explicit vertical constraint.
-- [ ] `FR-078`: parent move/rotation, normal and modifier resize, delete, duplicate, grouping, ordering, clipboard, simultaneous editing, reconnect, and reload preserve the approved layout contract and referential integrity with no cycles or orphans.
-- [ ] `FR-079`: new and legacy shape labels are first-class nested text children with inset responsive bounds, fixed font size, independent editing, and no content loss.
-- [ ] `FR-080`: corner-adjacent pointer rotation, Shift snapping, exact keyboard control, parent-local child transforms, history, collaboration, reconnect, and reload pass automated and hosted checks.
-- [ ] `FR-081`: horizontal and vertical flipping works for eligible independent objects and complete contained families, with durable history, collaboration, clipboard, reconnect, and reload behavior.
-- [ ] `FR-082`: independent and nested icons resize to 8px without lowering the 24px minimum for shapes or text, losing crisp vector rendering, or making selection unusable.
-- [ ] `FR-083`: complete legacy and new groups rotate around their durable visual-center frame with live member previews, exact input, Shift snapping, history, collaboration, clipboard, reconnect, and reload.
-- [ ] `FR-084`: modifier-drag and accessible actions nest, detach, and reparent a complete group as one child while ordinary overlap remains independent.
-- [ ] `FR-085`: same-parent children group without losing containment, mixed-parent grouping is rejected, and the nested group passes the complete family transform/lifecycle matrix.
-- [ ] `FR-086`: direct children and nested groups read legacy layout records compatibly and pass every `Left`/`Right`/`Left + Right`/`Center`/`Scale` and `Top`/`Bottom`/`Top + Bottom`/`Center`/`Scale` behavior with accessible menus.
-- [ ] `FR-087`: normal and modifier parent resize preview every direct child and nested-group member continuously, then persist the same final geometry in one undoable transaction.
-- [ ] The exact expanded Milestone 7 `AS-007` exit scenario passes with tree, brain, clock, and shoe icons plus nested shape and text children on an authenticated immutable Netlify preview using two collaborators.
-- [ ] Catalog generation/security, source-quality, unit/integration, migration/RLS, complete Chromium/axe, build, and performance gates pass for the exact implementation head.
-- [ ] The milestone record contains exact-head CI and matching immutable preview evidence, known limitations, and product-owner hands-on acceptance.
-- [ ] Product code remains deployable, previous canvases load unchanged, and no requirement from Milestones 0–6 regresses.
-- [ ] The icon pipeline uses a documented provider-neutral vector-scene boundary, and contract tests prove ordinary object systems do not depend directly on Phosphor SVG nodes; no path/node editing UI or user-owned vector schema is exposed.
+- [x] `FR-072`: every approved basic shape passes the complete applicable ordinary-object lifecycle, connection, style, comment, history, persistence, and collaboration matrix.
+- [x] `FR-073`: the pinned local catalog is searchable by accessible name/tag and browsable by category with responsive, virtualized, keyboard-accessible results and no third-party runtime request.
+- [x] `FR-074`: independent icons pass the ordinary object lifecycle plus permission, AI, collaboration, reconnect, reload, connector, comment, and annotation integration.
+- [x] `FR-075`: independent fill and stroke color, no-fill/no-stroke, stroke thickness/pattern, opacity, supported visual-variant preservation, mixed-selection, batch, and zoom-fidelity behavior passes automated and hosted manual checks.
+- [x] `FR-076`: modifier-drag and **Place inside** containment for shapes, icons, and text plus detach/reparent are understandable, validated, and visually stable; ordinary overlap never nests.
+- [x] `FR-077`: every nested child type is independently selectable, movable, resizable, rotatable where supported, styleable, commentable, connector-targetable, keyboard-operable, undoable, and governed by one explicit horizontal and one explicit vertical constraint.
+- [x] `FR-078`: parent move/rotation, normal and modifier resize, delete, duplicate, grouping, ordering, clipboard, simultaneous editing, reconnect, and reload preserve the approved layout contract and referential integrity with no cycles or orphans.
+- [x] `FR-079`: new and legacy shape labels are first-class nested text children with inset responsive bounds, fixed font size, independent editing, and no content loss.
+- [x] `FR-080`: corner-adjacent pointer rotation, Shift snapping, exact keyboard control, parent-local child transforms, history, collaboration, reconnect, and reload pass automated and hosted checks.
+- [x] `FR-081`: horizontal and vertical flipping works for eligible independent objects and complete contained families, with durable history, collaboration, clipboard, reconnect, and reload behavior.
+- [x] `FR-082`: independent and nested icons resize to 8px without lowering the 24px minimum for shapes or text, losing crisp vector rendering, or making selection unusable.
+- [x] `FR-083`: complete legacy and new groups rotate around their durable visual-center frame with live member previews, exact input, Shift snapping, history, collaboration, clipboard, reconnect, and reload.
+- [x] `FR-084`: modifier-drag and accessible actions nest, detach, and reparent a complete group as one child while ordinary overlap remains independent.
+- [x] `FR-085`: same-parent children group without losing containment, mixed-parent grouping is rejected, and the nested group passes the complete family transform/lifecycle matrix.
+- [x] `FR-086`: direct children and nested groups read legacy layout records compatibly and pass every `Left`/`Right`/`Left + Right`/`Center`/`Scale` and `Top`/`Bottom`/`Top + Bottom`/`Center`/`Scale` behavior with accessible menus.
+- [x] `FR-087`: normal and modifier parent resize preview every direct child and nested-group member continuously, then persist the same final geometry in one undoable transaction.
+- [x] The exact expanded Milestone 7 `AS-007` exit scenario passes with tree, brain, clock, and shoe icons plus nested shape and text children on an authenticated immutable Netlify preview using two collaborators.
+- [x] Catalog generation/security, source-quality, unit/integration, migration/RLS, complete Chromium/axe, build, and performance gates pass for the exact implementation head.
+- [x] The milestone record contains exact-head CI and matching immutable preview evidence, known limitations, and product-owner hands-on acceptance.
+- [x] Product code remains deployable, previous canvases load unchanged, and no requirement from Milestones 0–6 regresses.
+- [x] The icon pipeline uses a documented provider-neutral vector-scene boundary, and contract tests prove ordinary object systems do not depend directly on Phosphor SVG nodes; no path/node editing UI or user-owned vector schema is exposed.
 
 ## Explicitly excluded work
 
@@ -497,6 +497,8 @@ Expanded-containment evidence on 2026-08-31:
 - Slice 18 passed `pnpm check`: Prettier, ESLint with zero warnings, strict TypeScript, all 57 Vitest files / 294 tests, and the optimized Next.js production build. Focused fixtures prove that a retained 90-degree child remains readable when its unrotated width crosses a normalized edge, insignificant edge drift is tolerated, equivalent unrotated overflow remains rejected by the canonical writer, and a structurally valid old out-of-bounds child remains readable and field-editable. Implementation-head hosted evidence is recorded below; the final ledger head still requires exact CI and deploy matching.
 - Protected CI run `33597046270` passed commit `01e9704a5710b25fca74cf12c760a5f67941a1e9`: formatting, lint, strict TypeScript, 294 unit tests, database/RLS tests, the optimized production build, and all 69 authenticated Chromium/accessibility scenarios. Netlify deploy `6a97bba6e04f380008a4d6db` was ready with the same `commit_ref`; the exact bundle loaded the retained Milestone 7 canvas without a new `Nested object geometry must remain inside its parent.` error.
 - Slice 19 passed `pnpm check`: Prettier, ESLint with zero warnings, strict TypeScript, all 57 Vitest files / 294 tests, and the optimized Next.js production build. With local public Supabase variables derived from the running local stack, its new authenticated Chromium scenario passed 1 of 1 and the two adjacent inline-editing regressions passed 2 of 2. The behavior keeps a deliberately label-free parent at one navigator object after double-click while preserving existing label and standalone-text editors.
+- Protected CI run `33600485058` passed the final implementation head `8c1735d1655eba04a3409f9af7d713c35e509ba7`: formatting, lint, strict TypeScript, 294 unit tests, database/RLS tests, the optimized production build, and all 70 authenticated Chromium/accessibility scenarios. Ready Netlify deploy-preview ID `6a97c69d9a01c50008614d5c` had the same `commit_ref`; a fresh in-app-browser tab identified that exact deploy and reported no application console errors.
+- 2026-09-02 — The product owner completed the remaining hosted preview walkthrough, confirmed that everything was working well including deliberate shape-label deletion, and explicitly approved Milestone 7 closure. The previously recorded retained-canvas durable-acknowledgment backlog remains outside this milestone's schema-compatibility claim; no new Milestone 7 functional defect remains open.
 
 Research evidence:
 
@@ -527,11 +529,12 @@ Research evidence:
 | 2026-09-01 | Requested independent multiselection containment, direct same-parent child grouping, stable inline text alignment, and focused connector anchors.                 | Hosted testing showed that composition gestures still required premature grouping or object-navigator workarounds, inline editing shifted vertically, and an active connector exposed anchors across the whole canvas. | Adds Slice 17 within `FR-003`, `FR-076`, `FR-077`, `FR-079`, and `FR-085`; it broadens pointer routing and transient presentation only, while retaining the approved bounded hierarchy, constraint records, and command schemas.                                                                                                                                                | Product owner                                    |
 | 2026-09-01 | Approved a retained-canvas compatibility repair after the exact preview failed to read an existing rotated nested object.                                         | The saved transform can be parent-contained while its unrotated normalized width or height crosses an edge; an object-only schema cannot verify rotated corners without the parent geometry.                           | Adds Slice 18 within `FR-077`, `FR-078`, and reload-safe `AS-007`; actual new nesting remains protected by parent-aware corner containment and no retained data is deleted or rewritten.                                                                                                                                                                                        | Product owner                                    |
 | 2026-09-01 | Requested that deleting a first-class shape-label child permanently stop empty-parent double-click from recreating it.                                            | A deliberately text-free shape should remain available for icon and shape composition without an implicit label returning.                                                                                             | Adds Slice 19 within `FR-079`; existing labels remain editable, legacy embedded text remains accessible, and no schema or migration change is introduced.                                                                                                                                                                                                                       | Product owner                                    |
+| 2026-09-02 | Approved and closed Milestone 7 after completing the final exact-preview walkthrough.                                                                             | Exact-head CI, the matching ready preview, retained-canvas compatibility, and the full hands-on acceptance path now pass, including the final deliberate-label-deletion repair.                                        | Marks `FR-072` through `FR-087`, `AS-007`, supporting work, and the Milestone 7 exit gate complete. PR #12 remains open and unmerged pending separate merge authorization.                                                                                                                                                                                                      | Product owner                                    |
 
 ## Closure
 
-Closure status: Not ready
+Closure status: Closed
 
-Closure approval: Pending
+Closure approval: Product owner approved 2026-09-02
 
-Closed on: —
+Closed on: 2026-09-02
