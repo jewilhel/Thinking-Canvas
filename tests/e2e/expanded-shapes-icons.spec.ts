@@ -244,12 +244,45 @@ test("selects a composition parent first and exposes rotation at every corner", 
   });
   await expect(parentItem).toHaveAttribute("aria-pressed", "true");
   await expect(labelItem).toHaveAttribute("aria-pressed", "false");
-  await surface.dblclick({ position: { x: 390, y: 380 } });
+  const viewportXAfterDrag = Number(
+    await surface.getAttribute("data-viewport-x"),
+  );
+  const viewportYAfterDrag = Number(
+    await surface.getAttribute("data-viewport-y"),
+  );
+  const viewportScaleAfterDrag = Number(
+    await surface.getAttribute("data-viewport-scale"),
+  );
+  const parentXAfterDrag = Number(
+    await page.getByTestId("selected-position-x").innerText(),
+  );
+  const parentYAfterDrag = Number(
+    await page.getByTestId("selected-position-y").innerText(),
+  );
+  const parentWidthAfterDrag = Number(
+    await page.getByTestId("selected-width").innerText(),
+  );
+  const parentHeightAfterDrag = Number(
+    await page.getByTestId("selected-height").innerText(),
+  );
+  const parentBorderPoint = {
+    x: viewportXAfterDrag + (parentXAfterDrag + 5) * viewportScaleAfterDrag,
+    y: viewportYAfterDrag + (parentYAfterDrag + 5) * viewportScaleAfterDrag,
+  };
+  const parentCenterPoint = {
+    x:
+      viewportXAfterDrag +
+      (parentXAfterDrag + parentWidthAfterDrag / 2) * viewportScaleAfterDrag,
+    y:
+      viewportYAfterDrag +
+      (parentYAfterDrag + parentHeightAfterDrag / 2) * viewportScaleAfterDrag,
+  };
+  await surface.dblclick({ position: parentBorderPoint });
   const inlineEditor = page.getByLabel("Edit object text on canvas");
   await expect(inlineEditor).toBeFocused();
   await inlineEditor.press("Escape");
   await parentItem.click();
-  await surface.click({ position: { x: 390, y: 380 } });
+  await surface.click({ position: parentCenterPoint });
   await expect(labelItem).toHaveAttribute("aria-pressed", "true");
 
   await parentItem.click();
@@ -507,6 +540,160 @@ test("keeps grouped selection chrome tight and command-drags the group into a pa
     "4",
   );
   await page.mouse.up();
+});
+
+test("nests an independent multiselection and groups the children on canvas", async ({
+  page,
+}) => {
+  await openFreshCanvas(page);
+  const surface = page.getByTestId("product-canvas-surface");
+  const surfaceBox = await surface.boundingBox();
+  expect(surfaceBox).not.toBeNull();
+  const center = {
+    x: surfaceBox!.width / 2,
+    y: surfaceBox!.height / 2,
+  };
+
+  await page.getByRole("button", { name: "Sticky note", exact: true }).click();
+  await surface.click({
+    position: { x: center.x - 100, y: center.y - 80 },
+  });
+  const parent = page.getByRole("button", {
+    name: "rectangle — Sticky note",
+    exact: true,
+  });
+  const parentTestId = await parent.getAttribute("data-testid");
+  const parentId = parentTestId?.replace("object-list-item-", "");
+  expect(parentId).toBeTruthy();
+
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page.getByLabel("Search shapes and icons").fill("brain");
+  await page.getByTitle("Brain", { exact: true }).click();
+  await surface.focus();
+  for (let index = 0; index < 2; index += 1) {
+    await surface.press("Shift+ArrowLeft");
+  }
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page.getByLabel("Search shapes and icons").fill("arrow up");
+  await page.getByTitle("Arrow Up", { exact: true }).click();
+  await surface.focus();
+  for (let index = 0; index < 2; index += 1) {
+    await surface.press("Shift+ArrowRight");
+  }
+
+  const brain = page.locator('[data-testid^="object-list-item-"]').filter({
+    hasText: "icon — brain",
+  });
+  const arrow = page.locator('[data-testid^="object-list-item-"]').filter({
+    hasText: "icon — arrow-up",
+  });
+  await brain.click();
+  await arrow.click({ modifiers: ["Shift"] });
+  await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
+
+  const containmentModifier = await page.evaluate(() =>
+    /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? "Meta" : "Control",
+  );
+  await page.keyboard.down(containmentModifier);
+  await page.mouse.move(surfaceBox!.x + center.x, surfaceBox!.y + center.y);
+  await page.mouse.down();
+  await page.mouse.move(surfaceBox!.x + center.x + 8, surfaceBox!.y + center.y);
+  await page.mouse.up();
+  await page.keyboard.up(containmentModifier);
+
+  await expect(brain).toHaveAttribute("data-parent-id", parentId!);
+  await expect(arrow).toHaveAttribute("data-parent-id", parentId!);
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await expect(
+    page.getByRole("button", { name: "Group", exact: true }),
+  ).toBeEnabled();
+  await page.keyboard.press("Escape");
+
+  const viewportX = Number(await surface.getAttribute("data-viewport-x"));
+  const viewportY = Number(await surface.getAttribute("data-viewport-y"));
+  const viewportScale = Number(
+    await surface.getAttribute("data-viewport-scale"),
+  );
+  await brain.click();
+  const brainWidth = Number(
+    await page.getByTestId("selected-width").innerText(),
+  );
+  const brainPoint = {
+    x:
+      viewportX +
+      (Number(await page.getByTestId("selected-position-x").innerText()) +
+        brainWidth * 0.1) *
+        viewportScale,
+    y:
+      viewportY +
+      (Number(await page.getByTestId("selected-position-y").innerText()) +
+        Number(await page.getByTestId("selected-height").innerText()) / 2) *
+        viewportScale,
+  };
+  await arrow.click();
+  const arrowWidth = Number(
+    await page.getByTestId("selected-width").innerText(),
+  );
+  const arrowPoint = {
+    x:
+      viewportX +
+      (Number(await page.getByTestId("selected-position-x").innerText()) +
+        arrowWidth * 0.5) *
+        viewportScale,
+    y:
+      viewportY +
+      (Number(await page.getByTestId("selected-position-y").innerText()) +
+        Number(await page.getByTestId("selected-height").innerText()) / 2) *
+        viewportScale,
+  };
+
+  await surface.click({ position: { x: 60, y: 420 } });
+  await parent.click();
+  await surface.click({ position: brainPoint });
+  await expect(brain).toHaveAttribute("aria-pressed", "true");
+  await surface.click({
+    position: arrowPoint,
+    modifiers: ["Shift"],
+  });
+  await expect(page.getByTestId("selection-status")).toHaveText("2 selected");
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await page.getByRole("button", { name: "Group", exact: true }).click();
+  await page.getByRole("button", { name: "More selection actions" }).click();
+  await expect(
+    page.getByRole("button", { name: "Remove group from container" }),
+  ).toBeVisible();
+});
+
+test("keeps inline text vertically aligned while editing", async ({ page }) => {
+  await openFreshCanvas(page);
+  const surface = page.getByTestId("product-canvas-surface");
+  const surfaceBox = await surface.boundingBox();
+  expect(surfaceBox).not.toBeNull();
+  await page.getByRole("button", { name: "Sticky note", exact: true }).click();
+  await surface.click({ position: { x: 360, y: 320 } });
+  await surface.dblclick({ position: { x: 410, y: 370 } });
+
+  const editor = page.getByLabel("Edit object text on canvas");
+  await expect(editor).toBeFocused();
+  const [viewportY, viewportScale, objectY, objectHeight, editorBox] =
+    await Promise.all([
+      surface.getAttribute("data-viewport-y").then(Number),
+      surface.getAttribute("data-viewport-scale").then(Number),
+      page.getByTestId("selected-position-y").innerText().then(Number),
+      page.getByTestId("selected-height").innerText().then(Number),
+      editor.boundingBox(),
+    ]);
+  expect(editorBox).not.toBeNull();
+  const expectedTop =
+    surfaceBox!.y +
+    viewportY +
+    (objectY + objectHeight / 2) * viewportScale -
+    editorBox!.height / 2;
+  expect(editorBox!.y).toBeCloseTo(expectedTop, 0);
+  expect(editorBox!.y).toBeGreaterThan(
+    surfaceBox!.y + viewportY + objectY * viewportScale,
+  );
+  await editor.press("Escape");
 });
 
 test("keeps the contextual properties palette outside the selected frame", async ({

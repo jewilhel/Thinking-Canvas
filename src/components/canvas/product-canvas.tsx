@@ -30,6 +30,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -106,6 +107,7 @@ import {
   isObjectParent,
   parentFirstObjectOrder,
   parentRelativeGeometry,
+  rotatePoint,
   rotateGeometryAroundCenter,
   rotationHandleWorldPoint,
   shapeLabelChildLayout,
@@ -443,6 +445,9 @@ export function ProductCanvas({
   const [pointerPreview, setPointerPreview] = useState<Point | null>(null);
   const [inlineTextEditor, setInlineTextEditor] =
     useState<InlineTextEditor | null>(null);
+  const [inlineEditorMeasuredHeight, setInlineEditorMeasuredHeight] = useState<
+    number | null
+  >(null);
   const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
   const [containmentPreviewParentId, setContainmentPreviewParentId] = useState<
     string | null
@@ -563,6 +568,15 @@ export function ProductCanvas({
     const object = objectsById.get(id);
     return object ? [object] : [];
   });
+  const selectedNestedParentIds = new Set(
+    selectedObjects.flatMap((object) => {
+      if (!isContainableObject(object)) return [];
+      const parentId =
+        object.parentId ??
+        (object.groupId ? groupsById.get(object.groupId)?.parentId : null);
+      return parentId ? [parentId] : [];
+    }),
+  );
   const selectedContainerIds = new Set(
     selectedObjects.map((object) =>
       isContainableObject(object) ? (object.parentId ?? null) : null,
@@ -1101,6 +1115,7 @@ export function ProductCanvas({
     runCommand("object.create", { object });
     setConnectorStart(null);
     setPointerPreview(null);
+    setHoveredShapeId(null);
     setSelectedIds([id]);
     setTool("select");
   }
@@ -1112,6 +1127,7 @@ export function ProductCanvas({
     setTool("select");
     const listStyle = object.style.listStyle ?? "none";
     const editableText = formatListText(object.text, listStyle);
+    setInlineEditorMeasuredHeight(null);
     setInlineTextEditor({
       objectId: object.id,
       objectType: object.type,
@@ -1172,6 +1188,7 @@ export function ProductCanvas({
       if (commands.length) runCommandBatch(commands);
     }
     setInlineTextEditor(null);
+    setInlineEditorMeasuredHeight(null);
     requestAnimationFrame(() => containerRef.current?.focus());
   }
 
@@ -1550,6 +1567,59 @@ export function ProductCanvas({
     });
   }
 
+  function supportsIndependentContainment(targets: CanvasObjectV2[]) {
+    if (
+      targets.length === 0 ||
+      targets.some(
+        (target) => !isContainableObject(target) || target.groupId != null,
+      )
+    ) {
+      return false;
+    }
+    const targetIds = new Set(targets.map((target) => target.id));
+    const containerIds = new Set(
+      targets.map((target) =>
+        isContainableObject(target) ? (target.parentId ?? null) : null,
+      ),
+    );
+    return (
+      containerIds.size === 1 &&
+      !targets.some(
+        (target) =>
+          isContainableObject(target) &&
+          target.parentId != null &&
+          targetIds.has(target.parentId),
+      )
+    );
+  }
+
+  function independentContainmentTarget(
+    targets: CanvasObjectV2[],
+    dx: number,
+    dy: number,
+  ) {
+    if (!supportsIndependentContainment(targets)) return null;
+    const bounds = selectionBoundsForObjects(targets);
+    if (!bounds) return null;
+    const targetIds = new Set(targets.map((target) => target.id));
+    const nextFrame = {
+      ...bounds,
+      x: bounds.x + dx,
+      y: bounds.y + dy,
+      rotation: 0,
+    };
+    return (
+      [...objects]
+        .reverse()
+        .find(
+          (candidate) =>
+            isObjectParent(candidate) &&
+            !targetIds.has(candidate.id) &&
+            fullyContains(candidate, nextFrame),
+        ) ?? null
+    );
+  }
+
   function moveSelectionFromDrag(
     object: CanvasObjectV2,
     x: number,
@@ -1609,6 +1679,11 @@ export function ProductCanvas({
     }
     const commands: CommandDefinition[] = [];
     const selectedIdSet = new Set(selectedIds);
+    const independentContainment =
+      containmentIntent && supportsIndependentContainment(selectedObjects);
+    const nextParent = independentContainment
+      ? independentContainmentTarget(selectedObjects, dx, dy)
+      : null;
     for (const selected of referenceSafeSelectionOrder(selectedObjects)) {
       if (
         isContainableObject(selected) &&
@@ -1618,7 +1693,7 @@ export function ProductCanvas({
         continue;
       if (selected.type === "connector")
         commands.push(...moveConnectorCommands(selected, dx, dy, true));
-      else if (isContainableObject(selected) && selectedObjects.length === 1) {
+      else if (isContainableObject(selected) && independentContainment) {
         const geometry = {
           ...selected.geometry,
           x: selected.geometry.x + dx,
@@ -1627,19 +1702,7 @@ export function ProductCanvas({
         const currentParent = selected.parentId
           ? objectsById.get(selected.parentId)
           : null;
-        const nextParent = [...objects]
-          .reverse()
-          .find(
-            (candidate) =>
-              isObjectParent(candidate) &&
-              candidate.id !== selected.id &&
-              fullyContains(candidate, geometry),
-          );
-        if (
-          containmentIntent &&
-          selected.parentId &&
-          nextParent?.id !== selected.parentId
-        ) {
+        if (selected.parentId && nextParent?.id !== selected.parentId) {
           commands.push({
             type: "object.detach",
             payload: { objectId: selected.id },
@@ -1649,11 +1712,7 @@ export function ProductCanvas({
           type: "object.move",
           payload: { objectId: selected.id, x: geometry.x, y: geometry.y },
         });
-        if (
-          containmentIntent &&
-          nextParent &&
-          nextParent.id !== currentParent?.id
-        ) {
+        if (nextParent && nextParent.id !== currentParent?.id) {
           commands.push({
             type: "object.nest",
             payload: { objectId: selected.id, parentId: nextParent.id },
@@ -1702,24 +1761,8 @@ export function ProductCanvas({
             fullyContains(candidate, nextFrame),
         );
       setContainmentPreviewParentId(parent?.id ?? null);
-    } else if (
-      containmentIntent &&
-      isContainableObject(durableObject) &&
-      selectedTargets.length === 1
-    ) {
-      const geometry = {
-        ...durableObject.geometry,
-        x: durableObject.geometry.x + dx,
-        y: durableObject.geometry.y + dy,
-      };
-      const parent = [...objects]
-        .reverse()
-        .find(
-          (candidate) =>
-            isObjectParent(candidate) &&
-            candidate.id !== durableObject.id &&
-            fullyContains(candidate, geometry),
-        );
+    } else if (containmentIntent) {
+      const parent = independentContainmentTarget(selectedTargets, dx, dy);
       setContainmentPreviewParentId(parent?.id ?? null);
     } else {
       setContainmentPreviewParentId(null);
@@ -2258,23 +2301,52 @@ export function ProductCanvas({
     }
   }
 
+  function updateConnectorHoverTarget(point: Point) {
+    const hovered = [...displayObjects].reverse().find((candidate) => {
+      if (
+        candidate.type !== "shape" &&
+        candidate.type !== "icon" &&
+        candidate.type !== "text"
+      ) {
+        return false;
+      }
+      return pointWithinObjectHoverZone(
+        candidate,
+        point,
+        connectionAnchorHoverDistancePx / viewport.scale,
+      );
+    });
+    const hoverTarget =
+      hovered?.type === "text" &&
+      hovered.childRole === "shape-label" &&
+      hovered.parentId
+        ? objectsById.get(hovered.parentId)
+        : hovered;
+    setHoveredShapeId(hoverTarget?.id ?? null);
+  }
+
   function onStagePointerMove() {
     const point = worldPointer();
     if (connectorStart) setPointerPreview(point);
     if (point) {
-      setHoveredShapeId((current) => {
-        if (!current) return null;
-        const hovered = objectsById.get(current);
-        return hovered &&
-          hovered.type === "shape" &&
-          pointWithinObjectHoverZone(
-            hovered,
-            point,
-            connectionAnchorHoverDistancePx / viewport.scale,
-          )
-          ? current
-          : null;
-      });
+      if (connectorStart) updateConnectorHoverTarget(point);
+      else {
+        setHoveredShapeId((current) => {
+          if (!current) return null;
+          const hovered = objectsById.get(current);
+          return hovered &&
+            (hovered.type === "shape" ||
+              hovered.type === "icon" ||
+              hovered.type === "text") &&
+            pointWithinObjectHoverZone(
+              hovered,
+              point,
+              connectionAnchorHoverDistancePx / viewport.scale,
+            )
+            ? current
+            : null;
+        });
+      }
     }
     if (!marquee) return;
     if (point)
@@ -2669,6 +2741,11 @@ export function ProductCanvas({
     if (!selectedFrame) return;
     const target = selectionProxyTarget(node);
     if (!target) return;
+    const transformed = transformSelectionObjects(
+      selectedObjects,
+      selectedFrame,
+      target,
+    );
     if (containmentIntent && selectedGroup) {
       const parent = [...objects].reverse().find(
         (candidate) =>
@@ -2680,15 +2757,14 @@ export function ProductCanvas({
           }),
       );
       setContainmentPreviewParentId(parent?.id ?? null);
+    } else if (containmentIntent) {
+      const parent = independentContainmentTarget(transformed, 0, 0);
+      setContainmentPreviewParentId(parent?.id ?? null);
     } else {
       setContainmentPreviewParentId(null);
     }
     setSelectionTransformPreviewObjects(
-      Object.fromEntries(
-        transformSelectionObjects(selectedObjects, selectedFrame, target).map(
-          (object) => [object.id, object],
-        ),
-      ),
+      Object.fromEntries(transformed.map((object) => [object.id, object])),
     );
   }
 
@@ -2745,6 +2821,11 @@ export function ProductCanvas({
     );
     const transformedIds = new Set(transformed.map((object) => object.id));
     const commands: CommandDefinition[] = [];
+    const nextParent = containmentIntent
+      ? independentContainmentTarget(transformed, 0, 0)
+      : null;
+    const independentContainment =
+      containmentIntent && supportsIndependentContainment(transformed);
     for (const object of referenceSafeSelectionOrder(transformed)) {
       if (
         isContainableObject(object) &&
@@ -2773,6 +2854,19 @@ export function ProductCanvas({
         }
         continue;
       }
+      const original = objectsById.get(object.id);
+      if (
+        independentContainment &&
+        original &&
+        isContainableObject(original) &&
+        original.parentId &&
+        nextParent?.id !== original.parentId
+      ) {
+        commands.push({
+          type: "object.detach",
+          payload: { objectId: object.id },
+        });
+      }
       commands.push(
         {
           type: "object.move",
@@ -2791,11 +2885,24 @@ export function ProductCanvas({
           },
         },
       );
+      if (
+        independentContainment &&
+        nextParent &&
+        original &&
+        isContainableObject(original) &&
+        nextParent.id !== original.parentId
+      ) {
+        commands.push({
+          type: "object.nest",
+          payload: { objectId: object.id, parentId: nextParent.id },
+        });
+      }
     }
     node.position({ x: target.x, y: target.y });
     node.scale({ x: 1, y: 1 });
     setSelectionTransformPreviewObjects({});
     if (commands.length) runCommandBatch(commands);
+    setContainmentPreviewParentId(null);
   }
 
   function objectBounds(object: CanvasObjectV2) {
@@ -3705,7 +3812,8 @@ export function ProductCanvas({
     const nestedChildInteractive =
       !isContainableObject(object) ||
       !nestedParentId ||
-      selectedIds.includes(object.id);
+      selectedIds.includes(object.id) ||
+      selectedNestedParentIds.has(nestedParentId);
     const displayedParent =
       isContainableObject(object) && nestedParentId
         ? connectorLayoutObjectsById.get(nestedParentId)
@@ -3773,13 +3881,23 @@ export function ProductCanvas({
             }
           }}
           onMouseEnter={() => {
-            if (object.type === "shape") setHoveredShapeId(object.id);
+            if (
+              object.type === "shape" ||
+              object.type === "icon" ||
+              object.type === "text"
+            ) {
+              setHoveredShapeId(object.id);
+            }
           }}
           onMouseLeave={() => {
             // The stage-level proximity zone keeps anchors visible while the
             // pointer crosses the intentional gap between the object and handle.
           }}
           onDragStart={() => {
+            if (nestedChildSelectionTimerRef.current !== null) {
+              window.clearTimeout(nestedChildSelectionTimerRef.current);
+              nestedChildSelectionTimerRef.current = null;
+            }
             if (!selectedIds.includes(object.id)) {
               setSelectedIds(
                 object.groupId
@@ -3871,9 +3989,11 @@ export function ProductCanvas({
         (object.type === "shape" ||
           object.type === "icon" ||
           object.type === "text") &&
-        (selectedIds.includes(object.id) ||
-          hoveredShapeId === object.id ||
-          connectorStart) ? (
+        (connectorStart
+          ? (connectorStart.kind === "attached" &&
+              connectorStart.objectId === object.id) ||
+            hoveredShapeId === object.id
+          : selectedIds.includes(object.id) || hoveredShapeId === object.id) ? (
           <Group
             x={object.geometry.x}
             y={object.geometry.y}
@@ -3913,7 +4033,10 @@ export function ProductCanvas({
                   }
                   onDragMove={(event) => {
                     const point = eventWorldPointer(event);
-                    if (point) setPointerPreview(point);
+                    if (point) {
+                      setPointerPreview(point);
+                      updateConnectorHoverTarget(point);
+                    }
                   }}
                   onDragEnd={(event) => finishConnectorDrag(event, object.id)}
                   onClick={(event) => {
@@ -3984,36 +4107,82 @@ export function ProductCanvas({
     : undefined;
   const inlineEditorLayout =
     inlineEditorObject?.type === "shape" || inlineEditorObject?.type === "text"
-      ? {
-          left:
-            viewport.x +
-            (inlineEditorObject.geometry.x +
-              (inlineEditorObject.type === "shape" ? 12 : 0)) *
-              viewport.scale,
-          top:
-            viewport.y +
-            (inlineEditorObject.geometry.y +
-              (inlineEditorObject.type === "shape" ? 12 : 0)) *
-              viewport.scale,
-          width:
-            (inlineEditorObject.geometry.width -
-              (inlineEditorObject.type === "shape" ? 24 : 0)) *
-            viewport.scale,
-          height:
-            (inlineEditorObject.geometry.height -
-              (inlineEditorObject.type === "shape" ? 24 : 0)) *
-            viewport.scale,
-          transform: `rotate(${inlineEditorObject.geometry.rotation}deg)`,
-          transformOrigin: "top left" as const,
-          fontFamily: inlineEditorObject.style.fontFamily,
-          fontSize: inlineEditorObject.style.fontSize * viewport.scale,
-          fontWeight: inlineEditorObject.style.fontWeight ?? "normal",
-          color: inlineEditorObject.style.textColor ?? "#18181b",
-          textAlign:
-            inlineEditorObject.style.textAlign ??
-            (inlineEditorObject.type === "shape" ? "center" : "left"),
-        }
+      ? (() => {
+          const inset = inlineEditorObject.type === "shape" ? 12 : 0;
+          const contentWidth = inlineEditorObject.geometry.width - inset * 2;
+          const contentHeight = inlineEditorObject.geometry.height - inset * 2;
+          const lineHeight = inlineEditorObject.style.fontSize * 1.25;
+          const estimatedHeight = Math.min(
+            contentHeight * viewport.scale,
+            Math.max(
+              lineHeight * viewport.scale,
+              (inlineTextEditor?.draft.split("\n").length ?? 1) *
+                lineHeight *
+                viewport.scale,
+            ),
+          );
+          const editorHeight = Math.min(
+            contentHeight * viewport.scale,
+            inlineEditorMeasuredHeight ?? estimatedHeight,
+          );
+          const verticalOffset =
+            inset +
+            Math.max(0, (contentHeight - editorHeight / viewport.scale) / 2);
+          const rotatedOffset = rotatePoint(
+            inset,
+            verticalOffset,
+            inlineEditorObject.geometry.rotation,
+          );
+          return {
+            left:
+              viewport.x +
+              (inlineEditorObject.geometry.x + rotatedOffset.x) *
+                viewport.scale,
+            top:
+              viewport.y +
+              (inlineEditorObject.geometry.y + rotatedOffset.y) *
+                viewport.scale,
+            width: contentWidth * viewport.scale,
+            height: editorHeight,
+            transform: `rotate(${inlineEditorObject.geometry.rotation}deg)`,
+            transformOrigin: "top left" as const,
+            fontFamily: inlineEditorObject.style.fontFamily,
+            fontSize: inlineEditorObject.style.fontSize * viewport.scale,
+            lineHeight: `${lineHeight * viewport.scale}px`,
+            fontWeight: inlineEditorObject.style.fontWeight ?? "normal",
+            color: inlineEditorObject.style.textColor ?? "#18181b",
+            textAlign:
+              inlineEditorObject.style.textAlign ??
+              (inlineEditorObject.type === "shape" ? "center" : "left"),
+          };
+        })()
       : null;
+
+  useLayoutEffect(() => {
+    const editor = inlineEditorRef.current;
+    if (
+      !editor ||
+      !inlineTextEditor ||
+      (inlineEditorObject?.type !== "shape" &&
+        inlineEditorObject?.type !== "text")
+    ) {
+      return;
+    }
+    const inset = inlineEditorObject.type === "shape" ? 12 : 0;
+    const maxHeight =
+      (inlineEditorObject.geometry.height - inset * 2) * viewport.scale;
+    const minHeight = inlineEditorObject.style.fontSize * 1.25 * viewport.scale;
+    const previousHeight = editor.style.height;
+    editor.style.height = "1px";
+    const measuredHeight = Math.min(
+      maxHeight,
+      Math.max(minHeight, editor.scrollHeight),
+    );
+    editor.style.height = previousHeight;
+    setInlineEditorMeasuredHeight((current) =>
+      current === measuredHeight ? current : measuredHeight,
+    );
+  }, [inlineEditorObject, inlineTextEditor, viewport.scale]);
 
   return (
     <section
@@ -4105,9 +4274,12 @@ export function ProductCanvas({
                     (object.type === "shape" ||
                       object.type === "icon" ||
                       object.type === "text") &&
-                    (selectedIds.includes(object.id) ||
-                      hoveredShapeId === object.id ||
-                      connectorStart),
+                    (connectorStart
+                      ? (connectorStart.kind === "attached" &&
+                          connectorStart.objectId === object.id) ||
+                        hoveredShapeId === object.id
+                      : selectedIds.includes(object.id) ||
+                        hoveredShapeId === object.id),
                 ).length * 4}
           </output>
         </>
@@ -5468,6 +5640,7 @@ export function ProductCanvas({
           {inlineTextEditor && inlineEditorLayout ? (
             <textarea
               ref={inlineEditorRef}
+              rows={1}
               aria-label="Edit object text on canvas"
               data-testid="inline-object-text-editor"
               value={inlineTextEditor.draft}

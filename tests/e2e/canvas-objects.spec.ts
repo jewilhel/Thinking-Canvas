@@ -658,6 +658,8 @@ test("creates, reattaches, and detaches connectors with direct pointer gestures"
   await editSelectedText(page, "Drag source");
   await createAt(page, "Rectangle", { x: 520, y: 180 });
   await editSelectedText(page, "Drag target");
+  await createAt(page, "Rectangle", { x: 820, y: 180 });
+  await editSelectedText(page, "Unrelated shape");
   await selectShapeByLabel(page, "Drag source");
 
   const box = await surface.boundingBox();
@@ -667,12 +669,22 @@ test("creates, reattaches, and detaches connectors with direct pointer gestures"
   await surface.click({ position: { x: 40, y: 400 } });
   await page.mouse.move(box.x + 350, box.y + 235);
   await page.mouse.move(sourceRightHandle.x, sourceRightHandle.y, { steps: 6 });
+  await expect(page.getByTestId("visible-connection-anchor-count")).toHaveText(
+    "4",
+  );
   await page.mouse.down();
+  await page.mouse.move(box.x + 440, box.y + 235, { steps: 4 });
+  await expect(page.getByTestId("visible-connection-anchor-count")).toHaveText(
+    "4",
+  );
   await page.mouse.move(targetLeftHandle.x, targetLeftHandle.y, { steps: 8 });
+  await expect(page.getByTestId("visible-connection-anchor-count")).toHaveText(
+    "8",
+  );
   await page.mouse.up();
 
   await ensureObjectNavigator(page);
-  await expect(page.getByTestId("product-object-count")).toHaveText("3");
+  await expect(page.getByTestId("product-object-count")).toHaveText("4");
   await expect(page.getByTestId("selected-connector-points")).toHaveText(
     "280,155,440,155",
   );
