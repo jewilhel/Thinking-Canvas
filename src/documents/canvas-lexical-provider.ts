@@ -1,6 +1,15 @@
 import type { Provider, UserState } from "@lexical/yjs";
-import { Awareness } from "y-protocols/awareness";
+import {
+  applyAwarenessUpdate,
+  Awareness,
+  encodeAwarenessUpdate,
+} from "y-protocols/awareness";
 import type * as Y from "yjs";
+
+import {
+  broadcastLocalDocumentAwareness,
+  onRemoteDocumentAwareness,
+} from "@/collaboration/document-awareness-bridge";
 
 type SyncListener = (isSynced: boolean) => void;
 type StatusListener = (event: { status: string }) => void;
@@ -22,6 +31,7 @@ type ListenerMap = {
 export class CanvasLexicalProvider implements Provider {
   readonly awareness;
   private connected = false;
+  private removeRemoteAwarenessListener: (() => void) | null = null;
   private readonly listeners: ListenerMap = {
     sync: new Set(),
     status: new Set(),
@@ -29,7 +39,10 @@ export class CanvasLexicalProvider implements Provider {
     reload: new Set(),
   };
 
-  constructor(readonly document: Y.Doc) {
+  constructor(
+    readonly document: Y.Doc,
+    private readonly scopeId = "canvas-document",
+  ) {
     this.awareness = new Awareness(
       document,
     ) as unknown as Provider["awareness"];
@@ -38,6 +51,43 @@ export class CanvasLexicalProvider implements Provider {
   connect() {
     if (this.connected) return;
     this.connected = true;
+    const awareness = this.awareness as unknown as Awareness;
+    const handleLocalAwareness = (
+      changes: { added: number[]; updated: number[]; removed: number[] },
+      origin: unknown,
+    ) => {
+      if (origin === this) return;
+      const clients = [
+        ...changes.added,
+        ...changes.updated,
+        ...changes.removed,
+      ];
+      if (clients.length === 0) return;
+      broadcastLocalDocumentAwareness(
+        this.document,
+        this.scopeId,
+        encodeAwarenessUpdate(awareness, clients),
+      );
+    };
+    awareness.on("update", handleLocalAwareness);
+    this.removeRemoteAwarenessListener = onRemoteDocumentAwareness(
+      this.document,
+      (scopeId, update) => {
+        if (scopeId === this.scopeId) {
+          applyAwarenessUpdate(awareness, update, this);
+        }
+      },
+    );
+    const localState = awareness.getLocalState();
+    if (localState) {
+      broadcastLocalDocumentAwareness(
+        this.document,
+        this.scopeId,
+        encodeAwarenessUpdate(awareness, [this.document.clientID]),
+      );
+    }
+    this.removeAwarenessUpdateListener = () =>
+      awareness.off("update", handleLocalAwareness);
     this.listeners.status.forEach((listener) =>
       listener({ status: "connected" }),
     );
@@ -48,10 +98,16 @@ export class CanvasLexicalProvider implements Provider {
     if (!this.connected) return;
     this.connected = false;
     this.awareness.setLocalState(null);
+    this.removeAwarenessUpdateListener?.();
+    this.removeAwarenessUpdateListener = null;
+    this.removeRemoteAwarenessListener?.();
+    this.removeRemoteAwarenessListener = null;
     this.listeners.status.forEach((listener) =>
       listener({ status: "disconnected" }),
     );
   }
+
+  private removeAwarenessUpdateListener: (() => void) | null = null;
 
   on(type: "sync", listener: SyncListener): void;
   on(type: "status", listener: StatusListener): void;
@@ -79,7 +135,7 @@ export class CanvasLexicalProvider implements Provider {
 export function createCanvasLexicalProviderFactory(canvasDocument: Y.Doc) {
   return (documentId: string, documentMap: Map<string, Y.Doc>) => {
     documentMap.set(documentId, canvasDocument);
-    return new CanvasLexicalProvider(canvasDocument);
+    return new CanvasLexicalProvider(canvasDocument, documentId);
   };
 }
 

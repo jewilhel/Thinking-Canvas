@@ -5,6 +5,10 @@ import * as Y from "yjs";
 
 import { base64ToBytes, bytesToBase64 } from "@/collaboration/canvas-document";
 import {
+  onLocalDocumentAwareness,
+  receiveRemoteDocumentAwareness,
+} from "@/collaboration/document-awareness-bridge";
+import {
   enqueuePendingCanvasUpdate,
   pendingCanvasUpdateKey,
   readPendingCanvasUpdates,
@@ -189,6 +193,8 @@ export function useCanvasRecovery({
           cursor,
         ]);
       },
+      (scopeId, update) =>
+        receiveRemoteDocumentAwareness(document, scopeId, update),
     );
     repositoryRef.current = repository;
 
@@ -337,6 +343,12 @@ export function useCanvasRecovery({
         reconciliationRef.current = false;
       }
     }, 1_000);
+    const removeDocumentAwarenessListener = onLocalDocumentAwareness(
+      document,
+      (scopeId, update) => {
+        void repositoryRef.current?.broadcastDocumentAwareness(scopeId, update);
+      },
+    );
     void connect();
 
     return () => {
@@ -349,6 +361,7 @@ export function useCanvasRecovery({
       window.document.removeEventListener("click", protectNavigation, true);
       window.document.removeEventListener("submit", protectSubmit, true);
       clearInterval(reconciliationTimer);
+      removeDocumentAwarenessListener();
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       void loadedRef.current?.disconnect();

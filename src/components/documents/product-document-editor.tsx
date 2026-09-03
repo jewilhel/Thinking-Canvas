@@ -4,13 +4,26 @@ import { AutoFocusPlugin } from "@lexical/react/LexicalAutoFocusPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
+import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin";
+import { ListPlugin } from "@lexical/react/LexicalListPlugin";
+import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
+import { TablePlugin } from "@lexical/react/LexicalTablePlugin";
+import { LinkNode } from "@lexical/link";
+import { ListItemNode, ListNode } from "@lexical/list";
+import { HeadingNode } from "@lexical/rich-text";
+import { TableCellNode, TableNode, TableRowNode } from "@lexical/table";
 import { ArrowLeft, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type * as Y from "yjs";
 
 import { Button } from "@/components/ui/button";
 import { ProductDocumentCollaboration } from "@/components/documents/product-document-collaboration";
+import { ProductDocumentToolbar } from "@/components/documents/product-document-toolbar";
+import {
+  documentMarkdownTransformers,
+  isSafeDocumentLink,
+} from "@/documents/document-markdown";
 import type { ProductDocumentObject } from "@/documents/product-document";
 import {
   documentDisplayFonts,
@@ -134,17 +147,58 @@ export function ProductDocumentEditor({
         <LexicalComposer
           initialConfig={{
             namespace: `thinking-canvas-document-${documentObject.documentId}`,
-            nodes: [],
+            nodes: [
+              HeadingNode,
+              LinkNode,
+              ListItemNode,
+              ListNode,
+              TableCellNode,
+              TableNode,
+              TableRowNode,
+            ],
             editable: canEdit,
             editorState: null,
+            theme: {
+              heading: {
+                h1: "mb-4 mt-8 text-4xl font-bold",
+                h2: "mb-3 mt-7 text-3xl font-bold",
+                h3: "mb-3 mt-6 text-2xl font-semibold",
+                h4: "mb-2 mt-5 text-xl font-semibold",
+                h5: "mb-2 mt-4 text-lg font-semibold",
+                h6: "mb-2 mt-4 text-base font-semibold",
+              },
+              link: "text-violet-700 underline underline-offset-2",
+              list: {
+                listitem: "ml-6",
+                nested: { listitem: "list-none" },
+                ol: "my-3 list-decimal",
+                ul: "my-3 list-disc",
+              },
+              paragraph: "my-2",
+              table: "my-4 w-full border-collapse",
+              tableScrollableWrapper: "max-w-full overflow-x-auto",
+              tableCell: "min-w-24 border border-zinc-300 p-2 align-top",
+              tableCellHeader:
+                "min-w-24 border border-zinc-300 bg-zinc-100 p-2 text-left font-semibold align-top",
+              tableRow: "border-b border-zinc-300",
+              text: {
+                bold: "font-bold",
+                italic: "italic",
+              },
+            },
             onError(error) {
               throw error;
             },
           }}
         >
+          <ProductDocumentToolbar
+            title={documentObject.title}
+            settings={settings}
+            canEdit={canEdit}
+          />
           <div
             role="region"
-            className="h-full overflow-y-auto px-4 py-8 sm:px-8"
+            className="h-[calc(100%-3.25rem)] overflow-y-auto px-4 py-8 sm:px-8"
             aria-label={`${documentObject.title} document workspace`}
           >
             <div
@@ -179,6 +233,23 @@ export function ProductDocumentEditor({
                 documentId={documentObject.documentId}
                 username={username}
                 cursorColor="#7c3aed"
+              />
+              <ListPlugin />
+              <LinkPlugin
+                validateUrl={isSafeDocumentLink}
+                attributes={{
+                  rel: "noopener noreferrer",
+                  target: "_blank",
+                }}
+              />
+              <TablePlugin
+                hasCellMerge={false}
+                hasCellBackgroundColor={false}
+                hasHorizontalScroll
+                hasNestedTables={false}
+              />
+              <MarkdownShortcutPlugin
+                transformers={documentMarkdownTransformers}
               />
               {canEdit ? <AutoFocusPlugin /> : null}
             </div>

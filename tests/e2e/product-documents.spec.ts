@@ -131,6 +131,14 @@ test("collaborates on document body and display settings", async ({
   await expect(editor.getByLabel("Document body")).toContainText(
     collaborativeText,
   );
+  await owner.getByLabel("Document body").selectText();
+  await expect
+    .poll(() => editor.locator("[data-lexical-document-cursors] span").count())
+    .toBeGreaterThan(0);
+  await owner.getByRole("button", { name: "Bold" }).click();
+  await expect(editor.getByLabel("Document body").locator("strong")).toHaveText(
+    collaborativeText,
+  );
 
   await owner.getByRole("button", { name: /document settings/i }).click();
   await owner.getByRole("button", { name: "Rose document background" }).click();
@@ -143,4 +151,119 @@ test("collaborates on document body and display settings", async ({
   await expect(editor.getByTestId("canvas-save-status")).toHaveText("Saved");
   await ownerContext.close();
   await editorContext.close();
+});
+
+test("formats semantic text and round trips bounded Markdown", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await signIn(page);
+  await page.getByLabel("Canvas name").fill(`Markdown canvas ${Date.now()}`);
+  await page.getByRole("button", { name: "Create canvas" }).click();
+  await page.getByRole("button", { name: "Document", exact: true }).click();
+  await page
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 420, y: 260 } });
+  await page.getByRole("button", { name: "Open document" }).click();
+
+  await page.getByRole("button", { name: "Paste from Markdown" }).click();
+  const markdown = [
+    "# Release brief",
+    "",
+    "A **bold** and *careful* [reference](https://example.com/docs).",
+    "",
+    "- First item",
+    "- Second item",
+    "",
+    "| Topic | Owner |",
+    "| --- | --- |",
+    "| Scope | Editor |",
+  ].join("\n");
+  await page.getByLabel("Markdown source").fill(markdown);
+  await page.getByRole("button", { name: "Replace document" }).click();
+
+  const body = page.getByLabel("Document body");
+  await expect(body.locator("h1")).toHaveText("Release brief");
+  await expect(body.locator("strong")).toHaveText("bold");
+  await expect(body.locator("em")).toHaveText("careful");
+  await expect(body.locator("a")).toHaveAttribute(
+    "href",
+    "https://example.com/docs",
+  );
+  await expect(body.locator("li")).toHaveCount(2);
+  await expect(body.locator("table")).toContainText("Scope");
+  await body
+    .locator("p")
+    .filter({ hasText: "A bold and careful reference" })
+    .selectText();
+  await expect(page.getByRole("button", { name: "Bold" })).toHaveAttribute(
+    "aria-pressed",
+    "mixed",
+  );
+  await body.click();
+
+  await page.getByRole("button", { name: "Copy to Markdown" }).click();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain("# Release brief");
+  expect(copied).toContain("**bold**");
+  expect(copied).toContain("| Topic | Owner |");
+  expect(copied).not.toContain("background");
+  await expect(page.getByText(/Copied the complete document/)).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export Markdown" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Export Markdown" }),
+  ).toContainText(
+    "Document font, reading size, background, layout, page size, and orientation",
+  );
+  await page.getByRole("button", { name: "Acknowledge and export" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("untitled-document.md");
+
+  await page.getByLabel("Choose Markdown file").setInputFiles({
+    name: "replacement.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("## Imported\n\nSafe body", "utf8"),
+  });
+  await expect(
+    page.getByRole("dialog", { name: "Import Markdown" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Replace document" }).click();
+  await expect(body.locator("h2")).toHaveText("Imported");
+  await expect(body).toContainText("Safe body");
+
+  await body.getByText("Safe body").selectText();
+  await page.getByRole("button", { name: "Paste from Markdown" }).click();
+  await page.getByLabel("Markdown source").fill("Replacement body");
+  await page.getByRole("button", { name: "Insert at selection" }).click();
+  await expect(body).toContainText("Replacement body");
+  await expect(body).not.toContainText("Safe body");
+
+  await page.waitForTimeout(600);
+  await body.getByText("Replacement body").click({ clickCount: 3 });
+  await page.getByRole("button", { name: "Bold" }).click();
+  await expect(body.locator("strong")).toHaveText("Replacement body");
+  await page.waitForTimeout(600);
+  await body.press("ControlOrMeta+z");
+  await expect(body.locator("strong")).toHaveCount(0);
+  await body.press("ControlOrMeta+Shift+z");
+  await expect(body.locator("strong")).toHaveText("Replacement body");
+  await body.getByText("Replacement body").selectText();
+  await page.getByRole("button", { name: "Copy to Markdown" }).click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe("**Replacement body**");
+
+  await page.getByRole("button", { name: "Paste from Markdown" }).click();
+  await page.getByLabel("Markdown source").fill("<script>alert(1)</script>");
+  await page.getByRole("button", { name: "Replace document" }).click();
+  await expect(
+    page
+      .getByRole("dialog", { name: "Paste from Markdown" })
+      .getByRole("alert"),
+  ).toContainText("Raw HTML is not supported");
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(body.locator("h2")).toHaveText("Imported");
 });
