@@ -13,7 +13,7 @@ import { LinkNode } from "@lexical/link";
 import { ListItemNode, ListNode } from "@lexical/list";
 import { HeadingNode } from "@lexical/rich-text";
 import { TableCellNode, TableNode, TableRowNode } from "@lexical/table";
-import { ArrowLeft, ChevronLeft, ChevronRight, Settings2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as Y from "yjs";
 
@@ -31,7 +31,6 @@ import {
 import type { ProductDocumentObject } from "@/documents/product-document";
 import {
   documentDisplayFonts,
-  documentLayoutLabel,
   documentPageContentHeight,
   documentReadingMetrics,
   documentReadingSurfaceHeight,
@@ -247,55 +246,6 @@ export function ProductDocumentEditor({
       data-testid="focused-product-document"
       style={screenBounds}
     >
-      <div
-        role="toolbar"
-        aria-label="Document controls"
-        className="absolute top-3 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-1 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-white shadow-2xl [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-zinc-100 [&_button:hover]:bg-white/10 [&_button[aria-expanded=true]]:bg-violet-600"
-      >
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="outline"
-          aria-label="Return to canvas"
-          title="Return to canvas"
-          onClick={onExit}
-        >
-          <ArrowLeft aria-hidden="true" />
-        </Button>
-        <span
-          className="max-w-36 truncate px-2 text-xs text-zinc-300"
-          data-testid="document-layout-label"
-        >
-          {documentLayoutLabel(settings)}
-        </span>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="outline"
-          aria-label="Document settings"
-          title="Document settings"
-          aria-expanded={settingsOpen}
-          aria-controls="document-settings-panel"
-          onClick={() => setSettingsOpen((current) => !current)}
-        >
-          <Settings2 aria-hidden="true" />
-        </Button>
-        <ProductDocumentComments
-          canvasDocument={canvasDocument}
-          canvasId={canvasId}
-          canvasRole={canvasRole}
-          documentObjectId={documentObject.id}
-          objects={canvasObjects}
-          selectedObjectIds={selectedObjectIds}
-          selectedRange={selectedRange}
-          supabaseUrl={supabaseUrl}
-          supabasePublishableKey={supabasePublishableKey}
-          onAiTransactionApplied={onAiTransactionApplied}
-          onUndoAiTransaction={onUndoAiTransaction}
-          compact
-        />
-      </div>
-
       <div className="relative h-full overflow-visible">
         <LexicalComposer
           initialConfig={{
@@ -348,6 +298,36 @@ export function ProductDocumentEditor({
             title={documentObject.title}
             settings={settings}
             canEdit={canEdit}
+            documentControls={
+              <>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="outline"
+                  aria-label="Document settings"
+                  title="Document settings"
+                  aria-expanded={settingsOpen}
+                  aria-controls="document-settings-panel"
+                  onClick={() => setSettingsOpen((current) => !current)}
+                >
+                  <Settings2 aria-hidden="true" />
+                </Button>
+                <ProductDocumentComments
+                  canvasDocument={canvasDocument}
+                  canvasId={canvasId}
+                  canvasRole={canvasRole}
+                  documentObjectId={documentObject.id}
+                  objects={canvasObjects}
+                  selectedObjectIds={selectedObjectIds}
+                  selectedRange={selectedRange}
+                  supabaseUrl={supabaseUrl}
+                  supabasePublishableKey={supabasePublishableKey}
+                  onAiTransactionApplied={onAiTransactionApplied}
+                  onUndoAiTransaction={onUndoAiTransaction}
+                  compact
+                />
+              </>
+            }
           />
           {pageHeight !== null ? (
             <nav
@@ -396,7 +376,7 @@ export function ProductDocumentEditor({
           >
             <div
               ref={readingSurfaceRef}
-              className={`relative mx-auto border border-zinc-200 pt-36 shadow-xl ${settings.layout.mode === "continuous" ? "min-h-full rounded-xl px-20 pb-24" : "overflow-hidden rounded-sm px-24 pb-24"}`}
+              className={`relative mx-auto border border-zinc-200 pt-16 shadow-xl ${settings.layout.mode === "continuous" ? "min-h-full rounded-xl px-20 pb-24" : "overflow-hidden rounded-sm px-24 pb-24"}`}
               data-testid="document-reading-surface"
               data-layout-mode={settings.layout.mode}
               style={{

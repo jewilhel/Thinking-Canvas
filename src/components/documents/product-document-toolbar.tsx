@@ -26,7 +26,10 @@ import {
   $isRangeSelection,
   $isTextNode,
   $setSelection,
+  COMMAND_PRIORITY_LOW,
   FORMAT_TEXT_COMMAND,
+  SELECTION_CHANGE_COMMAND,
+  mergeRegister,
   type BaseSelection,
 } from "lexical";
 import {
@@ -41,7 +44,13 @@ import {
   Table2,
   Upload,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -60,6 +69,7 @@ type Props = {
   title: string;
   settings: DocumentSettings;
   canEdit: boolean;
+  documentControls: ReactNode;
 };
 
 type MarkdownPanel = "paste" | "import" | "export" | null;
@@ -98,7 +108,12 @@ async function copyText(value: string) {
   await navigator.clipboard.writeText(value);
 }
 
-export function ProductDocumentToolbar({ title, settings, canEdit }: Props) {
+export function ProductDocumentToolbar({
+  title,
+  settings,
+  canEdit,
+  documentControls,
+}: Props) {
   const [editor] = useLexicalComposerContext();
   const [bold, setBold] = useState<PressedState>(false);
   const [italic, setItalic] = useState<PressedState>(false);
@@ -106,31 +121,75 @@ export function ProductDocumentToolbar({ title, settings, canEdit }: Props) {
   const [panel, setPanel] = useState<MarkdownPanel>(null);
   const [markdown, setMarkdown] = useState("");
   const [status, setStatus] = useState("");
+  const [selectionPosition, setSelectionPosition] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
   const savedSelection = useRef<BaseSelection | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const refreshToolbar = useCallback(() => {
+    let hasExpandedRange = false;
     editor.getEditorState().read(() => {
+      const selection = $getSelection();
+      hasExpandedRange =
+        $isRangeSelection(selection) && !selection.isCollapsed();
       setBold(selectedFormatState("bold"));
       setItalic(selectedFormatState("italic"));
       setBlockType(selectedBlockType());
     });
+    if (!hasExpandedRange) {
+      setSelectionPosition(null);
+      return;
+    }
+    const editorRoot = editor.getRootElement();
+    const focusedFrame = editorRoot?.closest<HTMLElement>(
+      '[data-testid="focused-product-document"]',
+    );
+    const nativeSelection = window.getSelection();
+    if (
+      !editorRoot ||
+      !focusedFrame ||
+      !nativeSelection ||
+      nativeSelection.isCollapsed ||
+      nativeSelection.rangeCount === 0 ||
+      !nativeSelection.anchorNode ||
+      !editorRoot.contains(nativeSelection.anchorNode)
+    ) {
+      setSelectionPosition(null);
+      return;
+    }
+    const selectionRect = nativeSelection.getRangeAt(0).getBoundingClientRect();
+    const frameRect = focusedFrame.getBoundingClientRect();
+    const unclampedLeft =
+      selectionRect.left + selectionRect.width / 2 - frameRect.left;
+    setSelectionPosition({
+      left: Math.max(24, Math.min(frameRect.width - 24, unclampedLeft)),
+      top: Math.max(-52, selectionRect.top - frameRect.top - 52),
+    });
   }, [editor]);
 
   useEffect(() => {
-    refreshToolbar();
-    return editor.registerUpdateListener(({ editorState }) => {
-      editorState.read(() => {
-        const nextBold = selectedFormatState("bold");
-        const nextItalic = selectedFormatState("italic");
-        const nextBlockType = selectedBlockType();
-        window.setTimeout(() => {
-          setBold(nextBold);
-          setItalic(nextItalic);
-          setBlockType(nextBlockType);
-        });
-      });
-    });
+    let frame = window.requestAnimationFrame(refreshToolbar);
+    const scheduleRefresh = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(refreshToolbar);
+    };
+    const removeListeners = mergeRegister(
+      editor.registerUpdateListener(scheduleRefresh),
+      editor.registerCommand(
+        SELECTION_CHANGE_COMMAND,
+        () => {
+          scheduleRefresh();
+          return false;
+        },
+        COMMAND_PRIORITY_LOW,
+      ),
+    );
+    return () => {
+      window.cancelAnimationFrame(frame);
+      removeListeners();
+    };
   }, [editor, refreshToolbar]);
 
   function preserveSelection() {
@@ -288,112 +347,14 @@ export function ProductDocumentToolbar({ title, settings, canEdit }: Props) {
     <>
       <div
         role="toolbar"
-        aria-label="Document formatting and Markdown"
-        className="absolute top-16 left-1/2 z-[60] flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-white shadow-2xl [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-zinc-100 [&_button:hover]:bg-white/10 [&_button[aria-pressed=true]]:bg-violet-600"
+        aria-label="Document controls"
+        className="absolute top-3 right-3 z-[80] flex max-w-[calc(100%-1.5rem)] items-center justify-center gap-1 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-white shadow-2xl [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-zinc-100 [&_button:hover]:bg-white/10 [&_button[aria-expanded=true]]:bg-violet-600"
         onMouseDown={(event) => {
           if ((event.target as HTMLElement).closest("button"))
             event.preventDefault();
         }}
       >
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          aria-label="Bold"
-          aria-pressed={bold}
-          disabled={!canEdit}
-          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold")}
-        >
-          <Bold aria-hidden="true" />
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          aria-label="Italic"
-          aria-pressed={italic}
-          disabled={!canEdit}
-          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic")}
-        >
-          <Italic aria-hidden="true" />
-        </Button>
-        <label>
-          <span className="sr-only">Paragraph style</span>
-          <select
-            aria-label="Paragraph style"
-            value={blockType === "mixed" ? "mixed" : blockType}
-            disabled={!canEdit}
-            className="h-8 rounded-md border border-white/10 bg-zinc-800 px-2 text-sm text-zinc-100"
-            onMouseDown={(event) => event.stopPropagation()}
-            onChange={(event) => setHeading(event.target.value)}
-          >
-            {blockType === "mixed" ? (
-              <option value="mixed">Mixed styles</option>
-            ) : null}
-            <option value="paragraph">Paragraph</option>
-            {Array.from({ length: 6 }, (_, index) => (
-              <option key={index + 1} value={`h${index + 1}`}>
-                Heading {index + 1}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          aria-label="Bulleted list"
-          aria-pressed={blockType === "list"}
-          disabled={!canEdit}
-          onClick={() =>
-            editor.dispatchCommand(
-              blockType === "list"
-                ? REMOVE_LIST_COMMAND
-                : INSERT_UNORDERED_LIST_COMMAND,
-              undefined,
-            )
-          }
-        >
-          <List aria-hidden="true" />
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          aria-label="Numbered list"
-          disabled={!canEdit}
-          onClick={() =>
-            editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined)
-          }
-        >
-          <ListOrdered aria-hidden="true" />
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          aria-label="Add or remove link"
-          disabled={!canEdit}
-          onClick={setLink}
-        >
-          <Link aria-hidden="true" />
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          aria-label="Insert table"
-          disabled={!canEdit}
-          onClick={() =>
-            editor.dispatchCommand(INSERT_TABLE_COMMAND, {
-              columns: "3",
-              rows: "3",
-              includeHeaders: true,
-            })
-          }
-        >
-          <Table2 aria-hidden="true" />
-        </Button>
+        {documentControls}
         <span className="mx-1 h-6 w-px bg-white/20" aria-hidden="true" />
         <Button
           type="button"
@@ -475,12 +436,127 @@ export function ProductDocumentToolbar({ title, settings, canEdit }: Props) {
         </p>
       </div>
 
+      {selectionPosition ? (
+        <div
+          role="toolbar"
+          aria-label="Text formatting"
+          className="absolute z-[70] flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center justify-center gap-1 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-white shadow-2xl [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-zinc-100 [&_button:hover]:bg-white/10 [&_button[aria-pressed=true]]:bg-violet-600"
+          style={selectionPosition}
+          onMouseDown={(event) => {
+            if ((event.target as HTMLElement).closest("button"))
+              event.preventDefault();
+          }}
+        >
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-label="Bold"
+            aria-pressed={bold}
+            disabled={!canEdit}
+            onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold")}
+          >
+            <Bold aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-label="Italic"
+            aria-pressed={italic}
+            disabled={!canEdit}
+            onClick={() =>
+              editor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic")
+            }
+          >
+            <Italic aria-hidden="true" />
+          </Button>
+          <label>
+            <span className="sr-only">Paragraph style</span>
+            <select
+              aria-label="Paragraph style"
+              value={blockType === "mixed" ? "mixed" : blockType}
+              disabled={!canEdit}
+              className="h-8 rounded-md border border-white/10 bg-zinc-800 px-2 text-sm text-zinc-100"
+              onMouseDown={(event) => event.stopPropagation()}
+              onChange={(event) => setHeading(event.target.value)}
+            >
+              {blockType === "mixed" ? (
+                <option value="mixed">Mixed styles</option>
+              ) : null}
+              <option value="paragraph">Paragraph</option>
+              {Array.from({ length: 6 }, (_, index) => (
+                <option key={index + 1} value={`h${index + 1}`}>
+                  Heading {index + 1}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-label="Bulleted list"
+            aria-pressed={blockType === "list"}
+            disabled={!canEdit}
+            onClick={() =>
+              editor.dispatchCommand(
+                blockType === "list"
+                  ? REMOVE_LIST_COMMAND
+                  : INSERT_UNORDERED_LIST_COMMAND,
+                undefined,
+              )
+            }
+          >
+            <List aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-label="Numbered list"
+            disabled={!canEdit}
+            onClick={() =>
+              editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined)
+            }
+          >
+            <ListOrdered aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-label="Add or remove link"
+            disabled={!canEdit}
+            onClick={setLink}
+          >
+            <Link aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-label="Insert table"
+            disabled={!canEdit}
+            onClick={() =>
+              editor.dispatchCommand(INSERT_TABLE_COMMAND, {
+                columns: "3",
+                rows: "3",
+                includeHeaders: true,
+              })
+            }
+          >
+            <Table2 aria-hidden="true" />
+          </Button>
+        </div>
+      ) : null}
+
       {panel ? (
         <section
           role="dialog"
           aria-modal="true"
           aria-labelledby="markdown-panel-title"
-          className="absolute top-28 right-3 z-[90] w-[min(34rem,calc(100%-1.5rem))] rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl"
+          className="absolute top-16 right-3 z-[90] max-h-[calc(100%-8rem)] w-[min(34rem,calc(100%-1.5rem))] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl"
         >
           <h2 id="markdown-panel-title" className="font-semibold">
             {panel === "export"

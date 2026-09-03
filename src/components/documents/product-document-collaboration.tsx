@@ -35,6 +35,46 @@ import {
   type DocumentRangeTarget,
 } from "@/documents/document-range";
 
+type CachedCollabSharedType = object & {
+  _collabNode?: unknown;
+};
+
+function nestedSharedTypes(sharedType: object) {
+  if (sharedType instanceof Y.XmlText || sharedType instanceof Y.Text) {
+    return sharedType
+      .toDelta()
+      .map((operation: { insert?: unknown }) => operation.insert)
+      .filter(
+        (insert: unknown): insert is object => insert instanceof Y.AbstractType,
+      );
+  }
+  if (sharedType instanceof Y.Map) {
+    return [...sharedType.values()].filter(
+      (value): value is object => value instanceof Y.AbstractType,
+    );
+  }
+  if (sharedType instanceof Y.Array || sharedType instanceof Y.XmlFragment) {
+    return sharedType
+      .toArray()
+      .filter((value): value is object => value instanceof Y.AbstractType);
+  }
+  return [];
+}
+
+/**
+ * Lexical caches its collaboration wrapper directly on each Yjs shared type.
+ * Those wrappers retain their child arrays after destroy(), so reusing them on
+ * a later editor mount appends the same tree again and can persist a doubled
+ * document. A focused document has the only local binding for this namespace;
+ * release that cache after the binding is fully disconnected.
+ */
+export function releaseDocumentCollabNodeCache(sharedType: object) {
+  for (const child of nestedSharedTypes(sharedType)) {
+    releaseDocumentCollabNodeCache(child);
+  }
+  delete (sharedType as CachedCollabSharedType)._collabNode;
+}
+
 export function ProductDocumentCollaboration({
   canvasDocument,
   documentId,
@@ -234,6 +274,7 @@ export function ProductDocumentCollaboration({
       provider.disconnect();
       cursorContainer.remove();
       binding.root.destroy(binding);
+      releaseDocumentCollabNodeCache(sharedRoot);
     };
   }, [
     canvasDocument,

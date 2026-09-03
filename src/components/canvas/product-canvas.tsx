@@ -1072,7 +1072,7 @@ export function ProductCanvas({
       object.geometry.height * scale,
       Math.max(320, size.height - 176),
     );
-    const focusedTop = Math.max(88, (size.height - visibleHeight) / 2);
+    const focusedTop = Math.max(144, (size.height - visibleHeight) / 2);
     setViewport({
       scale,
       x:
@@ -2853,6 +2853,11 @@ export function ProductCanvas({
   }
 
   function onSurfacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (focusedDocumentId !== null) {
+      event.preventDefault();
+      exitDocument();
+      return;
+    }
     if (
       event.isPrimary &&
       (event.pointerType !== "mouse" || event.button === 0)

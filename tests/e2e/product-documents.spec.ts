@@ -59,8 +59,18 @@ test("creates, focuses, configures, restores, and reloads a product document", a
     page.getByRole("toolbar", { name: "Document controls" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("toolbar", { name: "Document formatting and Markdown" }),
+    page.getByRole("toolbar", { name: "Text formatting" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Copy to Markdown" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Export Markdown" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Return to canvas" }),
+  ).toHaveCount(0);
+  await expect(page.getByTestId("document-layout-label")).toHaveCount(0);
   const canvasBounds = await surface.boundingBox();
   const focusedBounds = await page
     .getByTestId("focused-product-document")
@@ -74,15 +84,29 @@ test("creates, focuses, configures, restores, and reloads a product document", a
   await page
     .getByLabel("Document body")
     .fill("A durable shared document body.");
+  await expect(
+    page.getByRole("toolbar", { name: "Text formatting" }),
+  ).toHaveCount(0);
+  await page.getByLabel("Document body").selectText();
+  const formattingPalette = page.getByRole("toolbar", {
+    name: "Text formatting",
+  });
+  await expect(formattingPalette).toBeVisible();
+  const selectionTop = await page.evaluate(
+    () => window.getSelection()!.getRangeAt(0).getBoundingClientRect().top,
+  );
+  const formattingBounds = await formattingPalette.boundingBox();
+  expect(formattingBounds).not.toBeNull();
+  expect(formattingBounds!.y + formattingBounds!.height).toBeLessThanOrEqual(
+    selectionTop + 4,
+  );
 
   await page.getByRole("button", { name: /document settings/i }).click();
   await page.getByLabel("Display font").selectOption("serif");
   await page.getByLabel("Reading size").selectOption("large");
   await page.getByLabel("Layout").selectOption("a4-landscape");
   await page.getByRole("button", { name: "Blue document background" }).click();
-  await expect(page.getByTestId("document-layout-label")).toHaveText(
-    "A4 · landscape",
-  );
+  await expect(page.getByLabel("Layout")).toHaveValue("a4-landscape");
   await expect(page.getByTestId("document-reading-surface")).toHaveCSS(
     "font-family",
     /Georgia/,
@@ -95,8 +119,8 @@ test("creates, focuses, configures, restores, and reloads a product document", a
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 
-  await page.keyboard.press("Escape");
-  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Done" }).click();
+  await surface.click({ position: { x: 24, y: 300 } });
   await expect(page.getByTestId("focused-product-document")).toHaveCount(0);
   await expect(surface).toHaveAttribute("data-viewport-x", initialViewport.x!);
   await expect(surface).toHaveAttribute("data-viewport-y", initialViewport.y!);
@@ -106,12 +130,17 @@ test("creates, focuses, configures, restores, and reloads a product document", a
   );
   await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
 
-  await surface.focus();
-  await page.keyboard.press("Enter");
-  await expect(page.getByLabel("Document body")).toContainText(
-    "A durable shared document body.",
-  );
-  await page.getByRole("button", { name: "Return to canvas" }).click();
+  for (let reopen = 0; reopen < 3; reopen += 1) {
+    await surface.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByLabel("Document body")).toHaveText(
+      "A durable shared document body.",
+    );
+    if (reopen < 2) {
+      await surface.click({ position: { x: 24, y: 300 } });
+      await expect(page.getByTestId("focused-product-document")).toHaveCount(0);
+    }
+  }
 
   await page.reload();
   await page.getByRole("button", { name: "Open Object navigator" }).click();
@@ -120,12 +149,11 @@ test("creates, focuses, configures, restores, and reloads a product document", a
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("focused-product-document")).toBeVisible();
   await expect(page.getByLabel("Document title")).toHaveValue("Planning brief");
-  await expect(page.getByLabel("Document body")).toContainText(
+  await expect(page.getByLabel("Document body")).toHaveText(
     "A durable shared document body.",
   );
-  await expect(page.getByTestId("document-layout-label")).toHaveText(
-    "A4 · landscape",
-  );
+  await page.getByRole("button", { name: /document settings/i }).click();
+  await expect(page.getByLabel("Layout")).toHaveValue("a4-landscape");
 });
 
 test("collaborates on document body and display settings", async ({
@@ -415,7 +443,7 @@ test("paginates and moves a canvas object into and out of a document", async ({
   await embedded.focus();
   await page.getByRole("button", { name: "Remove from document" }).click();
   await expect(embedded).toHaveCount(0);
-  await page.getByRole("button", { name: "Return to canvas" }).click();
+  await surface.click({ position: { x: 24, y: 300 } });
   await page.getByRole("button", { name: "Open Object navigator" }).click();
   await expect(
     page.getByRole("button", { name: "rectangle — New idea" }),
