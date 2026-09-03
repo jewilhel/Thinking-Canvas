@@ -2,6 +2,11 @@ import { z } from "zod";
 
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 import type { CanvasRole } from "@/domain/command";
+import {
+  DOCUMENT_RANGE_ANCHOR_MAX_LENGTH,
+  DOCUMENT_RANGE_QUOTE_MAX_LENGTH,
+  type DocumentRangeTarget,
+} from "@/documents/document-range";
 
 export const commentPromptKindSchema = z.enum(["yes_no", "review", "rating"]);
 export const commentStatusSchema = z.enum(["open", "resolved", "dismissed"]);
@@ -9,6 +14,12 @@ export const commentAuthorKindSchema = z.enum(["human", "ai"]);
 
 const strictText = z.string().trim().min(1).max(100_000);
 const uuid = z.uuid();
+export const documentRangeTargetSchema = z.strictObject({
+  documentObjectId: uuid,
+  anchor: z.string().min(1).max(DOCUMENT_RANGE_ANCHOR_MAX_LENGTH),
+  head: z.string().min(1).max(DOCUMENT_RANGE_ANCHOR_MAX_LENGTH),
+  quote: z.string().min(1).max(DOCUMENT_RANGE_QUOTE_MAX_LENGTH),
+});
 
 export const commentRoutingSchema = z.strictObject({
   recipientUserIds: z.array(uuid).max(100),
@@ -34,19 +45,23 @@ export const commentCreateCommandSchema = z
         y: z.number().finite().min(-1_000_000_000).max(1_000_000_000),
       })
       .nullable(),
+    documentRange: documentRangeTargetSchema.nullable(),
     promptKind: commentPromptKindSchema.nullable(),
     authorKind: commentAuthorKindSchema,
     authorKey: z.string().min(1).max(255).nullable(),
     routing: commentRoutingSchema.optional(),
   })
   .superRefine((command, context) => {
-    if (
-      command.targetObjectIds.length > 0 ===
-      (command.canvasAnchor !== null)
-    ) {
+    const targetFamilies = [
+      command.targetObjectIds.length > 0,
+      command.canvasAnchor !== null,
+      command.documentRange !== null,
+    ].filter(Boolean).length;
+    if (targetFamilies !== 1) {
       context.addIssue({
         code: "custom",
-        message: "Choose exactly one object target set or canvas position.",
+        message:
+          "Choose exactly one object target set, canvas position, or document range.",
         path: ["targetObjectIds"],
       });
     }
@@ -214,6 +229,7 @@ export type CommentThread = {
   updatedAt: string;
   targetObjectIds: string[];
   canvasAnchor: { x: number; y: number } | null;
+  documentRange: DocumentRangeTarget | null;
   replies: CommentReply[];
   recipients: CommentRecipient[];
   activeParticipants: CommentRecipient[];

@@ -53,6 +53,7 @@ export class SupabaseCommentRepository {
     const commentIds = comments.map((comment) => comment.id);
     const [
       targetsResult,
+      documentTargetsResult,
       repliesResult,
       promptsResult,
       participantsResult,
@@ -65,6 +66,12 @@ export class SupabaseCommentRepository {
         .in("comment_id", commentIds)
         .order("target_order", { ascending: true })
         .order("id", { ascending: true }),
+      this.supabase
+        .from("comment_document_targets")
+        .select(
+          "comment_id,document_object_id,relative_anchor,relative_head,quoted_text,created_at,updated_at",
+        )
+        .in("comment_id", commentIds),
       this.supabase
         .from("comment_replies")
         .select(
@@ -103,6 +110,10 @@ export class SupabaseCommentRepository {
         .order("id", { ascending: true }),
     ]);
     const targets = requireData(targetsResult.data, targetsResult.error);
+    const documentTargets = requireData(
+      documentTargetsResult.data,
+      documentTargetsResult.error,
+    );
     const replies = requireData(
       repliesResult.data,
       repliesResult.error,
@@ -291,6 +302,19 @@ export class SupabaseCommentRepository {
           comment.anchor_x === null || comment.anchor_y === null
             ? null
             : { x: comment.anchor_x, y: comment.anchor_y },
+        documentRange: (() => {
+          const target = documentTargets.find(
+            (candidate) => candidate.comment_id === comment.id,
+          );
+          return target
+            ? {
+                documentObjectId: target.document_object_id,
+                anchor: target.relative_anchor,
+                head: target.relative_head,
+                quote: target.quoted_text,
+              }
+            : null;
+        })(),
         replies: replies
           .filter((reply) => reply.comment_id === comment.id)
           .map((reply) => ({
@@ -348,6 +372,28 @@ export class SupabaseCommentRepository {
   async execute(input: CommentCommand) {
     const command = commentCommandSchema.parse(input);
     if (command.type === "comment.create") {
+      if (command.documentRange) {
+        const response = await fetch(
+          `/api/canvases/${command.canvasId}/comments/document`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(command),
+          },
+        );
+        const result = (await response.json().catch(() => null)) as {
+          error?: string;
+          comment_id?: string;
+          created?: boolean;
+          ai_run_id?: string;
+        } | null;
+        if (!response.ok || !result) {
+          throw new Error(
+            result?.error ?? "The document comment could not be saved.",
+          );
+        }
+        return result;
+      }
       const args: Database["public"]["Functions"]["create_comment_thread"]["Args"] =
         {
           target_canvas_id: command.canvasId,

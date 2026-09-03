@@ -153,6 +153,73 @@ test("collaborates on document body and display settings", async ({
   await editorContext.close();
 });
 
+test("keeps document range comments attached across two participants", async ({
+  browser,
+}: {
+  browser: Browser;
+}) => {
+  const ownerContext = await browser.newContext();
+  const editorContext = await browser.newContext();
+  const owner = await ownerContext.newPage();
+  const editor = await editorContext.newPage();
+  await signIn(owner);
+  await signIn(editor, "editor@thinking-canvas.local");
+  await owner.goto(`/app/canvases/${seedCanvasId}`);
+  await owner.getByRole("button", { name: "Document", exact: true }).click();
+  await owner
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 620, y: 380 } });
+  await owner.getByRole("button", { name: "Open document" }).click();
+  const title = `Range comment ${Date.now()}`;
+  await owner.getByLabel("Document title").fill(title);
+  await owner.getByLabel("Document title").blur();
+  await owner.getByLabel("Document body").fill("Review this shared sentence.");
+  await expect(owner.getByTestId("canvas-save-status")).toHaveText("Saved");
+
+  await editor.goto(`/app/canvases/${seedCanvasId}`);
+  await openNamedDocument(editor, title);
+  await expect(editor.getByLabel("Document body")).toContainText(
+    "Review this shared sentence.",
+  );
+
+  await owner.getByText("Review this shared sentence.").selectText();
+  await owner
+    .getByTestId("focused-product-document")
+    .getByRole("button", { name: "Comments", exact: true })
+    .click();
+  await expect(
+    owner.getByText(/Comment on “Review this shared sentence/),
+  ).toBeVisible();
+  await owner.getByLabel("New document comment").fill("Can we tighten this?");
+  await owner.getByLabel("Structured response").selectOption("yes_no");
+  await owner.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(owner.getByText("Can we tighten this?")).toBeVisible();
+
+  await editor
+    .getByTestId("focused-product-document")
+    .getByRole("button", { name: /Comments/ })
+    .click();
+  const editorComments = editor.getByRole("complementary", {
+    name: "Document comments",
+  });
+  await expect(editorComments.getByText("Can we tighten this?")).toBeVisible();
+  await expect(
+    editorComments.getByText("Review this shared sentence.", { exact: true }),
+  ).toBeVisible();
+  await editor
+    .getByLabel("Reply to Can we tighten this?")
+    .fill("Yes, I can revise it.");
+  await editor.getByRole("button", { name: "Reply", exact: true }).click();
+  await expect(owner.getByText("Yes, I can revise it.")).toBeVisible();
+  await owner.getByRole("button", { name: "Resolve" }).click();
+  await expect(
+    editorComments.getByText("resolved", { exact: true }),
+  ).toBeVisible();
+
+  await ownerContext.close();
+  await editorContext.close();
+});
+
 test("paginates and moves a canvas object into and out of a document", async ({
   page,
   context,

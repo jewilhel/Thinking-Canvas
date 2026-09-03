@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AiAuthorityLevel } from "@/ai/collaborator-contract";
 import { deterministicLayoutRequestSchema } from "@/ai/deterministic-layout";
 import { productCanvasMutationSchema } from "@/domain/canvas-command";
+import { documentSettingsSchema } from "@/documents/document-schema";
 
 const uuid = z.uuid();
 const pagingFields = {
@@ -208,6 +209,90 @@ export const executeArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
 });
 
+const documentTextFormatSchema = z.enum([
+  "plain",
+  "bold",
+  "italic",
+  "bold_italic",
+]);
+const documentBlockSchema = z.strictObject({
+  kind: z.enum([
+    "paragraph",
+    "heading1",
+    "heading2",
+    "heading3",
+    "heading4",
+    "heading5",
+    "heading6",
+  ]),
+  text: z.string().max(100_000),
+  format: documentTextFormatSchema.default("plain"),
+});
+export const documentSemanticOperationSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("replace_selection"),
+    text: z.string().max(100_000),
+    format: documentTextFormatSchema.default("plain"),
+  }),
+  z.strictObject({
+    kind: z.literal("append_block"),
+    block: documentBlockSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("replace_document"),
+    blocks: z.array(documentBlockSchema).min(1).max(250),
+  }),
+]);
+export const documentChangesArgumentsSchema = z
+  .strictObject({
+    summary: z.string().trim().min(1).max(10_000),
+    documentObjectId: uuid,
+    operations: z.array(documentSemanticOperationSchema).min(1).max(50),
+    settings: documentSettingsSchema.optional(),
+    objectCommands: z.array(productCanvasMutationSchema).max(50).default([]),
+    objectExplanations: z.array(reviewExplanationSchema).max(50).default([]),
+    whatChanged: z.string().trim().min(1).max(2_000),
+    why: z.string().trim().min(1).max(4_000),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.operations.filter(
+        (operation) => operation.kind === "replace_selection",
+      ).length > 1
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["operations"],
+        message: "A document edit may replace its selected range only once.",
+      });
+    }
+    if (
+      value.objectCommands.some(
+        (command) =>
+          command.type === "document.update" ||
+          command.type === "document.duplicate" ||
+          command.type === "object.create",
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["objectCommands"],
+        message:
+          "Document object actions may only modify existing projected internal objects.",
+      });
+    }
+    const explainedIds = value.objectExplanations.map(
+      (explanation) => explanation.objectId,
+    );
+    if (new Set(explainedIds).size !== explainedIds.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["objectExplanations"],
+        message: "Document object explanations must be unique.",
+      });
+    }
+  });
+
 export const contextualCommentArgumentsSchema = z
   .strictObject({
     body: z.string().trim().min(1).max(100_000),
@@ -258,12 +343,26 @@ export const AI_TOOL_REGISTRY = {
       "Return validated ordered canvas commands as a non-mutating proposal in the originating comment thread.",
     argumentsSchema: proposalArgumentsSchema,
   },
+  propose_document_changes: {
+    effect: "proposal" as const,
+    minimumAuthority: "propose_changes" as const,
+    description:
+      "Return a non-mutating proposal for semantic document text, formatting, presentation, or existing internal-object changes. Use only a document ID present in the semantic projection; range operations use the invoking comment range.",
+    argumentsSchema: documentChangesArgumentsSchema,
+  },
   stage_canvas_changes: {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
       "Apply one validated canvas edit immediately as a single durable, undoable AI transaction. Use for direct content, geometry, style, order, group, or deletion changes that are not better represented by a deterministic layout or creation action.",
     argumentsSchema: reviewStageArgumentsSchema,
+  },
+  stage_document_changes: {
+    effect: "review" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Apply one validated semantic document edit as one durable undoable transaction. Range operations are bounded to the invoking comment range; use existing projected IDs only.",
+    argumentsSchema: documentChangesArgumentsSchema,
   },
   stage_layout_changes: {
     effect: "review" as const,
@@ -299,6 +398,13 @@ export const AI_TOOL_REGISTRY = {
     description:
       "Execute validated ordered product commands against current durable canvas state with idempotent persistence.",
     argumentsSchema: executeArgumentsSchema,
+  },
+  execute_document_changes: {
+    effect: "mutation" as const,
+    minimumAuthority: "trusted_editor" as const,
+    description:
+      "Execute one validated semantic document edit immediately against current durable state. Range operations are bounded to the invoking comment range; use existing projected IDs only.",
+    argumentsSchema: documentChangesArgumentsSchema,
   },
 } as const;
 

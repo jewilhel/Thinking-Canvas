@@ -20,29 +20,42 @@ import {
   mergeRegister,
   REDO_COMMAND,
   UNDO_COMMAND,
+  $getSelection,
+  $isRangeSelection,
 } from "lexical";
 import { useEffect } from "react";
+import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
 import { CanvasLexicalProvider } from "@/documents/canvas-lexical-provider";
 import { documentContentRootName } from "@/documents/document-schema";
+import {
+  boundedDocumentRangeQuote,
+  encodeDocumentRelativePosition,
+  type DocumentRangeTarget,
+} from "@/documents/document-range";
 
 export function ProductDocumentCollaboration({
   canvasDocument,
   documentId,
   username,
   cursorColor,
+  documentObjectId,
+  onRangeSelectionChange,
 }: {
   canvasDocument: Y.Doc;
   documentId: string;
   username: string;
   cursorColor: string;
+  documentObjectId: string;
+  onRangeSelectionChange?: (range: DocumentRangeTarget | null) => void;
 }) {
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
     const provider = new CanvasLexicalProvider(canvasDocument, documentId);
     const documentMap = new Map([[documentId, canvasDocument]]);
+    const awareness = provider.awareness as unknown as Awareness;
     const binding = createYjsBinding({
       editor,
       id: documentId,
@@ -53,6 +66,7 @@ export function ProductDocumentCollaboration({
     const sharedRoot = binding.root.getSharedType();
     const undoManager = createUndoManager(binding, sharedRoot);
     const cursorContainer = document.createElement("div");
+    let lastPublishedRangeKey: string | null = null;
     cursorContainer.dataset.lexicalDocumentCursors = documentId;
     document.body.append(cursorContainer);
     binding.cursorsContainer = cursorContainer;
@@ -101,6 +115,40 @@ export function ProductDocumentCollaboration({
           normalizedNodes,
           tags,
         );
+        const localState = provider.awareness.getLocalState();
+        editorState.read(() => {
+          const selection = $getSelection();
+          if (
+            !$isRangeSelection(selection) ||
+            selection.isCollapsed() ||
+            !localState?.anchorPos ||
+            !localState.focusPos
+          ) {
+            if (lastPublishedRangeKey !== null) {
+              lastPublishedRangeKey = null;
+              onRangeSelectionChange?.(null);
+            }
+            return;
+          }
+          const quote = boundedDocumentRangeQuote(selection.getTextContent());
+          if (!quote) {
+            if (lastPublishedRangeKey !== null) {
+              lastPublishedRangeKey = null;
+              onRangeSelectionChange?.(null);
+            }
+            return;
+          }
+          const range = {
+            documentObjectId,
+            anchor: encodeDocumentRelativePosition(localState.anchorPos),
+            head: encodeDocumentRelativePosition(localState.focusPos),
+            quote,
+          };
+          const rangeKey = JSON.stringify(range);
+          if (rangeKey === lastPublishedRangeKey) return;
+          lastPublishedRangeKey = rangeKey;
+          onRangeSelectionChange?.(range);
+        });
       },
     );
 
@@ -149,12 +197,27 @@ export function ProductDocumentCollaboration({
         rootElement?.addEventListener("blur", blur);
       },
     );
-    const handleAwarenessUpdate = () => {
+    const handleAwarenessUpdate = ({
+      added,
+      updated,
+      removed,
+    }: {
+      added: number[];
+      updated: number[];
+      removed: number[];
+    }) => {
+      if (
+        ![...added, ...updated, ...removed].some(
+          (clientId) => clientId !== canvasDocument.clientID,
+        )
+      ) {
+        return;
+      }
       queueMicrotask(() =>
         syncCursorPositions(binding, provider, { selectionHighlight: true }),
       );
     };
-    provider.awareness.on("update", handleAwarenessUpdate);
+    awareness.on("update", handleAwarenessUpdate);
 
     initLocalState(provider, username, cursorColor, false, {});
     provider.connect();
@@ -163,7 +226,7 @@ export function ProductDocumentCollaboration({
       removeEditorListener();
       removeCommands();
       removeFocusListeners();
-      provider.awareness.off("update", handleAwarenessUpdate);
+      awareness.off("update", handleAwarenessUpdate);
       undoManager.off("stack-item-added", updateHistoryState);
       undoManager.off("stack-item-popped", updateHistoryState);
       undoManager.off("stack-cleared", updateHistoryState);
@@ -172,7 +235,15 @@ export function ProductDocumentCollaboration({
       cursorContainer.remove();
       binding.root.destroy(binding);
     };
-  }, [canvasDocument, cursorColor, documentId, editor, username]);
+  }, [
+    canvasDocument,
+    cursorColor,
+    documentId,
+    documentObjectId,
+    editor,
+    onRangeSelectionChange,
+    username,
+  ]);
 
   return null;
 }

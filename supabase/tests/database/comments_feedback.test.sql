@@ -102,7 +102,7 @@ select throws_ok(
     20
   )$$,
   '22023',
-  'A comment requires exactly one object target set or canvas position.',
+  'A comment requires exactly one object target set, canvas position, or document range.',
   'object IDs and a free canvas position cannot be combined'
 );
 

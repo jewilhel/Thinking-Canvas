@@ -43,6 +43,14 @@ export const commentThreadDetailSchema = z.strictObject({
   authorKind: z.enum(["human", "ai"]),
   authorKey: z.string().min(1).max(255),
   targetObjectIds: z.array(uuid).max(100),
+  documentRange: z
+    .strictObject({
+      documentObjectId: uuid,
+      quote: z.string().min(1).max(1_000),
+      detached: z.boolean(),
+    })
+    .nullable()
+    .default(null),
   participantKeys: z.array(z.string().min(1).max(255)).max(100),
   createdAt: z.iso.datetime({ offset: true }),
   updatedAt: z.iso.datetime({ offset: true }),

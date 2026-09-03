@@ -48,6 +48,7 @@ import {
 import {
   allowedAiToolNames,
   contextualCommentArgumentsSchema,
+  documentChangesArgumentsSchema,
   executeArgumentsSchema,
   proposalArgumentsSchema,
   reviewLayoutArgumentsSchema,
@@ -57,6 +58,7 @@ import {
   reviewStageArgumentsSchema,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
+import { buildValidatedDocumentEdit } from "@/ai/document-semantic-edit";
 import { broadcastAiCanvasUpdate } from "@/ai/realtime-broadcast";
 import { plainLanguageAiReply } from "@/ai/reply-copy";
 import {
@@ -84,6 +86,8 @@ import {
   postgresByteaToBytes,
 } from "@/collaboration/canvas-document";
 import { buildCompactedSnapshot } from "@/collaboration/persistence";
+import { buildAiDocumentProjections } from "@/documents/document-ai-projection";
+import { resolveDocumentRange } from "@/documents/document-range";
 import { getAuthenticatedUser } from "@/lib/auth/session";
 import type { Json } from "@/lib/supabase/database.types";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
@@ -213,7 +217,7 @@ export async function completeAiRun(
     supabase
       .from("comments")
       .select(
-        "id,body,status,anchor_x,anchor_y,comment_targets(target_object_id,target_order)",
+        "id,body,status,anchor_x,anchor_y,comment_targets(target_object_id,target_order),comment_document_targets(document_object_id,relative_anchor,relative_head,quoted_text)",
       )
       .eq("id", run.invoking_comment_id)
       .maybeSingle(),
@@ -239,7 +243,7 @@ export async function completeAiRun(
     supabase
       .from("comments")
       .select(
-        "id,body,status,author_kind,author_key,created_at,updated_at,comment_targets(target_object_id,target_order),comment_thread_participants(participant_kind,participant_user_id,participant_ai_key),comment_replies(id,author_kind,author_key,body,created_at,updated_at),comment_prompts(kind,comment_responses(value))",
+        "id,body,status,author_kind,author_key,created_at,updated_at,comment_targets(target_object_id,target_order),comment_document_targets(document_object_id,relative_anchor,relative_head,quoted_text),comment_thread_participants(participant_kind,participant_user_id,participant_ai_key),comment_replies(id,author_kind,author_key,body,created_at,updated_at),comment_prompts(kind,comment_responses(value))",
       )
       .eq("canvas_id", run.canvas_id)
       .in("status", ["open", "resolved"])
@@ -272,6 +276,28 @@ export async function completeAiRun(
     })),
   );
   const sourceObjects = listCanvasObjectsV2(compacted.document);
+  const sourceDocumentTarget = commentResult.data.comment_document_targets?.[0];
+  const sourceDocumentRange = sourceDocumentTarget
+    ? {
+        documentObjectId: sourceDocumentTarget.document_object_id,
+        anchor: sourceDocumentTarget.relative_anchor,
+        head: sourceDocumentTarget.relative_head,
+        quote: sourceDocumentTarget.quoted_text,
+      }
+    : null;
+  if (
+    sourceDocumentTarget &&
+    !sourceObjects.some(
+      (object) =>
+        object.id === sourceDocumentTarget.document_object_id &&
+        object.type === "document" &&
+        object.canvasId === run.canvas_id,
+    )
+  ) {
+    throw new AiRunConflictError(
+      "The targeted document is no longer available in this canvas.",
+    );
+  }
   const compositionParentIds = new Map(
     sourceObjects.flatMap((object) =>
       isIntrinsicShapeLabel(object) && object.parentId
@@ -310,6 +336,7 @@ export async function completeAiRun(
   }));
   const threadDetails = (threadsResult.data ?? []).map((thread) => {
     const prompt = thread.comment_prompts?.[0];
+    const documentTarget = thread.comment_document_targets?.[0];
     return commentThreadDetailSchema.parse({
       id: thread.id,
       status: thread.status,
@@ -319,6 +346,17 @@ export async function completeAiRun(
       targetObjectIds: [...thread.comment_targets]
         .sort((left, right) => left.target_order - right.target_order)
         .map((target) => target.target_object_id),
+      documentRange: documentTarget
+        ? {
+            documentObjectId: documentTarget.document_object_id,
+            quote: documentTarget.quoted_text,
+            detached: resolveDocumentRange(compacted.document, {
+              anchor: documentTarget.relative_anchor,
+              head: documentTarget.relative_head,
+              quote: documentTarget.quoted_text,
+            }).detached,
+          }
+        : null,
       participantKeys: thread.comment_thread_participants
         .map((participant) =>
           participant.participant_kind === "ai"
@@ -351,6 +389,7 @@ export async function completeAiRun(
     id: thread.id,
     status: thread.status,
     targetObjectIds: thread.targetObjectIds,
+    documentRange: thread.documentRange,
     summary: [thread.body, ...thread.replies.map((reply) => reply.body)]
       .join("\n")
       .slice(0, 10_000),
@@ -373,6 +412,10 @@ export async function completeAiRun(
     canvasId: run.canvas_id,
     objects,
     commentThreads,
+    documents: buildAiDocumentProjections({
+      document: compacted.document,
+      objects: sourceObjects,
+    }),
     designTokens: AI_CANVAS_DESIGN_TOKENS,
     truncated: false,
   };
@@ -554,11 +597,19 @@ export async function completeAiRun(
     } catch {
       throw new AiProviderOutputError();
     }
-    if (validatedTool.toolName === "execute_canvas_commands") {
+    if (
+      validatedTool.toolName === "execute_canvas_commands" ||
+      validatedTool.toolName === "execute_document_changes"
+    ) {
       options.onStatus?.("applying");
-      const toolArguments = executeArgumentsSchema.parse(
-        validatedTool.arguments,
-      );
+      const canvasToolArguments =
+        validatedTool.toolName === "execute_canvas_commands"
+          ? executeArgumentsSchema.parse(validatedTool.arguments)
+          : null;
+      const documentToolArguments =
+        validatedTool.toolName === "execute_document_changes"
+          ? documentChangesArgumentsSchema.parse(validatedTool.arguments)
+          : null;
       const service = createServiceClient();
       const commandId = await stableAiToolCommandId({
         runId: run.id,
@@ -584,14 +635,30 @@ export async function completeAiRun(
         sequence = retryResult.data[0].sequence;
         created = false;
       } else {
-        const execution = await buildTrustedCanvasUpdate({
-          document: compacted.document,
-          canvasId: run.canvas_id,
-          actorId: run.requested_by,
-          runId: run.id,
-          callKey: toolCall.callKey,
-          commands: toolArguments.commands,
-        });
+        const execution = canvasToolArguments
+          ? await buildTrustedCanvasUpdate({
+              document: compacted.document,
+              canvasId: run.canvas_id,
+              actorId: run.requested_by,
+              runId: run.id,
+              callKey: toolCall.callKey,
+              commands: canvasToolArguments.commands,
+            })
+          : (() => {
+              const edit = buildValidatedDocumentEdit({
+                document: compacted.document,
+                canvasId: run.canvas_id,
+                actorId: run.requested_by,
+                toolName: "execute_document_changes",
+                arguments: documentToolArguments,
+                range: sourceDocumentRange,
+              });
+              return {
+                commandId,
+                update: edit.tentativeUpdate,
+                affectedObjectIds: edit.affectedObjectIds,
+              };
+            })();
         const toolResult = await service.rpc("execute_ai_canvas_commands", {
           target_run_id: run.id,
           target_requester_id: run.requested_by,
@@ -620,7 +687,11 @@ export async function completeAiRun(
       });
       trustedExecutionResults.push({
         callKey: toolCall.callKey,
-        commandTypes: toolArguments.commands.map((command) => command.type),
+        commandTypes: canvasToolArguments
+          ? canvasToolArguments.commands.map((command) => command.type)
+          : documentToolArguments!.operations.map(
+              (operation) => `document.${operation.kind}`,
+            ),
         affectedObjectIds,
         commandId,
         sequence,
@@ -631,16 +702,33 @@ export async function completeAiRun(
       );
       continue;
     }
-    if (validatedTool.toolName === "propose_canvas_commands") {
-      const toolArguments = proposalArgumentsSchema.parse(
-        validatedTool.arguments,
-      );
-      const proposal = validateCanvasProposal({
-        document: compacted.document,
-        canvasId: run.canvas_id,
-        actorId: run.requested_by,
-        commands: toolArguments.commands,
-      });
+    if (
+      validatedTool.toolName === "propose_canvas_commands" ||
+      validatedTool.toolName === "propose_document_changes"
+    ) {
+      const canvasToolArguments =
+        validatedTool.toolName === "propose_canvas_commands"
+          ? proposalArgumentsSchema.parse(validatedTool.arguments)
+          : null;
+      const documentToolArguments =
+        validatedTool.toolName === "propose_document_changes"
+          ? documentChangesArgumentsSchema.parse(validatedTool.arguments)
+          : null;
+      const proposal = canvasToolArguments
+        ? validateCanvasProposal({
+            document: compacted.document,
+            canvasId: run.canvas_id,
+            actorId: run.requested_by,
+            commands: canvasToolArguments.commands,
+          })
+        : buildValidatedDocumentEdit({
+            document: compacted.document,
+            canvasId: run.canvas_id,
+            actorId: run.requested_by,
+            toolName: "propose_document_changes",
+            arguments: documentToolArguments,
+            range: sourceDocumentRange,
+          });
       const toolResult = await createServiceClient().rpc(
         "record_ai_canvas_proposal",
         {
@@ -658,12 +746,143 @@ export async function completeAiRun(
       }
       proposalToolResults.push({
         callKey: toolCall.callKey,
-        commandTypes: proposal.commandTypes,
+        commandTypes: canvasToolArguments
+          ? proposal.commandTypes
+          : documentToolArguments!.operations.map(
+              (operation) => `document.${operation.kind}`,
+            ),
         affectedObjectIds: proposal.affectedObjectIds,
         created: toolResult.data[0].created,
       });
       replySections.push(
         "The proposal did not change the canvas. Reply if you want me to apply or adjust it.",
+      );
+      continue;
+    }
+    if (validatedTool.toolName === "stage_document_changes") {
+      if (reviewStageToolResults.length > 0) {
+        throw new AiRunConflictError(
+          "One AI run may create only one reviewable change set.",
+        );
+      }
+      const toolArguments = documentChangesArgumentsSchema.parse(
+        validatedTool.arguments,
+      );
+      const edit = buildValidatedDocumentEdit({
+        document: compacted.document,
+        canvasId: run.canvas_id,
+        actorId: run.requested_by,
+        toolName: "stage_document_changes",
+        arguments: toolArguments,
+        range: sourceDocumentRange,
+      });
+      assertReviewChangesWithinScope({
+        scope: reviewScope,
+        changes: edit.objectChanges,
+        parentIdsByObjectId: compositionParentIds,
+      });
+      const expectedObjectExplanationIds = edit.objectChanges
+        .map((change) => change.objectId)
+        .filter((objectId) => objectId !== edit.documentObjectId)
+        .sort();
+      const suppliedObjectExplanationIds = toolArguments.objectExplanations
+        .map((explanation) => explanation.objectId)
+        .sort();
+      if (
+        expectedObjectExplanationIds.length !==
+          suppliedObjectExplanationIds.length ||
+        expectedObjectExplanationIds.some(
+          (objectId, index) => objectId !== suppliedObjectExplanationIds[index],
+        )
+      ) {
+        throw new AiRunConflictError(
+          "Document object explanations must match every changed internal object.",
+        );
+      }
+      const service = createServiceClient();
+      const toolResult = await service.rpc("stage_ai_canvas_changes", {
+        target_run_id: run.id,
+        target_requester_id: run.requested_by,
+        target_call_key: toolCall.callKey,
+        target_summary: toolArguments.summary,
+        target_changes: JSON.parse(JSON.stringify(edit.objectChanges)) as Json,
+        target_expected_sequence: compacted.lastSequence,
+      });
+      if (toolResult.error || !toolResult.data?.[0]) {
+        throw new AiRunConflictError(
+          toolResult.error?.message ?? "The document edit could not be saved.",
+        );
+      }
+      const changeSetId = toolResult.data[0].change_set_id;
+      const undoResult = await service
+        .from("ai_change_sets")
+        .update({
+          document_object_id: edit.documentObjectId,
+          document_undo_update: bytesToPostgresBytea(edit.documentUndoUpdate),
+        })
+        .eq("id", changeSetId)
+        .eq("requested_by", run.requested_by);
+      if (undoResult.error) {
+        throw new AiRunConflictError(
+          "The document undo record could not be saved.",
+        );
+      }
+      const finalizationResult = await service.rpc("finalize_ai_review_stage", {
+        target_change_set_id: changeSetId,
+        target_requester_id: run.requested_by,
+        target_summary: toolArguments.summary,
+        target_explanations: [
+          {
+            objectId: edit.documentObjectId,
+            whatChanged: toolArguments.whatChanged,
+            why: toolArguments.why,
+          },
+          ...toolArguments.objectExplanations,
+        ] as Json,
+        target_scope_kind: reviewScope.kind,
+        target_scope_object_ids: reviewScope.objectIds,
+        target_visual_feedback_metadata: {
+          projectionVersion: projection.version,
+          feedbackStatus: "semantic_document_validation",
+          captureCount: 0,
+        },
+      });
+      if (finalizationResult.error || !finalizationResult.data?.[0]) {
+        throw new AiRunConflictError(
+          finalizationResult.error?.message ??
+            "The document edit contract could not be finalized.",
+        );
+      }
+      const activationResult = await service.rpc("activate_ai_review_stage", {
+        target_change_set_id: changeSetId,
+        target_requester_id: run.requested_by,
+        target_update_data: bytesToPostgresBytea(edit.tentativeUpdate),
+        target_expected_sequence: compacted.lastSequence,
+      });
+      if (activationResult.error || !activationResult.data?.[0]) {
+        throw new AiRunConflictError(
+          activationResult.error?.message ??
+            "The document edit could not be applied.",
+        );
+      }
+      await broadcastAiCanvasUpdate({
+        canvasId: run.canvas_id,
+        sequence: activationResult.data[0].sequence,
+        update: edit.tentativeUpdate,
+      });
+      reviewStageToolResults.push({
+        callKey: toolCall.callKey,
+        changeSetId,
+        objectChangeCount: toolResult.data[0].object_change_count,
+        commandTypes: toolArguments.operations.map(
+          (operation) => `document.${operation.kind}`,
+        ),
+        affectedObjectIds: edit.affectedObjectIds,
+        activationSequence: activationResult.data[0].sequence,
+        created: toolResult.data[0].created,
+      });
+      replySections.push(
+        "The document change is applied as one edit. You can undo it or reply with adjustments.",
       );
       continue;
     }

@@ -1307,6 +1307,7 @@ export function CanvasComments({
       targetObjectIds: composerTarget.targetObjectIds,
       orderedContextIds: composerTarget.orderedContextIds,
       canvasAnchor: composerTarget.canvasAnchor,
+      documentRange: null,
       promptKind,
       authorKind: "human",
       authorKey: null,

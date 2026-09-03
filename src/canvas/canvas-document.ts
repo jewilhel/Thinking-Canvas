@@ -257,6 +257,7 @@ const legacyDocumentObjectSchema = canvasObjectBaseSchema.extend({
   documentId: uuid,
   title: z.string().max(500),
   documentVersion: z.literal(1).default(1),
+  contentRevision: z.number().int().nonnegative().optional(),
   settings: documentSettingsSchema.default(defaultDocumentSettings),
 });
 

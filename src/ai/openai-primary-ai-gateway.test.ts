@@ -91,6 +91,7 @@ const projection: AiProjectionEnvelope = {
     },
   ],
   commentThreads: [],
+  documents: [],
   designTokens: AI_CANVAS_DESIGN_TOKENS,
   serializedBytes: 512,
   truncated: false,

@@ -110,11 +110,14 @@ const documentUpdateCommand = commandBase.extend({
       objectId: uuid,
       title: z.string().trim().min(1).max(500).optional(),
       settings: documentSettingsSchema.optional(),
+      contentRevision: z.number().int().nonnegative().optional(),
     })
     .refine(
       (payload) =>
-        payload.title !== undefined || payload.settings !== undefined,
-      "A document title or settings update is required.",
+        payload.title !== undefined ||
+        payload.settings !== undefined ||
+        payload.contentRevision !== undefined,
+      "A document title, settings, or content revision update is required.",
     ),
 });
 const documentDuplicateCommand = commandBase.extend({
@@ -2077,6 +2080,14 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           object.id,
           ["settings"],
           command.payload.settings,
+        );
+      }
+      if (command.payload.contentRevision !== undefined) {
+        setCanvasObjectField(
+          document,
+          object.id,
+          ["contentRevision"],
+          command.payload.contentRevision,
         );
       }
       touch(document, object.id, command.issuedAt);

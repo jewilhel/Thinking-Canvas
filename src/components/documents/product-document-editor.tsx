@@ -14,11 +14,12 @@ import { ListItemNode, ListNode } from "@lexical/list";
 import { HeadingNode } from "@lexical/rich-text";
 import { TableCellNode, TableNode, TableRowNode } from "@lexical/table";
 import { ArrowLeft, ChevronLeft, ChevronRight, Settings2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type * as Y from "yjs";
 
 import { Button } from "@/components/ui/button";
 import { ProductDocumentCollaboration } from "@/components/documents/product-document-collaboration";
+import { ProductDocumentComments } from "@/components/documents/product-document-comments";
 import { ProductDocumentToolbar } from "@/components/documents/product-document-toolbar";
 import { ProductDocumentObjectLayer } from "@/components/documents/product-document-object-layer";
 import type { CanvasGroupV2, CanvasObjectV2 } from "@/canvas/canvas-document";
@@ -37,9 +38,15 @@ import {
   documentReadingSurfaceWidth,
 } from "@/documents/document-presentation";
 import type { DocumentSettings } from "@/documents/document-schema";
+import type { DocumentRangeTarget } from "@/documents/document-range";
+import type { CanvasRole } from "@/domain/command";
 
 type Props = {
   canvasDocument: Y.Doc;
+  canvasId: string;
+  canvasRole: CanvasRole;
+  supabaseUrl: string;
+  supabasePublishableKey: string;
   documentObject: ProductDocumentObject;
   username: string;
   canEdit: boolean;
@@ -94,6 +101,10 @@ function parseLayout(value: string): DocumentSettings["layout"] {
 
 export function ProductDocumentEditor({
   canvasDocument,
+  canvasId,
+  canvasRole,
+  supabaseUrl,
+  supabasePublishableKey,
   documentObject,
   username,
   canEdit,
@@ -120,12 +131,27 @@ export function ProductDocumentEditor({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageCount, setPageCount] = useState(1);
+  const [selectedRange, setSelectedRange] =
+    useState<DocumentRangeTarget | null>(null);
+  const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const editorElementRef = useRef<HTMLDivElement>(null);
   const readingSurfaceRef = useRef<HTMLDivElement>(null);
   const settings = documentObject.settings;
   const reading = documentReadingMetrics[settings.readingSize];
   const pageHeight = documentPageContentHeight(settings);
   const surfaceHeight = documentReadingSurfaceHeight(settings);
+  const handleRangeSelectionChange = useCallback(
+    (range: DocumentRangeTarget | null) => setSelectedRange(range),
+    [],
+  );
+  const handleObjectSelectionChange = useCallback(
+    (objectIds: string[]) => {
+      setSelectedObjectIds(objectIds);
+      if (objectIds.length) setSelectedRange(null);
+      onObjectSelectionChange(objectIds);
+    },
+    [onObjectSelectionChange],
+  );
 
   function updateSettings(patch: Partial<DocumentSettings>) {
     onUpdate({ settings: { ...settings, ...patch } });
@@ -207,7 +233,7 @@ export function ProductDocumentEditor({
       className="absolute inset-0 z-70 flex flex-col overflow-hidden bg-zinc-100 text-zinc-950"
       data-testid="focused-product-document"
     >
-      <header className="relative z-10 flex min-h-16 flex-wrap items-center gap-3 border-b border-zinc-200 bg-white/95 px-4 py-2 shadow-sm backdrop-blur">
+      <header className="relative z-50 flex min-h-16 flex-wrap items-center gap-3 border-b border-zinc-200 bg-white/95 px-4 py-2 shadow-sm backdrop-blur">
         <Button
           type="button"
           variant="outline"
@@ -248,6 +274,17 @@ export function ProductDocumentEditor({
         >
           <Settings2 aria-hidden="true" /> Document settings
         </Button>
+        <ProductDocumentComments
+          canvasDocument={canvasDocument}
+          canvasId={canvasId}
+          canvasRole={canvasRole}
+          documentObjectId={documentObject.id}
+          objects={canvasObjects}
+          selectedObjectIds={selectedObjectIds}
+          selectedRange={selectedRange}
+          supabaseUrl={supabaseUrl}
+          supabasePublishableKey={supabasePublishableKey}
+        />
       </header>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -405,7 +442,7 @@ export function ProductDocumentEditor({
                 onReorder={onReorderObjects}
                 onGroup={onGroupObjects}
                 onUngroup={onUngroupObjects}
-                onSelectionChange={onObjectSelectionChange}
+                onSelectionChange={handleObjectSelectionChange}
                 onUndo={onUndoObjectChange}
                 onRedo={onRedoObjectChange}
               />
@@ -414,6 +451,8 @@ export function ProductDocumentEditor({
                 documentId={documentObject.documentId}
                 username={username}
                 cursorColor="#7c3aed"
+                documentObjectId={documentObject.id}
+                onRangeSelectionChange={handleRangeSelectionChange}
               />
               <ListPlugin />
               <LinkPlugin

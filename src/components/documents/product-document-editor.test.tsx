@@ -5,6 +5,17 @@ import * as Y from "yjs";
 import { ProductDocumentEditor } from "@/components/documents/product-document-editor";
 import { createProductDocumentObject } from "@/documents/product-document";
 
+vi.mock("@/comments/use-canvas-comments", () => ({
+  useCanvasComments: () => ({
+    threads: [],
+    collaboration: null,
+    loading: false,
+    pending: false,
+    error: "",
+    execute: vi.fn(),
+  }),
+}));
+
 const canvasId = "10000000-0000-4000-8000-000000000001";
 const objectId = "70000000-0000-4000-8000-000000000001";
 const actorId = "80000000-0000-4000-8000-000000000001";
@@ -25,6 +36,10 @@ describe("ProductDocumentEditor", () => {
     render(
       <ProductDocumentEditor
         canvasDocument={new Y.Doc()}
+        canvasId={canvasId}
+        canvasRole="owner"
+        supabaseUrl="http://127.0.0.1:54321"
+        supabasePublishableKey="test-key"
         documentObject={documentObject}
         username="Editor"
         canEdit

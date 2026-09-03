@@ -104,6 +104,7 @@ function buildProjection(input: {
         id: ids.comment,
         status: "open" as const,
         targetObjectIds,
+        documentRange: null,
         summary:
           input.fixture.intent === "revision_followup"
             ? "The AI moved the targeted sticky note to the right; the user is requesting a follow-up adjustment."
@@ -113,6 +114,7 @@ function buildProjection(input: {
         updatedAt: "2026-08-28T12:01:00.000Z",
       },
     ],
+    documents: [],
     designTokens: AI_CANVAS_DESIGN_TOKENS,
     truncated: false,
   };

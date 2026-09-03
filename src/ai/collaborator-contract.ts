@@ -131,6 +131,50 @@ const projectionThreadSchema = z.strictObject({
   participantKeys: z.array(z.string().min(1).max(255)).max(100),
   createdAt: z.iso.datetime({ offset: true }),
   updatedAt: z.iso.datetime({ offset: true }),
+  documentRange: z
+    .strictObject({
+      documentObjectId: z.uuid(),
+      quote: z.string().min(1).max(1_000),
+      detached: z.boolean(),
+    })
+    .nullable()
+    .default(null),
+});
+
+const projectionDocumentSchema = z.strictObject({
+  objectId: z.uuid(),
+  title: z.string().max(500),
+  settings: z.strictObject({
+    layout: z.enum(["continuous", "paginated"]),
+    pageSize: z.enum(["letter", "a4"]).nullable(),
+    orientation: z.enum(["portrait", "landscape"]).nullable(),
+  }),
+  outline: z
+    .array(
+      z.strictObject({
+        level: z.number().int().min(1).max(6),
+        text: z.string().max(20_000),
+      }),
+    )
+    .max(250),
+  blocks: z
+    .array(
+      z.strictObject({
+        kind: z.string().min(1).max(80),
+        text: z.string().max(20_000),
+      }),
+    )
+    .max(250),
+  internalObjects: z
+    .array(
+      z.strictObject({
+        id: z.uuid(),
+        type: z.string().min(1).max(80),
+        summary: z.string().max(1_000),
+        relationshipIds: z.array(z.uuid()).max(1_000),
+      }),
+    )
+    .max(1_000),
 });
 
 export const aiProjectionEnvelopeSchema = z.strictObject({
@@ -138,6 +182,7 @@ export const aiProjectionEnvelopeSchema = z.strictObject({
   canvasId: z.uuid(),
   objects: z.array(projectionObjectSchema).max(10_000),
   commentThreads: z.array(projectionThreadSchema).max(10_000),
+  documents: z.array(projectionDocumentSchema).max(1_000).default([]),
   designTokens: aiCanvasDesignTokensSchema.default(AI_CANVAS_DESIGN_TOKENS),
   serializedBytes: z
     .number()

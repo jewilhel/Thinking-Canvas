@@ -19,11 +19,17 @@ describe("AI authority tool registry", () => {
     expect(allowedAiToolNames("propose_changes")).toContain(
       "propose_canvas_commands",
     );
+    expect(allowedAiToolNames("propose_changes")).toContain(
+      "propose_document_changes",
+    );
     expect(allowedAiToolNames("propose_changes")).not.toContain(
       "stage_canvas_changes",
     );
     expect(allowedAiToolNames("edit_with_review")).toContain(
       "stage_canvas_changes",
+    );
+    expect(allowedAiToolNames("edit_with_review")).toContain(
+      "stage_document_changes",
     );
     expect(allowedAiToolNames("edit_with_review")).not.toContain(
       "execute_canvas_commands",
@@ -36,13 +42,52 @@ describe("AI authority tool registry", () => {
       "inspect_comment_threads",
       "create_contextual_comment",
       "propose_canvas_commands",
+      "propose_document_changes",
       "stage_canvas_changes",
+      "stage_document_changes",
       "stage_layout_changes",
       "stage_new_shapes",
       "stage_new_connectors",
       "stage_new_annotations",
       "execute_canvas_commands",
+      "execute_document_changes",
     ]);
+  });
+
+  it("validates semantic document actions without accepting raw Yjs state", () => {
+    expect(
+      validateAiToolRequest({
+        authority: "edit_with_review",
+        toolName: "stage_document_changes",
+        arguments: {
+          summary: "Clarify the selected phrase.",
+          documentObjectId: objectId,
+          operations: [
+            {
+              kind: "replace_selection",
+              text: "clearer phrase",
+              format: "bold",
+            },
+          ],
+          whatChanged: "Replaced and emphasized the selected phrase.",
+          why: "The comment requested clearer wording.",
+        },
+      }),
+    ).toMatchObject({ toolName: "stage_document_changes", effect: "review" });
+    expect(() =>
+      validateAiToolRequest({
+        authority: "edit_with_review",
+        toolName: "stage_document_changes",
+        arguments: {
+          summary: "Injected state",
+          documentObjectId: objectId,
+          operations: [{ kind: "replace_selection", text: "safe" }],
+          whatChanged: "Changed text.",
+          why: "Requested.",
+          yjsUpdate: "untrusted",
+        },
+      }),
+    ).toThrow();
   });
 
   it("denies mutation and review tools below their persisted authority", () => {
@@ -58,6 +103,27 @@ describe("AI authority tool registry", () => {
         authority: "propose_changes",
         toolName: "stage_canvas_changes",
         arguments: { summary: "Review", commands: [] },
+      }),
+    ).toThrow(AiToolPermissionError);
+    expect(() =>
+      validateAiToolRequest({
+        authority: "comment_only",
+        toolName: "propose_document_changes",
+        arguments: {},
+      }),
+    ).toThrow(AiToolPermissionError);
+    expect(() =>
+      validateAiToolRequest({
+        authority: "propose_changes",
+        toolName: "stage_document_changes",
+        arguments: {},
+      }),
+    ).toThrow(AiToolPermissionError);
+    expect(() =>
+      validateAiToolRequest({
+        authority: "edit_with_review",
+        toolName: "execute_document_changes",
+        arguments: {},
       }),
     ).toThrow(AiToolPermissionError);
   });

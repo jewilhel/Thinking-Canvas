@@ -55,6 +55,7 @@ export function createProductDocumentObject({
     type: "document",
     documentId,
     documentVersion: 1,
+    contentRevision: 0,
     title,
     geometry,
     style: defaultDocumentStyle,

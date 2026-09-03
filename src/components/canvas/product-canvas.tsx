@@ -6368,6 +6368,10 @@ export function ProductCanvas({
       {focusedDocument?.type === "document" ? (
         <ProductDocumentEditor
           canvasDocument={document}
+          canvasId={canvasId}
+          canvasRole={canvasRole}
+          supabaseUrl={supabaseUrl}
+          supabasePublishableKey={supabasePublishableKey}
           documentObject={focusedDocument}
           username={userIdentity}
           canEdit={canMutateCanvas}

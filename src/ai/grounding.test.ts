@@ -125,6 +125,7 @@ describe("AI grounding tools", () => {
       authorKind: "human" as const,
       authorKey: actorId,
       targetObjectIds: [ids.first],
+      documentRange: null,
       participantKeys: [actorId, "primary-ai"],
       createdAt: "2026-08-24T12:00:00.000Z",
       updatedAt: "2026-08-24T12:00:00.000Z",
