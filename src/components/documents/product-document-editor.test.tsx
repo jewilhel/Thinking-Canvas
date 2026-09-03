@@ -60,6 +60,8 @@ describe("ProductDocumentEditor", () => {
         onObjectSelectionChange={vi.fn()}
         onUndoObjectChange={vi.fn()}
         onRedoObjectChange={vi.fn()}
+        onAiTransactionApplied={vi.fn()}
+        onUndoAiTransaction={vi.fn()}
         onUpdate={onUpdate}
         onExit={onExit}
       />,

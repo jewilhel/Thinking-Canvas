@@ -70,6 +70,8 @@ type Props = {
   onObjectSelectionChange: (objectIds: string[]) => void;
   onUndoObjectChange: () => void;
   onRedoObjectChange: () => void;
+  onAiTransactionApplied: (changeSetId: string) => void;
+  onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
   onUpdate: (update: { title?: string; settings?: DocumentSettings }) => void;
   onExit: () => void;
 };
@@ -125,6 +127,8 @@ export function ProductDocumentEditor({
   onObjectSelectionChange,
   onUndoObjectChange,
   onRedoObjectChange,
+  onAiTransactionApplied,
+  onUndoAiTransaction,
   onUpdate,
   onExit,
 }: Props) {
@@ -284,6 +288,8 @@ export function ProductDocumentEditor({
           selectedRange={selectedRange}
           supabaseUrl={supabaseUrl}
           supabasePublishableKey={supabasePublishableKey}
+          onAiTransactionApplied={onAiTransactionApplied}
+          onUndoAiTransaction={onUndoAiTransaction}
         />
       </header>
 

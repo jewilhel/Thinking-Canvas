@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageCircle, Send, Trash2, X } from "lucide-react";
+import { MessageCircle, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type * as Y from "yjs";
 
@@ -27,6 +27,8 @@ type Props = {
   selectedRange: DocumentRangeTarget | null;
   supabaseUrl: string;
   supabasePublishableKey: string;
+  onAiTransactionApplied: (changeSetId: string) => void;
+  onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
 };
 
 function targetLabel(
@@ -65,14 +67,26 @@ export function ProductDocumentComments({
   selectedRange,
   supabaseUrl,
   supabasePublishableKey,
+  onAiTransactionApplied,
+  onUndoAiTransaction,
 }: Props) {
   const { threads, collaboration, loading, pending, error, execute } =
-    useCanvasComments(canvasId, supabaseUrl, supabasePublishableKey);
+    useCanvasComments(
+      canvasId,
+      supabaseUrl,
+      supabasePublishableKey,
+      onAiTransactionApplied,
+    );
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [reply, setReply] = useState<Record<string, string>>({});
   const [promptKind, setPromptKind] = useState<CommentPromptKind | null>(null);
   const [askAi, setAskAi] = useState(false);
+  const [undoingChangeSetId, setUndoingChangeSetId] = useState<string | null>(
+    null,
+  );
+  const [undoNotice, setUndoNotice] = useState("");
+  const [undoError, setUndoError] = useState("");
   const objectsById = useMemo(
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
@@ -209,6 +223,16 @@ export function ProductDocumentComments({
             </div>
           ) : null}
           {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
+          {undoError ? (
+            <p role="alert" className="mt-3 text-sm text-red-700">
+              {undoError}
+            </p>
+          ) : null}
+          {undoNotice ? (
+            <p role="status" className="mt-3 text-sm text-amber-800">
+              {undoNotice}
+            </p>
+          ) : null}
           <div className="mt-4 space-y-3">
             {loading ? <p className="text-sm text-zinc-500">Loading…</p> : null}
             {!loading && !documentThreads.length ? (
@@ -234,10 +258,52 @@ export function ProductDocumentComments({
                   ) : null}
                   <p className="mt-2 text-sm">{thread.body}</p>
                   {thread.replies.map((item) => (
-                    <p key={item.id} className="mt-2 border-l pl-2 text-sm">
-                      <span className="font-medium">{item.authorName}:</span>{" "}
-                      {item.body}
-                    </p>
+                    <div key={item.id} className="mt-2 border-l pl-2 text-sm">
+                      <p>
+                        <span className="font-medium">{item.authorName}:</span>{" "}
+                        {item.body}
+                      </p>
+                      {item.aiTransaction?.status === "active" ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="mt-2"
+                          disabled={
+                            undoingChangeSetId ===
+                            item.aiTransaction.changeSetId
+                          }
+                          onClick={() => {
+                            const changeSetId = item.aiTransaction!.changeSetId;
+                            setUndoError("");
+                            setUndoNotice("");
+                            setUndoingChangeSetId(changeSetId);
+                            void onUndoAiTransaction(changeSetId)
+                              .then(({ conflicts }) =>
+                                setUndoNotice(
+                                  conflicts
+                                    ? `AI change undone; ${conflicts} later edit${conflicts === 1 ? " was" : "s were"} preserved.`
+                                    : "AI document change undone.",
+                                ),
+                              )
+                              .catch((undoFailure: unknown) =>
+                                setUndoError(
+                                  undoFailure instanceof Error
+                                    ? undoFailure.message
+                                    : "The AI document change could not be undone.",
+                                ),
+                              )
+                              .finally(() => setUndoingChangeSetId(null));
+                          }}
+                        >
+                          <RotateCcw aria-hidden="true" /> Undo AI change
+                        </Button>
+                      ) : item.aiTransaction?.status === "undone" ? (
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Change undone
+                        </p>
+                      ) : null}
+                    </div>
                   ))}
                   {thread.prompt && canComment && thread.status === "open" ? (
                     <div

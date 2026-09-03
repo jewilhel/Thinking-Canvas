@@ -97,6 +97,10 @@ const runRequestSchema = z.strictObject({
   canvasId: z.uuid(),
 });
 
+function firstRelatedRow<Row>(value: Row | Row[] | null | undefined) {
+  return Array.isArray(value) ? value[0] : (value ?? undefined);
+}
+
 async function repeatedLayoutContinuity(input: {
   runId: string;
   commentId: string;
@@ -276,7 +280,9 @@ export async function completeAiRun(
     })),
   );
   const sourceObjects = listCanvasObjectsV2(compacted.document);
-  const sourceDocumentTarget = commentResult.data.comment_document_targets?.[0];
+  const sourceDocumentTarget = firstRelatedRow(
+    commentResult.data.comment_document_targets,
+  );
   const sourceDocumentRange = sourceDocumentTarget
     ? {
         documentObjectId: sourceDocumentTarget.document_object_id,
@@ -336,7 +342,7 @@ export async function completeAiRun(
   }));
   const threadDetails = (threadsResult.data ?? []).map((thread) => {
     const prompt = thread.comment_prompts?.[0];
-    const documentTarget = thread.comment_document_targets?.[0];
+    const documentTarget = firstRelatedRow(thread.comment_document_targets);
     return commentThreadDetailSchema.parse({
       id: thread.id,
       status: thread.status,
@@ -814,15 +820,16 @@ export async function completeAiRun(
         );
       }
       const changeSetId = toolResult.data[0].change_set_id;
-      const undoResult = await service
-        .from("ai_change_sets")
-        .update({
-          document_object_id: edit.documentObjectId,
-          document_undo_update: bytesToPostgresBytea(edit.documentUndoUpdate),
-        })
-        .eq("id", changeSetId)
-        .eq("requested_by", run.requested_by);
-      if (undoResult.error) {
+      const undoResult = await service.rpc("attach_ai_document_undo", {
+        target_change_set_id: changeSetId,
+        target_run_id: run.id,
+        target_requester_id: run.requested_by,
+        target_document_object_id: edit.documentObjectId,
+        target_document_undo_update: bytesToPostgresBytea(
+          edit.documentUndoPayload,
+        ),
+      });
+      if (undoResult.error || undoResult.data !== true) {
         throw new AiRunConflictError(
           "The document undo record could not be saved.",
         );

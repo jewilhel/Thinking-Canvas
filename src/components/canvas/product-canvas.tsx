@@ -6394,6 +6394,8 @@ export function ProductCanvas({
           onObjectSelectionChange={setSelectedIds}
           onUndoObjectChange={undo}
           onRedoObjectChange={redo}
+          onAiTransactionApplied={registerAiTransaction}
+          onUndoAiTransaction={undoAiTransaction}
           onUpdate={updateFocusedDocument}
           onExit={exitDocument}
         />

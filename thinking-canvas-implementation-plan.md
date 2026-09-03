@@ -363,7 +363,7 @@ Evidence: [Milestone 7 implementation and verification record](docs/implementati
 
 - [ ] Complete the sourced **Document collaboration** acceptance scenario and product-owner-added **Document interoperability and composition** scenario in both scrolling and paginated layouts, then verify Markdown round-trip behavior, range-level styling, modifier-drag containment and removal, reload, and concurrent editing.
 
-Implementation and local verification are recorded in the [Milestone 8 first-class documents plan](docs/implementation/milestone-08-first-class-documents.md). Slices 1–5 are complete locally; exact-head CI, an immutable hosted preview, product-owner acceptance, and closure remain pending.
+Implementation and local verification are recorded in the [Milestone 8 first-class documents plan](docs/implementation/milestone-08-first-class-documents.md). Slices 1–5 and the clean local Slice 6 regression gate are complete; exact-head CI, an immutable hosted preview, hosted performance/role/reconnect evidence, product-owner acceptance, and closure remain pending.
 
 ## Milestone 9 — Guided canvas stories
 

@@ -316,6 +316,58 @@ describe("FakePrimaryAiGateway", () => {
     });
   });
 
+  it("returns a semantic document review edit for a grounded document range", async () => {
+    const gateway = new FakePrimaryAiGateway();
+    const reviewInvocation = {
+      ...invocation,
+      authority: "edit_with_review" as const,
+      instruction: "Revise document wording in the selected range.",
+    };
+    const result = await gateway.request({
+      invocation: reviewInvocation,
+      projection: {
+        ...projection,
+        documents: [
+          {
+            objectId: ids.object,
+            title: "Planning brief",
+            settings: {
+              layout: "continuous",
+              pageSize: null,
+              orientation: null,
+            },
+            outline: [],
+            blocks: [{ kind: "paragraph", text: "Original wording" }],
+            internalObjects: [],
+          },
+        ],
+      },
+      allowedToolNames: allowedAiToolNames(reviewInvocation.authority),
+    });
+    expect(result).toMatchObject({
+      status: "completed",
+      reply: {
+        body: "I revised the selected document text as one undoable AI change.",
+      },
+      toolCalls: [
+        {
+          callKey: "document-review-1",
+          toolName: "stage_document_changes",
+          arguments: {
+            documentObjectId: ids.object,
+            operations: [
+              {
+                kind: "replace_selection",
+                text: "AI revised document text.",
+                format: "plain",
+              },
+            ],
+          },
+        },
+      ],
+    });
+  });
+
   it("stages a grounded label edit for the single-object acceptance story", async () => {
     const gateway = new FakePrimaryAiGateway();
     const reviewInvocation = {

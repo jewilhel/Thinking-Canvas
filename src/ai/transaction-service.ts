@@ -4,6 +4,7 @@ import { z } from "zod";
 import * as Y from "yjs";
 
 import { broadcastAiCanvasUpdate } from "@/ai/realtime-broadcast";
+import { applyDocumentSemanticUndo } from "@/ai/document-semantic-edit";
 import { buildUndoAiChangeSetUpdate } from "@/ai/review-state";
 import {
   bytesToPostgresBytea,
@@ -102,10 +103,11 @@ export async function undoAiTransaction(canvasId: string, input: unknown) {
   Y.applyUpdate(undoDocument, Y.encodeStateAsUpdate(current.document));
   if (undo.update.length > 2) Y.applyUpdate(undoDocument, undo.update);
   if (changeSet.document_undo_update) {
-    Y.applyUpdate(
+    const documentUndo = applyDocumentSemanticUndo(
       undoDocument,
       postgresByteaToBytes(changeSet.document_undo_update),
     );
+    undo.conflicts.push(...documentUndo.conflicts);
   }
   const combinedUpdate = Y.encodeStateAsUpdate(undoDocument, beforeUndoVector);
   const update = combinedUpdate.length > 2 ? combinedUpdate : new Uint8Array();
@@ -116,7 +118,7 @@ export async function undoAiTransaction(canvasId: string, input: unknown) {
     target_idempotency_key: parsed.idempotencyKey,
     target_update_data: bytesToPostgresBytea(update),
     target_expected_sequence: current.lastSequence,
-    target_conflicts: undo.conflicts as Json,
+    target_conflicts: [...new Set(undo.conflicts)] as Json,
   });
   const transaction = result.data?.[0];
   if (result.error || !transaction) {
@@ -136,6 +138,6 @@ export async function undoAiTransaction(canvasId: string, input: unknown) {
   return {
     changeSetId: transaction.change_set_id,
     created: transaction.created,
-    conflicts: undo.conflicts,
+    conflicts: [...new Set(undo.conflicts)],
   };
 }

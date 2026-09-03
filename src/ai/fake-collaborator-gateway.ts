@@ -115,6 +115,10 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       return object ? [object] : [];
     });
     const firstObject = selectedPath[0] ?? projection.objects[0];
+    const targetDocument =
+      projection.documents.find((document) =>
+        invocation.selectedPathIds.includes(document.objectId),
+      ) ?? projection.documents[0];
     const sourceThread = projection.commentThreads.find(
       (thread) => thread.id === invocation.commentId,
     );
@@ -214,7 +218,12 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       instruction.includes("propose") &&
       firstObject !== undefined &&
       input.allowedToolNames.includes("propose_canvas_commands");
+    const shouldStageDocument =
+      instruction.includes("revise document") &&
+      targetDocument !== undefined &&
+      input.allowedToolNames.includes("stage_document_changes");
     const shouldStageReview =
+      !shouldStageDocument &&
       (instruction.includes("review") || instruction.includes("revise")) &&
       firstObject !== undefined &&
       input.allowedToolNames.includes("stage_canvas_changes");
@@ -264,13 +273,15 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
                 ? "I applied validated canvas changes as the primary AI collaborator."
                 : shouldStageLayout
                   ? "I straightened the selected objects and gave them even spacing."
-                  : shouldStageReview
-                    ? "I made the requested change on the canvas."
-                    : shouldProposeChanges
-                      ? "I prepared a validated proposal without changing the canvas."
-                      : selectedPath.length > 1
-                        ? `I inspected ${selectedPath.length} selected path objects in order: ${selectedPath.map((object) => object.summary || object.type).join(" → ")}.`
-                        : `I inspected ${projection.objects.length} canvas objects and ${projection.commentThreads.length} comment conversations.`,
+                  : shouldStageDocument
+                    ? "I revised the selected document text as one undoable AI change."
+                    : shouldStageReview
+                      ? "I made the requested change on the canvas."
+                      : shouldProposeChanges
+                        ? "I prepared a validated proposal without changing the canvas."
+                        : selectedPath.length > 1
+                          ? `I inspected ${selectedPath.length} selected path objects in order: ${selectedPath.map((object) => object.summary || object.type).join(" → ")}.`
+                          : `I inspected ${projection.objects.length} canvas objects and ${projection.commentThreads.length} comment conversations.`,
       evidence: firstObject
         ? [
             {
@@ -443,81 +454,104 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
                     },
                   },
                 ]
-              : shouldStageReview
+              : shouldStageDocument
                 ? [
                     {
-                      callKey: "review-stage-1",
-                      toolName: "stage_canvas_changes",
+                      callKey: "document-review-1",
+                      toolName: "stage_document_changes",
                       arguments: {
-                        summary: shouldReviewLabel
-                          ? "Clarify the supporting object's label."
-                          : "Move the supporting object to the right.",
-                        explanations: [
-                          ...reviewObjects.map((object, index) => ({
-                            objectId: object.id,
-                            whatChanged: shouldReviewLabel
-                              ? `Changed the label from “${"text" in object.state ? object.state.text : ""}” to “Supporting evidence”.`
-                              : reviewObjects.length === 1
-                                ? "Moved the supporting object to the right."
-                                : `Moved supporting object ${index + 1} to the right.`,
-                            why: shouldReviewLabel
-                              ? "The revised label states the object's purpose more clearly."
-                              : "The added spacing separates it from the main idea.",
-                          })),
+                        summary: "Revise the selected document text.",
+                        documentObjectId: targetDocument.objectId,
+                        operations: [
+                          {
+                            kind: "replace_selection",
+                            text: "AI revised document text.",
+                            format: "plain",
+                          },
                         ],
-                        commands: reviewObjects.map((object) =>
-                          shouldReviewLabel
-                            ? {
-                                type: "object.patch",
-                                payload: {
-                                  objectId: object.id,
-                                  objectType: object.type as "shape" | "text",
-                                  text: "Supporting evidence",
-                                },
-                              }
-                            : {
-                                type: "object.move",
-                                payload: {
-                                  objectId: object.id,
-                                  x: object.geometry.x + 40,
-                                  y: object.geometry.y,
-                                },
-                              },
-                        ),
+                        objectCommands: [],
+                        objectExplanations: [],
+                        whatChanged:
+                          "Replaced the selected text with clearer wording.",
+                        why: "The document comment requested a revision.",
                       },
                     },
                   ]
-                : shouldProposeChanges
+                : shouldStageReview
                   ? [
                       {
-                        callKey: "proposal-1",
-                        toolName: "propose_canvas_commands",
+                        callKey: "review-stage-1",
+                        toolName: "stage_canvas_changes",
                         arguments: {
-                          commands: [
-                            {
-                              type: "object.move",
-                              payload: {
-                                objectId: firstObject.id,
-                                x: firstObject.geometry.x + 40,
-                                y: firstObject.geometry.y,
-                              },
-                            },
+                          summary: shouldReviewLabel
+                            ? "Clarify the supporting object's label."
+                            : "Move the supporting object to the right.",
+                          explanations: [
+                            ...reviewObjects.map((object, index) => ({
+                              objectId: object.id,
+                              whatChanged: shouldReviewLabel
+                                ? `Changed the label from “${"text" in object.state ? object.state.text : ""}” to “Supporting evidence”.`
+                                : reviewObjects.length === 1
+                                  ? "Moved the supporting object to the right."
+                                  : `Moved supporting object ${index + 1} to the right.`,
+                              why: shouldReviewLabel
+                                ? "The revised label states the object's purpose more clearly."
+                                : "The added spacing separates it from the main idea.",
+                            })),
                           ],
+                          commands: reviewObjects.map((object) =>
+                            shouldReviewLabel
+                              ? {
+                                  type: "object.patch",
+                                  payload: {
+                                    objectId: object.id,
+                                    objectType: object.type as "shape" | "text",
+                                    text: "Supporting evidence",
+                                  },
+                                }
+                              : {
+                                  type: "object.move",
+                                  payload: {
+                                    objectId: object.id,
+                                    x: object.geometry.x + 40,
+                                    y: object.geometry.y,
+                                  },
+                                },
+                          ),
                         },
                       },
                     ]
-                  : shouldCreateContextualComment
+                  : shouldProposeChanges
                     ? [
                         {
-                          callKey: "contextual-comment-1",
-                          toolName: "create_contextual_comment",
+                          callKey: "proposal-1",
+                          toolName: "propose_canvas_commands",
                           arguments: {
-                            body: `Grounded observation: ${firstObject.summary || firstObject.type} is a concrete evidence point for this canvas.`,
-                            targetObjectIds: [firstObject.id],
+                            commands: [
+                              {
+                                type: "object.move",
+                                payload: {
+                                  objectId: firstObject.id,
+                                  x: firstObject.geometry.x + 40,
+                                  y: firstObject.geometry.y,
+                                },
+                              },
+                            ],
                           },
                         },
                       ]
-                    : [];
+                    : shouldCreateContextualComment
+                      ? [
+                          {
+                            callKey: "contextual-comment-1",
+                            toolName: "create_contextual_comment",
+                            arguments: {
+                              body: `Grounded observation: ${firstObject.summary || firstObject.type} is a concrete evidence point for this canvas.`,
+                              targetObjectIds: [firstObject.id],
+                            },
+                          },
+                        ]
+                      : [];
     const toolCalls: AiToolCall[] = shouldCreateNewAnnotation
       ? [
           {

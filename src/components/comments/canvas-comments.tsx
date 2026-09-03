@@ -1785,6 +1785,8 @@ export function CanvasComments({
             {threads.map((thread) => {
               const targetAvailable =
                 thread.canvasAnchor !== null ||
+                (thread.documentRange !== null &&
+                  objectsById.has(thread.documentRange.documentObjectId)) ||
                 thread.targetObjectIds.some((id) => objectsById.has(id));
               return (
                 <button

@@ -14,6 +14,14 @@ select ok(
   not has_table_privilege('authenticated', 'public.comment_document_targets', 'INSERT'),
   'clients cannot bypass the document comment RPC'
 );
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.attach_ai_document_undo(uuid,uuid,uuid,uuid,bytea)',
+    'EXECUTE'
+  ),
+  'clients cannot attach or replace server-generated document undo data'
+);
 
 select results_eq(
   $$select created from public.create_comment_thread(

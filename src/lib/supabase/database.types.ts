@@ -1358,6 +1358,16 @@ export type Database = {
               sequence: number
             }[]
           }
+      attach_ai_document_undo: {
+        Args: {
+          target_change_set_id: string
+          target_document_object_id: string
+          target_document_undo_update: string
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: boolean
+      }
       cancel_ai_run: {
         Args: { target_run_id: string }
         Returns: {

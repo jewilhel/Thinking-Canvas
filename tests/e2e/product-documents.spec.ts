@@ -20,6 +20,17 @@ async function openNamedDocument(page: Page, title: string) {
   await expect(page.getByTestId("focused-product-document")).toBeVisible();
 }
 
+async function configurePrimaryAiForDocuments(page: Page) {
+  await page
+    .getByRole("button", { name: "Open comment history and AI settings" })
+    .click();
+  const panel = page.getByRole("dialog", { name: "Comments" });
+  await panel.getByLabel("AI authority").selectOption("edit_with_review");
+  const enabled = panel.getByRole("checkbox", { name: "Enabled" });
+  if (!(await enabled.isChecked())) await enabled.click();
+  await panel.getByRole("button", { name: "Close Comments" }).click();
+}
+
 test("creates, focuses, configures, restores, and reloads a product document", async ({
   page,
 }) => {
@@ -218,6 +229,61 @@ test("keeps document range comments attached across two participants", async ({
 
   await ownerContext.close();
   await editorContext.close();
+});
+
+test("applies and undoes a semantic AI document revision while preserving later text", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.getByLabel("Canvas name").fill(`AI document ${Date.now()}`);
+  await page.getByRole("button", { name: "Create canvas" }).click();
+  await configurePrimaryAiForDocuments(page);
+  await page.getByRole("button", { name: "Document", exact: true }).click();
+  await page
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 480, y: 320 } });
+  await page.getByRole("button", { name: "Open document" }).click();
+
+  const body = page.getByLabel("Document body");
+  await body.fill("Original document wording.");
+  await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
+  await body.selectText();
+  const focusedDocument = page.getByTestId("focused-product-document");
+  await focusedDocument
+    .getByRole("button", { name: "Comments", exact: true })
+    .click();
+  await page
+    .getByLabel("New document comment")
+    .fill("Revise document wording in the selected range.");
+  await page.getByRole("checkbox", { name: "Ask AI" }).check();
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+
+  await expect(body).toContainText("AI revised document text.");
+  await expect(
+    page.getByText(
+      "I revised the selected document text as one undoable AI change.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Undo AI change" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Close document comments" }).click();
+  await body.focus();
+  await body.press("End");
+  await body.press("Enter");
+  await page.keyboard.type("Human follow-up.");
+  await expect(body).toContainText("Human follow-up.");
+  await page.waitForTimeout(700);
+  await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
+  await focusedDocument.getByRole("button", { name: /Comments/ }).click();
+  await page.getByRole("button", { name: "Undo AI change" }).click();
+  await expect(page.getByText("AI document change undone.")).toBeVisible();
+  await page.reload();
+  await openNamedDocument(page, "Untitled document");
+  const reloadedBody = page.getByLabel("Document body");
+  await expect(reloadedBody).not.toContainText("AI revised document text.");
+  await expect(reloadedBody).toContainText("Human follow-up.");
 });
 
 test("paginates and moves a canvas object into and out of a document", async ({
