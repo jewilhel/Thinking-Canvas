@@ -1,0 +1,342 @@
+# Milestone 8 — First-class documents
+
+Status: Approved for implementation
+Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
+Plan owner: Product owner
+Last updated: 2026-09-02
+
+## Goal and user-visible outcome
+
+Turn the Milestone 0 document feasibility spike into a first-class collaborative canvas object. A participant can add a page-like document, understand it at board zoom, enter a focused editor, write and collaboratively format Markdown-aligned rich text, choose continuous or paginated presentation, and return to the parent canvas without losing context.
+
+The document owns its text, settings, internal canvas objects, text-range comments, annotations, and AI edits. A participant can intentionally move supported canvas objects into and out of the document with the established Command-drag or Control-drag containment gesture, while ordinary overlap remains independent. Copy, paste, import, and export provide an explicit Markdown interoperability path without pretending that document display settings or spatial canvas objects are native Markdown.
+
+When complete, two authenticated participants can edit the same document and its internal objects concurrently, survive a temporary disconnect and reload, and converge on the same durable state. Owner, editor, commenter, viewer, and AI behavior remains governed by the existing server-side membership, command, comment, and AI-authority boundaries.
+
+## Requirements covered
+
+- `FR-044 — Add document`
+- `FR-045 — Page-like board representation`
+- `FR-046 — Focused document interaction`
+- `FR-047 — Rich text` — retained only as a superseded sourced requirement; `PD-021` and `FR-091` define the active first-version formatting scope
+- `FR-048 — AI document editing`
+- `FR-049 — Scrolling layout`
+- `FR-050 — Paginated layout`
+- `FR-051 — Internal visual objects`
+- `FR-052 — Internal collaboration`
+- `FR-053 — Boundary containment`
+- `FR-088 — Markdown interoperability`
+- `FR-089 — Modifier-drag document containment`
+- `FR-090 — Document appearance and layout properties`
+- `FR-091 — Range-level document text styling`
+- `AS-004 — Document collaboration`
+- `AS-008 — Document interoperability and composition`
+- Milestone 8 exit gate in the master plan
+
+This milestone must preserve the already-closed canvas-object, grouping, containment, connector, annotation, comment, AI permission, conversational undo, persistence, reconnect, collaboration, accessibility, and workspace behaviors from Milestones 1–7 wherever document objects participate in those boundaries.
+
+## Decisions required
+
+| Decision                                        | Owner         | Options                                                                                                                                                                | Recommended choice                                                                                                                                                                                                                                                                                                                                                                                                                                        | Consequences and required timing                                                                                                                                                 | Status                                  |
+| ----------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `PD-002 — Document preview`                     | Product owner | (A) live scaled page/window preview; (B) text excerpt card; (C) title-only placeholder                                                                                 | Render the first visible page or a bounded continuous-layout window inside the page-like canvas object, with title, layout indicator, and explicit continuation/overflow cue. Pause expensive editing/render work outside the viewport.                                                                                                                                                                                                                   | Determines the board-level renderer, long-content performance budget, zoom-to-focus transition, and `FR-045` acceptance fixture.                                                 | Approved by product owner on 2026-09-02 |
+| `PD-003 — Page sizes`                           | Product owner | (A) US Letter only; (B) A4 only; (C) US Letter and A4; each with portrait only or portrait/landscape                                                                   | Offer Continuous, US Letter, and A4; allow portrait and landscape for both paginated sizes. Store stable logical dimensions and render with CSS-independent document units.                                                                                                                                                                                                                                                                               | Every saved size becomes a compatibility commitment and expands pagination, print-like layout, responsive, and manual QA coverage.                                               | Approved by product owner on 2026-09-02 |
+| `PD-019 — Markdown conversion contract`         | Product owner | CommonMark or GitHub Flavored Markdown; omit unsupported internal objects after warning, emit textual placeholders, or create companion assets/front matter            | Use a bounded GitHub Flavored Markdown subset for headings, paragraphs, bold, italics, ordered/unordered lists, safe links, and tables; reject raw executable HTML. Export semantic document text and tables only after a preflight warning identifies internal spatial objects, comments, annotations, and display settings that Markdown cannot represent. Do not infer or serialize display font, reading size, background, page size, or orientation. | Defines parser dependencies, security policy, round-trip fixtures, loss disclosure, and the exact behavior of copy, paste, `.md` import, and `.md` export.                       | Approved by product owner on 2026-09-02 |
+| `PD-020 — Document containment matrix`          | Product owner | Permit individual objects only, selected families/groups, or every object type; reject or detach partial connector relationships; retain or normalize annotation state | Permit shapes, text, icons, tables, annotations, and complete compatible groups. Permit a free connector or a connector whose attached endpoints move in the same atomic family; reject a connector that would cross the document boundary. Preserve annotation temporary/durable state. Do not allow documents inside documents.                                                                                                                         | Determines schema compatibility, coordinate conversion, gesture previews, command validation, selection closure, clipboard behavior, and the `FR-053` security/integrity matrix. | Approved by product owner on 2026-09-02 |
+| `PD-021 — Markdown-aligned document formatting` | Product owner | Keep the sourced underline requirement or supersede it with Markdown-aligned semantics                                                                                 | Use the approved Markdown-aligned range formatting in `FR-091`; no range-level font, size, color, alignment, or underline controls. Permit only document-wide display font and reading size as non-semantic settings.                                                                                                                                                                                                                                     | Keeps semantic conversion predictable while allowing comfortable canvas reading.                                                                                                 | Approved by product owner on 2026-09-02 |
+
+The product owner approved this plan and the recommended `PD-002`, `PD-003`, `PD-019`, and `PD-020` choices on 2026-09-02. The decisions are recorded in this document and the master ledger, so Slice 1 may begin.
+
+## Technical approach
+
+### Product document model and durable collaboration
+
+- Upgrade the existing legacy `document` canvas-object discriminator through a compatibility reader rather than replacing saved records. Add versioned settings for title, layout mode, page size, orientation, background, document-wide display font, and reading size.
+- Keep the canvas object as the board-level identity, transform, selection, ordering, comment, and permission target. Store document body state in a stable per-document namespace within the same canonical canvas Yjs document so the existing authorized Broadcast, durable update, snapshot, compaction, reconnect, and pending-write paths carry document changes.
+- Replace the spike's plain-string Lexical bridge with a real collaborative Lexical/Yjs binding that preserves element and text-node semantics. Do not retain browser `localStorage` or `BroadcastChannel` as product persistence.
+- Keep the Milestone 0 spike routes and fixtures as evidence harnesses until equivalent production tests exist; remove or clearly isolate redundant spike-only code only after replacement coverage passes.
+- Introduce a versioned, renderer-independent document schema and compatibility adapters before UI exposure. Unknown or future nodes must fail safely without deleting the original Yjs content.
+- Treat document settings and internal object ownership as durable shared state. Keep focus, selection, open toolbar, current page, caret, and collaborator presence ephemeral.
+- Use one command boundary for document creation, settings, internal-object ownership changes, Markdown replacement/insertion, and AI mutations. Human and AI paths must share schema validation, permission enforcement, idempotency, audit metadata, collaboration updates, and actor-local undo/redo behavior.
+
+### Lexical editor and Markdown-aligned formatting
+
+- Pin any additional Lexical packages to the installed `0.49.0` family and use supported collaboration, rich-text, history, list, link, table, and Markdown transformers rather than hand-serializing Lexical internals.
+- Support paragraphs, heading/outline levels, bold, italics, ordered lists, unordered lists, safe HTTP/HTTPS links, and document tables. Do not expose range-level font family, font size, text color, alignment, or underline.
+- Apply document-wide font and reading size as presentation tokens on the focused editor and board preview. They never become per-range marks and never enter Markdown serialization.
+- Preserve selection through toolbar and keyboard actions. Mixed-format selections report mixed state without mutating content until a participant chooses a value.
+- Make local Lexical history and canvas command history coherent: text operations undo in the focused editor without reverting unrelated canvas work; cross-boundary operations such as import, AI replacement, or moving an object into the document use explicit transaction boundaries and conflict-safe compensating data.
+- Sanitize pasted and imported content. Markdown parsing must not execute raw HTML, scripts, event handlers, unsafe URLs, data URLs, remote embeds, or arbitrary file paths.
+
+### Markdown interoperability
+
+- Implement one deterministic semantic intermediate representation between Lexical and Markdown. Test Lexical → semantic model → Markdown and Markdown → semantic model → Lexical independently.
+- **Copy to Markdown** copies either the current document selection or the complete document when no text range is selected, with clear confirmation of which scope was copied.
+- **Paste from Markdown** inserts at the caret or replaces the active selection. Ordinary rich/plain clipboard paste remains distinct and must not unexpectedly reinterpret text as Markdown without an explicit action.
+- **Import Markdown** validates a bounded UTF-8 `.md` file, reports size or parse failures without changing the current document, previews replacement versus insertion scope, and commits one undoable transaction only after confirmation.
+- **Export Markdown** uses a deterministic filename and UTF-8 line endings. Run a preflight inventory of unsupported presentation or spatial content and require acknowledgment before an intentionally lossy export.
+- Preserve semantic headings, emphasis, lists, links, and tables under the approved dialect. Document display font, reading size, background, page layout, spatial objects, annotations, comments, and collaboration metadata do not silently enter Markdown.
+- Add property-based and golden-fixture round-trip tests. Require semantic equivalence rather than byte-identical Markdown when multiple valid serializations exist.
+
+### Canvas representation and focused interaction
+
+- Render a document as an ordinary selectable page-like canvas object with title, layout indicator, bounded live content preview, selection frame, transforms, comments, connectors where allowed, grouping, ordering, duplicate, clipboard, history, collaboration, and reload behavior.
+- Double-click, Enter, or an accessible **Open document** action frames the document and enters a focused editor. Escape or **Return to canvas** restores the prior camera and selection without losing caret-independent durable work.
+- Use the shared panel, popover, focus, keyboard, tooltip, responsive, and reduced-motion patterns. Do not trap a participant in document mode or require a permanent inspector.
+- Continuous layout uses one responsive vertical reading surface. Paginated layout computes deterministic page breaks from approved logical page dimensions and provides previous/next navigation without storing viewport-specific breaks as canonical content.
+- Keep pagination deterministic for the supported fonts and reading sizes. When simultaneous edits change page flow, preserve the logical text selection and nearest content anchor rather than a brittle page number.
+- At distant board zoom, use the approved bounded preview and cull editor-only structure. At focus zoom, render the interactive Lexical editor and internal-object layer.
+
+### Internal canvas objects and document containment
+
+- Extend object and group ownership with an explicit document relationship and document-local geometry. Do not overload the Milestone 7 shape-parent constraint record with page/document semantics.
+- Centralize world ↔ document-local coordinate conversion so Command/Control-drag insertion and removal preserve the visible transform without a jump. Commit the complete ownership/geometry/reference change as one transaction.
+- Require deliberate modifier intent and a full-containment preview. Ordinary overlap remains top-level. Provide **Place inside document** and **Remove from document** through keyboard-accessible menus and the object navigator.
+- Move a complete containment family atomically. Reject a partial move that would orphan a shape child, split a group, or leave a connector endpoint across the boundary.
+- Clip document-owned objects to the content/page region. In paginated mode, define page ownership from logical document coordinates; an object may not silently straddle or migrate pages because of viewport resizing.
+- Reuse ordinary renderers and commands for shapes, icons, text, tables, connectors, and annotations. Add document-local selection, multiselection, movement, resize, rotation, style, grouping, ordering, duplicate, clipboard, delete, comments, annotations, and history paths without creating a second incompatible canvas engine.
+- Keep document-owned connectors entirely within one document. Connector creation or reattachment to a parent-canvas object is rejected before mutation. Detaching an object or family is rejected when it would leave an attached connector crossing the boundary unless the complete connected family is included.
+- Preserve annotation temporary/durable state according to `PD-020`; hideable overlays remain governed by the existing comments-and-annotations visibility preference.
+
+### Comments, structured feedback, and text-range anchors
+
+- Reuse the existing relational comment thread, reply, prompt, response, recipient, AI-routing, resolve, dismiss, and deletion system.
+- Add a dedicated document-range target record containing the document canvas-object ID, encoded Yjs relative anchor/head positions, bounded quoted-text fallback, and timestamps. Do not store raw absolute character offsets as the sole durable anchor.
+- Resolve a text-range anchor against the current authorized document state. When edits delete the exact range, keep the thread history and show a clear detached/original-context state rather than silently retargeting unrelated text.
+- Object-target comments on document-owned visuals continue to use stable object IDs. A thread targets either object IDs, a canvas position, or one document range under a validated exclusive-target rule.
+- Commenters may add and respond to comments and structured prompts but may not mutate document text, settings, or internal objects. Viewers remain read-only. Owner/editor mutation rights continue to be enforced at durable write time.
+
+### AI document editing
+
+- Extend the semantic AI projection with bounded document title, outline, selected range, relevant surrounding text, settings, internal-object summaries, and stable IDs. Do not send the complete document blindly when it exceeds the approved context budget.
+- Add validated document tools for inserting/replacing semantic content, applying allowed marks or block types, and manipulating document-owned standard objects. The model never writes Lexical JSON, Yjs updates, SQL, or object IDs of its own invention.
+- Require current server-side membership and AI-authority checks immediately before projection and again before mutation. **Comment only**, **Propose changes**, **Edit with undo**, and **Trusted editor** retain their existing meanings.
+- Treat one AI document turn as one durable conversational transaction with a plain-language result and conflict-safe undo. A later unrelated human edit must survive AI-turn undo.
+- Bind AI work to the invoking comment and authorized document or range scope. Prompt content and imported Markdown remain untrusted input and cannot widen tool authority.
+- Apply the existing provider retry-before-mutation, cancellation, timeout, rate, budget, idempotency, audit, and privacy-safe logging boundaries.
+
+### Performance, accessibility, and failure behavior
+
+- Virtualize or incrementally render long document blocks and board previews. Keep pagination, Markdown conversion, AI projection, and snapshot work off pointer and typing hot paths where practical.
+- Establish milestone-local test budgets for a representative long document, page reflow, Markdown conversion, focus entry, local typing, collaborator propagation, reconnect, and board pan/zoom with documents. These measurements do not close release-wide `PD-007`.
+- Every visible action receives an accessible name, keyboard path, focus treatment, and non-color-only state. Document structure remains navigable with headings and landmarks; text formatting exposes pressed/mixed states.
+- Preserve reduced-motion behavior during focus framing and page navigation. At 200% browser zoom and tablet viewports, toolbars may reflow but the document remains editable and escapable.
+- Parse, import, persistence, collaboration, or AI failures leave the last durable document readable. Failed imports and invalid Markdown do not partially mutate the document. Unsynced changes use the existing visible retry and navigation-protection behavior.
+
+## Database and security changes
+
+- Keep document body, settings, and internal-object state in the existing authorized canvas Yjs update/snapshot stream; do not add a parallel document persistence service or browser-only store.
+- Add a forward-safe migration for `comment_document_targets` (final name subject to implementation review) with:
+  - `comment_id` referencing `comments` with cascade deletion;
+  - `document_object_id` as a stable UUID target within the owning canvas;
+  - bounded encoded Yjs relative anchor and head positions;
+  - a bounded quoted-text fallback and timestamps;
+  - one range target per thread and indexes for comment and document lookup.
+- Extend the comment-creation RPC and exclusive-target constraints so exactly one target family is present: object set, canvas position, or document text range.
+- Add RLS/read policies and security-definer validation that derive access from the parent comment's canvas membership. Direct table mutation remains revoked where the current comment architecture requires RPC-only writes.
+- Validate that the document object exists in the current authorized canvas projection at creation time and again when resolving the range. Never trust a client-supplied document ID merely because it is a UUID.
+- Re-run the owner/editor/commenter/viewer/non-member/unauthenticated policy matrix. Add negative cases for cross-canvas document IDs, malformed anchors, oversized quoted text, duplicate targets, unauthorized AI range access, and deleted documents.
+- Regenerate `src/lib/supabase/database.types.ts` after the migration and include a compensating migration plan that drops new policies/RPC signatures/table only if no Milestone 8 comments have been created. Once real range comments exist, rollback must preserve them as detached thread history rather than delete them.
+- Document retention follows the parent canvas and comment policies. Markdown exports are generated on demand and are not retained server-side by default. Do not log document bodies, imported files, clipboard payloads, or exported Markdown.
+
+## Ordered task checklist
+
+### Slice 1 — Decisions, schemas, and durable collaborative document core
+
+- [x] Obtain and record `PD-002`, `PD-003`, `PD-019`, and `PD-020`; reconcile any decision that changes a master requirement before product code changes.
+- [x] Read the installed Next.js 16.3 documentation for every affected App Router, route-handler, server-action, and client-boundary API before implementation.
+- [x] Add versioned document settings, semantic document-node, document ownership, and compatibility schemas without rewriting unrelated legacy canvas data.
+- [x] Replace the spike-only plain-text/localStorage document binding with a production Lexical/Yjs binding carried by the existing authorized durable canvas provider.
+- [x] Add document create/open/rename/delete commands with permission, history, duplicate, clipboard, collaboration, reconnect, and reload coverage.
+- [x] Preserve old legacy document objects through deterministic compatibility reads and add retained-canvas fixtures.
+
+### Slice 2 — Page-like canvas object, focus mode, and document settings
+
+- [ ] Add document insertion to the primary dock and render the approved bounded board-level preview.
+- [ ] Implement double-click, Enter, **Open document**, Escape, and **Return to canvas** focus transitions with prior-camera restoration and reduced motion.
+- [ ] Build document settings for background, document-wide display font, reading size, Continuous, approved page sizes, and orientation.
+- [ ] Implement continuous reading layout, responsive tool placement, keyboard paths, and board-preview culling.
+- [ ] Prove settings persistence, collaboration, undo/redo, reload, retained-data compatibility, and non-semantic Markdown exclusion.
+
+### Slice 3 — Semantic rich text and Markdown interoperability
+
+- [ ] Add the approved Lexical nodes/plugins and selected-range controls for bold, italics, headings/outline levels, ordered/unordered lists, safe links, and tables.
+- [ ] Implement mixed-format state, keyboard shortcuts, selection preservation, editor history, collaborative cursors/selections, and safe link behavior.
+- [ ] Implement the approved semantic Markdown transformer, hostile-input validation, bounded file handling, and golden/property round-trip tests.
+- [ ] Add **Copy to Markdown**, **Paste from Markdown**, **Import Markdown**, and **Export Markdown** with explicit selection/replacement scope and loss preflight.
+- [ ] Verify that document font, reading size, background, layout, page size, orientation, spatial objects, comments, and annotations are not silently serialized.
+
+### Slice 4 — Pagination and modifier-drag document containment
+
+- [ ] Implement deterministic pagination for every approved size/orientation and previous/next navigation with stable logical selection anchors.
+- [ ] Add explicit document ownership and local-coordinate commands for every object/group family approved by `PD-020`.
+- [ ] Implement Command/Control-drag preview, atomic place/remove/reparent, ordinary-overlap behavior, and accessible menu actions.
+- [ ] Reuse canvas renderers and contextual actions inside the focused document for the approved object matrix.
+- [ ] Enforce complete-family movement, clipping, page ownership, no nested documents, and no cross-boundary connector relationships.
+- [ ] Cover duplicate, clipboard, grouping, ordering, comments, annotation state, history, collaboration, reconnect, reload, and invalid moves.
+
+### Slice 5 — Text-range collaboration and AI document editing
+
+- [ ] Add the document-range comment migration, RPC changes, RLS/policy tests, generated types, repository mapping, and Yjs relative-position resolver.
+- [ ] Add range and internal-object comments, replies, structured prompts, visibility, resolve/dismiss/delete, detached-range presentation, and two-user convergence.
+- [ ] Extend the semantic AI projection with bounded document/range context and internal-object relationships.
+- [ ] Add validated AI semantic-text, formatting, and document-object tools through the existing authority and transaction services.
+- [ ] Prove comment-only denial, proposal behavior, one-turn **Edit with undo**, trusted editing, cancellation, idempotency, prompt-injection resistance, and preservation of later human edits.
+
+### Slice 6 — Hardening, hosted acceptance, and closure evidence
+
+- [ ] Run formatting, lint, strict types, units, database/RLS, production build, complete serialized Chromium end-to-end, and axe coverage from a clean state.
+- [ ] Run long-document, pagination, Markdown conversion, typing, collaboration, reconnect, and board-performance measurements and record limitations.
+- [ ] Obtain protected CI for the exact implementation head and a ready matching immutable Netlify preview with a clean secret scan.
+- [ ] Exercise `AS-004` and `AS-008` with two authenticated participants in Codex's in-app browser, plus the required additional browser session for concurrent editing.
+- [ ] Retain screenshots, trace/log references, exact commit, CI run, deploy ID/URL, browser, viewport, identities/roles, test data, and defect reruns.
+- [ ] Move this document to `Verification complete — awaiting closure approval` only after every exit criterion passes; request separate product-owner closure approval before checking the master ledger.
+
+## Pull-request slices
+
+| Slice                          | Dependency                                             | Demoable outcome                                                                                                                 | Included work and tests                                                                                                          | Safe rollback or compensating path                                                                                                    |
+| ------------------------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Durable document core       | Approved `PD-003`; decisions recorded for later slices | An owner creates, opens, edits, reloads, and collaboratively reopens a legacy-compatible document through production persistence | Schemas, commands, real Lexical/Yjs binding, retained fixtures, permission/convergence/reconnect tests                           | Keep new UI hidden; compatibility reader preserves legacy records; revert additive schemas before user data is created                |
+| 2. Canvas preview and settings | Slice 1; approved `PD-002`                             | A page-like document opens and returns cleanly; continuous layout and display settings persist                                   | Renderer, focus camera, settings, responsive/keyboard/axe, preview performance                                                   | Feature-gate insertion while retaining readable saved records; fall back to bounded title/preview card                                |
+| 3. Rich text and Markdown      | Slice 2; approved `PD-019`                             | Two users format semantic text and complete copy/paste/import/export Markdown with loss disclosure                               | Lexical nodes, transformations, sanitation, file/clipboard flows, round-trip/security tests                                      | Disable import/export entry points without changing stored Lexical/Yjs content; never rewrite source on failed conversion             |
+| 4. Pagination and containment  | Slices 1–3; approved `PD-020`                          | A user switches layouts and modifier-drags an approved object family into and out of the document without a jump                 | Pagination, ownership schema/commands, local transforms, internal canvas layer, connector integrity, history/collaboration tests | Hide containment actions while retaining ownership-aware reads; compensating command returns families to recorded world geometry      |
+| 5. Comments and AI             | Slices 1–4; migration review                           | Range comments persist under edits and permitted AI edits one document transaction with undo                                     | Additive migration/RLS/RPC, relative anchors, comment UI, AI projection/tools/evaluations                                        | Preserve threads as detached history if range targeting is disabled; remove AI tool registration without altering human document data |
+| 6. Acceptance and evidence     | Slices 1–5                                             | Exact-head CI and matching preview satisfy both acceptance scenarios                                                             | Full gates, performance, accessibility, two-user hosted matrix, evidence                                                         | No production deploy; fix within approved scope or leave milestone open with failed criteria explicit                                 |
+
+Keep slices focused even if they remain in one milestone pull request. A pull request, push, preview, closure, merge, and production deployment each require their own authorization unless the product owner explicitly combines those steps.
+
+## Automated and manual tests
+
+### Automated commands
+
+Run focused tests during each slice, then the complete gate before handoff:
+
+```text
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm supabase:start
+pnpm db:reset
+pnpm db:test
+pnpm build
+pnpm test:e2e
+pnpm supabase:stop --no-backup
+```
+
+Do not record a command as passing unless it ran. Serialize database-reset and Playwright runs against the same local Supabase instance. Protected CI must run the repository's complete `quality` job for the exact reviewed commit.
+
+### Required fixtures and automated matrices
+
+- Retained legacy document object from the Milestone 0 fixture plus a current versioned document with every setting.
+- Short semantic document and representative long document containing paragraphs, headings, nested ordered/unordered lists, bold, italics, safe links, and tables.
+- Markdown golden files for supported syntax, equivalent alternate syntax, CRLF/LF, Unicode, empty content, malformed input, oversized input, raw HTML, unsafe URLs, and unsupported spatial/comment content.
+- Continuous, Letter portrait/landscape, and A4 portrait/landscape fixtures if the recommended `PD-003` option is approved.
+- Internal object matrix for every approved type, complete groups, shape families, free and attached connectors, temporary/promoted annotations, invalid partial families, attempted nested documents, and cross-boundary endpoints.
+- Comment ranges before, inside, and after concurrent insert/delete operations, plus fully deleted ranges and deleted document objects.
+- Owner, editor, commenter, viewer, non-member, unauthenticated, primary-AI, stale-membership, and permission-change cases.
+- AI fixtures for bounded selection, long-document truncation, malformed tool calls, invented IDs, prompt injection inside Markdown, cancellation, provider retry, idempotency, one-turn undo, and unrelated later human edits.
+- Compatibility fixtures mixing legacy/malformed unrelated canvas entries with new documents so valid document commands do not delete or rewrite unrelated retained data.
+
+### Authenticated Netlify preview scenarios
+
+Use Codex's in-app browser as the primary hosted environment and a second authenticated browser context/session for concurrency. Record the exact browser for every result.
+
+1. Create a document, rename it, change background, display font, reading size, layout, page size, and orientation; reload both participants and confirm convergence.
+2. Inspect the page-like object at minimum, default, and maximum supported canvas zoom. Open it by pointer and keyboard, edit, then return with the prior canvas camera restored.
+3. Format disjoint and mixed text ranges with every allowed semantic control. Confirm no range-level font, size, color, alignment, or underline control is exposed.
+4. Copy a selection and complete document to Markdown; paste Markdown at a caret and over a selection; import and export `.md`; inspect semantic equivalence and the unsupported-content preflight.
+5. Confirm Markdown contains no document-wide font, reading size, background, page, orientation, comment, annotation, or spatial-object metadata.
+6. Switch the same document between continuous and every approved paginated size/orientation. Verify deterministic page flow, previous/next navigation, current selection stability, reload, and peer convergence.
+7. Ordinary-drag an eligible object over the document and confirm it stays top-level. Modifier-drag it inside, edit it independently, then remove it without a visual jump. Repeat through accessible actions.
+8. Exercise every approved individual object and group family, including valid connectors/annotations; confirm invalid partial groups, nested documents, and cross-boundary connectors are rejected without mutation.
+9. Add text-range and internal-object comments, replies, a yes/no structured prompt, annotation, and AI-assisted review. Edit around and through the range, then delete the exact range and inspect detached-history behavior.
+10. As commenter and viewer, prove the exact allowed/denied matrix. Revoke an editor during an open session and confirm the next durable text/object/AI mutation fails safely.
+11. In **Edit with undo**, ask the AI to revise a bounded document selection and add or edit an internal object. Make an unrelated human edit, undo the AI turn, and confirm only the AI transaction is reversed.
+12. Disconnect one editor, make permitted changes in both sessions, reconnect, reload, and confirm the same semantic text, settings, object ownership, comments, and document hash.
+13. Repeat the core path at `1440 × 900`, `1024 × 768`, `768 × 1024`, 200% browser zoom, keyboard-only operation, and reduced motion. Run automated axe checks for both canvas and focused modes.
+
+Retain exact commit SHA, protected CI URL/run, immutable deploy ID/URL, screenshots for board preview, focused continuous/paginated modes, Markdown loss preflight, contained objects, range comments, and AI result; also retain role/session descriptions, viewport, date, measurements, console/network findings, and defect reruns. Local success is not hosted proof.
+
+## Risks and assumptions
+
+| Risk or assumption                                                                          | Likelihood / impact | Mitigation or experiment                                                                                                                                                                                      | Owner                         | Status        |
+| ------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------- |
+| The spike's plain-text bridge appears more complete than it is and loses Lexical structure. | High / high         | Replace it first with a semantic Lexical/Yjs production binding and retained round-trip fixtures; do not build formatting on the spike serialization.                                                         | Engineering                   | Open          |
+| Long documents or many canvas previews degrade typing or board pan/zoom.                    | High / high         | Bound board previews, cull offscreen documents, incrementally render long content, measure representative fixtures, and keep conversion/pagination off hot paths.                                             | Engineering                   | Open          |
+| Pagination differs across browsers because fonts or CSS measurements drift.                 | Medium / high       | Pin supported display fonts, use logical page units and deterministic measurement inputs, test current Chrome plus required cross-browser spot checks, and preserve content anchors rather than page numbers. | Engineering                   | Open          |
+| Markdown round trips silently lose presentation, comments, or spatial content.              | High / high         | Use a semantic intermediate model, deterministic golden tests, explicit preflight inventory, and product-owner approval of `PD-019` before exposure.                                                          | Product owner and engineering | Decision open |
+| Imported Markdown carries unsafe HTML or links.                                             | Medium / high       | Disable raw executable HTML, allow only safe schemes, bound file size/depth, sanitize nodes, and test hostile fixtures.                                                                                       | Engineering                   | Open          |
+| Cross-boundary moves orphan children, split groups, or create illegal connectors.           | High / high         | Approve `PD-020`, compute atomic closure before mutation, reject partial families, centralize coordinate conversion, and add property/convergence tests.                                                      | Product owner and engineering | Decision open |
+| Yjs-relative text anchors detach or drift after concurrent deletion.                        | Medium / high       | Store relative anchor/head plus quoted fallback, test adversarial edits, preserve detached thread history, and never retarget solely by matching text.                                                        | Engineering                   | Open          |
+| AI context for a long document exceeds provider or budget limits.                           | High / medium       | Project outline plus bounded selected/relevant ranges, disclose truncation, keep stable IDs server-derived, and refuse ungrounded wide edits.                                                                 | Engineering                   | Open          |
+| One canvas Yjs document becomes too large when rich documents are embedded.                 | Medium / high       | Measure updates/snapshots/compaction with long fixtures; keep namespace boundaries explicit; return to architecture review before introducing subdocuments or a second persistence path.                      | Engineering                   | Open          |
+| Existing comments support object or canvas targets, not document ranges.                    | Certain / medium    | Add the narrow relational range-target migration and full RLS/RPC matrix in Slice 5.                                                                                                                          | Engineering                   | Planned       |
+| Open product decisions change schemas after implementation starts.                          | Medium / high       | Block each affected slice at the decision timing recorded above and update the master ledger before code.                                                                                                     | Product owner                 | Open          |
+
+## Exit criteria
+
+- [ ] `PD-002`, `PD-003`, `PD-019`, and `PD-020` are approved and recorded in the master ledger and this plan; `PD-021` remains the active formatting decision.
+- [ ] `FR-044`: an authorized participant creates, names, duplicates, deletes, persists, reloads, and collaboratively edits a first-class document canvas object.
+- [ ] `FR-045`: the approved page-like board preview remains understandable and performant for short and representative long documents at supported zoom levels.
+- [ ] `FR-046`: pointer and keyboard focus entry frame the document, and exit restores parent-canvas context without losing durable work.
+- [ ] Superseded `FR-047` remains retained for source traceability; no underline UI is implemented, and active formatting is proven under `FR-091` and `PD-021`.
+- [ ] `FR-048`: permitted AI generates, edits, and formats bounded document content through validated server-authorized tools and one undoable conversational transaction.
+- [ ] `FR-049`: continuous scrolling layout is responsive, accessible, persistent, collaborative, and reload-safe.
+- [ ] `FR-050`: every approved paginated size/orientation has deterministic previous/next navigation, persistent settings, stable content anchors, and reload/concurrency evidence.
+- [ ] `FR-051`: shapes, text, connectors, tables, and annotations use ordinary canvas behavior inside the document according to the approved containment matrix.
+- [ ] `FR-052`: text ranges and internal objects support comments, replies, structured prompts, annotations, and AI-assisted review under the existing role model.
+- [ ] `FR-053`: internal objects remain clipped and owned by one document; automated and hosted tests prove no parent/document cross-boundary connector or unauthorized mutation can be created.
+- [ ] `FR-088`: selected or complete content supports explicit Markdown copy, paste, import, and export with deterministic semantic round trips, safe parsing, bounded files, and visible loss disclosure.
+- [ ] `FR-089`: Command/Control-drag plus accessible actions move every approved object/group family into and out of a document without a jump; ordinary overlap remains independent and all history/collaboration/reference invariants pass.
+- [ ] `FR-090`: background, display font, reading size, layout, page size, and orientation persist and converge; font/reading size remain document-wide display settings and do not enter Markdown.
+- [ ] `FR-091`: selected ranges support bold, italics, headings/outline levels, ordered/unordered lists, and safe links with mixed state, keyboard access, collaboration, reload, Markdown conversion, undo, and redo; prohibited range-level styling is absent.
+- [ ] `AS-004 — Document collaboration` passes with rich text, a shape, and an annotation remaining inside the document and supporting comments and AI review without connecting to the parent canvas.
+- [ ] `AS-008 — Document interoperability and composition` passes in continuous and paginated layouts with settings, range formatting, Markdown workflows, modifier-drag containment/removal, ordinary overlap, collaboration, and reload.
+- [ ] Owner/editor/commenter/viewer/non-member/unauthenticated and all AI-authority cases pass at UI, command, durable persistence, RPC, and RLS boundaries.
+- [ ] Formatting, lint, strict types, units, database/RLS, build, complete Chromium end-to-end, accessibility, retained-data compatibility, reconnect, and performance gates pass on the exact implementation head.
+- [ ] Protected CI passes for the exact reviewed commit, and a matching ready immutable Netlify preview passes the authenticated hosted matrix with no secret-scan finding.
+- [ ] The exact master-plan exit gate is satisfied: “Complete the sourced **Document collaboration** acceptance scenario and product-owner-added **Document interoperability and composition** scenario in both scrolling and paginated layouts, then verify Markdown round-trip behavior, range-level styling, modifier-drag containment and removal, reload, and concurrent editing.”
+- [ ] This document reaches `Verification complete — awaiting closure approval`; only after separate product-owner closure approval are genuinely proven Milestone 8 master-ledger boxes checked.
+
+## Explicitly excluded work
+
+- Guided canvas stories and story narration (`FR-054` through `FR-062`, Milestone 9).
+- Live AI or remote-human voice (`FR-008` through `FR-014`, Milestone 10).
+- Conversational starter structures and reusable templates (`FR-063` through `FR-066`, Milestone 11).
+- Production launch, final cross-browser release certification, production domain, release-wide performance budgets, backup/restore rehearsal, and operations hardening (Milestone 12).
+- User-facing whole-canvas export or general portability outside document Markdown (`PD-010` remains unresolved).
+- Range-level typeface, font size, color, alignment, underline, highlights, custom CSS, arbitrary HTML, raw Lexical JSON import/export, or executable embedded content.
+- Serializing document background, display font, reading size, layout, page size, orientation, spatial objects, comments, annotations, AI history, or collaboration metadata as ordinary Markdown without a later approved conversion contract.
+- Nested documents, cross-document connectors, parent-canvas-to-document connectors, recursive arbitrary containment, internal objects spanning multiple documents, or silently splitting a group/contained family during movement.
+- Specialist document types, document templates, print/PDF export, track changes, citations/bibliographies, footnotes, equations, code execution, file attachments, arbitrary image upload, or AI image generation.
+- A second collaboration provider, database, auth service, hosted editor service, or client-only persistence path.
+
+## Implementation record
+
+- 2026-09-02 — Created `codex/milestone-8-first-class-documents` from `main` at `556eeee` while preserving the approved uncommitted master-ledger and milestone-plan changes.
+- 2026-09-02 — Completed Slice 1 locally. The legacy document canvas-object discriminator now reads as a versioned first-class document with compatibility defaults for Continuous layout, white background, sans display font, and comfortable reading size. New settings constrain pagination to approved Letter/A4 and portrait/landscape values.
+- 2026-09-02 — Added document creation helpers and validated `document.update` and `document.duplicate` commands. Title/settings changes participate in actor-local conflict-aware history; duplication receives a new document identity and clones structured Yjs content; generic deletion preserves the content namespace so undo can restore the document without data loss. Canvas clipboard remapping now prevents pasted documents from aliasing the source content identity. Portable clipboard serialization of a populated document body remains Slice 3 work alongside the approved semantic Markdown representation.
+- 2026-09-02 — Added a production Lexical provider adapter and collaboration component that bind each document to a namespaced shared type in the existing canvas Y.Doc. The adapter deliberately owns no network or browser-local persistence; the existing authorized canvas recovery path remains the only Realtime, durable update, snapshot, reconnect, and pending-write transport. The Milestone 0 localStorage/BroadcastChannel spike remains isolated as historical evidence until Slice 2 replaces its visible product role.
+- 2026-09-02 — Added legacy upgrade, settings validation, structured-content persistence, duplicate, clipboard identity, title/settings history, deletion restoration, provider lifecycle, and reordered/repeated disconnected-convergence regressions. Stabilized history equality by recursively sorting object keys before comparison so semantically identical restored records do not conflict solely because Yjs map insertion order changed.
+
+## Verification evidence
+
+- 2026-09-02 — Local focused gate: the document model/provider, canvas document, command, history, and clipboard suites plus strict TypeScript passed after the Slice 1 repairs.
+- 2026-09-02 — Local complete source/build gate: `pnpm check` passed formatting, lint, strict TypeScript, all 59 test files with 307 tests, and the optimized Next.js 16.3 production build.
+- No database migration, local Supabase reset/policy run, browser end-to-end run, protected CI, or Netlify preview verification has been performed for Milestone 8 yet. Those remain required in their applicable slices and cannot be inferred from the local source/build gate.
+
+## Change record
+
+| Date       | Change or decision                                                                                                                                       | Rationale                                                                                                                                                                                                        | Impact                                                                                                                                                                                 | Approved by                                                             |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 2026-09-02 | Created the detailed Milestone 8 draft from the approved requirements and current repository state.                                                      | The product owner approved the requirements and requested the implementation-ready plan before coding.                                                                                                           | Defines six dependency-ordered slices, proposed architecture, tests, risks, and exit criteria; no product code, database, deployment, or master completion checkbox changed.           | Requirements approved by product owner; detailed plan awaiting approval |
+| 2026-09-02 | Recorded Markdown interoperability, modifier-drag document containment, document settings, and Markdown-aligned range formatting as first-version scope. | The product owner expanded Milestone 8 and then refined the formatting boundary to exclude range-level font, size, color, alignment, and underline while permitting document-wide display font and reading size. | Adds `FR-088` through `FR-091`, `AS-008`, and the blocking `PD-019`/`PD-020` decisions; preserves sourced `FR-047` for traceability under approved `PD-021`.                           | Product owner                                                           |
+| 2026-09-02 | Approved the detailed plan and every recommended open decision.                                                                                          | The product owner authorized the documented Milestone 8 scope and selected the recommended preview, page-size, Markdown, and containment contracts.                                                              | Changes status to `Approved for implementation`, records `PD-002`, `PD-003`, `PD-019`, and `PD-020` in the master ledger, and authorizes Slice 1 only as the next implementation step. | Product owner                                                           |
+| 2026-09-02 | Completed the local Slice 1 foundation.                                                                                                                  | The first slice needed compatibility-safe document schemas, a production same-Y.Doc Lexical boundary, validated lifecycle/settings commands, and convergence/history proof before canvas UI work.                | Records the versioned document core and 307-test complete gate. No product UI is exposed yet; Slice 2, CI, preview evidence, and milestone completion remain open.                     | Engineering                                                             |
+
+## Closure
+
+Closure status: Not ready
+Closure approval: Pending
+Closed on: —

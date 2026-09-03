@@ -2,6 +2,10 @@ import * as Y from "yjs";
 import { z } from "zod";
 
 import { phosphorIconNames } from "@/canvas/phosphor-icon-names";
+import {
+  defaultDocumentSettings,
+  documentSettingsSchema,
+} from "@/documents/document-schema";
 import { canvasObjectSchema, type CanvasObject } from "@/domain/canvas-object";
 
 const metadataMapName = "canvas-metadata-v2";
@@ -221,6 +225,8 @@ const legacyDocumentObjectSchema = canvasObjectBaseSchema.extend({
   type: z.literal("document"),
   documentId: uuid,
   title: z.string().max(500),
+  documentVersion: z.literal(1).default(1),
+  settings: documentSettingsSchema.default(defaultDocumentSettings),
 });
 
 const legacyAnnotationObjectSchema = canvasObjectBaseSchema.extend({

@@ -203,6 +203,12 @@ export function remapCanvasClipboard(
       }
       return canvasObjectV2Schema.parse({ ...shared, parentId });
     }
+    if (object.type === "document") {
+      return canvasObjectV2Schema.parse({
+        ...shared,
+        documentId: crypto.randomUUID(),
+      });
+    }
     if (object.type !== "connector") {
       return canvasObjectV2Schema.parse(shared);
     }

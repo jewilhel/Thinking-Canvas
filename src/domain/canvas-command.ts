@@ -39,6 +39,8 @@ import {
   type VerticalConstraint,
 } from "@/canvas/icon-containment";
 import { isEligibleAnnotationTarget } from "@/canvas/annotation-attachment";
+import { documentSettingsSchema } from "@/documents/document-schema";
+import { copyProductDocumentContent } from "@/documents/product-document";
 import {
   rotateSelectionObjects,
   selectionBoundsForObjects,
@@ -91,6 +93,30 @@ const patchCommand = commandBase.extend({
         .max(100),
     }),
   ]),
+});
+const documentUpdateCommand = commandBase.extend({
+  type: z.literal("document.update"),
+  payload: z
+    .strictObject({
+      objectId: uuid,
+      title: z.string().trim().min(1).max(500).optional(),
+      settings: documentSettingsSchema.optional(),
+    })
+    .refine(
+      (payload) =>
+        payload.title !== undefined || payload.settings !== undefined,
+      "A document title or settings update is required.",
+    ),
+});
+const documentDuplicateCommand = commandBase.extend({
+  type: z.literal("document.duplicate"),
+  payload: z.strictObject({
+    sourceObjectId: uuid,
+    object: canvasObjectV2Schema.refine(
+      (object) => object.type === "document",
+      "A duplicated document requires a document object.",
+    ),
+  }),
 });
 const moveCommand = commandBase.extend({
   type: z.literal("object.move"),
@@ -330,6 +356,8 @@ const trustedCommandFields = {
 export const productCanvasMutationSchema = z.discriminatedUnion("type", [
   createCommand.omit(trustedCommandFields),
   patchCommand.omit(trustedCommandFields),
+  documentUpdateCommand.omit(trustedCommandFields),
+  documentDuplicateCommand.omit(trustedCommandFields),
   moveCommand.omit(trustedCommandFields),
   resizeCommand.omit(trustedCommandFields),
   deleteCommand.omit(trustedCommandFields),
@@ -363,6 +391,8 @@ export const productCanvasCommandSchema = z
   .discriminatedUnion("type", [
     createCommand,
     patchCommand,
+    documentUpdateCommand,
+    documentDuplicateCommand,
     moveCommand,
     resizeCommand,
     deleteCommand,
@@ -399,6 +429,8 @@ export const productCanvasCommandSchema = z
     }
     if (
       (command.type === "object.create" &&
+        command.payload.object.canvasId !== command.canvasId) ||
+      (command.type === "document.duplicate" &&
         command.payload.object.canvasId !== command.canvasId) ||
       (command.type === "selection.duplicate" &&
         command.payload.objects.some(
@@ -781,6 +813,34 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
       }
       putCanvasObjectV2(document, command.payload.object);
       affectedObjectIds.add(command.payload.object.id);
+      return;
+    }
+
+    if (command.type === "document.duplicate") {
+      const source = requireObject(document, command.payload.sourceObjectId);
+      const duplicate = command.payload.object;
+      if (source.type !== "document" || duplicate.type !== "document") {
+        throw new ProductCanvasCommandConflictError(
+          "Only a document can be duplicated as a document.",
+        );
+      }
+      if (readCanvasObjectV2(document, duplicate.id)) {
+        throw new ProductCanvasCommandConflictError(
+          "The duplicated document identity already exists.",
+        );
+      }
+      if (source.documentId === duplicate.documentId) {
+        throw new ProductCanvasCommandConflictError(
+          "A duplicate requires a new document identity.",
+        );
+      }
+      putCanvasObjectV2(document, duplicate);
+      copyProductDocumentContent(
+        document,
+        source.documentId,
+        duplicate.documentId,
+      );
+      affectedObjectIds.add(duplicate.id);
       return;
     }
 
@@ -1538,6 +1598,32 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
 
     const object = requireObject(document, command.payload.objectId);
     affectedObjectIds.add(object.id);
+
+    if (command.type === "document.update") {
+      if (object.type !== "document") {
+        throw new ProductCanvasCommandConflictError(
+          "Document settings can only be changed on a document object.",
+        );
+      }
+      if (command.payload.title !== undefined) {
+        setCanvasObjectField(
+          document,
+          object.id,
+          ["title"],
+          command.payload.title,
+        );
+      }
+      if (command.payload.settings !== undefined) {
+        setCanvasObjectField(
+          document,
+          object.id,
+          ["settings"],
+          command.payload.settings,
+        );
+      }
+      touch(document, object.id, command.issuedAt);
+      return;
+    }
 
     if (command.type === "object.flip") {
       if (!isContainableObject(object)) {

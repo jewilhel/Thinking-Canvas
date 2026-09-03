@@ -87,6 +87,46 @@ function nestedIcon(
 }
 
 describe("canvas clipboard", () => {
+  it("remaps a document's object and content identities independently", () => {
+    const source: CanvasObjectV2 = {
+      schemaVersion: 2,
+      id: "70000000-0000-4000-8000-000000000001",
+      canvasId,
+      createdBy: actorId,
+      createdAt: now,
+      updatedAt: now,
+      groupId: null,
+      type: "document",
+      documentId: "70000000-0000-4000-8000-000000000002",
+      documentVersion: 1,
+      title: "Shared document",
+      settings: {
+        schemaVersion: 1,
+        background: "#ffffff",
+        displayFont: "sans",
+        readingSize: "comfortable",
+        layout: { mode: "continuous" },
+      },
+      geometry: { x: 20, y: 40, width: 480, height: 640, rotation: 0 },
+      style: shape("33333333-3333-4333-8333-333333333333").style,
+    };
+
+    const [duplicate] = remapCanvasClipboard(
+      createCanvasClipboardPayload([source], [source.id]),
+      { canvasId, actorId, issuedAt: now },
+    );
+
+    expect(duplicate).toMatchObject({
+      type: "document",
+      title: source.title,
+      settings: source.settings,
+    });
+    expect(duplicate?.id).not.toBe(source.id);
+    expect(
+      duplicate?.type === "document" ? duplicate.documentId : null,
+    ).not.toBe(source.documentId);
+  });
+
   it("duplicates a parent with its child and detaches a copied child alone", () => {
     const parent = shape("33333333-3333-4333-8333-333333333333");
     const child = nestedIcon(parent.id);

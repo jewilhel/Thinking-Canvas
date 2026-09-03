@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as Y from "yjs";
 
 import {
   createProductCanvasDocument,
@@ -12,6 +13,10 @@ import {
 import { resolveConnectorPointsV2 } from "@/canvas/geometry";
 import { isContainableObject } from "@/canvas/icon-containment";
 import {
+  createProductDocumentObject,
+  getProductDocumentContentRoot,
+} from "@/documents/product-document";
+import {
   executeProductCanvasCommand,
   ProductCanvasCommandConflictError,
 } from "@/domain/canvas-command";
@@ -23,6 +28,7 @@ const secondShapeId = "44444444-4444-4444-8444-444444444444";
 const connectorId = "55555555-5555-4555-8555-555555555555";
 const iconId = "66666666-6666-4666-8666-666666666666";
 const textId = "77777777-7777-4777-8777-777777777777";
+const documentId = "88888888-8888-4888-8888-888888888888";
 const issuedAt = "2026-08-11T20:00:00.000Z";
 
 function baseCommand(type: string, payload: unknown) {
@@ -135,6 +141,115 @@ function text(): Extract<CanvasObjectV2, { type: "text" }> {
 }
 
 describe("product canvas command boundary", () => {
+  it("creates and updates a first-class document through validated commands", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const object = createProductDocumentObject({
+      canvasId,
+      objectId: documentId,
+      actorId,
+      issuedAt,
+      title: "Research plan",
+      geometry: { x: 80, y: 120, width: 480, height: 640, rotation: 0 },
+    });
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.create", { object }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("document.update", {
+        objectId: documentId,
+        title: "Revised research plan",
+        settings: {
+          schemaVersion: 1,
+          background: "#fef3c7",
+          displayFont: "serif",
+          readingSize: "large",
+          layout: {
+            mode: "paginated",
+            pageSize: "letter",
+            orientation: "landscape",
+          },
+        },
+      }),
+    );
+
+    expect(readCanvasObjectV2(document, documentId)).toMatchObject({
+      type: "document",
+      title: "Revised research plan",
+      settings: {
+        background: "#fef3c7",
+        layout: { mode: "paginated", pageSize: "letter" },
+      },
+    });
+  });
+
+  it("rejects document settings on another object type", () => {
+    const document = createProductCanvasDocument(canvasId);
+    putCanvasObjectV2(document, shape());
+
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("document.update", {
+          objectId: shapeId,
+          title: "Not a document",
+        }),
+      ),
+    ).toThrow(ProductCanvasCommandConflictError);
+  });
+
+  it("duplicates document identity, settings, and structured content", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const source = createProductDocumentObject({
+      canvasId,
+      objectId: documentId,
+      actorId,
+      issuedAt,
+      title: "Source document",
+      geometry: { x: 80, y: 120, width: 480, height: 640, rotation: 0 },
+    });
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.create", { object: source }),
+    );
+    const sourceContent = getProductDocumentContentRoot(
+      document,
+      source.documentId,
+    );
+    const paragraph = new Y.XmlText();
+    paragraph.setAttribute("__type", "paragraph");
+    paragraph.insert(0, "Shared structured content");
+    sourceContent.insertEmbed(0, paragraph);
+    const duplicateId = "88888888-8888-4888-8888-888888888889";
+    const duplicate = createProductDocumentObject({
+      canvasId,
+      objectId: duplicateId,
+      actorId,
+      issuedAt,
+      title: "Source document copy",
+      geometry: { x: 120, y: 160, width: 480, height: 640, rotation: 0 },
+    });
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("document.duplicate", {
+        sourceObjectId: source.id,
+        object: duplicate,
+      }),
+    );
+
+    expect(readCanvasObjectV2(document, duplicateId)).toMatchObject({
+      type: "document",
+      documentId: duplicateId,
+      title: "Source document copy",
+      settings: source.settings,
+    });
+    expect(getProductDocumentContentRoot(document, duplicateId).toJSON()).toBe(
+      sourceContent.toJSON(),
+    );
+  });
+
   it("creates and independently styles a catalog-backed icon", () => {
     const document = createProductCanvasDocument(canvasId);
     executeProductCanvasCommand(

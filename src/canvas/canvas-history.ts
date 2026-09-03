@@ -119,8 +119,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableJsonValue);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, stableJsonValue(value[key])]),
+  );
+}
+
 function equal(left: unknown, right: unknown) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return (
+    JSON.stringify(stableJsonValue(left)) ===
+    JSON.stringify(stableJsonValue(right))
+  );
 }
 
 function changedPaths(
