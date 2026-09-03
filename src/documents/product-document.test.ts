@@ -57,6 +57,13 @@ describe("product document model", () => {
         layout: { mode: "paginated", pageSize: "legal" },
       }),
     ).toThrow();
+
+    expect(() =>
+      documentSettingsSchema.parse({
+        ...defaultDocumentSettings,
+        background: "url(javascript:alert(1))",
+      }),
+    ).toThrow();
   });
 
   it("stores structured Lexical collaboration state inside the canvas Y.Doc", () => {

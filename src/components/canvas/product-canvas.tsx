@@ -168,8 +168,19 @@ import {
 } from "@/components/canvas/workspace-primary-dock";
 import { WorkspacePanel } from "@/components/canvas/workspace-panel";
 import { CanvasComments } from "@/components/comments/canvas-comments";
+import { ProductDocumentEditor } from "@/components/documents/product-document-editor";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { CanvasRole } from "@/domain/command";
+import {
+  documentDisplayFonts,
+  documentLayoutLabel,
+  documentPreviewText,
+  documentReadingMetrics,
+} from "@/documents/document-presentation";
+import {
+  createProductDocumentObject,
+  getProductDocumentContentRoot,
+} from "@/documents/product-document";
 
 type Props = {
   canvasId: string;
@@ -348,11 +359,13 @@ function objectLabel(object: CanvasObjectV2, canvasObjects?: CanvasObjectV2[]) {
   }
   if (object.type === "text") return `text — ${object.text || "Untitled"}`;
   if (object.type === "table") return `table — ${object.cells.length} rows`;
+  if (object.type === "document")
+    return `document — ${object.title || "Untitled document"}`;
   if (object.type === "connector") return "connector";
   if (object.type === "icon") return `icon — ${object.iconName}`;
   if (object.type === "annotation")
     return object.ink === "highlighter" ? "highlighter" : "pen stroke";
-  return object.type;
+  throw new Error("Unsupported canvas object type.");
 }
 
 function referenceSafeSelectionOrder(objects: CanvasObjectV2[]) {
@@ -395,6 +408,7 @@ export function ProductCanvas({
   const touchPointersRef = useRef(new Map<number, Point>());
   const touchNavigationGestureRef = useRef<TouchNavigationGesture | null>(null);
   const touchNavigationBlockedRef = useRef(false);
+  const previousDocumentViewportRef = useRef<Viewport | null>(null);
   const frameStartedAt = useRef(0);
   const documentStorageKey = `thinking-canvas:document:${canvasId}`;
   const viewportStorageKey = `thinking-canvas:viewport:${userId}:${canvasId}`;
@@ -440,6 +454,9 @@ export function ProductCanvas({
   );
   const [recentShape, setRecentShape] = useState<CanvasShapeTool>("rectangle");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [focusedDocumentId, setFocusedDocumentId] = useState<string | null>(
+    null,
+  );
   const [connectorStart, setConnectorStart] =
     useState<ConnectorEndpoint | null>(null);
   const [pointerPreview, setPointerPreview] = useState<Point | null>(null);
@@ -630,6 +647,9 @@ export function ProductCanvas({
         }
       : undefined);
   const selectedObject = selectedId ? objectsById.get(selectedId) : undefined;
+  const focusedDocument = focusedDocumentId
+    ? objectsById.get(focusedDocumentId)
+    : undefined;
   const selectedBounds = selectedObjects.length
     ? selectedObjects.reduce(
         (bounds, object) => {
@@ -897,56 +917,70 @@ export function ProductCanvas({
         x: Math.round(point.x),
         y: Math.round(point.y),
         width:
-          activeTool === "text"
-            ? 220
-            : activeTool === "table"
-              ? 300
-              : activeTool === "sticky"
-                ? 200
-                : 180,
+          activeTool === "document"
+            ? 440
+            : activeTool === "text"
+              ? 220
+              : activeTool === "table"
+                ? 300
+                : activeTool === "sticky"
+                  ? 200
+                  : 180,
         height:
-          activeTool === "text"
-            ? 72
-            : activeTool === "table"
-              ? 140
-              : activeTool === "sticky"
-                ? 160
-                : 110,
+          activeTool === "document"
+            ? 560
+            : activeTool === "text"
+              ? 72
+              : activeTool === "table"
+                ? 140
+                : activeTool === "sticky"
+                  ? 160
+                  : 110,
         rotation: 0,
       },
       style:
-        activeTool === "sticky"
-          ? {
-              ...baseStyle("shape"),
-              fill: "#fef3c7",
-              outline: "#f59e0b",
-            }
-          : baseStyle(
-              activeTool === "text"
-                ? "text"
-                : activeTool === "table"
-                  ? "table"
-                  : "shape",
-            ),
+        activeTool === "document"
+          ? baseStyle("shape")
+          : activeTool === "sticky"
+            ? {
+                ...baseStyle("shape"),
+                fill: "#fef3c7",
+                outline: "#f59e0b",
+              }
+            : baseStyle(
+                activeTool === "text"
+                  ? "text"
+                  : activeTool === "table"
+                    ? "table"
+                    : "shape",
+              ),
     };
     const object: CanvasObjectV2 =
-      activeTool === "text"
-        ? { ...shared, type: "text", text: "New text" }
-        : activeTool === "table"
-          ? {
-              ...shared,
-              type: "table",
-              cells: [
-                ["Heading", "Value"],
-                ["Item", "Detail"],
-              ],
-            }
-          : {
-              ...shared,
-              type: "shape",
-              shape: activeTool === "sticky" ? "rectangle" : activeTool,
-              text: "",
-            };
+      activeTool === "document"
+        ? createProductDocumentObject({
+            canvasId,
+            objectId: id,
+            actorId: userId,
+            issuedAt: now,
+            geometry: shared.geometry,
+          })
+        : activeTool === "text"
+          ? { ...shared, type: "text", text: "New text" }
+          : activeTool === "table"
+            ? {
+                ...shared,
+                type: "table",
+                cells: [
+                  ["Heading", "Value"],
+                  ["Item", "Detail"],
+                ],
+              }
+            : {
+                ...shared,
+                type: "shape",
+                shape: activeTool === "sticky" ? "rectangle" : activeTool,
+                text: "",
+              };
     if (object.type === "shape") {
       const labelId = crypto.randomUUID();
       const labelGeometry = {
@@ -989,7 +1023,7 @@ export function ProductCanvas({
   function chooseTool(nextTool: CanvasTool) {
     const drawingTool =
       nextTool === "pen" || nextTool === "highlighter" || nextTool === "eraser";
-    if (drawingTool && !canMutateCanvas) return;
+    if (nextTool !== "select" && nextTool !== "pan" && !canMutateCanvas) return;
     if (drawingTool) setLastDrawingTool(nextTool);
     if (
       nextTool !== "pen" &&
@@ -1013,6 +1047,56 @@ export function ProductCanvas({
   function chooseShape(shape: CanvasShapeTool) {
     setRecentShape(shape);
     chooseTool(shape);
+  }
+
+  function openDocument(object: Extract<CanvasObjectV2, { type: "document" }>) {
+    previousDocumentViewportRef.current = viewport;
+    const availableWidth = Math.max(240, size.width - 128);
+    const availableHeight = Math.max(240, size.height - 128);
+    const scale = Math.min(
+      maxCanvasScale,
+      Math.max(
+        minCanvasScale,
+        Math.min(
+          availableWidth / object.geometry.width,
+          availableHeight / object.geometry.height,
+        ),
+      ),
+    );
+    setViewport({
+      scale,
+      x:
+        (size.width - object.geometry.width * scale) / 2 -
+        object.geometry.x * scale,
+      y:
+        (size.height - object.geometry.height * scale) / 2 -
+        object.geometry.y * scale,
+    });
+    setSelectedIds([object.id]);
+    setTool("select");
+    setContextPanel(null);
+    setObjectContextMenu(null);
+    setSharedPanel(null);
+    setFocusedDocumentId(object.id);
+  }
+
+  function exitDocument() {
+    const previousViewport = previousDocumentViewportRef.current;
+    if (previousViewport) setViewport(previousViewport);
+    previousDocumentViewportRef.current = null;
+    setFocusedDocumentId(null);
+    requestAnimationFrame(() => containerRef.current?.focus());
+  }
+
+  function updateFocusedDocument(update: {
+    title?: string;
+    settings?: Extract<CanvasObjectV2, { type: "document" }>["settings"];
+  }) {
+    if (!focusedDocument || focusedDocument.type !== "document") return;
+    runCommand("document.update", {
+      objectId: focusedDocument.id,
+      ...update,
+    });
   }
 
   function addIcon(iconName: string, point?: Point) {
@@ -3016,6 +3100,15 @@ export function ProductCanvas({
       showObjectContextMenu(keyboardX, keyboardY);
       return;
     }
+    if (
+      event.key === "Enter" &&
+      selectedObjects.length === 1 &&
+      selectedObjects[0]?.type === "document"
+    ) {
+      event.preventDefault();
+      openDocument(selectedObjects[0]);
+      return;
+    }
     if (accelerator && event.key.toLowerCase() === "z") {
       event.preventDefault();
       if (event.shiftKey) redo();
@@ -3143,6 +3236,7 @@ export function ProductCanvas({
         p: "pen",
         t: "text",
         b: "table",
+        d: "document",
       }[event.key.toLowerCase()] as CanvasTool | undefined;
       if (shortcutTool) {
         event.preventDefault();
@@ -3685,7 +3779,138 @@ export function ProductCanvas({
     );
   }
 
+  function renderDocument(
+    object: Extract<CanvasObjectV2, { type: "document" }>,
+  ) {
+    const viewportBounds = {
+      left: -viewport.x / viewport.scale,
+      top: -viewport.y / viewport.scale,
+      right: (size.width - viewport.x) / viewport.scale,
+      bottom: (size.height - viewport.y) / viewport.scale,
+    };
+    const visible =
+      object.geometry.x < viewportBounds.right &&
+      object.geometry.x + object.geometry.width > viewportBounds.left &&
+      object.geometry.y < viewportBounds.bottom &&
+      object.geometry.y + object.geometry.height > viewportBounds.top;
+    const showBodyPreview =
+      visible &&
+      viewport.scale >= 0.4 &&
+      object.geometry.width * viewport.scale >= 180;
+    const preview = showBodyPreview
+      ? documentPreviewText(
+          getProductDocumentContentRoot(document, object.documentId),
+        )
+      : "";
+    const reading = documentReadingMetrics[object.settings.readingSize];
+    const inset = Math.max(24, object.geometry.width * 0.08);
+    return (
+      <Group
+        key={object.id}
+        id={object.id}
+        x={object.geometry.x}
+        y={object.geometry.y}
+        rotation={object.geometry.rotation}
+        ref={(node) => {
+          if (node) objectNodeRefs.current.set(object.id, node);
+          else objectNodeRefs.current.delete(object.id);
+        }}
+        draggable={tool === "select"}
+        onClick={(event) => selectObject(event, object)}
+        onTap={(event) => selectObject(event, object)}
+        onDblClick={() => openDocument(object)}
+        onDblTap={() => openDocument(object)}
+        onContextMenu={(event) => openObjectContextMenu(event, object)}
+        onDragStart={() => {
+          if (!selectedIds.includes(object.id)) setSelectedIds([object.id]);
+        }}
+        onDragMove={(event) =>
+          previewSelectionFromDrag(
+            objectsById.get(object.id) ?? object,
+            event.target.x(),
+            event.target.y(),
+            false,
+          )
+        }
+        onDragEnd={(event) => {
+          const durableObject = objectsById.get(object.id) ?? object;
+          setDragPreviewPositions({});
+          moveSelectionFromDrag(
+            durableObject,
+            event.target.x(),
+            event.target.y(),
+            false,
+          );
+        }}
+        onTransform={(event) => previewSingleObjectTransform(event, object)}
+        onTransformEnd={(event) => finishSingleObjectTransform(event, object)}
+      >
+        <Rect
+          width={object.geometry.width}
+          height={object.geometry.height}
+          fill={object.settings.background}
+          stroke="#d4d4d8"
+          strokeWidth={1.5}
+          cornerRadius={object.settings.layout.mode === "continuous" ? 12 : 2}
+          shadowColor="#18181b"
+          shadowBlur={18}
+          shadowOpacity={0.16}
+          shadowOffsetY={8}
+        />
+        <Text
+          x={inset}
+          y={inset}
+          width={object.geometry.width - inset * 2}
+          text={object.title || "Untitled document"}
+          fill="#18181b"
+          fontFamily={documentDisplayFonts[object.settings.displayFont]}
+          fontSize={Math.max(18, reading.fontSize + 4)}
+          fontStyle="bold"
+          ellipsis
+          wrap="none"
+        />
+        <Text
+          x={inset}
+          y={inset + 34}
+          width={object.geometry.width - inset * 2}
+          text={documentLayoutLabel(object.settings)}
+          fill="#71717a"
+          fontFamily="Inter, ui-sans-serif, system-ui, sans-serif"
+          fontSize={12}
+          wrap="none"
+        />
+        {showBodyPreview ? (
+          <Text
+            x={inset}
+            y={inset + 72}
+            width={object.geometry.width - inset * 2}
+            height={Math.max(48, object.geometry.height - inset * 2 - 94)}
+            text={preview || "Start writing…"}
+            fill={preview ? "#3f3f46" : "#a1a1aa"}
+            fontFamily={documentDisplayFonts[object.settings.displayFont]}
+            fontSize={reading.fontSize}
+            lineHeight={reading.lineHeight}
+            ellipsis
+            listening={false}
+          />
+        ) : null}
+        <Text
+          x={inset}
+          y={object.geometry.height - inset - 12}
+          width={object.geometry.width - inset * 2}
+          align="right"
+          text={preview ? "Open to continue →" : "Open document →"}
+          fill="#7c3aed"
+          fontSize={12}
+          fontStyle="bold"
+          listening={false}
+        />
+      </Group>
+    );
+  }
+
   function renderObject(object: CanvasObjectV2) {
+    if (object.type === "document") return renderDocument(object);
     if (object.type === "annotation") {
       return (
         <Group
@@ -3807,7 +4032,6 @@ export function ProductCanvas({
         </Group>
       );
     }
-    if (object.type === "document") return null;
     const groupParentId = object.groupId
       ? groupsById.get(object.groupId)?.parentId
       : null;
@@ -4700,6 +4924,16 @@ export function ProductCanvas({
                 }
               >
                 Edit table
+              </Button>
+            ) : null}
+            {selectedObject.type === "document" && selectedIds.length === 1 ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => openDocument(selectedObject)}
+              >
+                Open document
               </Button>
             ) : null}
             {selectedObjects.some(
@@ -5805,6 +6039,16 @@ export function ProductCanvas({
           ) : null}
         </div>
       </div>
+      {focusedDocument?.type === "document" ? (
+        <ProductDocumentEditor
+          canvasDocument={document}
+          documentObject={focusedDocument}
+          username={userIdentity}
+          canEdit={canMutateCanvas}
+          onUpdate={updateFocusedDocument}
+          onExit={exitDocument}
+        />
+      ) : null}
     </section>
   );
 }

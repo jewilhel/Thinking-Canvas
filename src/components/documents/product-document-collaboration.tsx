@@ -1,11 +1,17 @@
 "use client";
 
-import { LexicalCollaboration } from "@lexical/react/LexicalCollaborationContext";
-import { CollaborationPlugin } from "@lexical/react/LexicalCollaborationPlugin";
-import { useMemo } from "react";
-import type * as Y from "yjs";
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import {
+  createYjsBinding,
+  initLocalState,
+  syncLexicalUpdateToYjs,
+  syncYjsChangesToLexical,
+} from "@lexical/yjs";
+import { $createParagraphNode, $getRoot, COLLABORATION_TAG } from "lexical";
+import { useEffect } from "react";
+import * as Y from "yjs";
 
-import { createCanvasLexicalProviderFactory } from "@/documents/canvas-lexical-provider";
+import { CanvasLexicalProvider } from "@/documents/canvas-lexical-provider";
 import { documentContentRootName } from "@/documents/document-schema";
 
 export function ProductDocumentCollaboration({
@@ -19,22 +25,76 @@ export function ProductDocumentCollaboration({
   username: string;
   cursorColor: string;
 }) {
-  const providerFactory = useMemo(
-    () => createCanvasLexicalProviderFactory(canvasDocument),
-    [canvasDocument],
-  );
+  const [editor] = useLexicalComposerContext();
 
-  return (
-    <LexicalCollaboration>
-      <CollaborationPlugin
-        id={documentId}
-        providerFactory={providerFactory}
-        rootName={documentContentRootName(documentId)}
-        shouldBootstrap
-        username={username}
-        cursorColor={cursorColor}
-        selectionHighlight
-      />
-    </LexicalCollaboration>
-  );
+  useEffect(() => {
+    const provider = new CanvasLexicalProvider(canvasDocument);
+    const documentMap = new Map([[documentId, canvasDocument]]);
+    const binding = createYjsBinding({
+      editor,
+      id: documentId,
+      doc: canvasDocument,
+      docMap: documentMap,
+      rootName: documentContentRootName(documentId),
+    });
+    const sharedRoot = binding.root.getSharedType();
+
+    editor.update(
+      () => {
+        const lexicalRoot = $getRoot();
+        lexicalRoot.clear();
+        binding.root.syncPropertiesFromYjs(binding, null);
+        binding.root.applyChildrenYjsDelta(binding, sharedRoot.toDelta());
+        binding.root.syncChildrenFromYjs(binding);
+        if (lexicalRoot.isEmpty()) lexicalRoot.append($createParagraphNode());
+      },
+      { discrete: true, skipTransforms: true, tag: COLLABORATION_TAG },
+    );
+
+    const observeSharedRoot = (
+      events: Y.YEvent<Y.AbstractType<unknown>>[],
+      transaction: Y.Transaction,
+    ) => {
+      if (transaction.origin === binding) return;
+      syncYjsChangesToLexical(
+        binding,
+        provider,
+        events as Y.YEvent<Y.Text>[],
+        transaction.origin instanceof Y.UndoManager,
+      );
+    };
+    sharedRoot.observeDeep(observeSharedRoot);
+    const removeEditorListener = editor.registerUpdateListener(
+      ({
+        prevEditorState,
+        editorState,
+        dirtyElements,
+        dirtyLeaves,
+        normalizedNodes,
+        tags,
+      }) => {
+        syncLexicalUpdateToYjs(
+          binding,
+          provider,
+          prevEditorState,
+          editorState,
+          dirtyElements,
+          dirtyLeaves,
+          normalizedNodes,
+          tags,
+        );
+      },
+    );
+
+    initLocalState(provider, username, cursorColor, false, {});
+    provider.connect();
+    return () => {
+      sharedRoot.unobserveDeep(observeSharedRoot);
+      removeEditorListener();
+      provider.disconnect();
+      binding.root.destroy(binding);
+    };
+  }, [canvasDocument, cursorColor, documentId, editor, username]);
+
+  return null;
 }

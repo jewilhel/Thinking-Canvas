@@ -20,7 +20,7 @@ export const documentLayoutSchema = z.discriminatedUnion("mode", [
 
 export const documentSettingsSchema = z.strictObject({
   schemaVersion: z.literal(1),
-  background: z.string().min(1).max(100),
+  background: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   displayFont: documentDisplayFontSchema,
   readingSize: documentReadingSizeSchema,
   layout: documentLayoutSchema,

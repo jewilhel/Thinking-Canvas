@@ -66,7 +66,10 @@ export function getProductDocumentContentRoot(
   canvasDocument: Y.Doc,
   documentId: string,
 ) {
-  return canvasDocument.getText(documentContentRootName(documentId));
+  return canvasDocument.get(
+    documentContentRootName(documentId),
+    Y.XmlText,
+  ) as Y.XmlText;
 }
 
 export function hasProductDocumentContent(
