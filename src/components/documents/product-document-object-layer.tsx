@@ -261,19 +261,41 @@ export function ProductDocumentObjectLayer({
           (pageHeight === null || object.documentLocal.pageIndex === pageIndex),
       ),
   ).flatMap((object) => (isDocumentOwned(object) ? [object] : []));
+  const selectedOwned = owned.filter((object) =>
+    selectedIds.includes(object.id),
+  );
+  const selectedToolbarPosition = selectedOwned.length
+    ? {
+        left:
+          (Math.min(...selectedOwned.map((object) => object.documentLocal.x)) +
+            Math.max(
+              ...selectedOwned.map(
+                (object) => object.documentLocal.x + object.documentLocal.width,
+              ),
+            )) /
+          2,
+        top: Math.max(
+          128,
+          Math.min(...selectedOwned.map((object) => object.documentLocal.y)) -
+            (pageHeight === null ? 0 : pageIndex * pageHeight) -
+            52,
+        ),
+      }
+    : null;
 
   return (
     <div
       role="group"
-      className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+      className="pointer-events-none absolute inset-0 z-30 overflow-hidden"
       data-testid="document-object-layer"
       aria-label="Canvas objects in document"
     >
-      {selectedIds.length ? (
+      {selectedToolbarPosition ? (
         <div
           role="toolbar"
           aria-label="Embedded object actions"
-          className="pointer-events-auto absolute top-2 left-1/2 z-20 flex -translate-x-1/2 gap-1 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg"
+          className="pointer-events-auto absolute z-[50] flex -translate-x-1/2 gap-1 rounded-xl border border-white/10 bg-zinc-900 p-1 text-white shadow-2xl [&_button:hover]:bg-white/10"
+          style={selectedToolbarPosition}
         >
           {[
             { label: "Undo canvas object change", icon: Undo2, action: onUndo },

@@ -48,6 +48,12 @@ type Props = {
   supabaseUrl: string;
   supabasePublishableKey: string;
   documentObject: ProductDocumentObject;
+  screenBounds: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
   username: string;
   canEdit: boolean;
   canvasObjects: CanvasObjectV2[];
@@ -108,6 +114,7 @@ export function ProductDocumentEditor({
   supabaseUrl,
   supabasePublishableKey,
   documentObject,
+  screenBounds,
   username,
   canEdit,
   canvasObjects,
@@ -144,6 +151,8 @@ export function ProductDocumentEditor({
   const reading = documentReadingMetrics[settings.readingSize];
   const pageHeight = documentPageContentHeight(settings);
   const surfaceHeight = documentReadingSurfaceHeight(settings);
+  const surfaceWidth = documentReadingSurfaceWidth(settings);
+  const surfaceScale = screenBounds.width / surfaceWidth;
   const handleRangeSelectionChange = useCallback(
     (range: DocumentRangeTarget | null) => setSelectedRange(range),
     [],
@@ -234,49 +243,42 @@ export function ProductDocumentEditor({
 
   return (
     <div
-      className="absolute inset-0 z-70 flex flex-col overflow-hidden bg-zinc-100 text-zinc-950"
+      className="absolute z-20 overflow-visible text-zinc-950"
       data-testid="focused-product-document"
+      style={screenBounds}
     >
-      <header className="relative z-50 flex min-h-16 flex-wrap items-center gap-3 border-b border-zinc-200 bg-white/95 px-4 py-2 shadow-sm backdrop-blur">
+      <div
+        role="toolbar"
+        aria-label="Document controls"
+        className="absolute top-3 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-1 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-white shadow-2xl [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-zinc-100 [&_button:hover]:bg-white/10 [&_button[aria-expanded=true]]:bg-violet-600"
+      >
         <Button
           type="button"
+          size="icon-sm"
           variant="outline"
-          className="h-11 border-zinc-300 bg-white"
+          aria-label="Return to canvas"
+          title="Return to canvas"
           onClick={onExit}
         >
-          <ArrowLeft aria-hidden="true" /> Return to canvas
+          <ArrowLeft aria-hidden="true" />
         </Button>
-        <label className="min-w-48 flex-1">
-          <span className="sr-only">Document title</span>
-          <input
-            key={documentObject.title}
-            defaultValue={documentObject.title}
-            readOnly={!canEdit}
-            maxLength={500}
-            className="h-11 w-full rounded-lg border border-transparent bg-transparent px-3 text-lg font-semibold outline-none read-only:text-zinc-600 hover:border-zinc-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-200"
-            onBlur={(event) => {
-              const next =
-                event.currentTarget.value.trim() || "Untitled document";
-              event.currentTarget.value = next;
-              if (next !== documentObject.title) onUpdate({ title: next });
-            }}
-          />
-        </label>
         <span
-          className="text-xs text-zinc-500"
+          className="max-w-36 truncate px-2 text-xs text-zinc-300"
           data-testid="document-layout-label"
         >
           {documentLayoutLabel(settings)}
         </span>
         <Button
           type="button"
+          size="icon-sm"
           variant="outline"
-          className="h-11 border-zinc-300 bg-white"
+          aria-label="Document settings"
+          title="Document settings"
           aria-expanded={settingsOpen}
           aria-controls="document-settings-panel"
           onClick={() => setSettingsOpen((current) => !current)}
         >
-          <Settings2 aria-hidden="true" /> Document settings
+          <Settings2 aria-hidden="true" />
         </Button>
         <ProductDocumentComments
           canvasDocument={canvasDocument}
@@ -290,10 +292,11 @@ export function ProductDocumentEditor({
           supabasePublishableKey={supabasePublishableKey}
           onAiTransactionApplied={onAiTransactionApplied}
           onUndoAiTransaction={onUndoAiTransaction}
+          compact
         />
-      </header>
+      </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div className="relative h-full overflow-visible">
         <LexicalComposer
           initialConfig={{
             namespace: `thinking-canvas-document-${documentObject.documentId}`,
@@ -349,7 +352,7 @@ export function ProductDocumentEditor({
           {pageHeight !== null ? (
             <nav
               aria-label="Document pages"
-              className="relative z-10 flex h-11 items-center justify-center gap-3 border-b border-zinc-200 bg-zinc-50 px-4"
+              className="absolute bottom-3 left-1/2 z-[60] flex -translate-x-1/2 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-white shadow-2xl [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-zinc-100 [&_button:hover]:bg-white/10"
             >
               <Button
                 type="button"
@@ -364,7 +367,7 @@ export function ProductDocumentEditor({
                 <ChevronLeft aria-hidden="true" />
               </Button>
               <output
-                className="min-w-24 text-center text-sm"
+                className="min-w-20 text-center text-xs text-zinc-200"
                 data-testid="document-page-status"
               >
                 Page {pageIndex + 1} of {pageCount}
@@ -388,29 +391,50 @@ export function ProductDocumentEditor({
           <div
             role="region"
             tabIndex={0}
-            className={`${pageHeight === null ? "h-[calc(100%-3.25rem)]" : "h-[calc(100%-6rem)]"} overflow-y-auto px-4 py-8 sm:px-8`}
+            className="h-full overflow-x-hidden overflow-y-auto rounded-[inherit]"
             aria-label={`${documentObject.title} document workspace`}
           >
             <div
               ref={readingSurfaceRef}
-              className={`relative mx-auto border border-zinc-200 shadow-xl ${settings.layout.mode === "continuous" ? "min-h-[calc(100vh-9rem)] rounded-xl px-[clamp(2rem,8vw,6rem)] py-[clamp(2.5rem,8vw,6rem)]" : "overflow-hidden rounded-sm px-24 py-24"}`}
+              className={`relative mx-auto border border-zinc-200 pt-36 shadow-xl ${settings.layout.mode === "continuous" ? "min-h-full rounded-xl px-20 pb-24" : "overflow-hidden rounded-sm px-24 pb-24"}`}
               data-testid="document-reading-surface"
               data-layout-mode={settings.layout.mode}
               style={{
-                width: `min(100%, ${documentReadingSurfaceWidth(settings)}px)`,
-                ...(surfaceHeight === null ? {} : { height: surfaceHeight }),
+                width: surfaceWidth,
+                minHeight: screenBounds.height / surfaceScale,
+                ...(surfaceHeight === null
+                  ? {}
+                  : { height: Math.max(surfaceHeight, screenBounds.height) }),
                 backgroundColor: settings.background,
                 fontFamily: documentDisplayFonts[settings.displayFont],
                 fontSize: reading.fontSize,
                 lineHeight: reading.lineHeight,
+                zoom: surfaceScale,
               }}
             >
+              <label className="relative z-20 block">
+                <span className="sr-only">Document title</span>
+                <input
+                  key={documentObject.title}
+                  defaultValue={documentObject.title}
+                  readOnly={!canEdit}
+                  maxLength={500}
+                  className="mb-7 w-full border-0 bg-transparent p-0 text-4xl font-bold tracking-tight text-zinc-950 outline-none read-only:text-zinc-700 focus:ring-0"
+                  onBlur={(event) => {
+                    const next =
+                      event.currentTarget.value.trim() || "Untitled document";
+                    event.currentTarget.value = next;
+                    if (next !== documentObject.title)
+                      onUpdate({ title: next });
+                  }}
+                />
+              </label>
               <RichTextPlugin
                 contentEditable={
                   <ContentEditable
                     ref={editorElementRef}
                     aria-label="Document body"
-                    className="min-h-[60vh] whitespace-pre-wrap transition-transform outline-none motion-reduce:transition-none"
+                    className="relative z-20 min-h-[34rem] whitespace-pre-wrap transition-transform outline-none motion-reduce:transition-none"
                     data-testid="product-document-editor"
                     style={
                       pageHeight === null
@@ -423,7 +447,7 @@ export function ProductDocumentEditor({
                   />
                 }
                 placeholder={
-                  <p className="pointer-events-none absolute top-[clamp(2.5rem,8vw,6rem)] left-[clamp(2rem,8vw,6rem)] text-zinc-400">
+                  <p className="pointer-events-none absolute top-56 left-20 text-zinc-400">
                     Start writing…
                   </p>
                 }
@@ -486,7 +510,7 @@ export function ProductDocumentEditor({
           <aside
             id="document-settings-panel"
             aria-label="Document settings"
-            className="absolute top-4 right-4 z-20 max-h-[calc(100%-2rem)] w-[min(22rem,calc(100%-2rem))] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl"
+            className="absolute top-16 right-3 z-[90] max-h-[calc(100%-5rem)] w-[min(22rem,calc(100%-1.5rem))] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl"
           >
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-semibold">Document settings</h2>

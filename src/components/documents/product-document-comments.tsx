@@ -29,6 +29,7 @@ type Props = {
   supabasePublishableKey: string;
   onAiTransactionApplied: (changeSetId: string) => void;
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
+  compact?: boolean;
 };
 
 function targetLabel(
@@ -69,6 +70,7 @@ export function ProductDocumentComments({
   supabasePublishableKey,
   onAiTransactionApplied,
   onUndoAiTransaction,
+  compact = false,
 }: Props) {
   const { threads, collaboration, loading, pending, error, execute } =
     useCanvasComments(
@@ -141,18 +143,32 @@ export function ProductDocumentComments({
     <>
       <Button
         type="button"
+        size={compact ? "icon-sm" : undefined}
         variant="outline"
-        className="h-11 border-zinc-300 bg-white"
+        className={compact ? undefined : "h-11 border-zinc-300 bg-white"}
+        aria-label="Comments"
+        title="Comments"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <MessageCircle aria-hidden="true" /> Comments
-        {documentThreads.length ? ` (${documentThreads.length})` : ""}
+        <MessageCircle aria-hidden="true" />
+        {compact ? (
+          <span className="sr-only">
+            {documentThreads.length
+              ? `${documentThreads.length} document comments`
+              : "No document comments"}
+          </span>
+        ) : (
+          <>
+            Comments
+            {documentThreads.length ? ` (${documentThreads.length})` : ""}
+          </>
+        )}
       </Button>
       {open ? (
         <aside
           aria-label="Document comments"
-          className="absolute top-20 right-4 z-40 max-h-[calc(100%-6rem)] w-[min(25rem,calc(100%-2rem))] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl"
+          className="absolute top-16 right-3 z-[90] max-h-[calc(100%-5rem)] w-[min(25rem,calc(100%-1.5rem))] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl"
         >
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold">Document comments</h2>

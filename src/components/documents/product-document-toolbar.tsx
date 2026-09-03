@@ -31,8 +31,9 @@ import {
 } from "lexical";
 import {
   Bold,
+  ClipboardPaste,
+  Copy,
   Download,
-  FileInput,
   Italic,
   Link,
   List,
@@ -288,7 +289,7 @@ export function ProductDocumentToolbar({ title, settings, canEdit }: Props) {
       <div
         role="toolbar"
         aria-label="Document formatting and Markdown"
-        className="relative z-10 flex flex-wrap items-center gap-1 border-b border-zinc-200 bg-white px-4 py-2"
+        className="absolute top-16 left-1/2 z-[60] flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-white shadow-2xl [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-zinc-100 [&_button:hover]:bg-white/10 [&_button[aria-pressed=true]]:bg-violet-600"
         onMouseDown={(event) => {
           if ((event.target as HTMLElement).closest("button"))
             event.preventDefault();
@@ -322,7 +323,7 @@ export function ProductDocumentToolbar({ title, settings, canEdit }: Props) {
             aria-label="Paragraph style"
             value={blockType === "mixed" ? "mixed" : blockType}
             disabled={!canEdit}
-            className="h-8 rounded-md border border-zinc-300 bg-white px-2 text-sm"
+            className="h-8 rounded-md border border-white/10 bg-zinc-800 px-2 text-sm text-zinc-100"
             onMouseDown={(event) => event.stopPropagation()}
             onChange={(event) => setHeading(event.target.value)}
           >
@@ -393,27 +394,38 @@ export function ProductDocumentToolbar({ title, settings, canEdit }: Props) {
         >
           <Table2 aria-hidden="true" />
         </Button>
-        <span className="mx-1 h-6 w-px bg-zinc-200" aria-hidden="true" />
-        <Button type="button" size="sm" variant="outline" onClick={handleCopy}>
-          <Download aria-hidden="true" /> Copy to Markdown
+        <span className="mx-1 h-6 w-px bg-white/20" aria-hidden="true" />
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label="Copy to Markdown"
+          title="Copy to Markdown"
+          onClick={handleCopy}
+        >
+          <Copy aria-hidden="true" />
         </Button>
         <Button
           type="button"
-          size="sm"
+          size="icon-sm"
           variant="outline"
+          aria-label="Paste from Markdown"
+          title="Paste from Markdown"
           disabled={!canEdit}
           onClick={() => openPanel("paste")}
         >
-          <FileInput aria-hidden="true" /> Paste from Markdown
+          <ClipboardPaste aria-hidden="true" />
         </Button>
         <Button
           type="button"
-          size="sm"
+          size="icon-sm"
           variant="outline"
+          aria-label="Import Markdown"
+          title="Import Markdown"
           disabled={!canEdit}
           onClick={() => fileInput.current?.click()}
         >
-          <Upload aria-hidden="true" /> Import Markdown
+          <Upload aria-hidden="true" />
         </Button>
         <input
           ref={fileInput}
@@ -447,14 +459,16 @@ export function ProductDocumentToolbar({ title, settings, canEdit }: Props) {
         />
         <Button
           type="button"
-          size="sm"
+          size="icon-sm"
           variant="outline"
+          aria-label="Export Markdown"
+          title="Export Markdown"
           onClick={() => openPanel("export")}
         >
-          <Download aria-hidden="true" /> Export Markdown
+          <Download aria-hidden="true" />
         </Button>
         <p
-          className="min-w-48 flex-1 text-right text-xs text-zinc-600"
+          className="absolute top-full left-1/2 mt-2 max-w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl bg-zinc-900 px-3 py-2 text-center text-xs text-zinc-100 shadow-lg empty:hidden"
           aria-live="polite"
         >
           {status}
@@ -466,7 +480,7 @@ export function ProductDocumentToolbar({ title, settings, canEdit }: Props) {
           role="dialog"
           aria-modal="true"
           aria-labelledby="markdown-panel-title"
-          className="absolute top-28 right-4 z-30 w-[min(34rem,calc(100%-2rem))] rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl"
+          className="absolute top-28 right-3 z-[90] w-[min(34rem,calc(100%-1.5rem))] rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl"
         >
           <h2 id="markdown-panel-title" className="font-semibold">
             {panel === "export"

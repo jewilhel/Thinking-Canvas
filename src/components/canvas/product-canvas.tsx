@@ -1063,26 +1063,22 @@ export function ProductCanvas({
 
   function openDocument(object: Extract<CanvasObjectV2, { type: "document" }>) {
     previousDocumentViewportRef.current = viewport;
-    const availableWidth = Math.max(240, size.width - 128);
-    const availableHeight = Math.max(240, size.height - 128);
+    const focusedWidth = Math.min(820, Math.max(320, size.width - 280));
     const scale = Math.min(
       maxCanvasScale,
-      Math.max(
-        minCanvasScale,
-        Math.min(
-          availableWidth / object.geometry.width,
-          availableHeight / object.geometry.height,
-        ),
-      ),
+      Math.max(minCanvasScale, focusedWidth / object.geometry.width),
     );
+    const visibleHeight = Math.min(
+      object.geometry.height * scale,
+      Math.max(320, size.height - 176),
+    );
+    const focusedTop = Math.max(88, (size.height - visibleHeight) / 2);
     setViewport({
       scale,
       x:
         (size.width - object.geometry.width * scale) / 2 -
         object.geometry.x * scale,
-      y:
-        (size.height - object.geometry.height * scale) / 2 -
-        object.geometry.y * scale,
+      y: focusedTop - object.geometry.y * scale,
     });
     setSelectedIds([object.id]);
     setTool("select");
@@ -4092,10 +4088,7 @@ export function ProductCanvas({
       object.geometry.x + object.geometry.width > viewportBounds.left &&
       object.geometry.y < viewportBounds.bottom &&
       object.geometry.y + object.geometry.height > viewportBounds.top;
-    const showBodyPreview =
-      visible &&
-      viewport.scale >= 0.4 &&
-      object.geometry.width * viewport.scale >= 180;
+    const showBodyPreview = visible;
     const preview = showBodyPreview
       ? documentPreviewText(
           getProductDocumentContentRoot(document, object.documentId),
@@ -4193,17 +4186,6 @@ export function ProductCanvas({
             listening={false}
           />
         ) : null}
-        <Text
-          x={inset}
-          y={object.geometry.height - inset - 12}
-          width={object.geometry.width - inset * 2}
-          align="right"
-          text={preview ? "Open to continue →" : "Open document →"}
-          fill="#7c3aed"
-          fontSize={12}
-          fontStyle="bold"
-          listening={false}
-        />
       </Group>
     );
   }
@@ -5122,7 +5104,10 @@ export function ProductCanvas({
         />
       ) : null}
 
-      {tool === "select" && selectedObject && contextualToolbarPosition ? (
+      {tool === "select" &&
+      selectedObject &&
+      contextualToolbarPosition &&
+      focusedDocumentId === null ? (
         <div
           className="absolute z-40 -translate-x-1/2"
           style={contextualToolbarPosition}
@@ -6373,6 +6358,20 @@ export function ProductCanvas({
           supabaseUrl={supabaseUrl}
           supabasePublishableKey={supabasePublishableKey}
           documentObject={focusedDocument}
+          screenBounds={{
+            left: viewport.x + focusedDocument.geometry.x * viewport.scale,
+            top: viewport.y + focusedDocument.geometry.y * viewport.scale,
+            width: focusedDocument.geometry.width * viewport.scale,
+            height: Math.min(
+              focusedDocument.geometry.height * viewport.scale,
+              Math.max(
+                280,
+                size.height -
+                  (viewport.y + focusedDocument.geometry.y * viewport.scale) -
+                  56,
+              ),
+            ),
+          }}
           username={userIdentity}
           canEdit={canMutateCanvas}
           canvasObjects={objects}

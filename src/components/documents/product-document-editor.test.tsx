@@ -41,6 +41,7 @@ describe("ProductDocumentEditor", () => {
         supabaseUrl="http://127.0.0.1:54321"
         supabasePublishableKey="test-key"
         documentObject={documentObject}
+        screenBounds={{ left: 120, top: 88, width: 720, height: 480 }}
         username="Editor"
         canEdit
         canvasObjects={[]}

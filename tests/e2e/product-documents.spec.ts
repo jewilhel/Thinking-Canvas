@@ -53,6 +53,22 @@ test("creates, focuses, configures, restores, and reloads a product document", a
 
   await page.getByRole("button", { name: "Open document" }).click();
   await expect(page.getByTestId("focused-product-document")).toBeVisible();
+  await expect(surface).toBeVisible();
+  await expect(page.getByTestId("workspace-top-chrome")).toBeVisible();
+  await expect(
+    page.getByRole("toolbar", { name: "Document controls" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("toolbar", { name: "Document formatting and Markdown" }),
+  ).toBeVisible();
+  const canvasBounds = await surface.boundingBox();
+  const focusedBounds = await page
+    .getByTestId("focused-product-document")
+    .boundingBox();
+  expect(canvasBounds).not.toBeNull();
+  expect(focusedBounds).not.toBeNull();
+  expect(focusedBounds!.width).toBeLessThan(canvasBounds!.width - 160);
+  expect(focusedBounds!.x).toBeGreaterThan(canvasBounds!.x + 60);
   await page.getByLabel("Document title").fill("Planning brief");
   await page.getByLabel("Document title").blur();
   await page
