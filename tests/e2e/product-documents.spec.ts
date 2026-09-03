@@ -153,6 +153,141 @@ test("collaborates on document body and display settings", async ({
   await editorContext.close();
 });
 
+test("paginates and moves a canvas object into and out of a document", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await signIn(page);
+  await page.getByLabel("Canvas name").fill(`Contained document ${Date.now()}`);
+  await page.getByRole("button", { name: "Create canvas" }).click();
+  const surface = page.getByTestId("product-canvas-surface");
+
+  await page.getByRole("button", { name: "Document", exact: true }).click();
+  await surface.click({ position: { x: 460, y: 340 } });
+  await page.getByRole("button", { name: "Shapes", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Rectangle — basic shape", exact: true })
+    .click();
+  await surface.click({ position: { x: 460, y: 340 } });
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await expect(
+    page.getByRole("button", { name: "rectangle — New idea" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Close Object navigator" }).click();
+
+  const surfaceBox = await surface.boundingBox();
+  expect(surfaceBox).not.toBeNull();
+  const frame = (await page.getByTestId("selection-frame-geometry").innerText())
+    .split(",")
+    .map(Number);
+  const viewportX = Number(await surface.getAttribute("data-viewport-x"));
+  const viewportY = Number(await surface.getAttribute("data-viewport-y"));
+  const viewportScale = Number(
+    await surface.getAttribute("data-viewport-scale"),
+  );
+  const selectedCenter = {
+    x: surfaceBox!.x + viewportX + (frame[0]! + frame[2]! / 2) * viewportScale,
+    y: surfaceBox!.y + viewportY + (frame[1]! + frame[3]! / 2) * viewportScale,
+  };
+  const containmentModifier = await page.evaluate(() =>
+    /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? "Meta" : "Control",
+  );
+  await page.keyboard.down(containmentModifier);
+  await page.mouse.move(selectedCenter.x, selectedCenter.y);
+  await page.mouse.down();
+  await page.mouse.move(selectedCenter.x + 8, selectedCenter.y + 8);
+  await expect(page.getByTestId("containment-preview-target-type")).toHaveText(
+    "document",
+  );
+  await page.mouse.up();
+  await page.keyboard.up(containmentModifier);
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await expect(
+    page.getByRole("button", { name: /Document child rectangle — New idea/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "document — Untitled document" })
+    .click();
+  await surface.focus();
+  await surface.press("Enter");
+
+  const embedded = page.getByRole("group", {
+    name: "New idea embedded canvas object",
+  });
+  await expect(embedded).toBeVisible();
+  await embedded.focus();
+  await embedded.press("ArrowRight");
+  await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
+  await page
+    .getByRole("toolbar", { name: "Embedded object actions" })
+    .getByRole("button", { name: "Copy", exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toContain('"documentOwnerId"');
+  await page.getByRole("button", { name: "Duplicate", exact: true }).click();
+  await expect(
+    page.getByRole("group", { name: "New idea embedded canvas object" }),
+  ).toHaveCount(2);
+  await page.getByRole("button", { name: "Undo canvas object change" }).click();
+  await expect(
+    page.getByRole("group", { name: "New idea embedded canvas object" }),
+  ).toHaveCount(1);
+
+  await page.getByRole("button", { name: /document settings/i }).click();
+  await page.getByLabel("Layout").selectOption("letter-portrait");
+  await page.getByRole("button", { name: "Done" }).click();
+  await page
+    .getByLabel("Document body")
+    .fill(
+      Array.from(
+        { length: 140 },
+        (_, index) => `Pagination line ${index + 1}`,
+      ).join("\n"),
+    );
+  await expect
+    .poll(async () => page.getByTestId("document-page-status").textContent())
+    .toMatch(/Page 1 of ([2-9]|[1-9][0-9]+)/);
+  const body = page.getByLabel("Document body");
+  await body.selectText();
+  const selectedText = await page.evaluate(() =>
+    window.getSelection()?.toString(),
+  );
+  await page.getByRole("button", { name: "Next page" }).click();
+  await expect(page.getByTestId("document-page-status")).toContainText(
+    "Page 2 of",
+  );
+
+  await page.getByRole("button", { name: "Previous page" }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.getSelection()?.toString()))
+    .toBe(selectedText);
+  await embedded.focus();
+  await page.getByRole("button", { name: "Remove from document" }).click();
+  await expect(embedded).toHaveCount(0);
+  await page.getByRole("button", { name: "Return to canvas" }).click();
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await expect(
+    page.getByRole("button", { name: "rectangle — New idea" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "rectangle — New idea" }).click();
+  await page.getByRole("button", { name: "Close Object navigator" }).click();
+  await surface.focus();
+  await surface.press("Shift+F10");
+  await page.getByRole("menuitem", { name: "Place inside document" }).click();
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await expect(
+    page.getByRole("button", { name: /Document child rectangle — New idea/ }),
+  ).toBeVisible();
+  await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
+  await page.reload();
+  await page.getByRole("button", { name: "Open Object navigator" }).click();
+  await expect(
+    page.getByRole("button", { name: /Document child rectangle — New idea/ }),
+  ).toBeVisible();
+});
+
 test("formats semantic text and round trips bounded Markdown", async ({
   page,
   context,

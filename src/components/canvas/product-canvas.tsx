@@ -178,6 +178,10 @@ import {
   documentReadingMetrics,
 } from "@/documents/document-presentation";
 import {
+  documentFullyContainsGeometry,
+  documentWorldGeometry,
+} from "@/documents/document-containment";
+import {
   createProductDocumentObject,
   getProductDocumentContentRoot,
 } from "@/documents/product-document";
@@ -547,21 +551,26 @@ export function ProductCanvas({
     (object) => object.type !== "text" || object.childRole !== "shape-label",
   ).length;
   const displayObjects = useMemo(() => {
-    const previewed = orderedObjects.map((object) => {
-      const selectionPreview = selectionTransformPreviewObjects[object.id];
-      if (selectionPreview) return selectionPreview;
-      const preview = dragPreviewPositions[object.id];
-      return preview && object.type !== "connector"
-        ? {
-            ...object,
-            geometry: {
-              ...object.geometry,
-              x: preview.x,
-              y: preview.y,
-            },
-          }
-        : object;
-    });
+    const previewed = orderedObjects
+      .filter(
+        (object) =>
+          object.type === "document" || object.documentOwnerId == null,
+      )
+      .map((object) => {
+        const selectionPreview = selectionTransformPreviewObjects[object.id];
+        if (selectionPreview) return selectionPreview;
+        const preview = dragPreviewPositions[object.id];
+        return preview && object.type !== "connector"
+          ? {
+              ...object,
+              geometry: {
+                ...object.geometry,
+                x: preview.x,
+                y: preview.y,
+              },
+            }
+          : object;
+      });
     return previewed;
   }, [dragPreviewPositions, orderedObjects, selectionTransformPreviewObjects]);
   const connectorLayoutObjectsById = useMemo(
@@ -650,6 +659,9 @@ export function ProductCanvas({
   const focusedDocument = focusedDocumentId
     ? objectsById.get(focusedDocumentId)
     : undefined;
+  const accessibleDocumentPlacement = selectedObjects.length
+    ? documentContainmentTarget(selectedObjects, 0, 0)
+    : null;
   const selectedBounds = selectedObjects.length
     ? selectedObjects.reduce(
         (bounds, object) => {
@@ -1097,6 +1109,135 @@ export function ProductCanvas({
       objectId: focusedDocument.id,
       ...update,
     });
+  }
+
+  function moveFocusedDocumentObject(objectId: string, x: number, y: number) {
+    runCommand("object.move", { objectId, x, y });
+  }
+
+  function moveFocusedDocumentGroup(
+    groupId: string,
+    deltaX: number,
+    deltaY: number,
+  ) {
+    if (!focusedDocument || focusedDocument.type !== "document") return;
+    const group = groupsById.get(groupId);
+    if (!group?.documentLocal) return;
+    const world = documentWorldGeometry(
+      focusedDocument,
+      {
+        ...group.documentLocal,
+        x: group.documentLocal.x + deltaX,
+        y: group.documentLocal.y + deltaY,
+      },
+      group.geometry,
+    );
+    runCommand("group.transform", {
+      groupId,
+      x: world.x,
+      y: world.y,
+      width: world.width,
+      height: world.height,
+    });
+  }
+
+  function removeFocusedDocumentObject(objectIds: string[]) {
+    if (!focusedDocument || focusedDocument.type !== "document") return;
+    const family = completeDocumentPlacementFamily(
+      objectIds.flatMap((id) => {
+        const object = objectsById.get(id);
+        return object ? [object] : [];
+      }),
+    );
+    if (!family) {
+      setHistoryNotice(
+        "This object belongs to a connected family. Select a complete compatible family before removing it.",
+      );
+      return;
+    }
+    runCommand("document.remove", {
+      documentObjectId: focusedDocument.id,
+      ...family,
+    });
+  }
+
+  function deleteFocusedDocumentObject(objectIds: string[]) {
+    runCommandBatch(
+      [...objectIds].reverse().map((objectId) => ({
+        type: "object.delete",
+        payload: { objectId },
+      })),
+    );
+  }
+
+  function duplicateFocusedDocumentObjects(objectIds: string[]) {
+    const payload = createCanvasClipboardPayload(objects, objectIds, groups);
+    const duplicates = remapCanvasClipboard(payload, {
+      canvasId,
+      actorId: userId,
+      issuedAt: new Date().toISOString(),
+      offset: 12,
+    });
+    runCommand("selection.duplicate", { objects: duplicates });
+  }
+
+  async function copyFocusedDocumentObjects(objectIds: string[]) {
+    const value = serializeCanvasClipboard(
+      createCanvasClipboardPayload(objects, objectIds, groups),
+    );
+    setClipboardText(value);
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // The validated in-app clipboard remains available.
+    }
+  }
+
+  function cutFocusedDocumentObjects(objectIds: string[]) {
+    void copyFocusedDocumentObjects(objectIds);
+    runCommandBatch(
+      [...objectIds].reverse().map((objectId) => ({
+        type: "object.delete",
+        payload: { objectId },
+      })),
+    );
+  }
+
+  function reorderFocusedDocumentObjects(
+    objectIds: string[],
+    direction: "front" | "forward" | "backward" | "back",
+  ) {
+    runCommandBatch(
+      objectIds.map((objectId) => ({
+        type: "object.reorder",
+        payload: { objectId, direction },
+      })),
+    );
+  }
+
+  function groupFocusedDocumentObjects(objectIds: string[]) {
+    if (objectIds.length < 2) return;
+    runCommand("selection.group", {
+      objectIds,
+      groupId: crypto.randomUUID(),
+    });
+  }
+
+  function ungroupFocusedDocumentObjects(objectIds: string[]) {
+    const groupIds = [
+      ...new Set(
+        objectIds.flatMap((id) => {
+          const groupId = objectsById.get(id)?.groupId;
+          return groupId ? [groupId] : [];
+        }),
+      ),
+    ];
+    runCommandBatch(
+      groupIds.map((groupId) => ({
+        type: "selection.ungroup",
+        payload: { groupId },
+      })),
+    );
   }
 
   function addIcon(iconName: string, point?: Point) {
@@ -1710,6 +1851,113 @@ export function ProductCanvas({
     );
   }
 
+  function completeDocumentPlacementFamily(targets: CanvasObjectV2[]) {
+    const objectIds = new Set(targets.map((target) => target.id));
+    const groupIds = new Set<string>();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const object of objects) {
+        if (!objectIds.has(object.id)) continue;
+        if (object.type === "document") return null;
+        if (object.groupId) {
+          groupIds.add(object.groupId);
+          for (const member of objects) {
+            if (
+              member.groupId === object.groupId &&
+              !objectIds.has(member.id)
+            ) {
+              objectIds.add(member.id);
+              changed = true;
+            }
+          }
+        }
+        if (
+          isContainableObject(object) &&
+          object.parentId &&
+          !objectIds.has(object.parentId)
+        ) {
+          return null;
+        }
+        for (const child of objects) {
+          if (
+            isContainableObject(child) &&
+            child.parentId === object.id &&
+            !objectIds.has(child.id)
+          ) {
+            objectIds.add(child.id);
+            changed = true;
+          }
+        }
+      }
+    }
+    for (const annotation of objects) {
+      if (
+        annotation.type === "annotation" &&
+        annotation.attachedObjectId &&
+        objectIds.has(annotation.attachedObjectId)
+      ) {
+        objectIds.add(annotation.id);
+      }
+    }
+    for (const object of objects) {
+      if (object.type !== "connector") continue;
+      const attachedIds = [object.start, object.end].flatMap((endpoint) =>
+        endpoint.kind === "attached" ? [endpoint.objectId] : [],
+      );
+      if (objectIds.has(object.id)) {
+        if (attachedIds.some((id) => !objectIds.has(id))) return null;
+      } else if (attachedIds.some((id) => objectIds.has(id))) {
+        if (attachedIds.some((id) => !objectIds.has(id))) return null;
+        objectIds.add(object.id);
+      }
+    }
+    for (const id of objectIds) {
+      const object = objectsById.get(id);
+      if (
+        object?.type === "annotation" &&
+        object.attachedObjectId &&
+        !objectIds.has(object.attachedObjectId)
+      ) {
+        return null;
+      }
+    }
+    return { objectIds: [...objectIds], groupIds: [...groupIds] };
+  }
+
+  function documentContainmentTarget(
+    targets: CanvasObjectV2[],
+    dx: number,
+    dy: number,
+  ) {
+    const family = completeDocumentPlacementFamily(targets);
+    if (!family) return null;
+    const familyObjects = family.objectIds.map((id) => objectsById.get(id)!);
+    const familyGroups = family.groupIds.map((id) => groupsById.get(id)!);
+    const target = [...objects].reverse().find(
+      (candidate) =>
+        candidate.type === "document" &&
+        !family.objectIds.includes(candidate.id) &&
+        familyObjects.every((object) =>
+          documentFullyContainsGeometry(candidate, {
+            ...object.geometry,
+            x: object.geometry.x + dx,
+            y: object.geometry.y + dy,
+          }),
+        ) &&
+        familyGroups.every(
+          (group) =>
+            group &&
+            documentFullyContainsGeometry(candidate, {
+              ...group.geometry,
+              x: group.geometry.x + dx,
+              y: group.geometry.y + dy,
+            }),
+        ),
+    );
+    return target ? { target, family } : null;
+  }
+
   function moveSelectionFromDrag(
     object: CanvasObjectV2,
     x: number,
@@ -1718,6 +1966,20 @@ export function ProductCanvas({
   ) {
     const dx = x - object.geometry.x;
     const dy = y - object.geometry.y;
+    const documentTarget = containmentIntent
+      ? documentContainmentTarget(selectedObjects, dx, dy)
+      : null;
+    if (documentTarget) {
+      runCommand("document.place", {
+        documentObjectId: documentTarget.target.id,
+        ...documentTarget.family,
+        delta: { x: dx, y: dy },
+      });
+      setSelectedIds([]);
+      setDragPreviewPositions({});
+      setContainmentPreviewParentId(null);
+      return;
+    }
     if (selectedGroup) {
       const nextGeometry = {
         ...selectedGroup.geometry,
@@ -1836,7 +2098,12 @@ export function ProductCanvas({
       : object.groupId
         ? objects.filter((candidate) => candidate.groupId === object.groupId)
         : [durableObject];
-    if (containmentIntent && selectedGroup) {
+    const documentTarget = containmentIntent
+      ? documentContainmentTarget(selectedTargets, dx, dy)
+      : null;
+    if (documentTarget) {
+      setContainmentPreviewParentId(documentTarget.target.id);
+    } else if (containmentIntent && selectedGroup) {
       const nextFrame = {
         ...selectedGroup.geometry,
         x: selectedGroup.geometry.x + dx,
@@ -2836,7 +3103,16 @@ export function ProductCanvas({
       selectedFrame,
       target,
     );
-    if (containmentIntent && selectedGroup) {
+    const documentTarget = containmentIntent
+      ? documentContainmentTarget(
+          selectedObjects,
+          target.x - selectedFrame.x,
+          target.y - selectedFrame.y,
+        )
+      : null;
+    if (documentTarget) {
+      setContainmentPreviewParentId(documentTarget.target.id);
+    } else if (containmentIntent && selectedGroup) {
       const parent = [...objects].reverse().find(
         (candidate) =>
           isObjectParent(candidate) &&
@@ -2862,6 +3138,34 @@ export function ProductCanvas({
     if (!selectedFrame) return;
     const target = selectionProxyTarget(node);
     if (!target) return;
+    const transformed = transformSelectionObjects(
+      selectedObjects,
+      selectedFrame,
+      target,
+    );
+    const documentTarget = containmentIntent
+      ? documentContainmentTarget(
+          selectedObjects,
+          target.x - selectedFrame.x,
+          target.y - selectedFrame.y,
+        )
+      : null;
+    if (documentTarget) {
+      node.position({ x: target.x, y: target.y });
+      node.scale({ x: 1, y: 1 });
+      setSelectionTransformPreviewObjects({});
+      runCommand("document.place", {
+        documentObjectId: documentTarget.target.id,
+        ...documentTarget.family,
+        delta: {
+          x: target.x - selectedFrame.x,
+          y: target.y - selectedFrame.y,
+        },
+      });
+      setSelectedIds([]);
+      setContainmentPreviewParentId(null);
+      return;
+    }
     if (selectedGroup) {
       node.position({ x: target.x, y: target.y });
       node.scale({ x: 1, y: 1 });
@@ -2904,11 +3208,6 @@ export function ProductCanvas({
       setContainmentPreviewParentId(null);
       return;
     }
-    const transformed = transformSelectionObjects(
-      selectedObjects,
-      selectedFrame,
-      target,
-    );
     const transformedIds = new Set(transformed.map((object) => object.id));
     const commands: CommandDefinition[] = [];
     const nextParent = containmentIntent
@@ -4800,6 +5099,17 @@ export function ProductCanvas({
           canUngroup={selectedObjects.some((object) => object.groupId != null)}
           onGroup={groupSelected}
           onUngroup={ungroupSelected}
+          onPlaceInDocument={
+            accessibleDocumentPlacement
+              ? () => {
+                  runCommand("document.place", {
+                    documentObjectId: accessibleDocumentPlacement.target.id,
+                    ...accessibleDocumentPlacement.family,
+                  });
+                  setSelectedIds([]);
+                }
+              : undefined
+          }
           onReorder={reorderSelected}
           onDuplicate={duplicateSelected}
           onCopy={() => void copySelected()}
@@ -5704,14 +6014,22 @@ export function ProductCanvas({
               {containmentPreviewParentId
                 ? (() => {
                     const parent = objectsById.get(containmentPreviewParentId);
-                    return parent?.type === "shape" ? (
+                    return parent?.type === "shape" ||
+                      parent?.type === "document" ? (
                       <Rect
+                        data-testid={
+                          parent.type === "document"
+                            ? "document-containment-preview"
+                            : undefined
+                        }
                         x={parent.geometry.x - 4}
                         y={parent.geometry.y - 4}
                         width={parent.geometry.width + 8}
                         height={parent.geometry.height + 8}
                         rotation={parent.geometry.rotation}
-                        stroke="#8b5cf6"
+                        stroke={
+                          parent.type === "document" ? "#0d9488" : "#8b5cf6"
+                        }
                         strokeWidth={3 / viewport.scale}
                         dash={[8 / viewport.scale, 5 / viewport.scale]}
                         listening={false}
@@ -6013,6 +6331,14 @@ export function ProductCanvas({
                 </dd>
               </div>
               <div>
+                <dt className="text-zinc-400">Containment target</dt>
+                <dd data-testid="containment-preview-target-type">
+                  {containmentPreviewParentId
+                    ? (objectsById.get(containmentPreviewParentId)?.type ?? "—")
+                    : "—"}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-zinc-400">Pending</dt>
                 <dd data-testid="product-pending-count">{pendingCount}</dd>
               </div>
@@ -6045,6 +6371,25 @@ export function ProductCanvas({
           documentObject={focusedDocument}
           username={userIdentity}
           canEdit={canMutateCanvas}
+          canvasObjects={objects}
+          canvasGroups={groups}
+          showTemporaryAnnotations={temporaryOverlayVisible}
+          iconCatalog={iconCatalog}
+          onMoveObject={moveFocusedDocumentObject}
+          onMoveGroup={moveFocusedDocumentGroup}
+          onRemoveObject={removeFocusedDocumentObject}
+          onDeleteObject={deleteFocusedDocumentObject}
+          onDuplicateObjects={duplicateFocusedDocumentObjects}
+          onCopyObjects={(objectIds) =>
+            void copyFocusedDocumentObjects(objectIds)
+          }
+          onCutObjects={cutFocusedDocumentObjects}
+          onReorderObjects={reorderFocusedDocumentObjects}
+          onGroupObjects={groupFocusedDocumentObjects}
+          onUngroupObjects={ungroupFocusedDocumentObjects}
+          onObjectSelectionChange={setSelectedIds}
+          onUndoObjectChange={undo}
+          onRedoObjectChange={redo}
           onUpdate={updateFocusedDocument}
           onExit={exitDocument}
         />
@@ -6077,16 +6422,20 @@ function ObjectNavigatorContent({
                 type="button"
                 data-testid={`object-list-item-${object.id}`}
                 data-parent-id={
-                  isContainableObject(object) && object.parentId
-                    ? object.parentId
-                    : undefined
+                  object.type !== "document" && object.documentOwnerId
+                    ? object.documentOwnerId
+                    : isContainableObject(object) && object.parentId
+                      ? object.parentId
+                      : undefined
                 }
                 aria-label={
                   object.type === "text" && object.childRole === "shape-label"
                     ? "Contained intrinsic label"
-                    : isContainableObject(object) && object.parentId
-                      ? `Contained ${objectLabel(object, objects)}`
-                      : objectLabel(object, objects)
+                    : object.type !== "document" && object.documentOwnerId
+                      ? `Document child ${objectLabel(object, objects)}`
+                      : isContainableObject(object) && object.parentId
+                        ? `Contained ${objectLabel(object, objects)}`
+                        : objectLabel(object, objects)
                 }
                 aria-pressed={selectedIds.includes(object.id)}
                 onClick={(event) =>
@@ -6095,9 +6444,13 @@ function ObjectNavigatorContent({
                     event.shiftKey || event.metaKey || event.ctrlKey,
                   )
                 }
-                className={`min-h-11 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50 ${isContainableObject(object) && object.parentId ? "ml-5 w-[calc(100%-1.25rem)]" : "w-full"}`}
+                className={`min-h-11 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50 ${object.type !== "document" && object.documentOwnerId ? "ml-5 w-[calc(100%-1.25rem)] border-teal-200 bg-teal-50/40" : isContainableObject(object) && object.parentId ? "ml-5 w-[calc(100%-1.25rem)]" : "w-full"}`}
               >
-                {isContainableObject(object) && object.parentId ? "↳ " : ""}
+                {object.type !== "document" && object.documentOwnerId
+                  ? "↳ document · "
+                  : isContainableObject(object) && object.parentId
+                    ? "↳ "
+                    : ""}
                 {objectLabel(object, objects)}
               </button>
             </li>

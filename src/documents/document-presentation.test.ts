@@ -4,8 +4,10 @@ import * as Y from "yjs";
 import {
   documentDisplayFonts,
   documentLayoutLabel,
+  documentPageContentHeight,
   documentPreviewText,
   documentReadingMetrics,
+  documentReadingSurfaceHeight,
   documentReadingSurfaceWidth,
 } from "@/documents/document-presentation";
 import { defaultDocumentSettings } from "@/documents/document-schema";
@@ -30,6 +32,63 @@ describe("document presentation", () => {
         },
       }),
     ).toBe(1056);
+    expect(documentReadingSurfaceHeight(defaultDocumentSettings)).toBeNull();
+    expect(
+      documentReadingSurfaceHeight({
+        ...defaultDocumentSettings,
+        layout: {
+          mode: "paginated",
+          pageSize: "letter",
+          orientation: "portrait",
+        },
+      }),
+    ).toBe(1056);
+    expect(
+      documentReadingSurfaceHeight({
+        ...defaultDocumentSettings,
+        layout: {
+          mode: "paginated",
+          pageSize: "letter",
+          orientation: "landscape",
+        },
+      }),
+    ).toBe(816);
+    expect(
+      documentPageContentHeight({
+        ...defaultDocumentSettings,
+        layout: {
+          mode: "paginated",
+          pageSize: "a4",
+          orientation: "portrait",
+        },
+      }),
+    ).toBe(931);
+    expect(
+      ["letter", "a4"].flatMap((pageSize) =>
+        ["portrait", "landscape"].map((orientation) => {
+          const settings = {
+            ...defaultDocumentSettings,
+            layout: {
+              mode: "paginated" as const,
+              pageSize: pageSize as "letter" | "a4",
+              orientation: orientation as "portrait" | "landscape",
+            },
+          };
+          return [
+            pageSize,
+            orientation,
+            documentReadingSurfaceWidth(settings),
+            documentReadingSurfaceHeight(settings),
+            documentPageContentHeight(settings),
+          ];
+        }),
+      ),
+    ).toEqual([
+      ["letter", "portrait", 816, 1056, 864],
+      ["letter", "landscape", 1056, 816, 624],
+      ["a4", "portrait", 794, 1123, 931],
+      ["a4", "landscape", 1123, 794, 602],
+    ]);
 
     expect(Object.keys(documentDisplayFonts)).toEqual([
       "sans",

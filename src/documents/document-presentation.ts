@@ -32,6 +32,19 @@ export function documentReadingSurfaceWidth(settings: DocumentSettings) {
     : dimensions.height;
 }
 
+export function documentReadingSurfaceHeight(settings: DocumentSettings) {
+  if (settings.layout.mode === "continuous") return null;
+  const dimensions = documentPageDimensions[settings.layout.pageSize];
+  return settings.layout.orientation === "portrait"
+    ? dimensions.height
+    : dimensions.width;
+}
+
+export function documentPageContentHeight(settings: DocumentSettings) {
+  const height = documentReadingSurfaceHeight(settings);
+  return height === null ? null : Math.max(320, height - 192);
+}
+
 function sharedText(value: unknown): string {
   if (typeof value === "string") return value;
   if (value instanceof Y.XmlText || value instanceof Y.Text) {

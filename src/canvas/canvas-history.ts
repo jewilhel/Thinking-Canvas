@@ -170,7 +170,11 @@ function historyPathValue(value: unknown, path: string[]) {
 }
 
 function normalizeReplacement(path: string[], value: unknown): JsonValue {
-  if (value === undefined && path.at(-1) === "groupId") return null;
+  if (
+    value === undefined &&
+    ["groupId", "documentOwnerId", "documentLocal"].includes(path.at(-1) ?? "")
+  )
+    return null;
   if (
     value === null ||
     typeof value === "string" ||
@@ -271,12 +275,43 @@ export function applyCanvasHistoryEntry(
         }
       }
 
+      const documentRelationshipChanged =
+        expected.type !== "document" &&
+        desired.type !== "document" &&
+        current.type !== "document" &&
+        ((expected.documentOwnerId ?? null) !==
+          (desired.documentOwnerId ?? null) ||
+          !equal(
+            expected.documentLocal ?? null,
+            desired.documentLocal ?? null,
+          ));
+      if (documentRelationshipChanged) {
+        if (
+          (current.documentOwnerId ?? null) !==
+            (expected.documentOwnerId ?? null) ||
+          !equal(current.documentLocal ?? null, expected.documentLocal ?? null)
+        ) {
+          conflicts.push(`${objectId}:documentOwner`);
+        } else {
+          putCanvasObjectV2(document, {
+            ...current,
+            documentOwnerId: desired.documentOwnerId ?? null,
+            documentLocal: desired.documentLocal ?? null,
+          });
+        }
+      }
+
       for (const path of changedPaths(expected, desired)) {
         if (
           parentRelationshipChanged &&
           (path[0] === "parentId" ||
             path[0] === "parentRelative" ||
             path[0] === "childLayout")
+        )
+          continue;
+        if (
+          documentRelationshipChanged &&
+          (path[0] === "documentOwnerId" || path[0] === "documentLocal")
         )
           continue;
         const expectedValue = historyPathValue(expected, path);

@@ -28,6 +28,23 @@ describe("ProductDocumentEditor", () => {
         documentObject={documentObject}
         username="Editor"
         canEdit
+        canvasObjects={[]}
+        canvasGroups={[]}
+        showTemporaryAnnotations
+        iconCatalog={null}
+        onMoveObject={vi.fn()}
+        onMoveGroup={vi.fn()}
+        onRemoveObject={vi.fn()}
+        onDeleteObject={vi.fn()}
+        onDuplicateObjects={vi.fn()}
+        onCopyObjects={vi.fn()}
+        onCutObjects={vi.fn()}
+        onReorderObjects={vi.fn()}
+        onGroupObjects={vi.fn()}
+        onUngroupObjects={vi.fn()}
+        onObjectSelectionChange={vi.fn()}
+        onUndoObjectChange={vi.fn()}
+        onRedoObjectChange={vi.fn()}
         onUpdate={onUpdate}
         onExit={onExit}
       />,

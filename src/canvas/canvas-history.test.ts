@@ -119,6 +119,46 @@ function command(type: string, payload: unknown, issuedAt = now) {
 }
 
 describe("actor-local canvas history", () => {
+  it("undoes and redoes document ownership as one history entry", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const productDocument = createProductDocumentObject({
+      canvasId,
+      objectId: "88888888-8888-4888-8888-888888888888",
+      actorId,
+      issuedAt: now,
+      geometry: { x: 0, y: 0, width: 480, height: 640, rotation: 0 },
+    });
+    const child = {
+      ...shape(),
+      geometry: { x: 80, y: 100, width: 120, height: 80, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    putCanvasObjectV2(document, productDocument);
+    putCanvasObjectV2(document, child);
+    const { history } = executeProductCanvasCommandWithHistory(
+      document,
+      command("document.place", {
+        documentObjectId: productDocument.id,
+        objectIds: [child.id],
+      }),
+    );
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      documentOwnerId: productDocument.id,
+    });
+    expect(applyCanvasHistoryEntry(document, history, "undo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      documentOwnerId: null,
+      documentLocal: null,
+    });
+    expect(applyCanvasHistoryEntry(document, history, "redo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      documentOwnerId: productDocument.id,
+    });
+  });
+
   it("undoes and redoes document title and presentation settings", () => {
     const document = createProductCanvasDocument(canvasId);
     const productDocument = createProductDocumentObject({

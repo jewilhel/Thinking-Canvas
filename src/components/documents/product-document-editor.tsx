@@ -13,13 +13,16 @@ import { LinkNode } from "@lexical/link";
 import { ListItemNode, ListNode } from "@lexical/list";
 import { HeadingNode } from "@lexical/rich-text";
 import { TableCellNode, TableNode, TableRowNode } from "@lexical/table";
-import { ArrowLeft, Settings2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Settings2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type * as Y from "yjs";
 
 import { Button } from "@/components/ui/button";
 import { ProductDocumentCollaboration } from "@/components/documents/product-document-collaboration";
 import { ProductDocumentToolbar } from "@/components/documents/product-document-toolbar";
+import { ProductDocumentObjectLayer } from "@/components/documents/product-document-object-layer";
+import type { CanvasGroupV2, CanvasObjectV2 } from "@/canvas/canvas-document";
+import type { PhosphorIconCatalog } from "@/canvas/phosphor-icon-catalog";
 import {
   documentMarkdownTransformers,
   isSafeDocumentLink,
@@ -28,7 +31,9 @@ import type { ProductDocumentObject } from "@/documents/product-document";
 import {
   documentDisplayFonts,
   documentLayoutLabel,
+  documentPageContentHeight,
   documentReadingMetrics,
+  documentReadingSurfaceHeight,
   documentReadingSurfaceWidth,
 } from "@/documents/document-presentation";
 import type { DocumentSettings } from "@/documents/document-schema";
@@ -38,6 +43,26 @@ type Props = {
   documentObject: ProductDocumentObject;
   username: string;
   canEdit: boolean;
+  canvasObjects: CanvasObjectV2[];
+  canvasGroups: CanvasGroupV2[];
+  showTemporaryAnnotations: boolean;
+  iconCatalog: PhosphorIconCatalog | null;
+  onMoveObject: (objectId: string, x: number, y: number) => void;
+  onMoveGroup: (groupId: string, deltaX: number, deltaY: number) => void;
+  onRemoveObject: (objectIds: string[]) => void;
+  onDeleteObject: (objectIds: string[]) => void;
+  onDuplicateObjects: (objectIds: string[]) => void;
+  onCopyObjects: (objectIds: string[]) => void;
+  onCutObjects: (objectIds: string[]) => void;
+  onReorderObjects: (
+    objectIds: string[],
+    direction: "front" | "forward" | "backward" | "back",
+  ) => void;
+  onGroupObjects: (objectIds: string[]) => void;
+  onUngroupObjects: (objectIds: string[]) => void;
+  onObjectSelectionChange: (objectIds: string[]) => void;
+  onUndoObjectChange: () => void;
+  onRedoObjectChange: () => void;
   onUpdate: (update: { title?: string; settings?: DocumentSettings }) => void;
   onExit: () => void;
 };
@@ -72,12 +97,35 @@ export function ProductDocumentEditor({
   documentObject,
   username,
   canEdit,
+  canvasObjects,
+  canvasGroups,
+  showTemporaryAnnotations,
+  iconCatalog,
+  onMoveObject,
+  onMoveGroup,
+  onRemoveObject,
+  onDeleteObject,
+  onDuplicateObjects,
+  onCopyObjects,
+  onCutObjects,
+  onReorderObjects,
+  onGroupObjects,
+  onUngroupObjects,
+  onObjectSelectionChange,
+  onUndoObjectChange,
+  onRedoObjectChange,
   onUpdate,
   onExit,
 }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageCount, setPageCount] = useState(1);
+  const editorElementRef = useRef<HTMLDivElement>(null);
+  const readingSurfaceRef = useRef<HTMLDivElement>(null);
   const settings = documentObject.settings;
   const reading = documentReadingMetrics[settings.readingSize];
+  const pageHeight = documentPageContentHeight(settings);
+  const surfaceHeight = documentReadingSurfaceHeight(settings);
 
   function updateSettings(patch: Partial<DocumentSettings>) {
     onUpdate({ settings: { ...settings, ...patch } });
@@ -94,6 +142,65 @@ export function ProductDocumentEditor({
     window.addEventListener("keydown", handleEscape, true);
     return () => window.removeEventListener("keydown", handleEscape, true);
   }, [onExit, settingsOpen]);
+
+  useEffect(() => {
+    if (pageHeight === null) return;
+    const editorElement = editorElementRef.current;
+    if (!editorElement) return;
+    const measure = () => {
+      const nextCount = Math.max(
+        1,
+        Math.ceil(editorElement.scrollHeight / pageHeight),
+      );
+      setPageCount(nextCount);
+      setPageIndex((current) => Math.min(current, nextCount - 1));
+    };
+    measure();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measure);
+    const mutationObserver = new MutationObserver(measure);
+    resizeObserver?.observe(editorElement);
+    mutationObserver.observe(editorElement, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    return () => {
+      resizeObserver?.disconnect();
+      mutationObserver.disconnect();
+    };
+  }, [pageHeight]);
+
+  useEffect(() => {
+    if (pageHeight === null) return;
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      const anchor = selection?.anchorNode;
+      const editorElement = editorElementRef.current;
+      const surface = readingSurfaceRef.current;
+      if (!anchor || !editorElement?.contains(anchor) || !surface) return;
+      const anchorElement =
+        anchor.nodeType === Node.ELEMENT_NODE
+          ? (anchor as Element)
+          : anchor.parentElement;
+      if (!anchorElement) return;
+      const logicalTop =
+        anchorElement.getBoundingClientRect().top -
+        surface.getBoundingClientRect().top +
+        pageIndex * pageHeight;
+      setPageIndex(
+        Math.max(
+          0,
+          Math.min(pageCount - 1, Math.floor(logicalTop / pageHeight)),
+        ),
+      );
+    };
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () =>
+      document.removeEventListener("selectionchange", handleSelectionChange);
+  }, [pageCount, pageHeight, pageIndex]);
 
   return (
     <div
@@ -196,17 +303,59 @@ export function ProductDocumentEditor({
             settings={settings}
             canEdit={canEdit}
           />
+          {pageHeight !== null ? (
+            <nav
+              aria-label="Document pages"
+              className="relative z-10 flex h-11 items-center justify-center gap-3 border-b border-zinc-200 bg-zinc-50 px-4"
+            >
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label="Previous page"
+                disabled={pageIndex === 0}
+                onClick={() =>
+                  setPageIndex((current) => Math.max(0, current - 1))
+                }
+              >
+                <ChevronLeft aria-hidden="true" />
+              </Button>
+              <output
+                className="min-w-24 text-center text-sm"
+                data-testid="document-page-status"
+              >
+                Page {pageIndex + 1} of {pageCount}
+              </output>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label="Next page"
+                disabled={pageIndex >= pageCount - 1}
+                onClick={() =>
+                  setPageIndex((current) =>
+                    Math.min(pageCount - 1, current + 1),
+                  )
+                }
+              >
+                <ChevronRight aria-hidden="true" />
+              </Button>
+            </nav>
+          ) : null}
           <div
             role="region"
-            className="h-[calc(100%-3.25rem)] overflow-y-auto px-4 py-8 sm:px-8"
+            tabIndex={0}
+            className={`${pageHeight === null ? "h-[calc(100%-3.25rem)]" : "h-[calc(100%-6rem)]"} overflow-y-auto px-4 py-8 sm:px-8`}
             aria-label={`${documentObject.title} document workspace`}
           >
             <div
-              className={`relative mx-auto min-h-[calc(100vh-9rem)] border border-zinc-200 px-[clamp(2rem,8vw,6rem)] py-[clamp(2.5rem,8vw,6rem)] shadow-xl ${settings.layout.mode === "continuous" ? "rounded-xl" : "rounded-sm"}`}
+              ref={readingSurfaceRef}
+              className={`relative mx-auto border border-zinc-200 shadow-xl ${settings.layout.mode === "continuous" ? "min-h-[calc(100vh-9rem)] rounded-xl px-[clamp(2rem,8vw,6rem)] py-[clamp(2.5rem,8vw,6rem)]" : "overflow-hidden rounded-sm px-24 py-24"}`}
               data-testid="document-reading-surface"
               data-layout-mode={settings.layout.mode}
               style={{
                 width: `min(100%, ${documentReadingSurfaceWidth(settings)}px)`,
+                ...(surfaceHeight === null ? {} : { height: surfaceHeight }),
                 backgroundColor: settings.background,
                 fontFamily: documentDisplayFonts[settings.displayFont],
                 fontSize: reading.fontSize,
@@ -216,9 +365,18 @@ export function ProductDocumentEditor({
               <RichTextPlugin
                 contentEditable={
                   <ContentEditable
+                    ref={editorElementRef}
                     aria-label="Document body"
-                    className="min-h-[60vh] whitespace-pre-wrap outline-none"
+                    className="min-h-[60vh] whitespace-pre-wrap transition-transform outline-none motion-reduce:transition-none"
                     data-testid="product-document-editor"
+                    style={
+                      pageHeight === null
+                        ? undefined
+                        : {
+                            minHeight: pageHeight,
+                            transform: `translateY(-${pageIndex * pageHeight}px)`,
+                          }
+                    }
                   />
                 }
                 placeholder={
@@ -227,6 +385,29 @@ export function ProductDocumentEditor({
                   </p>
                 }
                 ErrorBoundary={LexicalErrorBoundary}
+              />
+              <ProductDocumentObjectLayer
+                documentObject={documentObject}
+                objects={canvasObjects}
+                groups={canvasGroups}
+                pageIndex={pageIndex}
+                pageHeight={pageHeight}
+                canEdit={canEdit}
+                showTemporaryAnnotations={showTemporaryAnnotations}
+                iconCatalog={iconCatalog}
+                onMove={onMoveObject}
+                onMoveGroup={onMoveGroup}
+                onRemove={onRemoveObject}
+                onDelete={onDeleteObject}
+                onDuplicate={onDuplicateObjects}
+                onCopy={onCopyObjects}
+                onCut={onCutObjects}
+                onReorder={onReorderObjects}
+                onGroup={onGroupObjects}
+                onUngroup={onUngroupObjects}
+                onSelectionChange={onObjectSelectionChange}
+                onUndo={onUndoObjectChange}
+                onRedo={onRedoObjectChange}
               />
               <ProductDocumentCollaboration
                 canvasDocument={canvasDocument}

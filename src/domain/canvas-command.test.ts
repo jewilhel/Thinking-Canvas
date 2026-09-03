@@ -16,6 +16,7 @@ import {
   createProductDocumentObject,
   getProductDocumentContentRoot,
 } from "@/documents/product-document";
+import { documentLocalGeometry } from "@/documents/document-containment";
 import {
   executeProductCanvasCommand,
   ProductCanvasCommandConflictError,
@@ -197,6 +198,403 @@ describe("product canvas command boundary", () => {
         }),
       ),
     ).toThrow(ProductCanvasCommandConflictError);
+  });
+
+  it("places and removes a complete object family without a visual jump", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const documentObject = createProductDocumentObject({
+      canvasId,
+      objectId: documentId,
+      actorId,
+      issuedAt,
+      geometry: { x: 80, y: 120, width: 480, height: 640, rotation: 0 },
+    });
+    const child = {
+      ...shape(),
+      geometry: { x: 120, y: 180, width: 160, height: 90, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    putCanvasObjectV2(document, documentObject);
+    putCanvasObjectV2(document, child);
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("document.place", {
+        documentObjectId: documentId,
+        objectIds: [child.id],
+        groupIds: [],
+      }),
+    );
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      geometry: child.geometry,
+      documentOwnerId: documentId,
+      documentLocal: { pageIndex: 0 },
+    });
+    const placed = readCanvasObjectV2(document, child.id);
+    expect(placed?.type).toBe("shape");
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.move", { objectId: child.id, x: 140, y: 200 }),
+    );
+    const movedGeometry = { ...child.geometry, x: 140, y: 200 };
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      geometry: { x: 140, y: 200 },
+      documentLocal: documentLocalGeometry(documentObject, movedGeometry),
+    });
+    const beforeRejectedMove = readCanvasObjectV2(document, child.id);
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("object.move", { objectId: child.id, x: -500, y: -500 }),
+      ),
+    ).toThrow("must remain fully inside one document page");
+    expect(readCanvasObjectV2(document, child.id)).toEqual(beforeRejectedMove);
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("document.remove", {
+        documentObjectId: documentId,
+        objectIds: [child.id],
+        groupIds: [],
+      }),
+    );
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      geometry: { x: 140, y: 200, width: 160, height: 90, rotation: 0 },
+      documentOwnerId: null,
+      documentLocal: null,
+    });
+  });
+
+  it("rejects nested documents, partial groups, and cross-boundary connectors", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const documentObject = createProductDocumentObject({
+      canvasId,
+      objectId: documentId,
+      actorId,
+      issuedAt,
+      geometry: { x: 0, y: 0, width: 600, height: 800, rotation: 0 },
+    });
+    const first = {
+      ...shape(),
+      geometry: { x: 40, y: 40, width: 100, height: 80, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const second = {
+      ...shape(secondShapeId),
+      geometry: { x: 180, y: 40, width: 100, height: 80, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    putCanvasObjectV2(document, documentObject);
+    putCanvasObjectV2(document, first);
+    putCanvasObjectV2(document, second);
+    executeProductCanvasCommand(
+      document,
+      baseCommand("selection.group", {
+        objectIds: [first.id, second.id],
+        groupId: "99999999-9999-4999-8999-999999999991",
+      }),
+    );
+
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("document.place", {
+          documentObjectId: documentId,
+          objectIds: [first.id],
+          groupIds: [],
+        }),
+      ),
+    ).toThrow("Move every member of a group");
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("document.place", {
+          documentObjectId: documentId,
+          objectIds: [documentId],
+          groupIds: [],
+        }),
+      ),
+    ).toThrow("Documents cannot be placed inside documents");
+
+    const attachedConnector = {
+      schemaVersion: 2,
+      id: connectorId,
+      canvasId,
+      createdBy: actorId,
+      createdAt: issuedAt,
+      updatedAt: issuedAt,
+      type: "connector",
+      start: { kind: "attached", objectId: first.id, anchor: "right" },
+      end: { kind: "free", x: 400, y: 100 },
+      geometry: { x: 140, y: 80, width: 260, height: 20, rotation: 0 },
+      style: {
+        fill: null,
+        outline: "#334155",
+        outlineWidth: 2,
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        fontSize: 16,
+      },
+    } satisfies CanvasObjectV2;
+    putCanvasObjectV2(document, attachedConnector);
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("document.place", {
+          documentObjectId: documentId,
+          objectIds: [first.id, second.id],
+          groupIds: ["99999999-9999-4999-8999-999999999991"],
+        }),
+      ),
+    ).toThrow("A connector cannot cross a document boundary");
+  });
+
+  it("preserves document ownership through grouping, duplication, and reparenting", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const firstDocument = createProductDocumentObject({
+      canvasId,
+      objectId: documentId,
+      actorId,
+      issuedAt,
+      geometry: { x: 0, y: 0, width: 600, height: 800, rotation: 0 },
+    });
+    const secondDocumentId = "88888888-8888-4888-8888-888888888889";
+    const secondDocument = createProductDocumentObject({
+      canvasId,
+      objectId: secondDocumentId,
+      actorId,
+      issuedAt,
+      geometry: firstDocument.geometry,
+    });
+    const first = {
+      ...shape(),
+      geometry: { x: 80, y: 80, width: 100, height: 70, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const second = {
+      ...shape(secondShapeId),
+      geometry: { x: 220, y: 80, width: 100, height: 70, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    putCanvasObjectV2(document, firstDocument);
+    putCanvasObjectV2(document, secondDocument);
+    putCanvasObjectV2(document, first);
+    putCanvasObjectV2(document, second);
+    executeProductCanvasCommand(
+      document,
+      baseCommand("document.place", {
+        documentObjectId: documentId,
+        objectIds: [first.id, second.id],
+      }),
+    );
+    const groupId = "99999999-9999-4999-8999-999999999991";
+    executeProductCanvasCommand(
+      document,
+      baseCommand("selection.group", {
+        objectIds: [first.id, second.id],
+        groupId,
+      }),
+    );
+    expect(readCanvasGroupV2(document, groupId)).toMatchObject({
+      documentOwnerId: documentId,
+      documentLocal: { pageIndex: 0 },
+    });
+    executeProductCanvasCommand(
+      document,
+      baseCommand("object.reorder", {
+        objectId: first.id,
+        direction: "front",
+      }),
+    );
+    expect(readCanvasOrderV2(document).slice(-2)).toEqual([
+      first.id,
+      second.id,
+    ]);
+    const grouped = readCanvasGroupV2(document, groupId)!;
+    executeProductCanvasCommand(
+      document,
+      baseCommand("group.transform", {
+        groupId,
+        x: grouped.geometry.x + 10,
+        y: grouped.geometry.y + 10,
+        width: grouped.geometry.width,
+        height: grouped.geometry.height,
+      }),
+    );
+    expect(
+      readCanvasGroupV2(document, groupId)?.documentLocal?.x,
+    ).toBeGreaterThan(grouped.documentLocal!.x);
+
+    executeProductCanvasCommand(
+      document,
+      baseCommand("document.place", {
+        documentObjectId: secondDocumentId,
+        objectIds: [first.id, second.id],
+        groupIds: [groupId],
+      }),
+    );
+    expect(readCanvasObjectV2(document, first.id)).toMatchObject({
+      documentOwnerId: secondDocumentId,
+    });
+    expect(readCanvasGroupV2(document, groupId)).toMatchObject({
+      documentOwnerId: secondDocumentId,
+    });
+
+    const duplicateId = "33333333-3333-4333-8333-333333333334";
+    executeProductCanvasCommand(
+      document,
+      baseCommand("selection.duplicate", {
+        objects: [
+          {
+            ...readCanvasObjectV2(document, first.id)!,
+            id: duplicateId,
+            groupId: null,
+            geometry: { ...first.geometry, x: 100, y: 180 },
+          },
+        ],
+      }),
+    );
+    const duplicate = readCanvasObjectV2(document, duplicateId);
+    expect(duplicate).toMatchObject({
+      documentOwnerId: secondDocumentId,
+      documentLocal: documentLocalGeometry(secondDocument, {
+        ...first.geometry,
+        x: 100,
+        y: 180,
+      }),
+    });
+  });
+
+  it("preserves annotation state and rejects new cross-boundary relationships", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const documentObject = createProductDocumentObject({
+      canvasId,
+      objectId: documentId,
+      actorId,
+      issuedAt,
+      geometry: { x: 0, y: 0, width: 600, height: 800, rotation: 0 },
+    });
+    const target = {
+      ...shape(),
+      geometry: { x: 80, y: 80, width: 120, height: 80, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const outside = {
+      ...shape(secondShapeId),
+      geometry: { x: 300, y: 80, width: 120, height: 80, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const stroke = {
+      ...annotation(),
+      attachedObjectId: target.id,
+      attachmentOffset: { x: 0, y: 0 },
+      geometry: { x: 90, y: 90, width: 30, height: 30, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    const freeConnector = {
+      schemaVersion: 2,
+      id: "55555555-5555-4555-8555-555555555556",
+      canvasId,
+      createdBy: actorId,
+      createdAt: issuedAt,
+      updatedAt: issuedAt,
+      type: "connector",
+      start: { kind: "free", x: 220, y: 100 },
+      end: { kind: "free", x: 260, y: 120 },
+      geometry: { x: 220, y: 100, width: 40, height: 20, rotation: 0 },
+      style: target.style,
+    } satisfies CanvasObjectV2;
+    for (const object of [
+      documentObject,
+      target,
+      outside,
+      stroke,
+      freeConnector,
+    ]) {
+      putCanvasObjectV2(document, object);
+    }
+    executeProductCanvasCommand(
+      document,
+      baseCommand("document.place", {
+        documentObjectId: documentId,
+        objectIds: [target.id, stroke.id],
+      }),
+    );
+    executeProductCanvasCommand(
+      document,
+      baseCommand("document.place", {
+        documentObjectId: documentId,
+        objectIds: [freeConnector.id],
+      }),
+    );
+    expect(readCanvasObjectV2(document, stroke.id)).toMatchObject({
+      documentOwnerId: documentId,
+      temporary: true,
+      attachedObjectId: target.id,
+    });
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("connector.endpoint", {
+          objectId: freeConnector.id,
+          endpoint: "end",
+          value: { kind: "attached", objectId: outside.id, anchor: "left" },
+        }),
+      ),
+    ).toThrow("cannot cross a document boundary");
+    expect(() =>
+      executeProductCanvasCommand(
+        document,
+        baseCommand("annotation.attach", {
+          objectId: stroke.id,
+          targetObjectId: outside.id,
+        }),
+      ),
+    ).toThrow("cannot cross a document boundary");
+  });
+
+  it("converges document ownership with disconnected text-safe canvas changes", () => {
+    const source = createProductCanvasDocument(canvasId);
+    const documentObject = createProductDocumentObject({
+      canvasId,
+      objectId: documentId,
+      actorId,
+      issuedAt,
+      geometry: { x: 0, y: 0, width: 600, height: 800, rotation: 0 },
+    });
+    const child = {
+      ...shape(),
+      geometry: { x: 80, y: 80, width: 120, height: 80, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    putCanvasObjectV2(source, documentObject);
+    putCanvasObjectV2(source, child);
+    const left = createProductCanvasDocument(canvasId);
+    const right = createProductCanvasDocument(canvasId);
+    const base = Y.encodeStateAsUpdate(source);
+    Y.applyUpdate(left, base);
+    Y.applyUpdate(right, base);
+
+    executeProductCanvasCommand(
+      left,
+      baseCommand("document.place", {
+        documentObjectId: documentId,
+        objectIds: [child.id],
+      }),
+    );
+    executeProductCanvasCommand(
+      right,
+      baseCommand("document.update", {
+        objectId: documentId,
+        title: "Offline title",
+      }),
+    );
+    Y.applyUpdate(left, Y.encodeStateAsUpdate(right));
+    Y.applyUpdate(right, Y.encodeStateAsUpdate(left));
+
+    expect(readCanvasObjectV2(left, child.id)).toMatchObject({
+      documentOwnerId: documentId,
+      documentLocal: { pageIndex: 0 },
+    });
+    expect(readCanvasObjectV2(right, child.id)).toEqual(
+      readCanvasObjectV2(left, child.id),
+    );
+    expect(readCanvasObjectV2(left, documentId)).toMatchObject({
+      title: "Offline title",
+    });
+    expect(readCanvasObjectV2(right, documentId)).toEqual(
+      readCanvasObjectV2(left, documentId),
+    );
   });
 
   it("duplicates document identity, settings, and structured content", () => {
