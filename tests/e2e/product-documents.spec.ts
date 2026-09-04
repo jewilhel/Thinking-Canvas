@@ -50,6 +50,9 @@ test("creates, focuses, configures, restores, and reloads a product document", a
   await surface.click({ position: { x: 410, y: 260 } });
   await expect(page.getByTestId("product-object-count")).toHaveText("1");
   await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
+  await expect(
+    page.locator('[data-testid^="document-page-preview-"]'),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Open document" }).click();
   await expect(page.getByTestId("focused-product-document")).toBeVisible();
@@ -71,14 +74,29 @@ test("creates, focuses, configures, restores, and reloads a product document", a
     page.getByRole("button", { name: "Return to canvas" }),
   ).toHaveCount(0);
   await expect(page.getByTestId("document-layout-label")).toHaveCount(0);
+  await expect(page.getByTestId("workspace-primary-dock")).toHaveCount(0);
   const canvasBounds = await surface.boundingBox();
   const focusedBounds = await page
     .getByTestId("focused-product-document")
     .boundingBox();
+  const documentControlsBounds = await page
+    .getByRole("toolbar", { name: "Document controls" })
+    .boundingBox();
   expect(canvasBounds).not.toBeNull();
   expect(focusedBounds).not.toBeNull();
+  expect(documentControlsBounds).not.toBeNull();
   expect(focusedBounds!.width).toBeLessThan(canvasBounds!.width - 160);
   expect(focusedBounds!.x).toBeGreaterThan(canvasBounds!.x + 60);
+  expect(focusedBounds!.y).toBeGreaterThanOrEqual(canvasBounds!.y + 90);
+  expect(focusedBounds!.y + focusedBounds!.height).toBeLessThanOrEqual(
+    canvasBounds!.y + canvasBounds!.height - 20,
+  );
+  expect(
+    documentControlsBounds!.x + documentControlsBounds!.width / 2,
+  ).toBeCloseTo(focusedBounds!.x + focusedBounds!.width / 2, 0);
+  expect(
+    documentControlsBounds!.y + documentControlsBounds!.height,
+  ).toBeLessThan(focusedBounds!.y);
   await page.getByLabel("Document title").fill("Planning brief");
   await page.getByLabel("Document title").blur();
   await page
@@ -122,6 +140,14 @@ test("creates, focuses, configures, restores, and reloads a product document", a
   await page.getByRole("button", { name: "Done" }).click();
   await surface.click({ position: { x: 24, y: 300 } });
   await expect(page.getByTestId("focused-product-document")).toHaveCount(0);
+  await expect(page.getByTestId("workspace-primary-dock")).toBeVisible();
+  const preview = page.locator('[data-testid^="document-page-preview-"]');
+  await expect(preview).toContainText("Planning brief");
+  await expect(preview.getByTestId("product-document-preview-body")).toHaveText(
+    "A durable shared document body.",
+  );
+  await expect(preview).not.toContainText("A4");
+  await expect(preview).not.toContainText("landscape");
   await expect(surface).toHaveAttribute("data-viewport-x", initialViewport.x!);
   await expect(surface).toHaveAttribute("data-viewport-y", initialViewport.y!);
   await expect(surface).toHaveAttribute(
@@ -479,7 +505,6 @@ test("formats semantic text and round trips bounded Markdown", async ({
     .click({ position: { x: 420, y: 260 } });
   await page.getByRole("button", { name: "Open document" }).click();
 
-  await page.getByRole("button", { name: "Paste from Markdown" }).click();
   const markdown = [
     "# Release brief",
     "",
@@ -492,10 +517,16 @@ test("formats semantic text and round trips bounded Markdown", async ({
     "| --- | --- |",
     "| Scope | Editor |",
   ].join("\n");
-  await page.getByLabel("Markdown source").fill(markdown);
-  await page.getByRole("button", { name: "Replace document" }).click();
-
   const body = page.getByLabel("Document body");
+  await body.click();
+  await page.evaluate(
+    (value) => navigator.clipboard.writeText(value),
+    markdown,
+  );
+  await page.getByRole("button", { name: "Paste from Markdown" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Paste from Markdown" }),
+  ).toHaveCount(0);
   await expect(body.locator("h1")).toHaveText("Release brief");
   await expect(body.locator("strong")).toHaveText("bold");
   await expect(body.locator("em")).toHaveText("careful");
@@ -547,9 +578,8 @@ test("formats semantic text and round trips bounded Markdown", async ({
   await expect(body).toContainText("Safe body");
 
   await body.getByText("Safe body").selectText();
+  await page.evaluate(() => navigator.clipboard.writeText("Replacement body"));
   await page.getByRole("button", { name: "Paste from Markdown" }).click();
-  await page.getByLabel("Markdown source").fill("Replacement body");
-  await page.getByRole("button", { name: "Insert at selection" }).click();
   await expect(body).toContainText("Replacement body");
   await expect(body).not.toContainText("Safe body");
 
@@ -568,14 +598,12 @@ test("formats semantic text and round trips bounded Markdown", async ({
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe("**Replacement body**");
 
+  await page.evaluate(() =>
+    navigator.clipboard.writeText("<script>alert(1)</script>"),
+  );
   await page.getByRole("button", { name: "Paste from Markdown" }).click();
-  await page.getByLabel("Markdown source").fill("<script>alert(1)</script>");
-  await page.getByRole("button", { name: "Replace document" }).click();
   await expect(
-    page
-      .getByRole("dialog", { name: "Paste from Markdown" })
-      .getByRole("alert"),
-  ).toContainText("Raw HTML is not supported");
-  await page.getByRole("button", { name: "Cancel" }).click();
+    page.getByText("Raw HTML is not supported in documents."),
+  ).toBeVisible();
   await expect(body.locator("h2")).toHaveText("Imported");
 });

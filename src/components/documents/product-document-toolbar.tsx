@@ -72,7 +72,7 @@ type Props = {
   documentControls: ReactNode;
 };
 
-type MarkdownPanel = "paste" | "import" | "export" | null;
+type MarkdownPanel = "import" | "export" | null;
 type PressedState = boolean | "mixed";
 
 function selectedFormatState(format: "bold" | "italic"): PressedState {
@@ -205,9 +205,13 @@ export function ProductDocumentToolbar({
     setPanel(nextPanel);
   }
 
-  function applyMarkdown(mode: "insert" | "replace") {
+  function applyMarkdown(
+    source: string,
+    mode: "insert" | "replace",
+    successMessage?: string,
+  ) {
     try {
-      const validated = validateDocumentMarkdown(markdown);
+      const validated = validateDocumentMarkdown(source);
       window.setTimeout(() => {
         try {
           editor.update(
@@ -248,9 +252,10 @@ export function ProductDocumentToolbar({
           );
           setPanel(null);
           setStatus(
-            mode === "replace"
-              ? "Replaced the document from Markdown."
-              : "Inserted Markdown at the saved selection.",
+            successMessage ??
+              (mode === "replace"
+                ? "Replaced the document from Markdown."
+                : "Inserted Markdown at the saved selection."),
           );
         } catch (error) {
           setStatus(
@@ -265,6 +270,24 @@ export function ProductDocumentToolbar({
         error instanceof Error
           ? error.message
           : "Markdown could not be applied.",
+      );
+    }
+  }
+
+  async function handlePaste() {
+    preserveSelection();
+    setStatus("");
+    try {
+      if (!navigator.clipboard?.readText) {
+        throw new Error("Clipboard access is unavailable in this browser.");
+      }
+      const value = await navigator.clipboard.readText();
+      applyMarkdown(value, "insert", "Pasted Markdown at the cursor.");
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Markdown could not be pasted.",
       );
     }
   }
@@ -348,7 +371,7 @@ export function ProductDocumentToolbar({
       <div
         role="toolbar"
         aria-label="Document controls"
-        className="absolute top-3 right-3 z-[80] flex max-w-[calc(100%-1.5rem)] items-center justify-center gap-1 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-white shadow-2xl [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-zinc-100 [&_button:hover]:bg-white/10 [&_button[aria-expanded=true]]:bg-violet-600"
+        className="absolute bottom-full left-1/2 z-[80] mb-3 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center justify-center gap-1 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-white shadow-2xl [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-zinc-100 [&_button:hover]:bg-white/10 [&_button[aria-expanded=true]]:bg-violet-600"
         onMouseDown={(event) => {
           if ((event.target as HTMLElement).closest("button"))
             event.preventDefault();
@@ -373,7 +396,7 @@ export function ProductDocumentToolbar({
           aria-label="Paste from Markdown"
           title="Paste from Markdown"
           disabled={!canEdit}
-          onClick={() => openPanel("paste")}
+          onClick={() => void handlePaste()}
         >
           <ClipboardPaste aria-hidden="true" />
         </Button>
@@ -559,11 +582,7 @@ export function ProductDocumentToolbar({
           className="absolute top-16 right-3 z-[90] max-h-[calc(100%-8rem)] w-[min(34rem,calc(100%-1.5rem))] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl"
         >
           <h2 id="markdown-panel-title" className="font-semibold">
-            {panel === "export"
-              ? "Export Markdown"
-              : panel === "import"
-                ? "Import Markdown"
-                : "Paste from Markdown"}
+            {panel === "export" ? "Export Markdown" : "Import Markdown"}
           </h2>
           {panel === "export" ? (
             <>
@@ -580,9 +599,8 @@ export function ProductDocumentToolbar({
           ) : (
             <>
               <p className="mt-2 text-sm text-zinc-600">
-                {panel === "import"
-                  ? "Review the file, then insert it at the saved caret or replace the complete document."
-                  : "Paste Markdown explicitly; ordinary clipboard paste remains unchanged."}
+                Review the file, then insert it at the saved caret or replace
+                the complete document.
               </p>
               <textarea
                 aria-label="Markdown source"
@@ -607,11 +625,14 @@ export function ProductDocumentToolbar({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => applyMarkdown("insert")}
+                  onClick={() => applyMarkdown(markdown, "insert")}
                 >
                   Insert at selection
                 </Button>
-                <Button type="button" onClick={() => applyMarkdown("replace")}>
+                <Button
+                  type="button"
+                  onClick={() => applyMarkdown(markdown, "replace")}
+                >
                   Replace document
                 </Button>
               </>

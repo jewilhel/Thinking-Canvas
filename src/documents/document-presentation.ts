@@ -19,6 +19,48 @@ export const documentReadingMetrics = {
   large: { fontSize: 20, lineHeight: 1.8 },
 } as const;
 
+export function focusedDocumentViewport(input: {
+  canvasWidth: number;
+  canvasHeight: number;
+  geometry: { x: number; y: number; width: number; height: number };
+  minimumScale: number;
+  maximumScale: number;
+}) {
+  const horizontalInset = Math.min(64, input.canvasWidth * 0.08);
+  const topInset = Math.min(96, input.canvasHeight * 0.16);
+  const bottomInset = Math.min(24, input.canvasHeight * 0.05);
+  const availableWidth = Math.max(240, input.canvasWidth - horizontalInset * 2);
+  const availableHeight = Math.max(
+    280,
+    input.canvasHeight - topInset - bottomInset,
+  );
+  const scale = Math.min(
+    input.maximumScale,
+    Math.max(
+      input.minimumScale,
+      Math.min(
+        availableWidth / input.geometry.width,
+        availableHeight / input.geometry.height,
+      ),
+    ),
+  );
+  const renderedWidth = input.geometry.width * scale;
+  const renderedHeight = input.geometry.height * scale;
+  const left = (input.canvasWidth - renderedWidth) / 2;
+  const top = topInset + (availableHeight - renderedHeight) / 2;
+  return {
+    scale,
+    x: left - input.geometry.x * scale,
+    y: top - input.geometry.y * scale,
+    screenBounds: {
+      left,
+      top,
+      width: renderedWidth,
+      height: renderedHeight,
+    },
+  };
+}
+
 export function documentLayoutLabel(settings: DocumentSettings) {
   if (settings.layout.mode === "continuous") return "Continuous";
   return `${settings.layout.pageSize === "letter" ? "US Letter" : "A4"} · ${settings.layout.orientation}`;

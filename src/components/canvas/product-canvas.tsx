@@ -169,22 +169,15 @@ import {
 import { WorkspacePanel } from "@/components/canvas/workspace-panel";
 import { CanvasComments } from "@/components/comments/canvas-comments";
 import { ProductDocumentEditor } from "@/components/documents/product-document-editor";
+import { ProductDocumentPreview } from "@/components/documents/product-document-preview";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { CanvasRole } from "@/domain/command";
-import {
-  documentDisplayFonts,
-  documentLayoutLabel,
-  documentPreviewText,
-  documentReadingMetrics,
-} from "@/documents/document-presentation";
+import { focusedDocumentViewport } from "@/documents/document-presentation";
 import {
   documentFullyContainsGeometry,
   documentWorldGeometry,
 } from "@/documents/document-containment";
-import {
-  createProductDocumentObject,
-  getProductDocumentContentRoot,
-} from "@/documents/product-document";
+import { createProductDocumentObject } from "@/documents/product-document";
 
 type Props = {
   canvasId: string;
@@ -1063,23 +1056,14 @@ export function ProductCanvas({
 
   function openDocument(object: Extract<CanvasObjectV2, { type: "document" }>) {
     previousDocumentViewportRef.current = viewport;
-    const focusedWidth = Math.min(820, Math.max(320, size.width - 280));
-    const scale = Math.min(
-      maxCanvasScale,
-      Math.max(minCanvasScale, focusedWidth / object.geometry.width),
-    );
-    const visibleHeight = Math.min(
-      object.geometry.height * scale,
-      Math.max(320, size.height - 176),
-    );
-    const focusedTop = Math.max(144, (size.height - visibleHeight) / 2);
-    setViewport({
-      scale,
-      x:
-        (size.width - object.geometry.width * scale) / 2 -
-        object.geometry.x * scale,
-      y: focusedTop - object.geometry.y * scale,
+    const focus = focusedDocumentViewport({
+      canvasWidth: size.width,
+      canvasHeight: size.height,
+      geometry: object.geometry,
+      minimumScale: minCanvasScale,
+      maximumScale: maxCanvasScale,
     });
+    setViewport({ scale: focus.scale, x: focus.x, y: focus.y });
     setSelectedIds([object.id]);
     setTool("select");
     setContextPanel(null);
@@ -4082,25 +4066,6 @@ export function ProductCanvas({
   function renderDocument(
     object: Extract<CanvasObjectV2, { type: "document" }>,
   ) {
-    const viewportBounds = {
-      left: -viewport.x / viewport.scale,
-      top: -viewport.y / viewport.scale,
-      right: (size.width - viewport.x) / viewport.scale,
-      bottom: (size.height - viewport.y) / viewport.scale,
-    };
-    const visible =
-      object.geometry.x < viewportBounds.right &&
-      object.geometry.x + object.geometry.width > viewportBounds.left &&
-      object.geometry.y < viewportBounds.bottom &&
-      object.geometry.y + object.geometry.height > viewportBounds.top;
-    const showBodyPreview = visible;
-    const preview = showBodyPreview
-      ? documentPreviewText(
-          getProductDocumentContentRoot(document, object.documentId),
-        )
-      : "";
-    const reading = documentReadingMetrics[object.settings.readingSize];
-    const inset = Math.max(24, object.geometry.width * 0.08);
     return (
       <Group
         key={object.id}
@@ -4145,52 +4110,8 @@ export function ProductCanvas({
         <Rect
           width={object.geometry.width}
           height={object.geometry.height}
-          fill={object.settings.background}
-          stroke="#d4d4d8"
-          strokeWidth={1.5}
-          cornerRadius={object.settings.layout.mode === "continuous" ? 12 : 2}
-          shadowColor="#18181b"
-          shadowBlur={18}
-          shadowOpacity={0.16}
-          shadowOffsetY={8}
+          fill="rgba(0,0,0,0.001)"
         />
-        <Text
-          x={inset}
-          y={inset}
-          width={object.geometry.width - inset * 2}
-          text={object.title || "Untitled document"}
-          fill="#18181b"
-          fontFamily={documentDisplayFonts[object.settings.displayFont]}
-          fontSize={Math.max(18, reading.fontSize + 4)}
-          fontStyle="bold"
-          ellipsis
-          wrap="none"
-        />
-        <Text
-          x={inset}
-          y={inset + 34}
-          width={object.geometry.width - inset * 2}
-          text={documentLayoutLabel(object.settings)}
-          fill="#71717a"
-          fontFamily="Inter, ui-sans-serif, system-ui, sans-serif"
-          fontSize={12}
-          wrap="none"
-        />
-        {showBodyPreview ? (
-          <Text
-            x={inset}
-            y={inset + 72}
-            width={object.geometry.width - inset * 2}
-            height={Math.max(48, object.geometry.height - inset * 2 - 94)}
-            text={preview || "Start writing…"}
-            fill={preview ? "#3f3f46" : "#a1a1aa"}
-            fontFamily={documentDisplayFonts[object.settings.displayFont]}
-            fontSize={reading.fontSize}
-            lineHeight={reading.lineHeight}
-            ellipsis
-            listening={false}
-          />
-        ) : null}
       </Group>
     );
   }
@@ -4946,32 +4867,34 @@ export function ProductCanvas({
         {shareNotice}
       </p>
 
-      <WorkspacePrimaryDock
-        key={dismissDockPaletteSignal}
-        activeTool={tool}
-        recentShape={recentShape}
-        simulatedAiEnabled={simulatedAiEnabled}
-        onChooseTool={chooseTool}
-        onChooseShape={chooseShape}
-        onChooseIcon={addIcon}
-        onAddSimulatedAiIdea={addSimulatedAiIdea}
-        commentPlacementActive={commentPlacementActive}
-        onChooseComments={chooseComments}
-        canDraw={canMutateCanvas}
-        lastDrawingTool={lastDrawingTool}
-        penColor={drawingColor}
-        penThickness={drawingThickness}
-        onPenColorChange={(color) =>
-          lastDrawingTool === "highlighter"
-            ? setHighlighterColor(color)
-            : setPenColor(color)
-        }
-        onPenThicknessChange={(thickness) =>
-          lastDrawingTool === "highlighter"
-            ? setHighlighterThickness(thickness)
-            : setPenThickness(thickness)
-        }
-      />
+      {focusedDocumentId === null ? (
+        <WorkspacePrimaryDock
+          key={dismissDockPaletteSignal}
+          activeTool={tool}
+          recentShape={recentShape}
+          simulatedAiEnabled={simulatedAiEnabled}
+          onChooseTool={chooseTool}
+          onChooseShape={chooseShape}
+          onChooseIcon={addIcon}
+          onAddSimulatedAiIdea={addSimulatedAiIdea}
+          commentPlacementActive={commentPlacementActive}
+          onChooseComments={chooseComments}
+          canDraw={canMutateCanvas}
+          lastDrawingTool={lastDrawingTool}
+          penColor={drawingColor}
+          penThickness={drawingThickness}
+          onPenColorChange={(color) =>
+            lastDrawingTool === "highlighter"
+              ? setHighlighterColor(color)
+              : setPenColor(color)
+          }
+          onPenThicknessChange={(thickness) =>
+            lastDrawingTool === "highlighter"
+              ? setHighlighterThickness(thickness)
+              : setPenThickness(thickness)
+          }
+        />
+      ) : null}
 
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
         <Button
@@ -5968,6 +5891,37 @@ export function ProductCanvas({
           data-viewport-y={Math.round(viewport.y)}
           data-viewport-scale={viewport.scale}
         >
+          {focusedDocumentId === null
+            ? displayObjects.flatMap((object) => {
+                if (object.type !== "document") return [];
+                const screenBounds = {
+                  left: viewport.x + object.geometry.x * viewport.scale,
+                  top: viewport.y + object.geometry.y * viewport.scale,
+                  width: object.geometry.width * viewport.scale,
+                  height: object.geometry.height * viewport.scale,
+                };
+                if (
+                  screenBounds.left >= size.width ||
+                  screenBounds.top >= size.height ||
+                  screenBounds.left + screenBounds.width <= 0 ||
+                  screenBounds.top + screenBounds.height <= 0
+                ) {
+                  return [];
+                }
+                return [
+                  <ProductDocumentPreview
+                    key={object.id}
+                    canvasDocument={document}
+                    documentObject={object}
+                    screenBounds={screenBounds}
+                    canvasObjects={objects}
+                    canvasGroups={groups}
+                    showTemporaryAnnotations={temporaryOverlayVisible}
+                    iconCatalog={iconCatalog}
+                  />,
+                ];
+              })
+            : null}
           <Stage
             ref={stageRef}
             width={size.width}
@@ -5976,6 +5930,7 @@ export function ProductCanvas({
             y={viewport.y}
             scaleX={viewport.scale}
             scaleY={viewport.scale}
+            style={{ position: "relative", zIndex: 1 }}
             draggable={tool === "pan"}
             onWheel={onWheel}
             onMouseDown={onStagePointerDown}
@@ -6367,15 +6322,7 @@ export function ProductCanvas({
             left: viewport.x + focusedDocument.geometry.x * viewport.scale,
             top: viewport.y + focusedDocument.geometry.y * viewport.scale,
             width: focusedDocument.geometry.width * viewport.scale,
-            height: Math.min(
-              focusedDocument.geometry.height * viewport.scale,
-              Math.max(
-                280,
-                size.height -
-                  (viewport.y + focusedDocument.geometry.y * viewport.scale) -
-                  56,
-              ),
-            ),
+            height: focusedDocument.geometry.height * viewport.scale,
           }}
           username={userIdentity}
           canEdit={canMutateCanvas}

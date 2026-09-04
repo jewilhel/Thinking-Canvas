@@ -82,6 +82,7 @@ export function ProductDocumentCollaboration({
   cursorColor,
   documentObjectId,
   onRangeSelectionChange,
+  preview = false,
 }: {
   canvasDocument: Y.Doc;
   documentId: string;
@@ -89,6 +90,7 @@ export function ProductDocumentCollaboration({
   cursorColor: string;
   documentObjectId: string;
   onRangeSelectionChange?: (range: DocumentRangeTarget | null) => void;
+  preview?: boolean;
 }) {
   const [editor] = useLexicalComposerContext();
 
@@ -104,12 +106,6 @@ export function ProductDocumentCollaboration({
       rootName: documentContentRootName(documentId),
     });
     const sharedRoot = binding.root.getSharedType();
-    const undoManager = createUndoManager(binding, sharedRoot);
-    const cursorContainer = document.createElement("div");
-    let lastPublishedRangeKey: string | null = null;
-    cursorContainer.dataset.lexicalDocumentCursors = documentId;
-    document.body.append(cursorContainer);
-    binding.cursorsContainer = cursorContainer;
 
     editor.update(
       () => {
@@ -136,6 +132,21 @@ export function ProductDocumentCollaboration({
       );
     };
     sharedRoot.observeDeep(observeSharedRoot);
+
+    if (preview) {
+      return () => {
+        sharedRoot.unobserveDeep(observeSharedRoot);
+        binding.root.destroy(binding);
+        releaseDocumentCollabNodeCache(sharedRoot);
+      };
+    }
+
+    const undoManager = createUndoManager(binding, sharedRoot);
+    const cursorContainer = document.createElement("div");
+    let lastPublishedRangeKey: string | null = null;
+    cursorContainer.dataset.lexicalDocumentCursors = documentId;
+    document.body.append(cursorContainer);
+    binding.cursorsContainer = cursorContainer;
     const removeEditorListener = editor.registerUpdateListener(
       ({
         prevEditorState,
@@ -283,6 +294,7 @@ export function ProductDocumentCollaboration({
     documentObjectId,
     editor,
     onRangeSelectionChange,
+    preview,
     username,
   ]);
 

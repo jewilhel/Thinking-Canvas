@@ -9,6 +9,7 @@ import {
   documentReadingMetrics,
   documentReadingSurfaceHeight,
   documentReadingSurfaceWidth,
+  focusedDocumentViewport,
 } from "@/documents/document-presentation";
 import { defaultDocumentSettings } from "@/documents/document-schema";
 
@@ -113,5 +114,28 @@ describe("document presentation", () => {
 
     expect(documentPreviewText(root)).toBe("A collaborative document preview");
     expect(documentPreviewText(root, 16)).toBe("A collaborative…");
+  });
+
+  it("fits and centers a focused document inside the usable canvas height", () => {
+    const focus = focusedDocumentViewport({
+      canvasWidth: 1440,
+      canvasHeight: 900,
+      geometry: { x: 120, y: 80, width: 480, height: 640 },
+      minimumScale: 0.25,
+      maximumScale: 4,
+    });
+
+    expect(focus.scale).toBeCloseTo(1.21875);
+    expect(focus.screenBounds).toEqual({
+      left: 427.5,
+      top: 96,
+      width: 585,
+      height: 780,
+    });
+    expect(focus.x + 120 * focus.scale).toBe(focus.screenBounds.left);
+    expect(focus.y + 80 * focus.scale).toBe(focus.screenBounds.top);
+    expect(
+      focus.screenBounds.top + focus.screenBounds.height,
+    ).toBeLessThanOrEqual(900 - 24);
   });
 });
