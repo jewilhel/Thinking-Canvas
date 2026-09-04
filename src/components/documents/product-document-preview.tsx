@@ -6,14 +6,11 @@ import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import type * as Y from "yjs";
 
-import type { CanvasGroupV2, CanvasObjectV2 } from "@/canvas/canvas-document";
-import type { PhosphorIconCatalog } from "@/canvas/phosphor-icon-catalog";
 import { ProductDocumentCollaboration } from "@/components/documents/product-document-collaboration";
 import {
   productDocumentLexicalNodes,
   productDocumentLexicalTheme,
 } from "@/components/documents/product-document-lexical-config";
-import { ProductDocumentObjectLayer } from "@/components/documents/product-document-object-layer";
 import {
   documentDisplayFonts,
   documentPageContentHeight,
@@ -23,16 +20,10 @@ import {
 } from "@/documents/document-presentation";
 import type { ProductDocumentObject } from "@/documents/product-document";
 
-const ignorePreviewInteraction = () => {};
-
 export function ProductDocumentPreview({
   canvasDocument,
   documentObject,
   screenBounds,
-  canvasObjects,
-  canvasGroups,
-  showTemporaryAnnotations,
-  iconCatalog,
 }: {
   canvasDocument: Y.Doc;
   documentObject: ProductDocumentObject;
@@ -42,10 +33,6 @@ export function ProductDocumentPreview({
     width: number;
     height: number;
   };
-  canvasObjects: CanvasObjectV2[];
-  canvasGroups: CanvasGroupV2[];
-  showTemporaryAnnotations: boolean;
-  iconCatalog: PhosphorIconCatalog | null;
 }) {
   const settings = documentObject.settings;
   const reading = documentReadingMetrics[settings.readingSize];
@@ -111,29 +98,6 @@ export function ProductDocumentPreview({
               }
               placeholder={null}
               ErrorBoundary={LexicalErrorBoundary}
-            />
-            <ProductDocumentObjectLayer
-              documentObject={documentObject}
-              objects={canvasObjects}
-              groups={canvasGroups}
-              pageIndex={0}
-              pageHeight={pageHeight}
-              canEdit={false}
-              showTemporaryAnnotations={showTemporaryAnnotations}
-              iconCatalog={iconCatalog}
-              onMove={ignorePreviewInteraction}
-              onMoveGroup={ignorePreviewInteraction}
-              onRemove={ignorePreviewInteraction}
-              onDelete={ignorePreviewInteraction}
-              onDuplicate={ignorePreviewInteraction}
-              onCopy={ignorePreviewInteraction}
-              onCut={ignorePreviewInteraction}
-              onReorder={ignorePreviewInteraction}
-              onGroup={ignorePreviewInteraction}
-              onUngroup={ignorePreviewInteraction}
-              onSelectionChange={ignorePreviewInteraction}
-              onUndo={ignorePreviewInteraction}
-              onRedo={ignorePreviewInteraction}
             />
             <ProductDocumentCollaboration
               canvasDocument={canvasDocument}

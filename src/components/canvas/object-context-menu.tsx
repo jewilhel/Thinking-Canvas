@@ -10,7 +10,6 @@ type Props = {
   canUngroup: boolean;
   onGroup: () => void;
   onUngroup: () => void;
-  onPlaceInDocument?: () => void;
   onReorder: (direction: "front" | "forward" | "backward" | "back") => void;
   onDuplicate: () => void;
   onCopy: () => void;
@@ -35,7 +34,6 @@ export function ObjectContextMenu({
   canUngroup,
   onGroup,
   onUngroup,
-  onPlaceInDocument,
   onReorder,
   onDuplicate,
   onCopy,
@@ -59,9 +57,6 @@ export function ObjectContextMenu({
         action: onUngroup,
       },
     ],
-    ...(onPlaceInDocument
-      ? [[{ label: "Place inside document", action: onPlaceInDocument }]]
-      : []),
     [
       { label: "Bring to front", action: () => onReorder("front") },
       { label: "Bring forward", action: () => onReorder("forward") },

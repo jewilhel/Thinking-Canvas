@@ -21,9 +21,7 @@ import {
   productDocumentLexicalTheme,
 } from "@/components/documents/product-document-lexical-config";
 import { ProductDocumentToolbar } from "@/components/documents/product-document-toolbar";
-import { ProductDocumentObjectLayer } from "@/components/documents/product-document-object-layer";
-import type { CanvasGroupV2, CanvasObjectV2 } from "@/canvas/canvas-document";
-import type { PhosphorIconCatalog } from "@/canvas/phosphor-icon-catalog";
+import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 import {
   documentMarkdownTransformers,
   isSafeDocumentLink,
@@ -56,25 +54,6 @@ type Props = {
   username: string;
   canEdit: boolean;
   canvasObjects: CanvasObjectV2[];
-  canvasGroups: CanvasGroupV2[];
-  showTemporaryAnnotations: boolean;
-  iconCatalog: PhosphorIconCatalog | null;
-  onMoveObject: (objectId: string, x: number, y: number) => void;
-  onMoveGroup: (groupId: string, deltaX: number, deltaY: number) => void;
-  onRemoveObject: (objectIds: string[]) => void;
-  onDeleteObject: (objectIds: string[]) => void;
-  onDuplicateObjects: (objectIds: string[]) => void;
-  onCopyObjects: (objectIds: string[]) => void;
-  onCutObjects: (objectIds: string[]) => void;
-  onReorderObjects: (
-    objectIds: string[],
-    direction: "front" | "forward" | "backward" | "back",
-  ) => void;
-  onGroupObjects: (objectIds: string[]) => void;
-  onUngroupObjects: (objectIds: string[]) => void;
-  onObjectSelectionChange: (objectIds: string[]) => void;
-  onUndoObjectChange: () => void;
-  onRedoObjectChange: () => void;
   onAiTransactionApplied: (changeSetId: string) => void;
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
   onUpdate: (update: { title?: string; settings?: DocumentSettings }) => void;
@@ -117,22 +96,6 @@ export function ProductDocumentEditor({
   username,
   canEdit,
   canvasObjects,
-  canvasGroups,
-  showTemporaryAnnotations,
-  iconCatalog,
-  onMoveObject,
-  onMoveGroup,
-  onRemoveObject,
-  onDeleteObject,
-  onDuplicateObjects,
-  onCopyObjects,
-  onCutObjects,
-  onReorderObjects,
-  onGroupObjects,
-  onUngroupObjects,
-  onObjectSelectionChange,
-  onUndoObjectChange,
-  onRedoObjectChange,
   onAiTransactionApplied,
   onUndoAiTransaction,
   onUpdate,
@@ -143,8 +106,8 @@ export function ProductDocumentEditor({
   const [pageCount, setPageCount] = useState(1);
   const [selectedRange, setSelectedRange] =
     useState<DocumentRangeTarget | null>(null);
-  const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const editorElementRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const readingSurfaceRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const settings = documentObject.settings;
@@ -157,14 +120,13 @@ export function ProductDocumentEditor({
     (range: DocumentRangeTarget | null) => setSelectedRange(range),
     [],
   );
-  const handleObjectSelectionChange = useCallback(
-    (objectIds: string[]) => {
-      setSelectedObjectIds(objectIds);
-      if (objectIds.length) setSelectedRange(null);
-      onObjectSelectionChange(objectIds);
-    },
-    [onObjectSelectionChange],
-  );
+
+  useEffect(() => {
+    const input = titleInputRef.current;
+    if (input && document.activeElement !== input) {
+      input.value = documentObject.title;
+    }
+  }, [documentObject.title]);
 
   useEffect(() => {
     let settledFrame = 0;
@@ -279,7 +241,6 @@ export function ProductDocumentEditor({
         >
           <ProductDocumentToolbar
             title={documentObject.title}
-            settings={settings}
             canEdit={canEdit}
             onTitleChange={(title) => onUpdate({ title })}
             documentControls={
@@ -302,7 +263,7 @@ export function ProductDocumentEditor({
                   canvasRole={canvasRole}
                   documentObjectId={documentObject.id}
                   objects={canvasObjects}
-                  selectedObjectIds={selectedObjectIds}
+                  selectedObjectIds={[]}
                   selectedRange={selectedRange}
                   supabaseUrl={supabaseUrl}
                   supabasePublishableKey={supabasePublishableKey}
@@ -381,7 +342,7 @@ export function ProductDocumentEditor({
               <label className="relative z-20 block">
                 <span className="sr-only">Document title</span>
                 <input
-                  key={documentObject.title}
+                  ref={titleInputRef}
                   defaultValue={documentObject.title}
                   readOnly={!canEdit}
                   maxLength={500}
@@ -418,29 +379,6 @@ export function ProductDocumentEditor({
                   </p>
                 }
                 ErrorBoundary={LexicalErrorBoundary}
-              />
-              <ProductDocumentObjectLayer
-                documentObject={documentObject}
-                objects={canvasObjects}
-                groups={canvasGroups}
-                pageIndex={pageIndex}
-                pageHeight={pageHeight}
-                canEdit={canEdit}
-                showTemporaryAnnotations={showTemporaryAnnotations}
-                iconCatalog={iconCatalog}
-                onMove={onMoveObject}
-                onMoveGroup={onMoveGroup}
-                onRemove={onRemoveObject}
-                onDelete={onDeleteObject}
-                onDuplicate={onDuplicateObjects}
-                onCopy={onCopyObjects}
-                onCut={onCutObjects}
-                onReorder={onReorderObjects}
-                onGroup={onGroupObjects}
-                onUngroup={onUngroupObjects}
-                onSelectionChange={handleObjectSelectionChange}
-                onUndo={onUndoObjectChange}
-                onRedo={onRedoObjectChange}
               />
               <ProductDocumentCollaboration
                 canvasDocument={canvasDocument}

@@ -366,11 +366,9 @@ test("applies and undoes a semantic AI document revision while preserving later 
   await expect(reloadedBody).toContainText("Human follow-up.");
 });
 
-test("paginates and moves a canvas object into and out of a document", async ({
+test("paginates while keeping canvas objects outside the document", async ({
   page,
-  context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await signIn(page);
   await page.getByLabel("Canvas name").fill(`Contained document ${Date.now()}`);
   await page.getByRole("button", { name: "Create canvas" }).click();
@@ -411,13 +409,13 @@ test("paginates and moves a canvas object into and out of a document", async ({
   await page.mouse.down();
   await page.mouse.move(selectedCenter.x + 8, selectedCenter.y + 8);
   await expect(page.getByTestId("containment-preview-target-type")).toHaveText(
-    "document",
+    "—",
   );
   await page.mouse.up();
   await page.keyboard.up(containmentModifier);
   await page.getByRole("button", { name: "Open Object navigator" }).click();
   await expect(
-    page.getByRole("button", { name: /Document child rectangle — New idea/ }),
+    page.getByRole("button", { name: "rectangle — New idea" }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "document — Untitled document" })
@@ -425,28 +423,10 @@ test("paginates and moves a canvas object into and out of a document", async ({
   await surface.focus();
   await surface.press("Enter");
 
-  const embedded = page.getByRole("group", {
-    name: "New idea embedded canvas object",
-  });
-  await expect(embedded).toBeVisible();
-  await embedded.focus();
-  await embedded.press("ArrowRight");
-  await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
-  await page
-    .getByRole("toolbar", { name: "Embedded object actions" })
-    .getByRole("button", { name: "Copy", exact: true })
-    .click();
-  await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toContain('"documentOwnerId"');
-  await page.getByRole("button", { name: "Duplicate", exact: true }).click();
+  await expect(page.getByTestId("document-object-layer")).toHaveCount(0);
   await expect(
-    page.getByRole("group", { name: "New idea embedded canvas object" }),
-  ).toHaveCount(2);
-  await page.getByRole("button", { name: "Undo canvas object change" }).click();
-  await expect(
-    page.getByRole("group", { name: "New idea embedded canvas object" }),
-  ).toHaveCount(1);
+    page.getByRole("group", { name: /embedded canvas object/ }),
+  ).toHaveCount(0);
 
   await page.getByRole("button", { name: /document settings/i }).click();
   await page.getByLabel("Layout").selectOption("letter-portrait");
@@ -476,9 +456,6 @@ test("paginates and moves a canvas object into and out of a document", async ({
   await expect
     .poll(() => page.evaluate(() => window.getSelection()?.toString()))
     .toBe(selectedText);
-  await embedded.focus();
-  await page.getByRole("button", { name: "Remove from document" }).click();
-  await expect(embedded).toHaveCount(0);
   await surface.click({ position: { x: 24, y: 300 } });
   await page.getByRole("button", { name: "Open Object navigator" }).click();
   await expect(
@@ -488,16 +465,15 @@ test("paginates and moves a canvas object into and out of a document", async ({
   await page.getByRole("button", { name: "Close Object navigator" }).click();
   await surface.focus();
   await surface.press("Shift+F10");
-  await page.getByRole("menuitem", { name: "Place inside document" }).click();
-  await page.getByRole("button", { name: "Open Object navigator" }).click();
   await expect(
-    page.getByRole("button", { name: /Document child rectangle — New idea/ }),
-  ).toBeVisible();
+    page.getByRole("menuitem", { name: "Place inside document" }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
   await page.reload();
   await page.getByRole("button", { name: "Open Object navigator" }).click();
   await expect(
-    page.getByRole("button", { name: /Document child rectangle — New idea/ }),
+    page.getByRole("button", { name: "rectangle — New idea" }),
   ).toBeVisible();
 });
 
@@ -560,10 +536,7 @@ test("formats semantic text and round trips bounded Markdown", async ({
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("dialog", { name: "Export Markdown" }),
-  ).toContainText(
-    "Document font, reading size, background, layout, page size, and orientation",
-  );
-  await page.getByRole("button", { name: "Acknowledge and export" }).click();
+  ).toHaveCount(0);
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("untitled-document.md");
 
@@ -577,10 +550,16 @@ test("formats semantic text and round trips bounded Markdown", async ({
   ).toHaveCount(0);
   await expect(body.locator("h2")).toHaveText("Imported");
   await expect(body).toContainText("Safe body");
-  await expect(page.getByLabel("Document title")).toHaveValue("Project brief");
+  await expect(page.getByLabel("Document title")).toHaveValue("Project Brief");
   await expect(
     page.getByRole("button", { name: "Import Markdown" }),
   ).toHaveAttribute("aria-pressed", "true");
+  await page.getByLabel("Document title").fill("Edited imported title");
+  await page.getByLabel("Document title").blur();
+  await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
+  await expect(page.getByLabel("Document title")).toHaveValue(
+    "Edited imported title",
+  );
 
   await body.getByText("Safe body").selectText();
   await page.evaluate(() => navigator.clipboard.writeText("Replacement body"));
@@ -611,4 +590,16 @@ test("formats semantic text and round trips bounded Markdown", async ({
     page.getByText("Raw HTML is not supported in documents."),
   ).toBeAttached();
   await expect(body.locator("h2")).toHaveText("Imported");
+  await expect(page.getByLabel("Document title")).toHaveValue(
+    "Edited imported title",
+  );
+  await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
+  await page
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 24, y: 300 } });
+  await page.reload();
+  await openNamedDocument(page, "Edited imported title");
+  await expect(page.getByLabel("Document title")).toHaveValue(
+    "Edited imported title",
+  );
 });

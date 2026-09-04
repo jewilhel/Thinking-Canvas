@@ -35,10 +35,6 @@ describe("ProductDocumentPreview", () => {
         canvasDocument={canvasDocument}
         documentObject={documentObject}
         screenBounds={{ left: 20, top: 30, width: 440, height: 560 }}
-        canvasObjects={[documentObject]}
-        canvasGroups={[]}
-        showTemporaryAnnotations
-        iconCatalog={null}
       />,
     );
 

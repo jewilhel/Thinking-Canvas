@@ -58,24 +58,18 @@ import {
   documentTitleFromMarkdownFilename,
   documentMarkdownTransformers,
   decodeDocumentMarkdownFile,
-  getDocumentMarkdownLosses,
   isSafeDocumentLink,
   looksLikeDocumentMarkdown,
-  markdownLossInventoryForSettings,
   maximumMarkdownBytes,
   validateDocumentMarkdown,
 } from "@/documents/document-markdown";
-import type { DocumentSettings } from "@/documents/document-schema";
-
 type Props = {
   title: string;
-  settings: DocumentSettings;
   canEdit: boolean;
   documentControls: ReactNode;
   onTitleChange: (title: string) => void;
 };
 
-type MarkdownPanel = "export" | null;
 type Action = "import" | "export";
 type PressedState = boolean | "mixed";
 
@@ -107,7 +101,6 @@ function selectedBlockType() {
 
 export function ProductDocumentToolbar({
   title,
-  settings,
   canEdit,
   documentControls,
   onTitleChange,
@@ -116,7 +109,6 @@ export function ProductDocumentToolbar({
   const [bold, setBold] = useState<PressedState>(false);
   const [italic, setItalic] = useState<PressedState>(false);
   const [blockType, setBlockType] = useState("paragraph");
-  const [panel, setPanel] = useState<MarkdownPanel>(null);
   const [status, setStatus] = useState("");
   const [activeAction, setActiveAction] = useState<Action | null>(null);
   const [selectionPosition, setSelectionPosition] = useState<{
@@ -329,7 +321,6 @@ export function ProductDocumentToolbar({
     anchor.download = documentMarkdownFilename(title);
     anchor.click();
     URL.revokeObjectURL(url);
-    setPanel(null);
     flashAction("export");
     setStatus(`Exported ${anchor.download}.`);
   }
@@ -355,10 +346,6 @@ export function ProductDocumentToolbar({
     }
     editor.dispatchCommand(TOGGLE_LINK_COMMAND, url || null);
   }
-
-  const losses = getDocumentMarkdownLosses(
-    markdownLossInventoryForSettings(settings),
-  );
 
   return (
     <>
@@ -428,9 +415,8 @@ export function ProductDocumentToolbar({
           title="Export Markdown"
           aria-pressed={activeAction === "export"}
           onClick={() => {
-            flashAction("export");
             setStatus("");
-            setPanel("export");
+            handleExport();
           }}
         >
           <Download aria-hidden="true" />
@@ -553,40 +539,6 @@ export function ProductDocumentToolbar({
             <Table2 aria-hidden="true" />
           </Button>
         </div>
-      ) : null}
-
-      {panel ? (
-        <section
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="markdown-panel-title"
-          className="absolute top-16 right-3 z-[90] max-h-[calc(100%-8rem)] w-[min(34rem,calc(100%-1.5rem))] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl"
-        >
-          <h2 id="markdown-panel-title" className="font-semibold">
-            Export Markdown
-          </h2>
-          <p className="mt-3 text-sm text-zinc-700">
-            Markdown contains semantic text and tables only. The following
-            content will not be exported:
-          </p>
-          <ul className="mt-2 list-disc pl-5 text-sm text-zinc-700">
-            {losses.map((loss) => (
-              <li key={loss}>{loss}</li>
-            ))}
-          </ul>
-          <div className="mt-4 flex flex-wrap justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setPanel(null)}
-            >
-              Cancel
-            </Button>
-            <Button type="button" onClick={handleExport}>
-              Acknowledge and export
-            </Button>
-          </div>
-        </section>
       ) : null}
     </>
   );

@@ -173,10 +173,7 @@ import { ProductDocumentPreview } from "@/components/documents/product-document-
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { CanvasRole } from "@/domain/command";
 import { focusedDocumentViewport } from "@/documents/document-presentation";
-import {
-  documentFullyContainsGeometry,
-  documentWorldGeometry,
-} from "@/documents/document-containment";
+import { documentFullyContainsGeometry } from "@/documents/document-containment";
 import { createProductDocumentObject } from "@/documents/product-document";
 
 type Props = {
@@ -228,6 +225,8 @@ type TouchNavigationGesture = {
 };
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
+// Retain legacy document-ownership reads, but do not create new nested objects.
+const documentObjectNestingEnabled: boolean = false;
 const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left"];
 const connectionAnchorOffsetPx = 28;
 const connectionAnchorRadiusPx = 7;
@@ -544,26 +543,21 @@ export function ProductCanvas({
     (object) => object.type !== "text" || object.childRole !== "shape-label",
   ).length;
   const displayObjects = useMemo(() => {
-    const previewed = orderedObjects
-      .filter(
-        (object) =>
-          object.type === "document" || object.documentOwnerId == null,
-      )
-      .map((object) => {
-        const selectionPreview = selectionTransformPreviewObjects[object.id];
-        if (selectionPreview) return selectionPreview;
-        const preview = dragPreviewPositions[object.id];
-        return preview && object.type !== "connector"
-          ? {
-              ...object,
-              geometry: {
-                ...object.geometry,
-                x: preview.x,
-                y: preview.y,
-              },
-            }
-          : object;
-      });
+    const previewed = orderedObjects.map((object) => {
+      const selectionPreview = selectionTransformPreviewObjects[object.id];
+      if (selectionPreview) return selectionPreview;
+      const preview = dragPreviewPositions[object.id];
+      return preview && object.type !== "connector"
+        ? {
+            ...object,
+            geometry: {
+              ...object.geometry,
+              x: preview.x,
+              y: preview.y,
+            },
+          }
+        : object;
+    });
     return previewed;
   }, [dragPreviewPositions, orderedObjects, selectionTransformPreviewObjects]);
   const connectorLayoutObjectsById = useMemo(
@@ -652,9 +646,6 @@ export function ProductCanvas({
   const focusedDocument = focusedDocumentId
     ? objectsById.get(focusedDocumentId)
     : undefined;
-  const accessibleDocumentPlacement = selectedObjects.length
-    ? documentContainmentTarget(selectedObjects, 0, 0)
-    : null;
   const selectedBounds = selectedObjects.length
     ? selectedObjects.reduce(
         (bounds, object) => {
@@ -1089,135 +1080,6 @@ export function ProductCanvas({
       objectId: focusedDocument.id,
       ...update,
     });
-  }
-
-  function moveFocusedDocumentObject(objectId: string, x: number, y: number) {
-    runCommand("object.move", { objectId, x, y });
-  }
-
-  function moveFocusedDocumentGroup(
-    groupId: string,
-    deltaX: number,
-    deltaY: number,
-  ) {
-    if (!focusedDocument || focusedDocument.type !== "document") return;
-    const group = groupsById.get(groupId);
-    if (!group?.documentLocal) return;
-    const world = documentWorldGeometry(
-      focusedDocument,
-      {
-        ...group.documentLocal,
-        x: group.documentLocal.x + deltaX,
-        y: group.documentLocal.y + deltaY,
-      },
-      group.geometry,
-    );
-    runCommand("group.transform", {
-      groupId,
-      x: world.x,
-      y: world.y,
-      width: world.width,
-      height: world.height,
-    });
-  }
-
-  function removeFocusedDocumentObject(objectIds: string[]) {
-    if (!focusedDocument || focusedDocument.type !== "document") return;
-    const family = completeDocumentPlacementFamily(
-      objectIds.flatMap((id) => {
-        const object = objectsById.get(id);
-        return object ? [object] : [];
-      }),
-    );
-    if (!family) {
-      setHistoryNotice(
-        "This object belongs to a connected family. Select a complete compatible family before removing it.",
-      );
-      return;
-    }
-    runCommand("document.remove", {
-      documentObjectId: focusedDocument.id,
-      ...family,
-    });
-  }
-
-  function deleteFocusedDocumentObject(objectIds: string[]) {
-    runCommandBatch(
-      [...objectIds].reverse().map((objectId) => ({
-        type: "object.delete",
-        payload: { objectId },
-      })),
-    );
-  }
-
-  function duplicateFocusedDocumentObjects(objectIds: string[]) {
-    const payload = createCanvasClipboardPayload(objects, objectIds, groups);
-    const duplicates = remapCanvasClipboard(payload, {
-      canvasId,
-      actorId: userId,
-      issuedAt: new Date().toISOString(),
-      offset: 12,
-    });
-    runCommand("selection.duplicate", { objects: duplicates });
-  }
-
-  async function copyFocusedDocumentObjects(objectIds: string[]) {
-    const value = serializeCanvasClipboard(
-      createCanvasClipboardPayload(objects, objectIds, groups),
-    );
-    setClipboardText(value);
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      // The validated in-app clipboard remains available.
-    }
-  }
-
-  function cutFocusedDocumentObjects(objectIds: string[]) {
-    void copyFocusedDocumentObjects(objectIds);
-    runCommandBatch(
-      [...objectIds].reverse().map((objectId) => ({
-        type: "object.delete",
-        payload: { objectId },
-      })),
-    );
-  }
-
-  function reorderFocusedDocumentObjects(
-    objectIds: string[],
-    direction: "front" | "forward" | "backward" | "back",
-  ) {
-    runCommandBatch(
-      objectIds.map((objectId) => ({
-        type: "object.reorder",
-        payload: { objectId, direction },
-      })),
-    );
-  }
-
-  function groupFocusedDocumentObjects(objectIds: string[]) {
-    if (objectIds.length < 2) return;
-    runCommand("selection.group", {
-      objectIds,
-      groupId: crypto.randomUUID(),
-    });
-  }
-
-  function ungroupFocusedDocumentObjects(objectIds: string[]) {
-    const groupIds = [
-      ...new Set(
-        objectIds.flatMap((id) => {
-          const groupId = objectsById.get(id)?.groupId;
-          return groupId ? [groupId] : [];
-        }),
-      ),
-    ];
-    runCommandBatch(
-      groupIds.map((groupId) => ({
-        type: "selection.ungroup",
-        payload: { groupId },
-      })),
-    );
   }
 
   function addIcon(iconName: string, point?: Point) {
@@ -1946,9 +1808,10 @@ export function ProductCanvas({
   ) {
     const dx = x - object.geometry.x;
     const dy = y - object.geometry.y;
-    const documentTarget = containmentIntent
-      ? documentContainmentTarget(selectedObjects, dx, dy)
-      : null;
+    const documentTarget =
+      documentObjectNestingEnabled && containmentIntent
+        ? documentContainmentTarget(selectedObjects, dx, dy)
+        : null;
     if (documentTarget) {
       runCommand("document.place", {
         documentObjectId: documentTarget.target.id,
@@ -2078,9 +1941,10 @@ export function ProductCanvas({
       : object.groupId
         ? objects.filter((candidate) => candidate.groupId === object.groupId)
         : [durableObject];
-    const documentTarget = containmentIntent
-      ? documentContainmentTarget(selectedTargets, dx, dy)
-      : null;
+    const documentTarget =
+      documentObjectNestingEnabled && containmentIntent
+        ? documentContainmentTarget(selectedTargets, dx, dy)
+        : null;
     if (documentTarget) {
       setContainmentPreviewParentId(documentTarget.target.id);
     } else if (containmentIntent && selectedGroup) {
@@ -3088,13 +2952,14 @@ export function ProductCanvas({
       selectedFrame,
       target,
     );
-    const documentTarget = containmentIntent
-      ? documentContainmentTarget(
-          selectedObjects,
-          target.x - selectedFrame.x,
-          target.y - selectedFrame.y,
-        )
-      : null;
+    const documentTarget =
+      documentObjectNestingEnabled && containmentIntent
+        ? documentContainmentTarget(
+            selectedObjects,
+            target.x - selectedFrame.x,
+            target.y - selectedFrame.y,
+          )
+        : null;
     if (documentTarget) {
       setContainmentPreviewParentId(documentTarget.target.id);
     } else if (containmentIntent && selectedGroup) {
@@ -3128,13 +2993,14 @@ export function ProductCanvas({
       selectedFrame,
       target,
     );
-    const documentTarget = containmentIntent
-      ? documentContainmentTarget(
-          selectedObjects,
-          target.x - selectedFrame.x,
-          target.y - selectedFrame.y,
-        )
-      : null;
+    const documentTarget =
+      documentObjectNestingEnabled && containmentIntent
+        ? documentContainmentTarget(
+            selectedObjects,
+            target.x - selectedFrame.x,
+            target.y - selectedFrame.y,
+          )
+        : null;
     if (documentTarget) {
       node.position({ x: target.x, y: target.y });
       node.scale({ x: 1, y: 1 });
@@ -5009,17 +4875,6 @@ export function ProductCanvas({
           canUngroup={selectedObjects.some((object) => object.groupId != null)}
           onGroup={groupSelected}
           onUngroup={ungroupSelected}
-          onPlaceInDocument={
-            accessibleDocumentPlacement
-              ? () => {
-                  runCommand("document.place", {
-                    documentObjectId: accessibleDocumentPlacement.target.id,
-                    ...accessibleDocumentPlacement.family,
-                  });
-                  setSelectedIds([]);
-                }
-              : undefined
-          }
           onReorder={reorderSelected}
           onDuplicate={duplicateSelected}
           onCopy={() => void copySelected()}
@@ -5914,10 +5769,6 @@ export function ProductCanvas({
                     canvasDocument={document}
                     documentObject={object}
                     screenBounds={screenBounds}
-                    canvasObjects={objects}
-                    canvasGroups={groups}
-                    showTemporaryAnnotations={temporaryOverlayVisible}
-                    iconCatalog={iconCatalog}
                   />,
                 ];
               })
@@ -6327,24 +6178,6 @@ export function ProductCanvas({
           username={userIdentity}
           canEdit={canMutateCanvas}
           canvasObjects={objects}
-          canvasGroups={groups}
-          showTemporaryAnnotations={temporaryOverlayVisible}
-          iconCatalog={iconCatalog}
-          onMoveObject={moveFocusedDocumentObject}
-          onMoveGroup={moveFocusedDocumentGroup}
-          onRemoveObject={removeFocusedDocumentObject}
-          onDeleteObject={deleteFocusedDocumentObject}
-          onDuplicateObjects={duplicateFocusedDocumentObjects}
-          onCopyObjects={(objectIds) =>
-            void copyFocusedDocumentObjects(objectIds)
-          }
-          onCutObjects={cutFocusedDocumentObjects}
-          onReorderObjects={reorderFocusedDocumentObjects}
-          onGroupObjects={groupFocusedDocumentObjects}
-          onUngroupObjects={ungroupFocusedDocumentObjects}
-          onObjectSelectionChange={setSelectedIds}
-          onUndoObjectChange={undo}
-          onRedoObjectChange={redo}
           onAiTransactionApplied={registerAiTransaction}
           onUndoAiTransaction={undoAiTransaction}
           onUpdate={updateFocusedDocument}
@@ -6379,20 +6212,16 @@ function ObjectNavigatorContent({
                 type="button"
                 data-testid={`object-list-item-${object.id}`}
                 data-parent-id={
-                  object.type !== "document" && object.documentOwnerId
-                    ? object.documentOwnerId
-                    : isContainableObject(object) && object.parentId
-                      ? object.parentId
-                      : undefined
+                  isContainableObject(object) && object.parentId
+                    ? object.parentId
+                    : undefined
                 }
                 aria-label={
                   object.type === "text" && object.childRole === "shape-label"
                     ? "Contained intrinsic label"
-                    : object.type !== "document" && object.documentOwnerId
-                      ? `Document child ${objectLabel(object, objects)}`
-                      : isContainableObject(object) && object.parentId
-                        ? `Contained ${objectLabel(object, objects)}`
-                        : objectLabel(object, objects)
+                    : isContainableObject(object) && object.parentId
+                      ? `Contained ${objectLabel(object, objects)}`
+                      : objectLabel(object, objects)
                 }
                 aria-pressed={selectedIds.includes(object.id)}
                 onClick={(event) =>
@@ -6401,13 +6230,9 @@ function ObjectNavigatorContent({
                     event.shiftKey || event.metaKey || event.ctrlKey,
                   )
                 }
-                className={`min-h-11 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50 ${object.type !== "document" && object.documentOwnerId ? "ml-5 w-[calc(100%-1.25rem)] border-teal-200 bg-teal-50/40" : isContainableObject(object) && object.parentId ? "ml-5 w-[calc(100%-1.25rem)]" : "w-full"}`}
+                className={`min-h-11 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 hover:border-violet-500 aria-pressed:border-violet-500 aria-pressed:bg-violet-50 ${isContainableObject(object) && object.parentId ? "ml-5 w-[calc(100%-1.25rem)]" : "w-full"}`}
               >
-                {object.type !== "document" && object.documentOwnerId
-                  ? "↳ document · "
-                  : isContainableObject(object) && object.parentId
-                    ? "↳ "
-                    : ""}
+                {isContainableObject(object) && object.parentId ? "↳ " : ""}
                 {objectLabel(object, objects)}
               </button>
             </li>

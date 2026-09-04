@@ -123,10 +123,12 @@ describe("document Markdown contract", () => {
   });
 
   it("derives document titles from imported Markdown filenames", () => {
-    expect(documentTitleFromMarkdownFilename("Project brief.md")).toBe(
-      "Project brief",
+    expect(documentTitleFromMarkdownFilename("project-brief.md")).toBe(
+      "Project Brief",
     );
-    expect(documentTitleFromMarkdownFilename("Research.MD")).toBe("Research");
+    expect(documentTitleFromMarkdownFilename("research_notes.MD")).toBe(
+      "Research Notes",
+    );
     expect(documentTitleFromMarkdownFilename(".md")).toBe("Untitled document");
   });
 

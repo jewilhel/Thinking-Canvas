@@ -45,22 +45,6 @@ describe("ProductDocumentEditor", () => {
         username="Editor"
         canEdit
         canvasObjects={[]}
-        canvasGroups={[]}
-        showTemporaryAnnotations
-        iconCatalog={null}
-        onMoveObject={vi.fn()}
-        onMoveGroup={vi.fn()}
-        onRemoveObject={vi.fn()}
-        onDeleteObject={vi.fn()}
-        onDuplicateObjects={vi.fn()}
-        onCopyObjects={vi.fn()}
-        onCutObjects={vi.fn()}
-        onReorderObjects={vi.fn()}
-        onGroupObjects={vi.fn()}
-        onUngroupObjects={vi.fn()}
-        onObjectSelectionChange={vi.fn()}
-        onUndoObjectChange={vi.fn()}
-        onRedoObjectChange={vi.fn()}
         onAiTransactionApplied={vi.fn()}
         onUndoAiTransaction={vi.fn()}
         onUpdate={onUpdate}

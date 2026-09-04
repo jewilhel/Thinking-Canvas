@@ -276,7 +276,17 @@ export function documentMarkdownFilename(title: string) {
 }
 
 export function documentTitleFromMarkdownFilename(filename: string) {
-  const title = filename.replace(/\.md$/i, "").trim().slice(0, 500);
+  const title = filename
+    .replace(/\.md$/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(
+      /(^|\s)(\p{L})/gu,
+      (_match, boundary: string, letter: string) =>
+        `${boundary}${letter.toLocaleUpperCase()}`,
+    )
+    .slice(0, 500);
   return title || "Untitled document";
 }
 
