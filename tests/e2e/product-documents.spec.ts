@@ -73,7 +73,10 @@ test("creates, focuses, configures, restores, and reloads a product document", a
   ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Copy to Markdown" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Paste from Markdown" }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Export Markdown" }),
   ).toBeVisible();
@@ -530,10 +533,7 @@ test("formats semantic text and round trips bounded Markdown", async ({
     (value) => navigator.clipboard.writeText(value),
     markdown,
   );
-  await page.getByRole("button", { name: "Paste from Markdown" }).click();
-  await expect(
-    page.getByRole("dialog", { name: "Paste from Markdown" }),
-  ).toHaveCount(0);
+  await body.press("ControlOrMeta+v");
   await expect(body.locator("h1")).toHaveText("Release brief");
   await expect(body.locator("strong")).toHaveText("bold");
   await expect(body.locator("em")).toHaveText("careful");
@@ -553,16 +553,11 @@ test("formats semantic text and round trips bounded Markdown", async ({
   );
   await body.click();
 
-  await page.getByRole("button", { name: "Copy to Markdown" }).click();
-  const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toContain("# Release brief");
-  expect(copied).toContain("**bold**");
-  expect(copied).toContain("| Topic | Owner |");
-  expect(copied).not.toContain("background");
-  await expect(page.getByText(/Copied the complete document/)).toBeVisible();
-
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export Markdown" }).click();
+  await expect(
+    page.getByRole("button", { name: "Export Markdown" }),
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("dialog", { name: "Export Markdown" }),
   ).toContainText(
@@ -573,20 +568,23 @@ test("formats semantic text and round trips bounded Markdown", async ({
   expect(download.suggestedFilename()).toBe("untitled-document.md");
 
   await page.getByLabel("Choose Markdown file").setInputFiles({
-    name: "replacement.md",
+    name: "Project brief.md",
     mimeType: "text/markdown",
     buffer: Buffer.from("## Imported\n\nSafe body", "utf8"),
   });
   await expect(
     page.getByRole("dialog", { name: "Import Markdown" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Replace document" }).click();
+  ).toHaveCount(0);
   await expect(body.locator("h2")).toHaveText("Imported");
   await expect(body).toContainText("Safe body");
+  await expect(page.getByLabel("Document title")).toHaveValue("Project brief");
+  await expect(
+    page.getByRole("button", { name: "Import Markdown" }),
+  ).toHaveAttribute("aria-pressed", "true");
 
   await body.getByText("Safe body").selectText();
   await page.evaluate(() => navigator.clipboard.writeText("Replacement body"));
-  await page.getByRole("button", { name: "Paste from Markdown" }).click();
+  await body.press("ControlOrMeta+v");
   await expect(body).toContainText("Replacement body");
   await expect(body).not.toContainText("Safe body");
 
@@ -600,7 +598,7 @@ test("formats semantic text and round trips bounded Markdown", async ({
   await body.press("ControlOrMeta+Shift+z");
   await expect(body.locator("strong")).toHaveText("Replacement body");
   await body.getByText("Replacement body").selectText();
-  await page.getByRole("button", { name: "Copy to Markdown" }).click();
+  await body.press("ControlOrMeta+c");
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe("**Replacement body**");
@@ -608,9 +606,9 @@ test("formats semantic text and round trips bounded Markdown", async ({
   await page.evaluate(() =>
     navigator.clipboard.writeText("<script>alert(1)</script>"),
   );
-  await page.getByRole("button", { name: "Paste from Markdown" }).click();
+  await body.press("ControlOrMeta+v");
   await expect(
     page.getByText("Raw HTML is not supported in documents."),
-  ).toBeVisible();
+  ).toBeAttached();
   await expect(body.locator("h2")).toHaveText("Imported");
 });

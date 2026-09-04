@@ -281,6 +281,7 @@ export function ProductDocumentEditor({
             title={documentObject.title}
             settings={settings}
             canEdit={canEdit}
+            onTitleChange={(title) => onUpdate({ title })}
             documentControls={
               <>
                 <Button

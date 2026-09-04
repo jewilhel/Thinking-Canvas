@@ -13,9 +13,11 @@ import {
   DocumentMarkdownError,
   decodeDocumentMarkdownFile,
   documentMarkdownFilename,
+  documentTitleFromMarkdownFilename,
   documentMarkdownTransformers,
   getDocumentMarkdownLosses,
   isSafeDocumentLink,
+  looksLikeDocumentMarkdown,
   maximumMarkdownBytes,
   validateDocumentMarkdown,
 } from "@/documents/document-markdown";
@@ -118,6 +120,20 @@ describe("document Markdown contract", () => {
     expect(() =>
       decodeDocumentMarkdownFile(new Uint8Array([0xc3, 0x28]).buffer, "bad.md"),
     ).toThrow(/UTF-8/);
+  });
+
+  it("derives document titles from imported Markdown filenames", () => {
+    expect(documentTitleFromMarkdownFilename("Project brief.md")).toBe(
+      "Project brief",
+    );
+    expect(documentTitleFromMarkdownFilename("Research.MD")).toBe("Research");
+    expect(documentTitleFromMarkdownFilename(".md")).toBe("Untitled document");
+  });
+
+  it("detects structured and unsafe Markdown without intercepting plain text", () => {
+    expect(looksLikeDocumentMarkdown("## Heading\n\n**Body**")).toBe(true);
+    expect(looksLikeDocumentMarkdown("<script>alert(1)</script>")).toBe(true);
+    expect(looksLikeDocumentMarkdown("Ordinary clipboard text.")).toBe(false);
   });
 
   it("keeps generated supported documents stable across semantic round trips", () => {

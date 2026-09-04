@@ -274,3 +274,19 @@ export function documentMarkdownFilename(title: string) {
     .slice(0, 80);
   return `${stem || "untitled-document"}.md`;
 }
+
+export function documentTitleFromMarkdownFilename(filename: string) {
+  const title = filename.replace(/\.md$/i, "").trim().slice(0, 500);
+  return title || "Untitled document";
+}
+
+export function looksLikeDocumentMarkdown(value: string) {
+  return (
+    /(^|\n)\s{0,3}(?:#{1,6}\s|>|[-+*]\s|\d+[.)]\s)/.test(value) ||
+    /(^|\n)\s*\|?.+\|.+\|?\s*\n\s*\|?\s*:?-{3,}/.test(value) ||
+    /(?:\*\*|__)[^\n]+(?:\*\*|__)/.test(value) ||
+    /(?:^|[^*])\*[^*\n]+\*/.test(value) ||
+    /\[[^\]]+\]\([^)]+\)/.test(value) ||
+    /<\/?[a-z][^>]*>/i.test(value)
+  );
+}
