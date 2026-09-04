@@ -146,6 +146,7 @@ export function ProductDocumentEditor({
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const editorElementRef = useRef<HTMLDivElement>(null);
   const readingSurfaceRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const settings = documentObject.settings;
   const reading = documentReadingMetrics[settings.readingSize];
   const pageHeight = documentPageContentHeight(settings);
@@ -164,6 +165,23 @@ export function ProductDocumentEditor({
     },
     [onObjectSelectionChange],
   );
+
+  useEffect(() => {
+    let settledFrame = 0;
+    const frame = window.requestAnimationFrame(() => {
+      const scrollContainer = scrollContainerRef.current;
+      if (!scrollContainer) return;
+      scrollContainer.scrollTop = 0;
+      settledFrame = window.requestAnimationFrame(() => {
+        if (scrollContainerRef.current)
+          scrollContainerRef.current.scrollTop = 0;
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(settledFrame);
+    };
+  }, [documentObject.id]);
 
   function updateSettings(patch: Partial<DocumentSettings>) {
     onUpdate({ settings: { ...settings, ...patch } });
@@ -334,10 +352,12 @@ export function ProductDocumentEditor({
             </nav>
           ) : null}
           <div
+            ref={scrollContainerRef}
             role="region"
             tabIndex={0}
             className="h-full overflow-x-hidden overflow-y-auto rounded-[inherit]"
             aria-label={`${documentObject.title} document workspace`}
+            data-testid="document-scroll-container"
           >
             <div
               ref={readingSurfaceRef}

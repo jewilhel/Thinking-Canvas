@@ -18,6 +18,13 @@ async function openNamedDocument(page: Page, title: string) {
   await page.getByTestId("product-canvas-surface").focus();
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("focused-product-document")).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .getByTestId("document-scroll-container")
+        .evaluate((element) => element.scrollTop),
+    )
+    .toBe(0);
 }
 
 async function configurePrimaryAiForDocuments(page: Page) {
