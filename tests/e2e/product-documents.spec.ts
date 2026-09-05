@@ -83,6 +83,11 @@ test("creates, focuses, configures, restores, and reloads a product document", a
     page.getByRole("toolbar", { name: "Document controls" }),
   ).toBeVisible();
   await expect(
+    page
+      .getByRole("toolbar", { name: "Document controls" })
+      .getByRole("button", { name: /comment/i }),
+  ).toHaveCount(0);
+  await expect(
     page.getByRole("toolbar", { name: "Text formatting" }),
   ).toHaveCount(0);
   await expect(
@@ -221,12 +226,27 @@ test("links selected text and inserts a table below its title", async ({
   const body = page.getByLabel("Document body");
   await body.fill("Reference title");
   await body.selectText();
-  page.once("dialog", (dialog) =>
-    dialog.accept("https://example.com/reference"),
-  );
   await page.getByRole("button", { name: "Add or remove link" }).click();
+  const linkPalette = page.getByRole("dialog", { name: "Add link" });
+  await expect(linkPalette).toBeVisible();
+  await expect
+    .poll(() =>
+      linkPalette
+        .getByLabel("Link URL")
+        .evaluate(
+          (element) =>
+            getComputedStyle(element).backgroundColor !== "transparent",
+        ),
+    )
+    .toBe(true);
+  await linkPalette
+    .getByLabel("Link URL")
+    .fill("https://example.com/reference");
+  await linkPalette.getByLabel("Link URL").press("Enter");
+  await expect(linkPalette).toHaveCount(0);
   const link = body.getByRole("link", { name: "Reference title" });
   await expect(link).toHaveAttribute("href", "https://example.com/reference");
+  await expect(link).toHaveCSS("text-decoration-line", "underline");
 
   await link.selectText();
   await page.getByRole("button", { name: "Insert table" }).click();
@@ -332,7 +352,7 @@ test("keeps document range comments attached across two participants", async ({
   await owner.getByText("Review this shared sentence.").selectText();
   await owner
     .getByTestId("focused-product-document")
-    .getByRole("button", { name: "Comments", exact: true })
+    .getByRole("button", { name: "Comment on selected text" })
     .click();
   await expect(
     owner.getByText(/Comment on “Review this shared sentence/),
@@ -341,10 +361,38 @@ test("keeps document range comments attached across two participants", async ({
   await owner.getByLabel("Structured response").selectOption("yes_no");
   await owner.getByRole("button", { name: "Comment", exact: true }).click();
   await expect(owner.getByText("Can we tighten this?")).toBeVisible();
+  await owner.getByRole("button", { name: "Close document comments" }).click();
+  await expect
+    .poll(() =>
+      owner.evaluate(() => {
+        const style = document.querySelector<HTMLStyleElement>(
+          "style[data-document-comment-highlight]",
+        );
+        const name = style?.dataset.documentCommentHighlight;
+        return name
+          ? (CSS.highlights.get(`document-comment-${name}`)?.size ?? 0)
+          : 0;
+      }),
+    )
+    .toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      editor.evaluate(() => {
+        const style = document.querySelector<HTMLStyleElement>(
+          "style[data-document-comment-highlight]",
+        );
+        const name = style?.dataset.documentCommentHighlight;
+        return name
+          ? (CSS.highlights.get(`document-comment-${name}`)?.size ?? 0)
+          : 0;
+      }),
+    )
+    .toBeGreaterThan(0);
 
+  await editor.getByText("Review this shared sentence.").selectText();
   await editor
     .getByTestId("focused-product-document")
-    .getByRole("button", { name: /Comments/ })
+    .getByRole("button", { name: "Comment on selected text" })
     .click();
   const editorComments = editor.getByRole("complementary", {
     name: "Document comments",
@@ -357,11 +405,29 @@ test("keeps document range comments attached across two participants", async ({
     .getByLabel("Reply to Can we tighten this?")
     .fill("Yes, I can revise it.");
   await editor.getByRole("button", { name: "Reply", exact: true }).click();
+  await owner.getByText("Review this shared sentence.").selectText();
+  await owner
+    .getByTestId("focused-product-document")
+    .getByRole("button", { name: "Comment on selected text" })
+    .click();
   await expect(owner.getByText("Yes, I can revise it.")).toBeVisible();
   await owner.getByRole("button", { name: "Resolve" }).click();
   await expect(
     editorComments.getByText("resolved", { exact: true }),
   ).toBeVisible();
+  await expect
+    .poll(() =>
+      editor.evaluate(() => {
+        const style = document.querySelector<HTMLStyleElement>(
+          "style[data-document-comment-highlight]",
+        );
+        const name = style?.dataset.documentCommentHighlight;
+        return name
+          ? (CSS.highlights.get(`document-comment-${name}`)?.size ?? 0)
+          : 0;
+      }),
+    )
+    .toBe(0);
 
   await ownerContext.close();
   await editorContext.close();
@@ -386,7 +452,7 @@ test("applies and undoes a semantic AI document revision while preserving later 
   await body.selectText();
   const focusedDocument = page.getByTestId("focused-product-document");
   await focusedDocument
-    .getByRole("button", { name: "Comments", exact: true })
+    .getByRole("button", { name: "Comment on selected text" })
     .click();
   await page
     .getByLabel("New document comment")
@@ -412,7 +478,10 @@ test("applies and undoes a semantic AI document revision while preserving later 
   await expect(body).toContainText("Human follow-up.");
   await page.waitForTimeout(700);
   await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
-  await focusedDocument.getByRole("button", { name: /Comments/ }).click();
+  await body.selectText();
+  await focusedDocument
+    .getByRole("button", { name: "Comment on selected text" })
+    .click();
   await page.getByRole("button", { name: "Undo AI change" }).click();
   await expect(page.getByText("AI document change undone.")).toBeVisible();
   await page.reload();

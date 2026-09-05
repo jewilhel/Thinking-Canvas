@@ -21,6 +21,7 @@ import { $setBlocksType } from "@lexical/selection";
 import { $createTableNodeWithDimensions } from "@lexical/table";
 import {
   $createParagraphNode,
+  $createRangeSelection,
   $getRoot,
   $getSelection,
   $isElementNode,
@@ -37,11 +38,13 @@ import {
 } from "lexical";
 import {
   Bold,
+  Check,
   Download,
   Italic,
   Link,
   List,
   ListOrdered,
+  MessageCircle,
   Table2,
   Upload,
 } from "lucide-react";
@@ -67,12 +70,27 @@ import {
 type Props = {
   title: string;
   canEdit: boolean;
+  canComment: boolean;
+  commentsOpen: boolean;
   documentControls: ReactNode;
+  onCommentsOpen: () => void;
+  onSelectionPositionChange: (
+    position: { left: number; top: number } | null,
+  ) => void;
   onTitleChange: (title: string) => void;
 };
 
 type Action = "import" | "export";
 type PressedState = boolean | "mixed";
+type SelectionPointSnapshot = {
+  key: string;
+  offset: number;
+  type: "element" | "text";
+};
+type RangeSelectionSnapshot = {
+  anchor: SelectionPointSnapshot;
+  focus: SelectionPointSnapshot;
+};
 
 function selectedFormatState(format: "bold" | "italic"): PressedState {
   const selection = $getSelection();
@@ -103,7 +121,11 @@ function selectedBlockType() {
 export function ProductDocumentToolbar({
   title,
   canEdit,
+  canComment,
+  commentsOpen,
   documentControls,
+  onCommentsOpen,
+  onSelectionPositionChange,
   onTitleChange,
 }: Props) {
   const [editor] = useLexicalComposerContext();
@@ -112,11 +134,16 @@ export function ProductDocumentToolbar({
   const [blockType, setBlockType] = useState("paragraph");
   const [status, setStatus] = useState("");
   const [activeAction, setActiveAction] = useState<Action | null>(null);
+  const [linkEditorOpen, setLinkEditorOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
   const [selectionPosition, setSelectionPosition] = useState<{
     left: number;
     top: number;
   } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const linkInput = useRef<HTMLInputElement>(null);
+  const linkPalette = useRef<HTMLFormElement>(null);
+  const linkSelection = useRef<RangeSelectionSnapshot | null>(null);
   const actionTimer = useRef<number | null>(null);
 
   const flashAction = useCallback((action: Action) => {
@@ -136,6 +163,12 @@ export function ProductDocumentToolbar({
     [],
   );
 
+  useEffect(() => {
+    if (linkEditorOpen) {
+      window.requestAnimationFrame(() => linkInput.current?.focus());
+    }
+  }, [linkEditorOpen]);
+
   const refreshToolbar = useCallback(() => {
     let hasExpandedRange = false;
     editor.getEditorState().read(() => {
@@ -147,7 +180,9 @@ export function ProductDocumentToolbar({
       setBlockType(selectedBlockType());
     });
     if (!hasExpandedRange) {
+      if (linkEditorOpen || commentsOpen) return;
       setSelectionPosition(null);
+      onSelectionPositionChange(null);
       return;
     }
     const editorRoot = editor.getRootElement();
@@ -164,18 +199,22 @@ export function ProductDocumentToolbar({
       !nativeSelection.anchorNode ||
       !editorRoot.contains(nativeSelection.anchorNode)
     ) {
+      if (linkEditorOpen || commentsOpen) return;
       setSelectionPosition(null);
+      onSelectionPositionChange(null);
       return;
     }
     const selectionRect = nativeSelection.getRangeAt(0).getBoundingClientRect();
     const frameRect = focusedFrame.getBoundingClientRect();
     const unclampedLeft =
       selectionRect.left + selectionRect.width / 2 - frameRect.left;
-    setSelectionPosition({
+    const nextPosition = {
       left: Math.max(24, Math.min(frameRect.width - 24, unclampedLeft)),
       top: Math.max(-52, selectionRect.top - frameRect.top - 52),
-    });
-  }, [editor]);
+    };
+    setSelectionPosition(nextPosition);
+    onSelectionPositionChange(nextPosition);
+  }, [commentsOpen, editor, linkEditorOpen, onSelectionPositionChange]);
 
   useEffect(() => {
     let frame = window.requestAnimationFrame(refreshToolbar);
@@ -338,28 +377,67 @@ export function ProductDocumentToolbar({
     });
   }
 
-  function setLink() {
-    let selectionSnapshot: ReturnType<typeof $getSelection> = null;
+  function beginLink() {
+    let selectionSnapshot: RangeSelectionSnapshot | null = null;
     editor.getEditorState().read(() => {
       const selection = $getSelection();
       if ($isRangeSelection(selection) && !selection.isCollapsed()) {
-        selectionSnapshot = selection.clone();
+        selectionSnapshot = {
+          anchor: {
+            key: selection.anchor.key,
+            offset: selection.anchor.offset,
+            type: selection.anchor.type,
+          },
+          focus: {
+            key: selection.focus.key,
+            offset: selection.focus.offset,
+            type: selection.focus.type,
+          },
+        };
       }
     });
     if (!selectionSnapshot) return;
-    const url = window.prompt("Enter an http or https link");
-    if (url === null) return;
-    if (url !== "" && !isSafeDocumentLink(url)) {
-      setStatus("Document links must use an http or https address.");
+    linkSelection.current = selectionSnapshot;
+    setLinkUrl("");
+    setStatus("");
+    setLinkEditorOpen(true);
+  }
+
+  function applyLink() {
+    const url = linkUrl.trim();
+    const selectionSnapshot = linkSelection.current;
+    if (!selectionSnapshot) {
+      setLinkEditorOpen(false);
       return;
     }
+    if (url !== "" && !isSafeDocumentLink(url)) {
+      setStatus("Document links must use an http or https address.");
+      window.requestAnimationFrame(() => linkInput.current?.focus());
+      return;
+    }
+    // Clear the pinned selection before the form unmounts. Its input blur can
+    // otherwise re-enter this handler while Lexical is applying the command.
+    linkSelection.current = null;
+    setLinkEditorOpen(false);
     editor.update(
       () => {
-        $setSelection(selectionSnapshot);
+        const selection = $createRangeSelection();
+        selection.anchor.set(
+          selectionSnapshot.anchor.key,
+          selectionSnapshot.anchor.offset,
+          selectionSnapshot.anchor.type,
+        );
+        selection.focus.set(
+          selectionSnapshot.focus.key,
+          selectionSnapshot.focus.offset,
+          selectionSnapshot.focus.type,
+        );
+        $setSelection(selection);
       },
       { discrete: true },
     );
     editor.dispatchCommand(TOGGLE_LINK_COMMAND, url || null);
+    window.requestAnimationFrame(() => editor.focus());
   }
 
   function insertTableAfterSelection() {
@@ -551,10 +629,22 @@ export function ProductDocumentToolbar({
             size="sm"
             variant="outline"
             aria-label="Add or remove link"
+            aria-expanded={linkEditorOpen}
             disabled={!canEdit}
-            onClick={setLink}
+            onClick={beginLink}
           >
             <Link aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-label="Comment on selected text"
+            aria-expanded={commentsOpen}
+            disabled={!canComment}
+            onClick={onCommentsOpen}
+          >
+            <MessageCircle aria-hidden="true" />
           </Button>
           <Button
             type="button"
@@ -567,6 +657,61 @@ export function ProductDocumentToolbar({
             <Table2 aria-hidden="true" />
           </Button>
         </div>
+      ) : null}
+
+      {linkEditorOpen && selectionPosition ? (
+        <form
+          ref={linkPalette}
+          role="dialog"
+          aria-label="Add link"
+          className="absolute z-[90] flex w-[min(26rem,calc(100%-1.5rem))] -translate-x-1/2 items-center gap-2 rounded-2xl border border-white/10 bg-zinc-900 p-2 text-white shadow-2xl"
+          style={{
+            left: selectionPosition.left,
+            top: selectionPosition.top + 48,
+          }}
+          onSubmit={(event) => {
+            event.preventDefault();
+            applyLink();
+          }}
+        >
+          <label className="min-w-0 flex-1">
+            <span className="sr-only">Link URL</span>
+            <input
+              ref={linkInput}
+              type="url"
+              aria-label="Link URL"
+              placeholder="Paste an https:// URL"
+              value={linkUrl}
+              className="h-9 w-full rounded-xl border border-white/15 bg-zinc-800 px-3 text-sm text-white outline-none placeholder:text-zinc-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-500/40"
+              onChange={(event) => {
+                setLinkUrl(event.currentTarget.value);
+                setStatus("");
+              }}
+              onBlur={(event) => {
+                const next = event.relatedTarget;
+                if (next instanceof Node && linkPalette.current?.contains(next))
+                  return;
+                applyLink();
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                event.preventDefault();
+                linkSelection.current = null;
+                setLinkEditorOpen(false);
+                editor.focus();
+              }}
+            />
+          </label>
+          <Button
+            type="submit"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Apply link"
+            className="border-white/15 bg-zinc-800 text-white hover:bg-zinc-700"
+          >
+            <Check aria-hidden="true" />
+          </Button>
+        </form>
       ) : null}
     </>
   );

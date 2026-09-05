@@ -22,6 +22,7 @@ import {
 } from "@/components/documents/product-document-lexical-config";
 import { ProductDocumentToolbar } from "@/components/documents/product-document-toolbar";
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
+import type { CommentThread } from "@/comments/comment-model";
 import {
   documentMarkdownTransformers,
   isSafeDocumentLink,
@@ -102,9 +103,19 @@ export function ProductDocumentEditor({
   onExit,
 }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [selectionPosition, setSelectionPosition] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+  const [documentCommentThreads, setDocumentCommentThreads] = useState<
+    CommentThread[]
+  >([]);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageCount, setPageCount] = useState(1);
   const [selectedRange, setSelectedRange] =
+    useState<DocumentRangeTarget | null>(null);
+  const [commentTargetRange, setCommentTargetRange] =
     useState<DocumentRangeTarget | null>(null);
   const editorElementRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -118,6 +129,20 @@ export function ProductDocumentEditor({
   const surfaceScale = screenBounds.width / surfaceWidth;
   const handleRangeSelectionChange = useCallback(
     (range: DocumentRangeTarget | null) => setSelectedRange(range),
+    [],
+  );
+  const handleDocumentThreadsChange = useCallback(
+    (threads: CommentThread[]) => {
+      setDocumentCommentThreads((current) => {
+        const currentKey = current
+          .map((thread) => `${thread.id}:${thread.status}:${thread.updatedAt}`)
+          .join("|");
+        const nextKey = threads
+          .map((thread) => `${thread.id}:${thread.status}:${thread.updatedAt}`)
+          .join("|");
+        return currentKey === nextKey ? current : threads;
+      });
+    },
     [],
   );
 
@@ -222,7 +247,7 @@ export function ProductDocumentEditor({
 
   return (
     <div
-      className="absolute z-20 overflow-visible text-zinc-950 shadow-[0_22px_55px_rgba(15,23,42,0.22)]"
+      className="absolute z-20 overflow-visible text-zinc-950 shadow-[0_8px_22px_rgba(15,23,42,0.24)]"
       data-testid="focused-product-document"
       style={screenBounds}
     >
@@ -242,37 +267,48 @@ export function ProductDocumentEditor({
           <ProductDocumentToolbar
             title={documentObject.title}
             canEdit={canEdit}
+            canComment={canvasRole !== "viewer"}
+            commentsOpen={commentsOpen}
+            onCommentsOpen={() => {
+              setCommentTargetRange(selectedRange);
+              setCommentsOpen(true);
+            }}
+            onSelectionPositionChange={setSelectionPosition}
             onTitleChange={(title) => onUpdate({ title })}
             documentControls={
-              <>
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="outline"
-                  aria-label="Document settings"
-                  title="Document settings"
-                  aria-expanded={settingsOpen}
-                  aria-controls="document-settings-panel"
-                  onClick={() => setSettingsOpen((current) => !current)}
-                >
-                  <Settings2 aria-hidden="true" />
-                </Button>
-                <ProductDocumentComments
-                  canvasDocument={canvasDocument}
-                  canvasId={canvasId}
-                  canvasRole={canvasRole}
-                  documentObjectId={documentObject.id}
-                  objects={canvasObjects}
-                  selectedObjectIds={[]}
-                  selectedRange={selectedRange}
-                  supabaseUrl={supabaseUrl}
-                  supabasePublishableKey={supabasePublishableKey}
-                  onAiTransactionApplied={onAiTransactionApplied}
-                  onUndoAiTransaction={onUndoAiTransaction}
-                  compact
-                />
-              </>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Document settings"
+                title="Document settings"
+                aria-expanded={settingsOpen}
+                aria-controls="document-settings-panel"
+                onClick={() => setSettingsOpen((current) => !current)}
+              >
+                <Settings2 aria-hidden="true" />
+              </Button>
             }
+          />
+          <ProductDocumentComments
+            canvasDocument={canvasDocument}
+            canvasId={canvasId}
+            canvasRole={canvasRole}
+            documentObjectId={documentObject.id}
+            objects={canvasObjects}
+            selectedObjectIds={[]}
+            selectedRange={commentTargetRange ?? selectedRange}
+            supabaseUrl={supabaseUrl}
+            supabasePublishableKey={supabasePublishableKey}
+            onAiTransactionApplied={onAiTransactionApplied}
+            onUndoAiTransaction={onUndoAiTransaction}
+            open={commentsOpen}
+            anchorPosition={selectionPosition}
+            onOpenChange={(open) => {
+              setCommentsOpen(open);
+              if (!open) setCommentTargetRange(null);
+            }}
+            onThreadsChange={handleDocumentThreadsChange}
           />
           {pageHeight !== null ? (
             <nav
@@ -387,6 +423,7 @@ export function ProductDocumentEditor({
                 cursorColor="#7c3aed"
                 documentObjectId={documentObject.id}
                 onRangeSelectionChange={handleRangeSelectionChange}
+                commentThreads={documentCommentThreads}
               />
               <ListPlugin />
               <LinkPlugin

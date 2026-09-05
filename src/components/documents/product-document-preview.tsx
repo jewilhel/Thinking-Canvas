@@ -45,7 +45,7 @@ export function ProductDocumentPreview({
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute overflow-hidden text-zinc-950 shadow-[0_22px_55px_rgba(15,23,42,0.22)]"
+      className="pointer-events-none absolute overflow-hidden text-zinc-950 shadow-[0_8px_22px_rgba(15,23,42,0.24)]"
       data-testid={`document-page-preview-${documentObject.id}`}
       style={{
         ...screenBounds,

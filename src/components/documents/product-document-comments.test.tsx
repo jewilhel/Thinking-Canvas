@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
@@ -24,7 +24,7 @@ const selectedRange: DocumentRangeTarget = {
 };
 
 describe("ProductDocumentComments", () => {
-  it("keeps the selected document range after focus moves into comments", () => {
+  it("uses the pinned selected range while the composer owns focus", () => {
     const props = {
       canvasDocument: new Y.Doc(),
       canvasId: "10000000-0000-4000-8000-000000000001",
@@ -36,16 +36,14 @@ describe("ProductDocumentComments", () => {
       supabasePublishableKey: "test-key",
       onAiTransactionApplied: vi.fn(),
       onUndoAiTransaction: vi.fn(),
-      compact: true,
+      open: true,
+      anchorPosition: { left: 300, top: 120 },
+      onOpenChange: vi.fn(),
+      onThreadsChange: vi.fn(),
     };
-    const { rerender } = render(
+    render(
       <ProductDocumentComments {...props} selectedRange={selectedRange} />,
     );
-
-    const comments = screen.getByRole("button", { name: "Comments" });
-    fireEvent.mouseDown(comments);
-    fireEvent.click(comments);
-    rerender(<ProductDocumentComments {...props} selectedRange={null} />);
 
     expect(
       screen.getByText("Comment on “Selected document text”"),

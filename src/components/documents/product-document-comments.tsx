@@ -1,7 +1,7 @@
 "use client";
 
-import { MessageCircle, RotateCcw, Send, Trash2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { RotateCcw, Send, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type * as Y from "yjs";
 
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
@@ -29,7 +29,10 @@ type Props = {
   supabasePublishableKey: string;
   onAiTransactionApplied: (changeSetId: string) => void;
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
-  compact?: boolean;
+  open: boolean;
+  anchorPosition: { left: number; top: number } | null;
+  onOpenChange: (open: boolean) => void;
+  onThreadsChange: (threads: CommentThread[]) => void;
 };
 
 function targetLabel(
@@ -70,7 +73,10 @@ export function ProductDocumentComments({
   supabasePublishableKey,
   onAiTransactionApplied,
   onUndoAiTransaction,
-  compact = false,
+  open,
+  anchorPosition,
+  onOpenChange,
+  onThreadsChange,
 }: Props) {
   const { threads, collaboration, loading, pending, error, execute } =
     useCanvasComments(
@@ -79,10 +85,6 @@ export function ProductDocumentComments({
       supabasePublishableKey,
       onAiTransactionApplied,
     );
-  const [open, setOpen] = useState(false);
-  const [commentRange, setCommentRange] = useState<DocumentRangeTarget | null>(
-    null,
-  );
   const [draft, setDraft] = useState("");
   const [reply, setReply] = useState<Record<string, string>>({});
   const [promptKind, setPromptKind] = useState<CommentPromptKind | null>(null);
@@ -103,20 +105,28 @@ export function ProductDocumentComments({
       object?.documentOwnerId === documentObjectId
     );
   });
-  const documentThreads = threads.filter(
-    (thread) =>
-      thread.documentRange?.documentObjectId === documentObjectId ||
-      thread.targetObjectIds.some((id) => {
-        const object = objectsById.get(id);
-        return (
-          object?.type !== "document" &&
-          object?.documentOwnerId === documentObjectId
-        );
-      }),
+  const documentThreads = useMemo(
+    () =>
+      threads.filter(
+        (thread) =>
+          thread.documentRange?.documentObjectId === documentObjectId ||
+          thread.targetObjectIds.some((id) => {
+            const object = objectsById.get(id);
+            return (
+              object?.type !== "document" &&
+              object?.documentOwnerId === documentObjectId
+            );
+          }),
+      ),
+    [documentObjectId, objectsById, threads],
   );
   const canComment = canvasRole !== "viewer";
-  const effectiveRange = commentRange ?? selectedRange;
+  const effectiveRange = selectedRange;
   const hasTarget = effectiveRange !== null || internalObjectIds.length > 0;
+
+  useEffect(() => {
+    onThreadsChange(documentThreads);
+  }, [documentThreads, onThreadsChange]);
 
   async function createThread() {
     if (!draft.trim() || !hasTarget) return;
@@ -145,45 +155,14 @@ export function ProductDocumentComments({
 
   return (
     <>
-      <Button
-        type="button"
-        size={compact ? "icon-sm" : undefined}
-        variant="outline"
-        className={compact ? undefined : "h-11 border-zinc-300 bg-white"}
-        aria-label="Comments"
-        title="Comments"
-        aria-expanded={open}
-        onMouseDown={() => {
-          if (!open && selectedRange) setCommentRange(selectedRange);
-        }}
-        onClick={() => {
-          if (open) {
-            setOpen(false);
-            setCommentRange(null);
-          } else {
-            if (selectedRange) setCommentRange(selectedRange);
-            setOpen(true);
-          }
-        }}
-      >
-        <MessageCircle aria-hidden="true" />
-        {compact ? (
-          <span className="sr-only">
-            {documentThreads.length
-              ? `${documentThreads.length} document comments`
-              : "No document comments"}
-          </span>
-        ) : (
-          <>
-            Comments
-            {documentThreads.length ? ` (${documentThreads.length})` : ""}
-          </>
-        )}
-      </Button>
-      {open ? (
+      {open && anchorPosition ? (
         <aside
           aria-label="Document comments"
-          className="absolute top-16 right-3 z-[90] max-h-[calc(100%-5rem)] w-[min(25rem,calc(100%-1.5rem))] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl"
+          className="absolute z-[90] max-h-[calc(100%-5rem)] w-[min(30rem,calc(100%-1.5rem))] -translate-x-1/2 overflow-y-auto rounded-3xl border border-zinc-200 bg-white p-4 text-zinc-900 shadow-2xl"
+          style={{
+            left: anchorPosition.left,
+            top: anchorPosition.top + 48,
+          }}
         >
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold">Document comments</h2>
@@ -192,10 +171,7 @@ export function ProductDocumentComments({
               size="icon-sm"
               variant="ghost"
               aria-label="Close document comments"
-              onClick={() => {
-                setOpen(false);
-                setCommentRange(null);
-              }}
+              onClick={() => onOpenChange(false)}
             >
               <X aria-hidden="true" />
             </Button>

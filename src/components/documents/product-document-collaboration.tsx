@@ -2,6 +2,7 @@
 
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import {
+  $getAnchorAndFocusForUserState,
   createUndoManager,
   createYjsBinding,
   initLocalState,
@@ -10,8 +11,10 @@ import {
   syncLexicalUpdateToYjs,
   syncYjsChangesToLexical,
 } from "@lexical/yjs";
+import { createDOMRange } from "@lexical/selection";
 import {
   $createParagraphNode,
+  $getNodeByKey,
   $getRoot,
   CAN_REDO_COMMAND,
   CAN_UNDO_COMMAND,
@@ -23,14 +26,16 @@ import {
   $getSelection,
   $isRangeSelection,
 } from "lexical";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
 import { CanvasLexicalProvider } from "@/documents/canvas-lexical-provider";
+import type { CommentThread } from "@/comments/comment-model";
 import { documentContentRootName } from "@/documents/document-schema";
 import {
   boundedDocumentRangeQuote,
+  decodeDocumentRelativePosition,
   encodeDocumentRelativePosition,
   type DocumentRangeTarget,
 } from "@/documents/document-range";
@@ -82,6 +87,7 @@ export function ProductDocumentCollaboration({
   cursorColor,
   documentObjectId,
   onRangeSelectionChange,
+  commentThreads = [],
   preview = false,
 }: {
   canvasDocument: Y.Doc;
@@ -90,9 +96,17 @@ export function ProductDocumentCollaboration({
   cursorColor: string;
   documentObjectId: string;
   onRangeSelectionChange?: (range: DocumentRangeTarget | null) => void;
+  commentThreads?: CommentThread[];
   preview?: boolean;
 }) {
   const [editor] = useLexicalComposerContext();
+  const commentThreadsRef = useRef(commentThreads);
+  const syncCommentHighlightsRef = useRef<() => void>(() => undefined);
+
+  useEffect(() => {
+    commentThreadsRef.current = commentThreads;
+    syncCommentHighlightsRef.current();
+  }, [commentThreads]);
 
   useEffect(() => {
     const provider = new CanvasLexicalProvider(canvasDocument, documentId);
@@ -106,6 +120,75 @@ export function ProductDocumentCollaboration({
       rootName: documentContentRootName(documentId),
     });
     const sharedRoot = binding.root.getSharedType();
+    const highlightName = `document-comment-${documentObjectId}`;
+    const rootElement = editor.getRootElement();
+    const ownerDocument = rootElement?.ownerDocument;
+    const highlightStyle = preview
+      ? null
+      : (ownerDocument?.createElement("style") ?? null);
+    if (highlightStyle) {
+      highlightStyle.dataset.documentCommentHighlight = documentObjectId;
+      highlightStyle.textContent = `::highlight(${highlightName}) { background-color: color-mix(in srgb, #8b5cf6 28%, transparent); color: inherit; }`;
+      ownerDocument?.head.append(highlightStyle);
+    }
+    let highlightFrame = 0;
+
+    const clearCommentHighlights = () => {
+      if (typeof CSS === "undefined") return;
+      const registry = CSS.highlights;
+      registry?.delete(highlightName);
+    };
+    const syncCommentHighlights = () => {
+      if (preview) return;
+      window.cancelAnimationFrame(highlightFrame);
+      highlightFrame = window.requestAnimationFrame(() => {
+        if (typeof Highlight === "undefined" || !CSS.highlights) return;
+        const ranges = editor.getEditorState().read(() =>
+          commentThreadsRef.current.flatMap((thread) => {
+            if (
+              thread.status !== "open" ||
+              thread.documentRange?.documentObjectId !== documentObjectId
+            ) {
+              return [];
+            }
+            try {
+              const { anchorKey, anchorOffset, focusKey, focusOffset } =
+                $getAnchorAndFocusForUserState(binding, {
+                  anchorPos: decodeDocumentRelativePosition(
+                    thread.documentRange.anchor,
+                  ),
+                  focusPos: decodeDocumentRelativePosition(
+                    thread.documentRange.head,
+                  ),
+                  color: "#8b5cf6",
+                  focusing: false,
+                  name: thread.authorName,
+                  awarenessData: {},
+                });
+              if (!anchorKey || !focusKey) return [];
+              const anchorNode = $getNodeByKey(anchorKey);
+              const focusNode = $getNodeByKey(focusKey);
+              if (!anchorNode || !focusNode) return [];
+              const range = createDOMRange(
+                editor,
+                anchorNode,
+                anchorOffset,
+                focusNode,
+                focusOffset,
+              );
+              return range && !range.collapsed ? [range] : [];
+            } catch {
+              return [];
+            }
+          }),
+        );
+        clearCommentHighlights();
+        if (ranges.length > 0) {
+          CSS.highlights.set(highlightName, new Highlight(...ranges));
+        }
+      });
+    };
+    syncCommentHighlightsRef.current = syncCommentHighlights;
 
     editor.update(
       () => {
@@ -135,6 +218,10 @@ export function ProductDocumentCollaboration({
 
     if (preview) {
       return () => {
+        window.cancelAnimationFrame(highlightFrame);
+        clearCommentHighlights();
+        highlightStyle?.remove();
+        syncCommentHighlightsRef.current = () => undefined;
         sharedRoot.unobserveDeep(observeSharedRoot);
         binding.root.destroy(binding);
         releaseDocumentCollabNodeCache(sharedRoot);
@@ -200,8 +287,10 @@ export function ProductDocumentCollaboration({
           lastPublishedRangeKey = rangeKey;
           onRangeSelectionChange?.(range);
         });
+        syncCommentHighlights();
       },
     );
+    syncCommentHighlights();
 
     const updateHistoryState = () => {
       queueMicrotask(() => {
@@ -273,6 +362,10 @@ export function ProductDocumentCollaboration({
     initLocalState(provider, username, cursorColor, false, {});
     provider.connect();
     return () => {
+      window.cancelAnimationFrame(highlightFrame);
+      clearCommentHighlights();
+      highlightStyle?.remove();
+      syncCommentHighlightsRef.current = () => undefined;
       sharedRoot.unobserveDeep(observeSharedRoot);
       removeEditorListener();
       removeCommands();
