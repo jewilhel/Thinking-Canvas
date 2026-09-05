@@ -1,479 +1,357 @@
 "use client";
 
-import { RotateCcw, Send, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import type * as Y from "yjs";
+import { ArrowUp, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 import type {
+  CommentPrompt,
   CommentPromptKind,
+  CommentRecipient,
   CommentThread,
+  PromptResponseValue,
 } from "@/comments/comment-model";
 import { useCanvasComments } from "@/comments/use-canvas-comments";
-import { Button } from "@/components/ui/button";
-import type { CanvasRole } from "@/domain/command";
 import {
-  resolveDocumentRange,
-  type DocumentRangeTarget,
-} from "@/documents/document-range";
+  RecipientComposer,
+  ThreadBody,
+} from "@/components/comments/canvas-comments";
+import { Button } from "@/components/ui/button";
+import type { DocumentRangeTarget } from "@/documents/document-range";
+import type { CanvasRole } from "@/domain/command";
 
 type Props = {
-  canvasDocument: Y.Doc;
   canvasId: string;
+  userId: string;
   canvasRole: CanvasRole;
   documentObjectId: string;
-  objects: CanvasObjectV2[];
-  selectedObjectIds: string[];
   selectedRange: DocumentRangeTarget | null;
   supabaseUrl: string;
   supabasePublishableKey: string;
   onAiTransactionApplied: (changeSetId: string) => void;
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
+  onSelectEvidence: (objectId: string) => void;
   open: boolean;
   anchorPosition: { left: number; top: number } | null;
   onOpenChange: (open: boolean) => void;
   onThreadsChange: (threads: CommentThread[]) => void;
 };
 
-function targetLabel(
-  thread: CommentThread,
-  canvasDocument: Y.Doc,
-  objectsById: Map<string, CanvasObjectV2>,
-) {
-  if (thread.documentRange) {
-    const detached = resolveDocumentRange(
-      canvasDocument,
-      thread.documentRange,
-    ).detached;
-    return {
-      label: detached ? "Detached text range" : "Selected text",
-      quote: thread.documentRange.quote,
-      detached,
-    };
-  }
-  const object = thread.targetObjectIds
-    .map((id) => objectsById.get(id))
-    .find(Boolean);
-  return {
-    label: object ? `Document ${object.type}` : "Detached document object",
-    quote: "",
-    detached: !object,
-  };
-}
-
 export function ProductDocumentComments({
-  canvasDocument,
   canvasId,
+  userId,
   canvasRole,
   documentObjectId,
-  objects,
-  selectedObjectIds,
   selectedRange,
   supabaseUrl,
   supabasePublishableKey,
   onAiTransactionApplied,
   onUndoAiTransaction,
+  onSelectEvidence,
   open,
   anchorPosition,
   onOpenChange,
   onThreadsChange,
 }: Props) {
-  const { threads, collaboration, loading, pending, error, execute } =
-    useCanvasComments(
-      canvasId,
-      supabaseUrl,
-      supabasePublishableKey,
-      onAiTransactionApplied,
-    );
+  const {
+    threads,
+    collaboration,
+    loading,
+    pending,
+    error,
+    refresh,
+    execute,
+    cancelAiRun,
+    retryAiRun,
+  } = useCanvasComments(
+    canvasId,
+    supabaseUrl,
+    supabasePublishableKey,
+    onAiTransactionApplied,
+  );
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [reply, setReply] = useState<Record<string, string>>({});
+  const [draftRecipients, setDraftRecipients] = useState<CommentRecipient[]>(
+    [],
+  );
   const [promptKind, setPromptKind] = useState<CommentPromptKind | null>(null);
-  const [askAi, setAskAi] = useState(false);
-  const [undoingChangeSetId, setUndoingChangeSetId] = useState<string | null>(
-    null,
-  );
-  const [undoNotice, setUndoNotice] = useState("");
-  const [undoError, setUndoError] = useState("");
-  const objectsById = useMemo(
-    () => new Map(objects.map((object) => [object.id, object])),
-    [objects],
-  );
-  const internalObjectIds = selectedObjectIds.filter((id) => {
-    const object = objectsById.get(id);
-    return (
-      object?.type !== "document" &&
-      object?.documentOwnerId === documentObjectId
-    );
-  });
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const documentThreads = useMemo(
     () =>
       threads.filter(
-        (thread) =>
-          thread.documentRange?.documentObjectId === documentObjectId ||
-          thread.targetObjectIds.some((id) => {
-            const object = objectsById.get(id);
-            return (
-              object?.type !== "document" &&
-              object?.documentOwnerId === documentObjectId
-            );
-          }),
+        (thread) => thread.documentRange?.documentObjectId === documentObjectId,
       ),
-    [documentObjectId, objectsById, threads],
+    [documentObjectId, threads],
   );
+  const selectedThread =
+    documentThreads.find((thread) => thread.id === selectedThreadId) ?? null;
   const canComment = canvasRole !== "viewer";
-  const effectiveRange = selectedRange;
-  const hasTarget = effectiveRange !== null || internalObjectIds.length > 0;
 
   useEffect(() => {
     onThreadsChange(documentThreads);
   }, [documentThreads, onThreadsChange]);
 
+  useEffect(() => {
+    if (open && !selectedThreadId) {
+      requestAnimationFrame(() => composerRef.current?.focus());
+    }
+  }, [open, selectedThreadId]);
+
+  useEffect(() => {
+    if (!open) return;
+    function dismissOutside(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node) || panelRef.current?.contains(target)) {
+        return;
+      }
+      setSelectedThreadId(null);
+      setDraft("");
+      setDraftRecipients([]);
+      setPromptKind(null);
+      onOpenChange(false);
+    }
+    window.addEventListener("pointerdown", dismissOutside, true);
+    return () =>
+      window.removeEventListener("pointerdown", dismissOutside, true);
+  }, [onOpenChange, open]);
+
+  function close() {
+    setSelectedThreadId(null);
+    setDraft("");
+    setDraftRecipients([]);
+    setPromptKind(null);
+    onOpenChange(false);
+  }
+
   async function createThread() {
-    if (!draft.trim() || !hasTarget) return;
-    await execute({
+    if (!selectedRange || !draft.trim()) return;
+    const result = await execute({
       type: "comment.create",
       commandId: crypto.randomUUID(),
       canvasId,
       body: draft.trim(),
-      targetObjectIds: effectiveRange ? [] : internalObjectIds,
-      orderedContextIds: effectiveRange
-        ? [documentObjectId]
-        : [documentObjectId, ...internalObjectIds],
+      targetObjectIds: [],
+      orderedContextIds: [documentObjectId],
       canvasAnchor: null,
-      documentRange: effectiveRange,
+      documentRange: selectedRange,
       promptKind,
       authorKind: "human",
       authorKey: null,
-      routing: askAi
-        ? { recipientUserIds: [], includePrimaryAi: true }
+      routing: draftRecipients.length
+        ? {
+            recipientUserIds: draftRecipients
+              .filter((recipient) => recipient.kind === "human")
+              .map((recipient) => recipient.key),
+            includePrimaryAi: draftRecipients.some(
+              (recipient) => recipient.kind === "ai",
+            ),
+          }
         : undefined,
     });
+    const id =
+      result && typeof result === "object" && "comment_id" in result
+        ? String(result.comment_id)
+        : null;
     setDraft("");
+    setDraftRecipients([]);
     setPromptKind(null);
-    setAskAi(false);
+    if (id) setSelectedThreadId(id);
+  }
+
+  async function reply(
+    thread: CommentThread,
+    body: string,
+    recipients: CommentRecipient[] | undefined,
+  ) {
+    await execute({
+      type: "comment.reply",
+      commandId: crypto.randomUUID(),
+      commentId: thread.id,
+      body,
+      routing: recipients
+        ? {
+            recipientUserIds: recipients
+              .filter((recipient) => recipient.kind === "human")
+              .map((recipient) => recipient.key),
+            includePrimaryAi: recipients.some(
+              (recipient) => recipient.kind === "ai",
+            ),
+          }
+        : undefined,
+    });
+  }
+
+  async function respond(prompt: CommentPrompt, value: PromptResponseValue) {
+    await execute({
+      type: "comment.respond",
+      commandId: crypto.randomUUID(),
+      promptId: prompt.id,
+      promptKind: prompt.kind,
+      value,
+    });
+  }
+
+  if (!open || !anchorPosition) return null;
+
+  const sharedPosition = {
+    left: anchorPosition.left,
+    top: anchorPosition.top + 48,
+  };
+
+  if (selectedThread) {
+    return (
+      <aside
+        ref={panelRef}
+        role="dialog"
+        aria-label="Comment thread"
+        className="absolute z-[90] max-h-[min(28rem,calc(100%-2rem))] w-[min(24rem,calc(100%-2rem))] -translate-x-1/2 overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 text-zinc-900 shadow-2xl"
+        style={sharedPosition}
+      >
+        <div className="mb-3 flex items-center justify-between border-b border-zinc-100 pb-2">
+          <p className="font-semibold">Comment</p>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Close comment thread"
+            onClick={close}
+          >
+            <X aria-hidden="true" />
+          </Button>
+        </div>
+        <ThreadBody
+          thread={selectedThread}
+          userId={userId}
+          role={canvasRole}
+          pending={pending}
+          collaborators={collaboration?.collaborators ?? []}
+          onReply={(body, recipients) =>
+            reply(selectedThread, body, recipients)
+          }
+          onRespond={respond}
+          onPromptChange={async (kind) => {
+            await execute({
+              type: "comment.prompt.set",
+              commentId: selectedThread.id,
+              promptKind: kind,
+            });
+          }}
+          onBodyChange={async (body) => {
+            await execute({
+              type: "comment.body.update",
+              commentId: selectedThread.id,
+              body,
+            });
+          }}
+          onStatus={async (status) => {
+            await execute({
+              type: "comment.status",
+              commentId: selectedThread.id,
+              status,
+            });
+            close();
+          }}
+          onDelete={async () => {
+            await execute({
+              type: "comment.delete",
+              commentId: selectedThread.id,
+            });
+            close();
+          }}
+          onNavigateEvidence={onSelectEvidence}
+          onUndoAiTransaction={async (changeSetId) => {
+            const result = await onUndoAiTransaction(changeSetId);
+            await refresh();
+            return result;
+          }}
+          onCancelAiRun={cancelAiRun}
+          onRetryAiRun={retryAiRun}
+        />
+      </aside>
+    );
   }
 
   return (
-    <>
-      {open && anchorPosition ? (
-        <aside
-          aria-label="Document comments"
-          className="absolute z-[90] max-h-[calc(100%-5rem)] w-[min(30rem,calc(100%-1.5rem))] -translate-x-1/2 overflow-y-auto rounded-3xl border border-zinc-200 bg-white p-4 text-zinc-900 shadow-2xl"
-          style={{
-            left: anchorPosition.left,
-            top: anchorPosition.top + 48,
-          }}
+    <aside
+      ref={panelRef}
+      role="dialog"
+      aria-label="New comment"
+      className="group absolute z-[90] w-[min(30rem,calc(100%-2rem))] -translate-x-1/2 rounded-3xl border border-zinc-200 bg-white p-2 text-zinc-900 shadow-2xl"
+      style={sharedPosition}
+    >
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void createThread();
+        }}
+      >
+        <RecipientComposer
+          label="Comment"
+          value={draft}
+          recipients={draftRecipients}
+          collaborators={(collaboration?.collaborators ?? []).filter(
+            (collaborator) =>
+              collaborator.kind === "ai" || collaborator.key !== userId,
+          )}
+          pending={pending}
+          inputRef={composerRef}
+          placeholder="Add a comment or type @"
+          onChange={setDraft}
+          onRecipientsChange={setDraftRecipients}
+        />
+        <Button
+          type="submit"
+          size="icon"
+          variant="ghost"
+          className="size-12 shrink-0 rounded-full bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-300"
+          disabled={pending || !canComment || !selectedRange || !draft.trim()}
+          aria-label="Submit comment"
         >
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="font-semibold">Document comments</h2>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Close document comments"
-              onClick={() => onOpenChange(false)}
-            >
-              <X aria-hidden="true" />
-            </Button>
-          </div>
-          {canComment ? (
-            <div className="mt-4 rounded-xl border border-zinc-200 p-3">
-              <p className="text-xs font-medium text-zinc-600">
-                {effectiveRange
-                  ? `Comment on “${effectiveRange.quote}”`
-                  : internalObjectIds.length
-                    ? `Comment on ${internalObjectIds.length} selected document object(s)`
-                    : "Select text or a document object to comment"}
-              </p>
-              <textarea
-                aria-label="New document comment"
-                value={draft}
-                disabled={!hasTarget || pending}
-                className="mt-2 min-h-20 w-full rounded-lg border border-zinc-300 p-2 text-sm outline-none focus:border-violet-500"
-                onChange={(event) => setDraft(event.currentTarget.value)}
-              />
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <select
-                  aria-label="Structured response"
-                  value={promptKind ?? ""}
-                  className="h-9 rounded-md border border-zinc-300 px-2 text-sm"
-                  onChange={(event) =>
-                    setPromptKind(
-                      (event.currentTarget.value ||
-                        null) as CommentPromptKind | null,
-                    )
-                  }
-                >
-                  <option value="">Reply</option>
-                  <option value="yes_no">Yes / No</option>
-                  <option value="review">Review decision</option>
-                  <option value="rating">Rating</option>
-                </select>
-                {collaboration?.aiAccess.enabled ? (
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={askAi}
-                      onChange={(event) =>
-                        setAskAi(event.currentTarget.checked)
-                      }
-                    />
-                    Ask AI
-                  </label>
-                ) : null}
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={!hasTarget || !draft.trim() || pending}
-                  onClick={() => void createThread()}
-                >
-                  <Send aria-hidden="true" /> Comment
-                </Button>
-              </div>
-            </div>
-          ) : null}
-          {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
-          {undoError ? (
-            <p role="alert" className="mt-3 text-sm text-red-700">
-              {undoError}
-            </p>
-          ) : null}
-          {undoNotice ? (
-            <p role="status" className="mt-3 text-sm text-amber-800">
-              {undoNotice}
-            </p>
-          ) : null}
-          <div className="mt-4 space-y-3">
-            {loading ? <p className="text-sm text-zinc-500">Loading…</p> : null}
-            {!loading && !documentThreads.length ? (
-              <p className="text-sm text-zinc-500">No document comments yet.</p>
-            ) : null}
-            {documentThreads.map((thread) => {
-              const target = targetLabel(thread, canvasDocument, objectsById);
-              return (
-                <article
-                  key={thread.id}
-                  className="rounded-xl border border-zinc-200 p-3"
-                >
-                  <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
-                    <span>{target.label}</span>
-                    <span>{thread.status}</span>
-                  </div>
-                  {target.quote ? (
-                    <blockquote
-                      className={`mt-2 border-l-2 pl-2 text-sm ${target.detached ? "border-amber-500 text-amber-800" : "border-violet-400 text-zinc-600"}`}
-                    >
-                      {target.quote}
-                    </blockquote>
-                  ) : null}
-                  <p className="mt-2 text-sm">{thread.body}</p>
-                  {thread.replies.map((item) => (
-                    <div key={item.id} className="mt-2 border-l pl-2 text-sm">
-                      <p>
-                        <span className="font-medium">{item.authorName}:</span>{" "}
-                        {item.body}
-                      </p>
-                      {item.aiTransaction?.status === "active" ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="mt-2"
-                          disabled={
-                            undoingChangeSetId ===
-                            item.aiTransaction.changeSetId
-                          }
-                          onClick={() => {
-                            const changeSetId = item.aiTransaction!.changeSetId;
-                            setUndoError("");
-                            setUndoNotice("");
-                            setUndoingChangeSetId(changeSetId);
-                            void onUndoAiTransaction(changeSetId)
-                              .then(({ conflicts }) =>
-                                setUndoNotice(
-                                  conflicts
-                                    ? `AI change undone; ${conflicts} later edit${conflicts === 1 ? " was" : "s were"} preserved.`
-                                    : "AI document change undone.",
-                                ),
-                              )
-                              .catch((undoFailure: unknown) =>
-                                setUndoError(
-                                  undoFailure instanceof Error
-                                    ? undoFailure.message
-                                    : "The AI document change could not be undone.",
-                                ),
-                              )
-                              .finally(() => setUndoingChangeSetId(null));
-                          }}
-                        >
-                          <RotateCcw aria-hidden="true" /> Undo AI change
-                        </Button>
-                      ) : item.aiTransaction?.status === "undone" ? (
-                        <p className="mt-1 text-xs text-zinc-500">
-                          Change undone
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                  {thread.prompt && canComment && thread.status === "open" ? (
-                    <div
-                      className="mt-3 flex flex-wrap gap-2"
-                      aria-label="Structured response"
-                    >
-                      {thread.prompt.kind === "yes_no"
-                        ? ["yes", "no"].map((answer) => (
-                            <Button
-                              key={answer}
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                void execute({
-                                  type: "comment.respond",
-                                  commandId: crypto.randomUUID(),
-                                  promptId: thread.prompt!.id,
-                                  promptKind: "yes_no",
-                                  value: { answer },
-                                })
-                              }
-                            >
-                              {answer === "yes" ? "Yes" : "No"}
-                            </Button>
-                          ))
-                        : thread.prompt.kind === "review"
-                          ? ["approve", "revise", "discard"].map((decision) => (
-                              <Button
-                                key={decision}
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  void execute({
-                                    type: "comment.respond",
-                                    commandId: crypto.randomUUID(),
-                                    promptId: thread.prompt!.id,
-                                    promptKind: "review",
-                                    value: { decision },
-                                  })
-                                }
-                              >
-                                {decision[0]!.toUpperCase() + decision.slice(1)}
-                              </Button>
-                            ))
-                          : [1, 2, 3, 4, 5].map((rating) => (
-                              <Button
-                                key={rating}
-                                type="button"
-                                size="icon-sm"
-                                variant="outline"
-                                aria-label={`Rate ${rating}`}
-                                onClick={() =>
-                                  void execute({
-                                    type: "comment.respond",
-                                    commandId: crypto.randomUUID(),
-                                    promptId: thread.prompt!.id,
-                                    promptKind: "rating",
-                                    value: { rating },
-                                  })
-                                }
-                              >
-                                {rating}
-                              </Button>
-                            ))}
-                    </div>
-                  ) : null}
-                  {thread.status === "open" && canComment ? (
-                    <div className="mt-3 flex gap-2">
-                      <input
-                        aria-label={`Reply to ${thread.body}`}
-                        value={reply[thread.id] ?? ""}
-                        className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2 text-sm"
-                        onChange={(event) => {
-                          const value = event.currentTarget.value;
-                          setReply((current) => ({
-                            ...current,
-                            [thread.id]: value,
-                          }));
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={!reply[thread.id]?.trim() || pending}
-                        onClick={() =>
-                          void execute({
-                            type: "comment.reply",
-                            commandId: crypto.randomUUID(),
-                            commentId: thread.id,
-                            body: reply[thread.id]!.trim(),
-                          }).then(() =>
-                            setReply((current) => ({
-                              ...current,
-                              [thread.id]: "",
-                            })),
-                          )
-                        }
-                      >
-                        Reply
-                      </Button>
-                    </div>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {thread.status === "open" && canComment ? (
-                      <>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            void execute({
-                              type: "comment.status",
-                              commentId: thread.id,
-                              status: "resolved",
-                            })
-                          }
-                        >
-                          Resolve
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            void execute({
-                              type: "comment.status",
-                              commentId: thread.id,
-                              status: "dismissed",
-                            })
-                          }
-                        >
-                          Dismiss
-                        </Button>
-                      </>
-                    ) : null}
-                    {canComment ? (
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Delete comment thread"
-                        onClick={() =>
-                          void execute({
-                            type: "comment.delete",
-                            commentId: thread.id,
-                          })
-                        }
-                      >
-                        <Trash2 aria-hidden="true" />
-                      </Button>
-                    ) : null}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </aside>
+          <ArrowUp aria-hidden="true" className="size-6" />
+        </Button>
+      </form>
+      <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 px-2 pt-2 pb-1">
+        <label
+          className="text-xs font-medium text-zinc-600"
+          htmlFor="document-comment-prompt-kind"
+        >
+          Prompt
+        </label>
+        <select
+          id="document-comment-prompt-kind"
+          value={promptKind ?? ""}
+          className="h-9 rounded-lg border border-zinc-200 bg-white px-2 text-sm"
+          onChange={(event) =>
+            setPromptKind(
+              (event.target.value || null) as CommentPromptKind | null,
+            )
+          }
+        >
+          <option value="">Reply</option>
+          <option value="yes_no">Yes / no</option>
+          <option value="review">Review</option>
+          <option value="rating">Rating 1–5</option>
+        </select>
+        <Button
+          className="ml-auto"
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Close comment composer"
+          onClick={close}
+        >
+          <X aria-hidden="true" />
+        </Button>
+      </div>
+      {loading ? (
+        <p className="px-2 pb-1 text-xs text-zinc-500">Loading comments…</p>
       ) : null}
-    </>
+      {error ? (
+        <p role="alert" className="px-2 pb-1 text-xs text-red-700">
+          {error}
+        </p>
+      ) : null}
+    </aside>
   );
 }

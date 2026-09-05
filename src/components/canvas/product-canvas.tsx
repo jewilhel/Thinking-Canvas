@@ -6175,11 +6175,15 @@ export function ProductCanvas({
             width: focusedDocument.geometry.width * viewport.scale,
             height: focusedDocument.geometry.height * viewport.scale,
           }}
+          userId={userId}
           username={userIdentity}
           canEdit={canMutateCanvas}
-          canvasObjects={objects}
           onAiTransactionApplied={registerAiTransaction}
           onUndoAiTransaction={undoAiTransaction}
+          onSelectCommentEvidence={(objectId) => {
+            setSelectedIds([objectId]);
+            setTool("select");
+          }}
           onUpdate={updateFocusedDocument}
           onExit={exitDocument}
         />

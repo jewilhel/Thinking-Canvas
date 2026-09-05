@@ -338,6 +338,7 @@ test("keeps document range comments attached across two participants", async ({
     .click({ position: { x: 620, y: 380 } });
   await owner.getByRole("button", { name: "Open document" }).click();
   const title = `Range comment ${Date.now()}`;
+  const commentBody = `Can we tighten ${Date.now()}?`;
   await owner.getByLabel("Document title").fill(title);
   await owner.getByLabel("Document title").blur();
   await owner.getByLabel("Document body").fill("Review this shared sentence.");
@@ -354,14 +355,18 @@ test("keeps document range comments attached across two participants", async ({
     .getByTestId("focused-product-document")
     .getByRole("button", { name: "Comment on selected text" })
     .click();
+  const ownerComposer = owner.getByRole("dialog", { name: "New comment" });
+  await expect(ownerComposer).toBeVisible();
+  await ownerComposer.getByRole("textbox", { name: "Comment" }).fill("@");
   await expect(
-    owner.getByText(/Comment on “Review this shared sentence/),
+    ownerComposer.getByRole("option", { name: /Thinking Canvas AI/ }),
   ).toBeVisible();
-  await owner.getByLabel("New document comment").fill("Can we tighten this?");
-  await owner.getByLabel("Structured response").selectOption("yes_no");
-  await owner.getByRole("button", { name: "Comment", exact: true }).click();
-  await expect(owner.getByText("Can we tighten this?")).toBeVisible();
-  await owner.getByRole("button", { name: "Close document comments" }).click();
+  await ownerComposer
+    .getByRole("textbox", { name: "Comment" })
+    .fill(commentBody);
+  await ownerComposer.getByRole("button", { name: "Submit comment" }).click();
+  await expect(owner.getByText(commentBody)).toBeVisible();
+  await owner.getByRole("button", { name: "Close comment thread" }).click();
   await expect
     .poll(() =>
       owner.evaluate(() => {
@@ -389,32 +394,35 @@ test("keeps document range comments attached across two participants", async ({
     )
     .toBeGreaterThan(0);
 
-  await editor.getByText("Review this shared sentence.").selectText();
   await editor
-    .getByTestId("focused-product-document")
-    .getByRole("button", { name: "Comment on selected text" })
+    .getByRole("button", { name: "Open comment history and AI settings" })
     .click();
-  const editorComments = editor.getByRole("complementary", {
-    name: "Document comments",
-  });
-  await expect(editorComments.getByText("Can we tighten this?")).toBeVisible();
-  await expect(
-    editorComments.getByText("Review this shared sentence.", { exact: true }),
-  ).toBeVisible();
-  await editor
-    .getByLabel("Reply to Can we tighten this?")
+  const editorHistory = editor.getByRole("dialog", { name: "Comments" });
+  await expect(editorHistory.getByText(commentBody)).toBeVisible();
+  await editorHistory.getByText(commentBody).click();
+  const editorThread = editor.getByRole("dialog", { name: "Comment thread" });
+  await editorThread
+    .getByRole("textbox", { name: "Reply" })
     .fill("Yes, I can revise it.");
-  await editor.getByRole("button", { name: "Reply", exact: true }).click();
-  await owner.getByText("Review this shared sentence.").selectText();
+  await editorThread.getByRole("button", { name: "Send reply" }).click();
+
   await owner
-    .getByTestId("focused-product-document")
-    .getByRole("button", { name: "Comment on selected text" })
+    .getByRole("button", { name: "Open comment history and AI settings" })
     .click();
+  const ownerHistory = owner.getByRole("dialog", { name: "Comments" });
+  await expect(ownerHistory.getByText(commentBody)).toBeVisible();
+  await ownerHistory.getByText(commentBody).click();
   await expect(owner.getByText("Yes, I can revise it.")).toBeVisible();
   await owner.getByRole("button", { name: "Resolve" }).click();
+  await editor
+    .getByRole("button", { name: "Open comment history and AI settings" })
+    .click();
   await expect(
-    editorComments.getByText("resolved", { exact: true }),
-  ).toBeVisible();
+    editor
+      .getByRole("dialog", { name: "Comments" })
+      .getByRole("button")
+      .filter({ hasText: commentBody }),
+  ).toContainText("resolved");
   await expect
     .poll(() =>
       editor.evaluate(() => {
@@ -454,11 +462,13 @@ test("applies and undoes a semantic AI document revision while preserving later 
   await focusedDocument
     .getByRole("button", { name: "Comment on selected text" })
     .click();
-  await page
-    .getByLabel("New document comment")
+  const composer = page.getByRole("dialog", { name: "New comment" });
+  await composer.getByRole("textbox", { name: "Comment" }).fill("@");
+  await composer.getByRole("option", { name: /Thinking Canvas AI/ }).click();
+  await composer
+    .getByRole("textbox", { name: "Comment" })
     .fill("Revise document wording in the selected range.");
-  await page.getByRole("checkbox", { name: "Ask AI" }).check();
-  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await composer.getByRole("button", { name: "Submit comment" }).click();
 
   await expect(body).toContainText("AI revised document text.");
   await expect(
@@ -470,7 +480,7 @@ test("applies and undoes a semantic AI document revision while preserving later 
     page.getByRole("button", { name: "Undo AI change" }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Close document comments" }).click();
+  await page.getByRole("button", { name: "Close comment thread" }).click();
   await body.focus();
   await body.press("End");
   await body.press("Enter");
@@ -478,12 +488,17 @@ test("applies and undoes a semantic AI document revision while preserving later 
   await expect(body).toContainText("Human follow-up.");
   await page.waitForTimeout(700);
   await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
-  await body.selectText();
-  await focusedDocument
-    .getByRole("button", { name: "Comment on selected text" })
+  await page
+    .getByRole("button", { name: "Open comment history and AI settings" })
+    .click();
+  const history = page.getByRole("dialog", { name: "Comments" });
+  await history
+    .getByText("Revise document wording in the selected range.")
     .click();
   await page.getByRole("button", { name: "Undo AI change" }).click();
-  await expect(page.getByText("AI document change undone.")).toBeVisible();
+  await expect(body).not.toContainText("AI revised document text.");
+  await expect(body).toContainText("Original document wording.");
+  await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
   await page.reload();
   await openNamedDocument(page, "Untitled document");
   const reloadedBody = page.getByLabel("Document body");

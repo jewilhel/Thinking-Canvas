@@ -1,6 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import * as Y from "yjs";
 
 import { ProductDocumentComments } from "@/components/documents/product-document-comments";
 import type { DocumentRangeTarget } from "@/documents/document-range";
@@ -8,11 +7,30 @@ import type { DocumentRangeTarget } from "@/documents/document-range";
 vi.mock("@/comments/use-canvas-comments", () => ({
   useCanvasComments: () => ({
     threads: [],
-    collaboration: null,
+    collaboration: {
+      collaborators: [
+        {
+          kind: "ai",
+          key: "primary-ai",
+          name: "Thinking Canvas AI",
+          role: "primary_ai",
+        },
+      ],
+      aiAccess: {
+        enabled: true,
+        configuredAuthority: "comment_only",
+        effectiveAuthority: "comment_only",
+        canManage: true,
+        version: 1,
+      },
+    },
     loading: false,
     pending: false,
     error: "",
+    refresh: vi.fn(),
     execute: vi.fn(),
+    cancelAiRun: vi.fn(),
+    retryAiRun: vi.fn(),
   }),
 }));
 
@@ -24,18 +42,17 @@ const selectedRange: DocumentRangeTarget = {
 };
 
 describe("ProductDocumentComments", () => {
-  it("uses the pinned selected range while the composer owns focus", () => {
+  it("uses the canvas comment composer and exposes @ AI routing", () => {
     const props = {
-      canvasDocument: new Y.Doc(),
       canvasId: "10000000-0000-4000-8000-000000000001",
+      userId: "80000000-0000-4000-8000-000000000001",
       canvasRole: "owner" as const,
       documentObjectId: selectedRange.documentObjectId,
-      objects: [],
-      selectedObjectIds: [],
       supabaseUrl: "http://127.0.0.1:54321",
       supabasePublishableKey: "test-key",
       onAiTransactionApplied: vi.fn(),
       onUndoAiTransaction: vi.fn(),
+      onSelectEvidence: vi.fn(),
       open: true,
       anchorPosition: { left: 300, top: 120 },
       onOpenChange: vi.fn(),
@@ -45,9 +62,14 @@ describe("ProductDocumentComments", () => {
       <ProductDocumentComments {...props} selectedRange={selectedRange} />,
     );
 
+    expect(screen.getByRole("dialog", { name: "New comment" })).toHaveClass(
+      "rounded-3xl",
+    );
+    const composer = screen.getByLabelText("Comment");
+    expect(composer).toHaveAttribute("placeholder", "Add a comment or type @");
+    fireEvent.change(composer, { target: { value: "@" } });
     expect(
-      screen.getByText("Comment on “Selected document text”"),
+      screen.getByRole("option", { name: /Thinking Canvas AI/ }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("New document comment")).toBeEnabled();
   });
 });

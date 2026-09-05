@@ -489,7 +489,7 @@ function PromptControls({
   );
 }
 
-function RecipientComposer({
+export function RecipientComposer({
   label,
   value,
   recipients,
@@ -665,7 +665,7 @@ function RecipientComposer({
   );
 }
 
-function ThreadBody({
+export function ThreadBody({
   thread,
   userId,
   role,

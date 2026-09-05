@@ -42,11 +42,12 @@ describe("ProductDocumentEditor", () => {
         supabasePublishableKey="test-key"
         documentObject={documentObject}
         screenBounds={{ left: 120, top: 88, width: 720, height: 480 }}
+        userId={actorId}
         username="Editor"
         canEdit
-        canvasObjects={[]}
         onAiTransactionApplied={vi.fn()}
         onUndoAiTransaction={vi.fn()}
+        onSelectCommentEvidence={vi.fn()}
         onUpdate={onUpdate}
         onExit={onExit}
       />,

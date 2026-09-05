@@ -21,7 +21,6 @@ import {
   productDocumentLexicalTheme,
 } from "@/components/documents/product-document-lexical-config";
 import { ProductDocumentToolbar } from "@/components/documents/product-document-toolbar";
-import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 import type { CommentThread } from "@/comments/comment-model";
 import {
   documentMarkdownTransformers,
@@ -52,11 +51,12 @@ type Props = {
     width: number;
     height: number;
   };
+  userId: string;
   username: string;
   canEdit: boolean;
-  canvasObjects: CanvasObjectV2[];
   onAiTransactionApplied: (changeSetId: string) => void;
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
+  onSelectCommentEvidence: (objectId: string) => void;
   onUpdate: (update: { title?: string; settings?: DocumentSettings }) => void;
   onExit: () => void;
 };
@@ -94,11 +94,12 @@ export function ProductDocumentEditor({
   supabasePublishableKey,
   documentObject,
   screenBounds,
+  userId,
   username,
   canEdit,
-  canvasObjects,
   onAiTransactionApplied,
   onUndoAiTransaction,
+  onSelectCommentEvidence,
   onUpdate,
   onExit,
 }: Props) {
@@ -291,17 +292,16 @@ export function ProductDocumentEditor({
             }
           />
           <ProductDocumentComments
-            canvasDocument={canvasDocument}
             canvasId={canvasId}
+            userId={userId}
             canvasRole={canvasRole}
             documentObjectId={documentObject.id}
-            objects={canvasObjects}
-            selectedObjectIds={[]}
             selectedRange={commentTargetRange ?? selectedRange}
             supabaseUrl={supabaseUrl}
             supabasePublishableKey={supabasePublishableKey}
             onAiTransactionApplied={onAiTransactionApplied}
             onUndoAiTransaction={onUndoAiTransaction}
+            onSelectEvidence={onSelectCommentEvidence}
             open={commentsOpen}
             anchorPosition={selectionPosition}
             onOpenChange={(open) => {
