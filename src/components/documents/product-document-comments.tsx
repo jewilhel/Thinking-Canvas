@@ -80,6 +80,9 @@ export function ProductDocumentComments({
       onAiTransactionApplied,
     );
   const [open, setOpen] = useState(false);
+  const [commentRange, setCommentRange] = useState<DocumentRangeTarget | null>(
+    null,
+  );
   const [draft, setDraft] = useState("");
   const [reply, setReply] = useState<Record<string, string>>({});
   const [promptKind, setPromptKind] = useState<CommentPromptKind | null>(null);
@@ -112,7 +115,8 @@ export function ProductDocumentComments({
       }),
   );
   const canComment = canvasRole !== "viewer";
-  const hasTarget = selectedRange !== null || internalObjectIds.length > 0;
+  const effectiveRange = commentRange ?? selectedRange;
+  const hasTarget = effectiveRange !== null || internalObjectIds.length > 0;
 
   async function createThread() {
     if (!draft.trim() || !hasTarget) return;
@@ -121,12 +125,12 @@ export function ProductDocumentComments({
       commandId: crypto.randomUUID(),
       canvasId,
       body: draft.trim(),
-      targetObjectIds: selectedRange ? [] : internalObjectIds,
-      orderedContextIds: selectedRange
+      targetObjectIds: effectiveRange ? [] : internalObjectIds,
+      orderedContextIds: effectiveRange
         ? [documentObjectId]
         : [documentObjectId, ...internalObjectIds],
       canvasAnchor: null,
-      documentRange: selectedRange,
+      documentRange: effectiveRange,
       promptKind,
       authorKind: "human",
       authorKey: null,
@@ -149,7 +153,18 @@ export function ProductDocumentComments({
         aria-label="Comments"
         title="Comments"
         aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
+        onMouseDown={() => {
+          if (!open && selectedRange) setCommentRange(selectedRange);
+        }}
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            setCommentRange(null);
+          } else {
+            if (selectedRange) setCommentRange(selectedRange);
+            setOpen(true);
+          }
+        }}
       >
         <MessageCircle aria-hidden="true" />
         {compact ? (
@@ -177,7 +192,10 @@ export function ProductDocumentComments({
               size="icon-sm"
               variant="ghost"
               aria-label="Close document comments"
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false);
+                setCommentRange(null);
+              }}
             >
               <X aria-hidden="true" />
             </Button>
@@ -185,8 +203,8 @@ export function ProductDocumentComments({
           {canComment ? (
             <div className="mt-4 rounded-xl border border-zinc-200 p-3">
               <p className="text-xs font-medium text-zinc-600">
-                {selectedRange
-                  ? `Comment on “${selectedRange.quote}”`
+                {effectiveRange
+                  ? `Comment on “${effectiveRange.quote}”`
                   : internalObjectIds.length
                     ? `Comment on ${internalObjectIds.length} selected document object(s)`
                     : "Select text or a document object to comment"}

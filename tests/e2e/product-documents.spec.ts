@@ -60,9 +60,23 @@ test("creates, focuses, configures, restores, and reloads a product document", a
   await expect(
     page.locator('[data-testid^="document-page-preview-"]'),
   ).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-testid^="document-page-preview-"]')
+        .evaluate((element) => getComputedStyle(element).boxShadow),
+    )
+    .not.toBe("none");
 
   await page.getByRole("button", { name: "Open document" }).click();
   await expect(page.getByTestId("focused-product-document")).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .getByTestId("focused-product-document")
+        .evaluate((element) => getComputedStyle(element).boxShadow),
+    )
+    .not.toBe("none");
   await expect(surface).toBeVisible();
   await expect(page.getByTestId("workspace-top-chrome")).toBeVisible();
   await expect(
@@ -190,6 +204,48 @@ test("creates, focuses, configures, restores, and reloads a product document", a
   );
   await page.getByRole("button", { name: /document settings/i }).click();
   await expect(page.getByLabel("Layout")).toHaveValue("a4-landscape");
+});
+
+test("links selected text and inserts a table below its title", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.getByLabel("Canvas name").fill(`Document tools ${Date.now()}`);
+  await page.getByRole("button", { name: "Create canvas" }).click();
+  await page.getByRole("button", { name: "Document", exact: true }).click();
+  await page
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 480, y: 320 } });
+  await page.getByRole("button", { name: "Open document" }).click();
+
+  const body = page.getByLabel("Document body");
+  await body.fill("Reference title");
+  await body.selectText();
+  page.once("dialog", (dialog) =>
+    dialog.accept("https://example.com/reference"),
+  );
+  await page.getByRole("button", { name: "Add or remove link" }).click();
+  const link = body.getByRole("link", { name: "Reference title" });
+  await expect(link).toHaveAttribute("href", "https://example.com/reference");
+
+  await link.selectText();
+  await page.getByRole("button", { name: "Insert table" }).click();
+  await expect(body).toContainText("Reference title");
+  await expect(body.locator("table")).toBeVisible();
+  await expect
+    .poll(() =>
+      body.evaluate((element) => {
+        const title = element.querySelector("p");
+        const table = element.querySelector("table");
+        return Boolean(
+          title &&
+          table &&
+          title.compareDocumentPosition(table) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+      }),
+    )
+    .toBe(true);
 });
 
 test("collaborates on document body and display settings", async ({

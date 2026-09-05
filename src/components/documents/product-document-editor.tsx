@@ -222,7 +222,7 @@ export function ProductDocumentEditor({
 
   return (
     <div
-      className="absolute z-20 overflow-visible text-zinc-950"
+      className="absolute z-20 overflow-visible text-zinc-950 shadow-[0_22px_55px_rgba(15,23,42,0.22)]"
       data-testid="focused-product-document"
       style={screenBounds}
     >

@@ -18,11 +18,12 @@ import {
   type HeadingTagType,
 } from "@lexical/rich-text";
 import { $setBlocksType } from "@lexical/selection";
-import { INSERT_TABLE_COMMAND } from "@lexical/table";
+import { $createTableNodeWithDimensions } from "@lexical/table";
 import {
   $createParagraphNode,
   $getRoot,
   $getSelection,
+  $isElementNode,
   $isRangeSelection,
   $isTextNode,
   $setSelection,
@@ -338,13 +339,46 @@ export function ProductDocumentToolbar({
   }
 
   function setLink() {
+    let selectionSnapshot: ReturnType<typeof $getSelection> = null;
+    editor.getEditorState().read(() => {
+      const selection = $getSelection();
+      if ($isRangeSelection(selection) && !selection.isCollapsed()) {
+        selectionSnapshot = selection.clone();
+      }
+    });
+    if (!selectionSnapshot) return;
     const url = window.prompt("Enter an http or https link");
     if (url === null) return;
     if (url !== "" && !isSafeDocumentLink(url)) {
       setStatus("Document links must use an http or https address.");
       return;
     }
+    editor.update(
+      () => {
+        $setSelection(selectionSnapshot);
+      },
+      { discrete: true },
+    );
     editor.dispatchCommand(TOGGLE_LINK_COMMAND, url || null);
+  }
+
+  function insertTableAfterSelection() {
+    editor.update(() => {
+      const selection = $getSelection();
+      if (!$isRangeSelection(selection) || selection.isCollapsed()) return;
+      const selectedNodes = selection.getNodes();
+      const lastSelectedNode = selectedNodes[selectedNodes.length - 1];
+      if (!lastSelectedNode) return;
+      const selectedBlock = lastSelectedNode.getTopLevelElementOrThrow();
+      const table = $createTableNodeWithDimensions(3, 3, true);
+      selectedBlock.insertAfter(table);
+      const firstTableDescendant = table.getFirstDescendant();
+      if ($isElementNode(firstTableDescendant)) {
+        firstTableDescendant.selectStart();
+      } else {
+        table.selectStart();
+      }
+    });
   }
 
   return (
@@ -528,13 +562,7 @@ export function ProductDocumentToolbar({
             variant="outline"
             aria-label="Insert table"
             disabled={!canEdit}
-            onClick={() =>
-              editor.dispatchCommand(INSERT_TABLE_COMMAND, {
-                columns: "3",
-                rows: "3",
-                includeHeaders: true,
-              })
-            }
+            onClick={insertTableAfterSelection}
           >
             <Table2 aria-hidden="true" />
           </Button>
