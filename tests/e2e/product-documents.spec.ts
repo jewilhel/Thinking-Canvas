@@ -380,6 +380,16 @@ test("keeps document range comments attached across two participants", async ({
       }),
     )
     .toBeGreaterThan(0);
+  await owner
+    .getByText("Review this shared sentence.", { exact: true })
+    .click({ position: { x: 70, y: 10 } });
+  const reopenedOwnerThread = owner.getByRole("dialog", {
+    name: "Comment thread",
+  });
+  await expect(reopenedOwnerThread.getByText(commentBody)).toBeVisible();
+  await reopenedOwnerThread
+    .getByRole("button", { name: "Close comment thread" })
+    .click();
   await expect
     .poll(() =>
       editor.evaluate(() => {
@@ -439,6 +449,54 @@ test("keeps document range comments attached across two participants", async ({
 
   await ownerContext.close();
   await editorContext.close();
+});
+
+test("removes document range highlights after dismissal and deletion", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.getByLabel("Canvas name").fill(`Comment lifecycle ${Date.now()}`);
+  await page.getByRole("button", { name: "Create canvas" }).click();
+  await page.getByRole("button", { name: "Document", exact: true }).click();
+  await page
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 480, y: 320 } });
+  await page.getByRole("button", { name: "Open document" }).click();
+  const body = page.getByLabel("Document body");
+  await body.fill("Review this lifecycle sentence.");
+  await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
+
+  const highlightCount = () =>
+    page.evaluate(() => {
+      const style = document.querySelector<HTMLStyleElement>(
+        "style[data-document-comment-highlight]",
+      );
+      const name = style?.dataset.documentCommentHighlight;
+      return name
+        ? (CSS.highlights.get(`document-comment-${name}`)?.size ?? 0)
+        : 0;
+    });
+  const createComment = async (message: string) => {
+    await body.selectText();
+    await page
+      .getByTestId("focused-product-document")
+      .getByRole("button", { name: "Comment on selected text" })
+      .click();
+    const composer = page.getByRole("dialog", { name: "New comment" });
+    await composer.getByRole("textbox", { name: "Comment" }).fill(message);
+    await composer.getByRole("button", { name: "Submit comment" }).click();
+    await expect(page.getByText(message)).toBeVisible();
+    await expect.poll(highlightCount).toBeGreaterThan(0);
+  };
+
+  await createComment("Dismiss this document comment.");
+  await page.getByRole("button", { name: "Dismiss" }).click();
+  await expect.poll(highlightCount).toBe(0);
+
+  await createComment("Delete this document comment.");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect.poll(highlightCount).toBe(0);
 });
 
 test("applies and undoes a semantic AI document revision while preserving later text", async ({

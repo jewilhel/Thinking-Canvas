@@ -80,6 +80,30 @@ export function releaseDocumentCollabNodeCache(sharedType: object) {
   delete (sharedType as CachedCollabSharedType)._collabNode;
 }
 
+export function commentThreadIdAtSelection(
+  selection: Selection | null,
+  ranges: ReadonlyMap<string, Range>,
+) {
+  if (
+    !selection ||
+    !selection.isCollapsed ||
+    !selection.anchorNode ||
+    selection.rangeCount === 0
+  ) {
+    return null;
+  }
+  for (const [threadId, range] of ranges) {
+    try {
+      if (range.isPointInRange(selection.anchorNode, selection.anchorOffset)) {
+        return threadId;
+      }
+    } catch {
+      // Ignore detached DOM ranges while the collaborative editor reconciles.
+    }
+  }
+  return null;
+}
+
 export function ProductDocumentCollaboration({
   canvasDocument,
   documentId,
@@ -87,6 +111,7 @@ export function ProductDocumentCollaboration({
   cursorColor,
   documentObjectId,
   onRangeSelectionChange,
+  onCommentThreadOpen,
   commentThreads = [],
   preview = false,
 }: {
@@ -96,17 +121,27 @@ export function ProductDocumentCollaboration({
   cursorColor: string;
   documentObjectId: string;
   onRangeSelectionChange?: (range: DocumentRangeTarget | null) => void;
+  onCommentThreadOpen?: (
+    threadId: string,
+    position: { left: number; top: number },
+  ) => void;
   commentThreads?: CommentThread[];
   preview?: boolean;
 }) {
   const [editor] = useLexicalComposerContext();
   const commentThreadsRef = useRef(commentThreads);
+  const onCommentThreadOpenRef = useRef(onCommentThreadOpen);
+  const commentRangesRef = useRef(new Map<string, Range>());
   const syncCommentHighlightsRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     commentThreadsRef.current = commentThreads;
     syncCommentHighlightsRef.current();
   }, [commentThreads]);
+
+  useEffect(() => {
+    onCommentThreadOpenRef.current = onCommentThreadOpen;
+  }, [onCommentThreadOpen]);
 
   useEffect(() => {
     const provider = new CanvasLexicalProvider(canvasDocument, documentId);
@@ -134,6 +169,7 @@ export function ProductDocumentCollaboration({
     let highlightFrame = 0;
 
     const clearCommentHighlights = () => {
+      commentRangesRef.current.clear();
       if (typeof CSS === "undefined") return;
       const registry = CSS.highlights;
       registry?.delete(highlightName);
@@ -176,7 +212,9 @@ export function ProductDocumentCollaboration({
                 focusNode,
                 focusOffset,
               );
-              return range && !range.collapsed ? [range] : [];
+              return range && !range.collapsed
+                ? ([[thread.id, range]] as const)
+                : [];
             } catch {
               return [];
             }
@@ -184,7 +222,11 @@ export function ProductDocumentCollaboration({
         );
         clearCommentHighlights();
         if (ranges.length > 0) {
-          CSS.highlights.set(highlightName, new Highlight(...ranges));
+          commentRangesRef.current = new Map(ranges);
+          CSS.highlights.set(
+            highlightName,
+            new Highlight(...ranges.map(([, range]) => range)),
+          );
         }
       });
     };
@@ -325,6 +367,28 @@ export function ProductDocumentCollaboration({
         COMMAND_PRIORITY_EDITOR,
       ),
     );
+    const openComment = (event: MouseEvent) => {
+      if (!onCommentThreadOpenRef.current) return;
+      const eventRoot = event.currentTarget;
+      if (!(eventRoot instanceof HTMLElement)) return;
+      const threadId = commentThreadIdAtSelection(
+        eventRoot.ownerDocument.getSelection(),
+        commentRangesRef.current,
+      );
+      if (!threadId) return;
+      const frame = eventRoot.closest<HTMLElement>(
+        '[data-testid="focused-product-document"]',
+      );
+      if (!frame) return;
+      const frameRect = frame.getBoundingClientRect();
+      onCommentThreadOpenRef.current(threadId, {
+        left: Math.max(
+          24,
+          Math.min(frameRect.width - 24, event.clientX - frameRect.left),
+        ),
+        top: Math.max(-52, event.clientY - frameRect.top - 52),
+      });
+    };
     const removeFocusListeners = editor.registerRootListener(
       (rootElement, previousRootElement) => {
         const focus = () =>
@@ -333,8 +397,10 @@ export function ProductDocumentCollaboration({
           setLocalStateFocus(provider, username, cursorColor, false, {});
         previousRootElement?.removeEventListener("focus", focus);
         previousRootElement?.removeEventListener("blur", blur);
+        previousRootElement?.removeEventListener("click", openComment);
         rootElement?.addEventListener("focus", focus);
         rootElement?.addEventListener("blur", blur);
+        rootElement?.addEventListener("click", openComment);
       },
     );
     const handleAwarenessUpdate = ({

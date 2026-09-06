@@ -31,6 +31,7 @@ type Props = {
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
   onSelectEvidence: (objectId: string) => void;
   open: boolean;
+  requestedThreadId?: string | null;
   anchorPosition: { left: number; top: number } | null;
   onOpenChange: (open: boolean) => void;
   onThreadsChange: (threads: CommentThread[]) => void;
@@ -48,6 +49,7 @@ export function ProductDocumentComments({
   onUndoAiTransaction,
   onSelectEvidence,
   open,
+  requestedThreadId = null,
   anchorPosition,
   onOpenChange,
   onThreadsChange,
@@ -83,8 +85,9 @@ export function ProductDocumentComments({
       ),
     [documentObjectId, threads],
   );
+  const activeThreadId = requestedThreadId ?? selectedThreadId;
   const selectedThread =
-    documentThreads.find((thread) => thread.id === selectedThreadId) ?? null;
+    documentThreads.find((thread) => thread.id === activeThreadId) ?? null;
   const canComment = canvasRole !== "viewer";
 
   useEffect(() => {
@@ -92,16 +95,20 @@ export function ProductDocumentComments({
   }, [documentThreads, onThreadsChange]);
 
   useEffect(() => {
-    if (open && !selectedThreadId) {
+    if (open && !activeThreadId) {
       requestAnimationFrame(() => composerRef.current?.focus());
     }
-  }, [open, selectedThreadId]);
+  }, [activeThreadId, open]);
 
   useEffect(() => {
     if (!open) return;
     function dismissOutside(event: PointerEvent) {
       const target = event.target;
-      if (!(target instanceof Node) || panelRef.current?.contains(target)) {
+      if (
+        pending ||
+        !(target instanceof Node) ||
+        panelRef.current?.contains(target)
+      ) {
         return;
       }
       setSelectedThreadId(null);
@@ -113,9 +120,10 @@ export function ProductDocumentComments({
     window.addEventListener("pointerdown", dismissOutside, true);
     return () =>
       window.removeEventListener("pointerdown", dismissOutside, true);
-  }, [onOpenChange, open]);
+  }, [onOpenChange, open, pending]);
 
   function close() {
+    if (pending) return;
     setSelectedThreadId(null);
     setDraft("");
     setDraftRecipients([]);
@@ -206,6 +214,7 @@ export function ProductDocumentComments({
         aria-label="Comment thread"
         className="absolute z-[90] max-h-[min(28rem,calc(100%-2rem))] w-[min(24rem,calc(100%-2rem))] -translate-x-1/2 overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 text-zinc-900 shadow-2xl"
         style={sharedPosition}
+        aria-busy={pending}
       >
         <div className="mb-3 flex items-center justify-between border-b border-zinc-100 pb-2">
           <p className="font-semibold">Comment</p>
@@ -214,6 +223,7 @@ export function ProductDocumentComments({
             size="icon-sm"
             variant="ghost"
             aria-label="Close comment thread"
+            disabled={pending}
             onClick={close}
           >
             <X aria-hidden="true" />
@@ -278,6 +288,7 @@ export function ProductDocumentComments({
       aria-label="New comment"
       className="group absolute z-[90] w-[min(30rem,calc(100%-2rem))] -translate-x-1/2 rounded-3xl border border-zinc-200 bg-white p-2 text-zinc-900 shadow-2xl"
       style={sharedPosition}
+      aria-busy={pending}
     >
       <form
         className="flex items-center gap-2"
@@ -339,6 +350,7 @@ export function ProductDocumentComments({
           size="icon-sm"
           variant="ghost"
           aria-label="Close comment composer"
+          disabled={pending}
           onClick={close}
         >
           <X aria-hidden="true" />
@@ -346,6 +358,11 @@ export function ProductDocumentComments({
       </div>
       {loading ? (
         <p className="px-2 pb-1 text-xs text-zinc-500">Loading comments…</p>
+      ) : null}
+      {pending ? (
+        <p role="status" className="px-2 pb-1 text-xs text-zinc-500">
+          Creating comment…
+        </p>
       ) : null}
       {error ? (
         <p role="alert" className="px-2 pb-1 text-xs text-red-700">

@@ -118,6 +118,9 @@ export function ProductDocumentEditor({
     useState<DocumentRangeTarget | null>(null);
   const [commentTargetRange, setCommentTargetRange] =
     useState<DocumentRangeTarget | null>(null);
+  const [requestedCommentThreadId, setRequestedCommentThreadId] = useState<
+    string | null
+  >(null);
   const editorElementRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const readingSurfaceRef = useRef<HTMLDivElement>(null);
@@ -271,6 +274,7 @@ export function ProductDocumentEditor({
             canComment={canvasRole !== "viewer"}
             commentsOpen={commentsOpen}
             onCommentsOpen={() => {
+              setRequestedCommentThreadId(null);
               setCommentTargetRange(selectedRange);
               setCommentsOpen(true);
             }}
@@ -303,10 +307,14 @@ export function ProductDocumentEditor({
             onUndoAiTransaction={onUndoAiTransaction}
             onSelectEvidence={onSelectCommentEvidence}
             open={commentsOpen}
+            requestedThreadId={requestedCommentThreadId}
             anchorPosition={selectionPosition}
             onOpenChange={(open) => {
               setCommentsOpen(open);
-              if (!open) setCommentTargetRange(null);
+              if (!open) {
+                setCommentTargetRange(null);
+                setRequestedCommentThreadId(null);
+              }
             }}
             onThreadsChange={handleDocumentThreadsChange}
           />
@@ -423,6 +431,17 @@ export function ProductDocumentEditor({
                 cursorColor="#7c3aed"
                 documentObjectId={documentObject.id}
                 onRangeSelectionChange={handleRangeSelectionChange}
+                onCommentThreadOpen={(threadId, position) => {
+                  const thread = documentCommentThreads.find(
+                    (candidate) => candidate.id === threadId,
+                  );
+                  if (!thread?.documentRange || thread.status !== "open")
+                    return;
+                  setCommentTargetRange(thread.documentRange);
+                  setSelectionPosition(position);
+                  setRequestedCommentThreadId(threadId);
+                  setCommentsOpen(true);
+                }}
                 commentThreads={documentCommentThreads}
               />
               <ListPlugin />

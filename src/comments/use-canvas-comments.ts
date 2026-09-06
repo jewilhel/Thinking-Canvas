@@ -157,8 +157,6 @@ export function useCanvasComments(
       setError("");
       try {
         const result = await repository.execute(command);
-        await refresh();
-        await repository.broadcastInvalidated();
         const aiRunId =
           result &&
           typeof result === "object" &&
@@ -169,6 +167,8 @@ export function useCanvasComments(
         if (aiRunId) {
           void processAiRun(aiRunId);
         }
+        await refresh();
+        await repository.broadcastInvalidated();
         return result;
       } catch (caught) {
         const message =

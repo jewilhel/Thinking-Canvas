@@ -1,8 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ProductDocumentComments } from "@/components/documents/product-document-comments";
 import type { DocumentRangeTarget } from "@/documents/document-range";
+
+const commentHook = vi.hoisted(() => ({
+  pending: false,
+}));
 
 vi.mock("@/comments/use-canvas-comments", () => ({
   useCanvasComments: () => ({
@@ -25,7 +29,7 @@ vi.mock("@/comments/use-canvas-comments", () => ({
       },
     },
     loading: false,
-    pending: false,
+    pending: commentHook.pending,
     error: "",
     refresh: vi.fn(),
     execute: vi.fn(),
@@ -71,5 +75,44 @@ describe("ProductDocumentComments", () => {
     expect(
       screen.getByRole("option", { name: /Thinking Canvas AI/ }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps a pending document comment anchored until creation completes", () => {
+    commentHook.pending = true;
+    const onOpenChange = vi.fn();
+    const props = {
+      canvasId: "10000000-0000-4000-8000-000000000001",
+      userId: "80000000-0000-4000-8000-000000000001",
+      canvasRole: "owner" as const,
+      documentObjectId: selectedRange.documentObjectId,
+      supabaseUrl: "http://127.0.0.1:54321",
+      supabasePublishableKey: "test-key",
+      onAiTransactionApplied: vi.fn(),
+      onUndoAiTransaction: vi.fn(),
+      onSelectEvidence: vi.fn(),
+      open: true,
+      anchorPosition: { left: 300, top: 120 },
+      onOpenChange,
+      onThreadsChange: vi.fn(),
+    };
+    render(
+      <ProductDocumentComments {...props} selectedRange={selectedRange} />,
+    );
+
+    const dialog = screen
+      .getAllByRole("dialog", { name: "New comment" })
+      .at(-1)!;
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "Creating comment…",
+    );
+    const close = within(dialog).getByRole("button", {
+      name: "Close comment composer",
+    });
+    expect(close).toBeDisabled();
+    fireEvent.click(close);
+    fireEvent.pointerDown(document.body);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(dialog).toHaveAttribute("aria-busy", "true");
+    commentHook.pending = false;
   });
 });
