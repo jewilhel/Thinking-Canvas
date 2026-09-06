@@ -24,6 +24,7 @@ type Props = {
   userId: string;
   canvasRole: CanvasRole;
   documentObjectId: string;
+  documentTitle: string;
   selectedRange: DocumentRangeTarget | null;
   supabaseUrl: string;
   supabasePublishableKey: string;
@@ -42,6 +43,7 @@ export function ProductDocumentComments({
   userId,
   canvasRole,
   documentObjectId,
+  documentTitle,
   selectedRange,
   supabaseUrl,
   supabasePublishableKey,
@@ -76,6 +78,9 @@ export function ProductDocumentComments({
     [],
   );
   const [promptKind, setPromptKind] = useState<CommentPromptKind | null>(null);
+  const [includeDocumentContext, setIncludeDocumentContext] = useState(true);
+  const [includeSelectedTextContext, setIncludeSelectedTextContext] =
+    useState(true);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const documentThreads = useMemo(
@@ -115,6 +120,8 @@ export function ProductDocumentComments({
       setDraft("");
       setDraftRecipients([]);
       setPromptKind(null);
+      setIncludeDocumentContext(true);
+      setIncludeSelectedTextContext(true);
       onOpenChange(false);
     }
     window.addEventListener("pointerdown", dismissOutside, true);
@@ -128,6 +135,8 @@ export function ProductDocumentComments({
     setDraft("");
     setDraftRecipients([]);
     setPromptKind(null);
+    setIncludeDocumentContext(true);
+    setIncludeSelectedTextContext(true);
     onOpenChange(false);
   }
 
@@ -139,9 +148,13 @@ export function ProductDocumentComments({
       canvasId,
       body: draft.trim(),
       targetObjectIds: [],
-      orderedContextIds: [documentObjectId],
+      orderedContextIds: includeDocumentContext ? [documentObjectId] : [],
       canvasAnchor: null,
       documentRange: selectedRange,
+      documentAiContext: {
+        includeDocument: includeDocumentContext,
+        includeSelectedText: includeSelectedTextContext,
+      },
       promptKind,
       authorKind: "human",
       authorKey: null,
@@ -291,6 +304,37 @@ export function ProductDocumentComments({
       style={sharedPosition}
       aria-busy={pending}
     >
+      <div className="mb-1 flex flex-wrap items-center gap-1 px-2">
+        <span className="text-xs font-medium text-zinc-500">Context</span>
+        {includeDocumentContext ? (
+          <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-violet-100 px-2 py-1 text-xs font-medium text-violet-900">
+            <span className="truncate">{documentTitle}</span>
+            <button
+              type="button"
+              disabled={pending}
+              aria-label={`Remove document context ${documentTitle}`}
+              className="shrink-0 rounded-full p-0.5 hover:bg-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500"
+              onClick={() => setIncludeDocumentContext(false)}
+            >
+              <X aria-hidden="true" className="size-3" />
+            </button>
+          </span>
+        ) : null}
+        {includeSelectedTextContext ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-1 text-xs font-medium text-violet-900">
+            Selected text
+            <button
+              type="button"
+              disabled={pending}
+              aria-label="Remove selected text context"
+              className="rounded-full p-0.5 hover:bg-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500"
+              onClick={() => setIncludeSelectedTextContext(false)}
+            >
+              <X aria-hidden="true" className="size-3" />
+            </button>
+          </span>
+        ) : null}
+      </div>
       <form
         className="flex items-center gap-2"
         onSubmit={(event) => {

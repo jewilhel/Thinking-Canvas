@@ -720,6 +720,8 @@ export type Database = {
           comment_id: string
           created_at: string
           document_object_id: string
+          include_document_context: boolean
+          include_selected_text_context: boolean
           quoted_text: string
           relative_anchor: string
           relative_head: string
@@ -729,6 +731,8 @@ export type Database = {
           comment_id: string
           created_at?: string
           document_object_id: string
+          include_document_context?: boolean
+          include_selected_text_context?: boolean
           quoted_text: string
           relative_anchor: string
           relative_head: string
@@ -738,6 +742,8 @@ export type Database = {
           comment_id?: string
           created_at?: string
           document_object_id?: string
+          include_document_context?: boolean
+          include_selected_text_context?: boolean
           quoted_text?: string
           relative_anchor?: string
           relative_head?: string

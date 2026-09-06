@@ -300,6 +300,7 @@ export function ProductDocumentEditor({
             userId={userId}
             canvasRole={canvasRole}
             documentObjectId={documentObject.id}
+            documentTitle={documentObject.title}
             selectedRange={commentTargetRange ?? selectedRange}
             supabaseUrl={supabaseUrl}
             supabasePublishableKey={supabasePublishableKey}

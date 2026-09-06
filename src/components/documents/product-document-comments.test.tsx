@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProductDocumentComments } from "@/components/documents/product-document-comments";
 import type { DocumentRangeTarget } from "@/documents/document-range";
 
 const commentHook = vi.hoisted(() => ({
   pending: false,
+  execute: vi.fn(),
 }));
 
 vi.mock("@/comments/use-canvas-comments", () => ({
@@ -32,7 +33,7 @@ vi.mock("@/comments/use-canvas-comments", () => ({
     pending: commentHook.pending,
     error: "",
     refresh: vi.fn(),
-    execute: vi.fn(),
+    execute: commentHook.execute,
     cancelAiRun: vi.fn(),
     retryAiRun: vi.fn(),
   }),
@@ -46,12 +47,19 @@ const selectedRange: DocumentRangeTarget = {
 };
 
 describe("ProductDocumentComments", () => {
+  beforeEach(() => {
+    commentHook.pending = false;
+    commentHook.execute.mockReset();
+    commentHook.execute.mockResolvedValue(null);
+  });
+
   it("uses the canvas comment composer and exposes @ AI routing", () => {
     const props = {
       canvasId: "10000000-0000-4000-8000-000000000001",
       userId: "80000000-0000-4000-8000-000000000001",
       canvasRole: "owner" as const,
       documentObjectId: selectedRange.documentObjectId,
+      documentTitle: "Research notes",
       supabaseUrl: "http://127.0.0.1:54321",
       supabasePublishableKey: "test-key",
       onAiTransactionApplied: vi.fn(),
@@ -75,6 +83,62 @@ describe("ProductDocumentComments", () => {
     expect(
       screen.getByRole("option", { name: /Thinking Canvas AI/ }),
     ).toBeInTheDocument();
+    expect(screen.getByText("Research notes")).toBeInTheDocument();
+    expect(screen.getByText("Selected text")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Remove selected text context",
+      }),
+    );
+    expect(screen.queryByText("Selected text")).not.toBeInTheDocument();
+  });
+
+  it("submits the visible document and selected-text context choices", async () => {
+    render(
+      <ProductDocumentComments
+        canvasId="10000000-0000-4000-8000-000000000001"
+        userId="80000000-0000-4000-8000-000000000001"
+        canvasRole="owner"
+        documentObjectId={selectedRange.documentObjectId}
+        documentTitle="Research notes"
+        selectedRange={selectedRange}
+        supabaseUrl="http://127.0.0.1:54321"
+        supabasePublishableKey="test-key"
+        onAiTransactionApplied={vi.fn()}
+        onUndoAiTransaction={vi.fn()}
+        onSelectEvidence={vi.fn()}
+        open
+        anchorPosition={{ left: 300, top: 120 }}
+        onOpenChange={vi.fn()}
+        onThreadsChange={vi.fn()}
+      />,
+    );
+    const dialog = screen
+      .getAllByRole("dialog", { name: "New comment" })
+      .at(-1)!;
+
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Remove document context Research notes",
+      }),
+    );
+    fireEvent.change(within(dialog).getByLabelText("Comment"), {
+      target: { value: "Review this selection" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Submit comment" }),
+    );
+
+    expect(commentHook.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderedContextIds: [],
+        documentRange: selectedRange,
+        documentAiContext: {
+          includeDocument: false,
+          includeSelectedText: true,
+        },
+      }),
+    );
   });
 
   it("keeps a pending document comment anchored until creation completes", () => {
@@ -85,6 +149,7 @@ describe("ProductDocumentComments", () => {
       userId: "80000000-0000-4000-8000-000000000001",
       canvasRole: "owner" as const,
       documentObjectId: selectedRange.documentObjectId,
+      documentTitle: "Research notes",
       supabaseUrl: "http://127.0.0.1:54321",
       supabasePublishableKey: "test-key",
       onAiTransactionApplied: vi.fn(),

@@ -219,7 +219,7 @@ export async function completeAiRun(
     supabase
       .from("comments")
       .select(
-        "id,body,status,anchor_x,anchor_y,comment_targets(target_object_id,target_order),comment_document_targets(document_object_id,relative_anchor,relative_head,quoted_text)",
+        "id,body,status,anchor_x,anchor_y,comment_targets(target_object_id,target_order),comment_document_targets(document_object_id,relative_anchor,relative_head,quoted_text,include_document_context,include_selected_text_context)",
       )
       .eq("id", run.invoking_comment_id)
       .maybeSingle(),
@@ -245,7 +245,7 @@ export async function completeAiRun(
     supabase
       .from("comments")
       .select(
-        "id,body,status,author_kind,author_key,created_at,updated_at,comment_targets(target_object_id,target_order),comment_document_targets(document_object_id,relative_anchor,relative_head,quoted_text),comment_thread_participants(participant_kind,participant_user_id,participant_ai_key),comment_replies(id,author_kind,author_key,body,created_at,updated_at),comment_prompts(kind,comment_responses(value))",
+        "id,body,status,author_kind,author_key,created_at,updated_at,comment_targets(target_object_id,target_order),comment_document_targets(document_object_id,relative_anchor,relative_head,quoted_text,include_document_context,include_selected_text_context),comment_thread_participants(participant_kind,participant_user_id,participant_ai_key),comment_replies(id,author_kind,author_key,body,created_at,updated_at),comment_prompts(kind,comment_responses(value))",
       )
       .eq("canvas_id", run.canvas_id)
       .in("status", ["open", "resolved"])
@@ -289,6 +289,10 @@ export async function completeAiRun(
         quote: sourceDocumentTarget.quoted_text,
       }
     : null;
+  const aiDocumentRange =
+    sourceDocumentTarget?.include_selected_text_context === false
+      ? null
+      : sourceDocumentRange;
   if (
     sourceDocumentTarget &&
     !sourceObjects.some(
@@ -350,17 +354,20 @@ export async function completeAiRun(
       targetObjectIds: [...thread.comment_targets]
         .sort((left, right) => left.target_order - right.target_order)
         .map((target) => target.target_object_id),
-      documentRange: documentTarget
-        ? {
-            documentObjectId: documentTarget.document_object_id,
-            quote: documentTarget.quoted_text,
-            detached: resolveDocumentRange(compacted.document, {
-              anchor: documentTarget.relative_anchor,
-              head: documentTarget.relative_head,
+      documentRange:
+        documentTarget &&
+        (thread.id !== run.invoking_comment_id ||
+          documentTarget.include_selected_text_context !== false)
+          ? {
+              documentObjectId: documentTarget.document_object_id,
               quote: documentTarget.quoted_text,
-            }).detached,
-          }
-        : null,
+              detached: resolveDocumentRange(compacted.document, {
+                anchor: documentTarget.relative_anchor,
+                head: documentTarget.relative_head,
+                quote: documentTarget.quoted_text,
+              }).detached,
+            }
+          : null,
       participantKeys: thread.comment_thread_participants
         .map((participant) =>
           participant.participant_kind === "ai"
@@ -411,15 +418,30 @@ export async function completeAiRun(
     cursor: 0,
     limit: 25,
   });
+  const projectedObjects = sourceDocumentTarget
+    ? sourceDocumentTarget.include_document_context
+      ? objects.filter(
+          (object) => object.id === sourceDocumentTarget.document_object_id,
+        )
+      : []
+    : objects;
+  const projectedThreads = sourceDocumentTarget
+    ? commentThreads.filter((thread) => thread.id === run.invoking_comment_id)
+    : commentThreads;
   const projectionBase = {
     version: 2 as const,
     canvasId: run.canvas_id,
-    objects,
-    commentThreads,
+    objects: projectedObjects,
+    commentThreads: projectedThreads,
     documents: buildAiDocumentProjections({
       document: compacted.document,
       objects: sourceObjects,
-    }),
+    }).filter(
+      (document) =>
+        !sourceDocumentTarget ||
+        (sourceDocumentTarget.include_document_context &&
+          document.objectId === sourceDocumentTarget.document_object_id),
+    ),
     designTokens: AI_CANVAS_DESIGN_TOKENS,
     truncated: false,
   };
@@ -655,7 +677,7 @@ export async function completeAiRun(
                 actorId: run.requested_by,
                 toolName: "execute_document_changes",
                 arguments: documentToolArguments,
-                range: sourceDocumentRange,
+                range: aiDocumentRange,
               });
               return {
                 commandId,
@@ -731,7 +753,7 @@ export async function completeAiRun(
             actorId: run.requested_by,
             toolName: "propose_document_changes",
             arguments: documentToolArguments,
-            range: sourceDocumentRange,
+            range: aiDocumentRange,
           });
       const toolResult = await createServiceClient().rpc(
         "record_ai_canvas_proposal",
@@ -778,7 +800,7 @@ export async function completeAiRun(
         actorId: run.requested_by,
         toolName: "stage_document_changes",
         arguments: toolArguments,
-        range: sourceDocumentRange,
+        range: aiDocumentRange,
       });
       assertReviewChangesWithinScope({
         scope: reviewScope,

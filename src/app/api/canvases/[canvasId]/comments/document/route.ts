@@ -7,7 +7,7 @@ import { buildCompactedSnapshot } from "@/collaboration/persistence";
 import { decodeDocumentRelativePosition } from "@/documents/document-range";
 import { getAuthenticatedUser } from "@/lib/auth/session";
 import type { Database } from "@/lib/supabase/database.types";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 export async function POST(
   request: Request,
@@ -118,6 +118,23 @@ export async function POST(
           result.error?.message ?? "The document comment could not be saved.",
       },
       { status: result.error?.code === "42501" ? 403 : 409 },
+    );
+  }
+  const context = command.data.documentAiContext ?? {
+    includeDocument: true,
+    includeSelectedText: true,
+  };
+  const contextUpdate = await createServiceClient()
+    .from("comment_document_targets")
+    .update({
+      include_document_context: context.includeDocument,
+      include_selected_text_context: context.includeSelectedText,
+    })
+    .eq("comment_id", result.data[0].comment_id);
+  if (contextUpdate.error) {
+    return Response.json(
+      { error: "The document comment context could not be saved." },
+      { status: 409 },
     );
   }
   return Response.json(result.data[0], {

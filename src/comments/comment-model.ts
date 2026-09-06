@@ -46,6 +46,12 @@ export const commentCreateCommandSchema = z
       })
       .nullable(),
     documentRange: documentRangeTargetSchema.nullable(),
+    documentAiContext: z
+      .strictObject({
+        includeDocument: z.boolean(),
+        includeSelectedText: z.boolean(),
+      })
+      .optional(),
     promptKind: commentPromptKindSchema.nullable(),
     authorKind: commentAuthorKindSchema,
     authorKey: z.string().min(1).max(255).nullable(),
