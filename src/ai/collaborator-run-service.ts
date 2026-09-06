@@ -78,10 +78,6 @@ import {
 import { materializeReviewNewConnectors } from "@/ai/new-connector-stage";
 import { materializeReviewNewAnnotations } from "@/ai/new-annotation-stage";
 import {
-  renderTargetedCanvasCapture,
-  TARGETED_CAPTURE_RENDERER_VERSION,
-} from "@/ai/render-capture";
-import {
   bytesToPostgresBytea,
   postgresByteaToBytes,
 } from "@/collaboration/canvas-document";
@@ -96,6 +92,8 @@ const runRequestSchema = z.strictObject({
   runId: z.uuid(),
   canvasId: z.uuid(),
 });
+
+const TARGETED_CAPTURE_RENDERER_VERSION = 1;
 
 function firstRelatedRow<Row>(value: Row | Row[] | null | undefined) {
   return Array.isArray(value) ? value[0] : (value ?? undefined);
@@ -1019,6 +1017,8 @@ export async function completeAiRun(
         feedbackIssueCount: 0,
       };
       try {
+        const { renderTargetedCanvasCapture } =
+          await import("@/ai/render-capture");
         const [beforeCapture, afterCapture, beforeOverview, afterOverview] =
           await Promise.all([
             renderTargetedCanvasCapture({

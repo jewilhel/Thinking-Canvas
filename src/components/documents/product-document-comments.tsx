@@ -276,6 +276,7 @@ export function ProductDocumentComments({
           }}
           onCancelAiRun={cancelAiRun}
           onRetryAiRun={retryAiRun}
+          operationError={error}
         />
       </aside>
     );

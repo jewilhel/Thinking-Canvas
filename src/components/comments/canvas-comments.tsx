@@ -681,6 +681,7 @@ export function ThreadBody({
   onUndoAiTransaction,
   onCancelAiRun,
   onRetryAiRun,
+  operationError = "",
 }: {
   thread: CommentThread;
   userId: string;
@@ -703,6 +704,7 @@ export function ThreadBody({
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
   onCancelAiRun: (runId: string) => Promise<void>;
   onRetryAiRun: (runId: string) => Promise<void>;
+  operationError?: string;
 }) {
   const [reply, setReply] = useState("");
   const inheritedRecipients = thread.activeParticipants.filter(
@@ -938,6 +940,11 @@ export function ThreadBody({
           {undoNotice}
         </p>
       ) : null}
+      {operationError ? (
+        <p role="alert" className="mt-3 text-sm text-red-700">
+          {operationError}
+        </p>
+      ) : null}
       {latestRuns
         .filter((run) => run.status !== "completed")
         .map((run) => {
@@ -994,6 +1001,7 @@ export function ThreadBody({
                       type="button"
                       size="sm"
                       variant="outline"
+                      disabled={pending}
                       onClick={() => void onCancelAiRun(run.id)}
                     >
                       <X aria-hidden="true" /> Cancel
@@ -1003,7 +1011,7 @@ export function ThreadBody({
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={thread.status !== "open"}
+                      disabled={pending || thread.status !== "open"}
                       onClick={() => void onRetryAiRun(run.id)}
                     >
                       <RotateCcw aria-hidden="true" /> Retry
@@ -1672,6 +1680,7 @@ export function CanvasComments({
             }}
             onCancelAiRun={cancelAiRun}
             onRetryAiRun={retryAiRun}
+            operationError={error}
           />
         </div>
       ) : null}

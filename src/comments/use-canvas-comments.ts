@@ -186,49 +186,73 @@ export function useCanvasComments(
 
   const cancelAiRun = useCallback(
     async (runId: string) => {
-      const response = await fetch(`/api/canvases/${canvasId}/ai/runs`, {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ runId }),
-      });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: unknown;
-        } | null;
-        throw new Error(
-          typeof body?.error === "string"
-            ? body.error
+      setPending(true);
+      setError("");
+      try {
+        const response = await fetch(`/api/canvases/${canvasId}/ai/runs`, {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ runId }),
+        });
+        if (!response.ok) {
+          const body = (await response.json().catch(() => null)) as {
+            error?: unknown;
+          } | null;
+          throw new Error(
+            typeof body?.error === "string"
+              ? body.error
+              : "AI run could not be cancelled.",
+          );
+        }
+        runControllers.current.get(runId)?.abort();
+        await refresh();
+        await repository.broadcastInvalidated();
+      } catch (caught) {
+        setError(
+          caught instanceof Error
+            ? caught.message
             : "AI run could not be cancelled.",
         );
+      } finally {
+        setPending(false);
       }
-      runControllers.current.get(runId)?.abort();
-      await refresh();
-      await repository.broadcastInvalidated();
     },
     [canvasId, refresh, repository],
   );
 
   const retryAiRun = useCallback(
     async (runId: string) => {
-      const response = await fetch(`/api/canvases/${canvasId}/ai/runs`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ runId }),
-      });
-      const body = (await response.json().catch(() => null)) as {
-        error?: unknown;
-        run_id?: unknown;
-      } | null;
-      if (!response.ok || typeof body?.run_id !== "string") {
-        throw new Error(
-          typeof body?.error === "string"
-            ? body.error
+      setPending(true);
+      setError("");
+      try {
+        const response = await fetch(`/api/canvases/${canvasId}/ai/runs`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ runId }),
+        });
+        const body = (await response.json().catch(() => null)) as {
+          error?: unknown;
+          run_id?: unknown;
+        } | null;
+        if (!response.ok || typeof body?.run_id !== "string") {
+          throw new Error(
+            typeof body?.error === "string"
+              ? body.error
+              : "AI run could not be retried.",
+          );
+        }
+        void processAiRun(body.run_id);
+        await refresh();
+        await repository.broadcastInvalidated();
+      } catch (caught) {
+        setError(
+          caught instanceof Error
+            ? caught.message
             : "AI run could not be retried.",
         );
+      } finally {
+        setPending(false);
       }
-      await refresh();
-      await repository.broadcastInvalidated();
-      void processAiRun(body.run_id);
     },
     [canvasId, processAiRun, refresh, repository],
   );
