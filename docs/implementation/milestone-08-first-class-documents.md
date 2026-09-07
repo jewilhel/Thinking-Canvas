@@ -422,6 +422,14 @@ Retain exact commit SHA, protected CI URL/run, immutable deploy ID/URL, screensh
 
 ## Closure
 
+### Active AI reliability investigation (2026-09-06)
+
+- Hosted `aac3f33` still showed the saved suggestion followed by a failed approval for the retained “What to Expect” paragraph-and-list selection. The document remained unchanged. Earlier strict-payload changes did not establish end-to-end reliability.
+- Source inspection found that `applyTextOperations` explicitly rejected different anchor/head Yjs text containers. This made multi-paragraph and list-item selections valid in the composer but unsupported by the executor.
+- Multi-container replacement now runs through an isolated Lexical/Yjs binding and the document Markdown node configuration instead of hand-editing a single text container. A regression covers paragraph plus list replacement, list structure, and undo in both DOM and Node test environments.
+- Local gates: 366 tests across 72 files, formatting, lint, typecheck, and production build passed before the diagnostic-only route logging addition. Hosted acceptance and repeated follow-up/undo/cancel/retry testing remain pending. This is not a fix or closure claim.
+- Failure logs now correlate a run and execution stage with stack frames without logging document content, prompts, or provider response bodies.
+
 Closure status: Not ready
 Closure approval: Pending
 Closed on: —

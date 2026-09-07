@@ -39,6 +39,7 @@ export async function POST(
   const stream = new ReadableStream({
     async start(controller) {
       const deadline = createAiRunDeadlineSignal(request.signal);
+      let stage = "loading_context";
       const send = (event: Record<string, unknown>) =>
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       try {
@@ -47,15 +48,24 @@ export async function POST(
           {
             signal: deadline.signal,
             scenario,
-            onStatus: (status) => send({ status, runId: parsed.data.runId }),
+            onStatus: (status) => {
+              stage = status;
+              send({ status, runId: parsed.data.runId });
+            },
           },
         );
         send(result);
       } catch (error) {
         const errorCode = privacySafeAiRunErrorCode(error);
         console.error("AI collaborator run failed.", {
+          runId: parsed.data.runId,
+          stage,
           errorCode,
           errorName: error instanceof Error ? error.name : "UnknownError",
+          // Stack frames identify the failing layer without logging document
+          // text, prompts, provider response bodies, or the error message.
+          frames:
+            error instanceof Error ? error.stack?.split("\n").slice(1, 5) : [],
           ...(process.env.NODE_ENV !== "production" && error instanceof Error
             ? { errorMessage: error.message }
             : {}),

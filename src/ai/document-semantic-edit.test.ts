@@ -70,6 +70,80 @@ function fixture() {
 }
 
 describe("semantic AI document editing", () => {
+  it("replaces a paragraph and nested list selection using real editor semantics", () => {
+    const { document, paragraph } = fixture();
+    const root = getProductDocumentContentRoot(document, documentId);
+    const list = new Y.XmlText();
+    list.setAttribute("__type", "list");
+    list.setAttribute("__listType", "bullet");
+    list.setAttribute("__tag", "ul");
+    list.setAttribute("__start", 1);
+    root.insertEmbed(root.length, list);
+    for (const value of ["First benefit", "Second benefit"]) {
+      const item = new Y.XmlText();
+      item.setAttribute("__type", "listitem");
+      item.setAttribute("__value", 1);
+      list.insertEmbed(list.length, item);
+      const metadata = new Y.Map<unknown>();
+      metadata.set("__type", "text");
+      metadata.set("__format", 0);
+      metadata.set("__style", "");
+      metadata.set("__mode", 0);
+      metadata.set("__detail", 0);
+      item.insertEmbed(0, metadata);
+      item.insert(1, value);
+    }
+    const lastItem = list.toDelta()[1]!.insert as Y.XmlText;
+    const range: DocumentRangeTarget = {
+      documentObjectId: documentId,
+      anchor: encodeDocumentRelativePosition(
+        Y.createRelativePositionFromTypeIndex(paragraph, 1),
+      ),
+      head: encodeDocumentRelativePosition(
+        Y.createRelativePositionFromTypeIndex(lastItem, lastItem.length),
+      ),
+      quote: "Alpha beta gamma\nFirst benefit\nSecond benefit",
+    };
+    const edit = buildValidatedDocumentEdit({
+      document,
+      canvasId,
+      actorId,
+      range,
+      toolName: "execute_document_changes",
+      arguments: {
+        summary: "Improve the introduction and benefits.",
+        documentObjectId: documentId,
+        operations: [
+          {
+            kind: "replace_selection",
+            text: "What to expect:\n\n- Clear first benefit\n- Clear second benefit",
+            format: "plain",
+          },
+        ],
+        whatChanged: "Revised the selected section.",
+        why: "Approved wording.",
+      },
+    });
+    Y.applyUpdate(document, edit.tentativeUpdate);
+    const blocks = root
+      .toDelta()
+      .map((entry: { insert?: unknown }) => entry.insert as Y.XmlText);
+    expect(plainText(blocks[0]!)).toBe("What to expect:");
+    expect(blocks[1]!.getAttribute("__type")).toBe("list");
+    expect(
+      blocks[1]!
+        .toDelta()
+        .map((entry: { insert?: unknown }) =>
+          plainText(entry.insert as Y.XmlText),
+        ),
+    ).toEqual(["Clear first benefit", "Clear second benefit"]);
+    const undo = applyDocumentSemanticUndo(document, edit.documentUndoPayload);
+    expect(undo.conflicts).toEqual([]);
+    expect(plainText(root.toDelta()[0]!.insert as Y.XmlText)).toBe(
+      "Alpha beta gamma",
+    );
+  });
+
   it("creates one validated update and an inverse that preserves later human text", () => {
     const { document, paragraph, range } = fixture();
     const edit = buildValidatedDocumentEdit({

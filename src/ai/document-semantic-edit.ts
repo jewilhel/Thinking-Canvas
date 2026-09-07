@@ -19,6 +19,7 @@ import {
   type DocumentRangeTarget,
 } from "@/documents/document-range";
 import { base64ToBytes, bytesToBase64 } from "@/collaboration/canvas-document";
+import { replaceStructuredDocumentSelection } from "@/documents/server-document-selection";
 
 type DocumentEditToolName = Extract<
   AiToolName,
@@ -222,15 +223,17 @@ function applyTextOperations(input: {
       decodeDocumentRelativePosition(input.range.head),
       input.document,
     );
-    if (
-      !anchor ||
-      !head ||
-      anchor.type !== head.type ||
-      !(anchor.type instanceof Y.XmlText)
-    ) {
-      throw new Error(
-        "The selected document range is detached or crosses blocks.",
-      );
+    if (!anchor || !head || !(anchor.type instanceof Y.XmlText)) {
+      throw new Error("The selected document range is detached.");
+    }
+    if (anchor.type !== head.type) {
+      replaceStructuredDocumentSelection({
+        document: input.document,
+        documentId: input.documentId,
+        range: input.range,
+        text: operation.text,
+      });
+      continue;
     }
     const start = Math.min(anchor.index, head.index);
     const end = Math.max(anchor.index, head.index);
