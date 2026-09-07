@@ -249,7 +249,7 @@ export function CommentPanel({
         type="button"
         aria-label="Resize comment panel from left edge"
         title="Drag to resize; left and right arrow keys also resize"
-        className="absolute top-8 bottom-8 left-0 w-2 cursor-ew-resize touch-none rounded-full hover:bg-violet-200 focus-visible:bg-violet-200 focus-visible:outline-none"
+        className="absolute top-8 bottom-8 left-0 w-2 cursor-ew-resize touch-none rounded-full hover:bg-zinc-200 focus-visible:bg-zinc-200 focus-visible:outline-none"
         onPointerDown={(event) => start(event, "left")}
         onPointerMove={move}
         onPointerUp={() => {
