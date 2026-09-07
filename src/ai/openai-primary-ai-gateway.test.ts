@@ -226,13 +226,25 @@ describe("OpenAiPrimaryAiGateway", () => {
 
   it("keeps provider-facing document edits compact and validates them before returning", async () => {
     const tool = buildSubmitTurnTool(["stage_document_changes"]);
-    const description = (
-      tool.parameters.properties.toolCalls.items.properties.argumentsJson as {
-        description: string;
+    const documentArguments = (
+      tool.parameters.properties.toolCalls.items.properties as unknown as {
+        arguments: {
+          properties: Record<string, unknown>;
+          required: string[];
+        };
       }
-    ).description;
-    expect(description).toContain('"stage_document_changes"');
-    expect(description).not.toContain('"objectCommands"');
+    ).arguments as {
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+    expect(documentArguments.required).toEqual([
+      "summary",
+      "documentObjectId",
+      "operations",
+      "whatChanged",
+      "why",
+    ]);
+    expect(documentArguments.properties).not.toHaveProperty("objectCommands");
 
     const client = clientReturning(
       providerResponse({
@@ -243,18 +255,19 @@ describe("OpenAiPrimaryAiGateway", () => {
           {
             callKey: "document-edit",
             toolName: "stage_document_changes",
-            argumentsJson: JSON.stringify({
+            arguments: {
               summary: "Clarify the selection.",
               documentObjectId: ids.object,
               operations: [
                 {
                   kind: "replace_selection",
                   text: "Clearer selected wording.",
+                  format: "plain",
                 },
               ],
               whatChanged: "Replaced the selected wording.",
               why: "The user approved the suggested clarification.",
-            }),
+            },
           },
         ],
       }),
@@ -290,10 +303,10 @@ describe("OpenAiPrimaryAiGateway", () => {
           {
             callKey: "document-edit",
             toolName: "stage_document_changes",
-            argumentsJson: JSON.stringify({
+            arguments: {
               documentObjectId: ids.object,
               operations: [],
-            }),
+            },
           },
         ],
       }),

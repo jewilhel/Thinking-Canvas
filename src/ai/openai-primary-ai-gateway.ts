@@ -86,8 +86,54 @@ function providerArgumentsSchema(toolName: AiToolName) {
   return z.toJSONSchema(AI_TOOL_REGISTRY[toolName].argumentsSchema);
 }
 
+function directDocumentActionName(actionToolNames: AiToolName[]) {
+  return actionToolNames.length === 1 &&
+    documentRangeToolNames.has(actionToolNames[0]!)
+    ? actionToolNames[0]!
+    : null;
+}
+
+function documentRangeActionParameters() {
+  return {
+    type: "object",
+    properties: {
+      summary: { type: "string", minLength: 1, maxLength: 10_000 },
+      documentObjectId: { type: "string", format: "uuid" },
+      operations: {
+        type: "array",
+        minItems: 1,
+        maxItems: 1,
+        items: {
+          type: "object",
+          properties: {
+            kind: { type: "string", enum: ["replace_selection"] },
+            text: { type: "string", maxLength: 100_000 },
+            format: {
+              type: "string",
+              enum: ["plain", "bold", "italic", "bold_italic"],
+            },
+          },
+          required: ["kind", "text", "format"],
+          additionalProperties: false,
+        },
+      },
+      whatChanged: { type: "string", minLength: 1, maxLength: 2_000 },
+      why: { type: "string", minLength: 1, maxLength: 4_000 },
+    },
+    required: [
+      "summary",
+      "documentObjectId",
+      "operations",
+      "whatChanged",
+      "why",
+    ],
+    additionalProperties: false,
+  };
+}
+
 export function buildSubmitTurnTool(allowedToolNames: AiToolName[]) {
   const actionToolNames = executableToolNames(allowedToolNames);
+  const directDocumentAction = directDocumentActionName(actionToolNames);
   const actionSchemas = Object.fromEntries(
     actionToolNames.map((toolName) => [
       toolName,
@@ -130,12 +176,20 @@ export function buildSubmitTurnTool(allowedToolNames: AiToolName[]) {
             properties: {
               callKey: { type: "string", minLength: 1, maxLength: 255 },
               toolName: { type: "string", enum: actionToolNames },
-              argumentsJson: {
-                type: "string",
-                description: `A JSON object matching the selected tool schema. It is parsed and validated again by the server before execution. Exact schemas by tool name: ${JSON.stringify(actionSchemas)}`,
-              },
+              ...(directDocumentAction
+                ? { arguments: documentRangeActionParameters() }
+                : {
+                    argumentsJson: {
+                      type: "string",
+                      description: `A JSON object matching the selected tool schema. It is parsed and validated again by the server before execution. Exact schemas by tool name: ${JSON.stringify(actionSchemas)}`,
+                    },
+                  }),
             },
-            required: ["callKey", "toolName", "argumentsJson"],
+            required: [
+              "callKey",
+              "toolName",
+              directDocumentAction ? "arguments" : "argumentsJson",
+            ],
             additionalProperties: false,
           },
         },
@@ -166,11 +220,37 @@ const submittedTurnSchema = z.strictObject({
     .max(MAX_TOOL_CALLS_PER_TURN),
 });
 
+const submittedDocumentTurnSchema = z.strictObject({
+  body: z.string().trim().min(1).max(100_000),
+  evidence: z.array(
+    z.strictObject({
+      objectId: z.uuid(),
+      label: z.string().trim().min(1).max(500),
+    }),
+  ),
+  contextualTargetObjectIds: z.array(z.uuid()).max(100),
+  toolCalls: z
+    .array(
+      z.strictObject({
+        callKey: z.string().min(1).max(255),
+        toolName: z.string().min(1).max(120),
+        arguments: providerDocumentChangesArgumentsSchema,
+      }),
+    )
+    .max(MAX_TOOL_CALLS_PER_TURN),
+});
+
 function parseSubmittedTurn(
   argumentsJson: string,
   allowedToolNames: AiToolName[],
 ) {
-  const submitted = submittedTurnSchema.parse(JSON.parse(argumentsJson));
+  const directDocumentAction = directDocumentActionName(
+    executableToolNames(allowedToolNames),
+  );
+  const submittedValue = JSON.parse(argumentsJson);
+  const submitted = directDocumentAction
+    ? submittedDocumentTurnSchema.parse(submittedValue)
+    : submittedTurnSchema.parse(submittedValue);
   const allowedActions = new Set(executableToolNames(allowedToolNames));
   const reply = aiReplySchema.parse({
     body: submitted.body,
@@ -183,7 +263,10 @@ function parseSubmittedTurn(
         "The provider returned a tool outside current authority.",
       );
     }
-    const argumentsValue = JSON.parse(toolCall.argumentsJson);
+    const argumentsValue =
+      "arguments" in toolCall
+        ? toolCall.arguments
+        : JSON.parse(toolCall.argumentsJson);
     const validatedArguments =
       AI_TOOL_REGISTRY[toolCall.toolName as AiToolName].argumentsSchema.parse(
         argumentsValue,
