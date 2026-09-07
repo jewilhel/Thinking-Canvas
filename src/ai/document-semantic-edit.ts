@@ -21,6 +21,7 @@ import {
   relocateDocumentRange,
   encodeDocumentRelativePosition,
   boundedDocumentRangeQuote,
+  resolveDocumentRange,
   type DocumentRangeTarget,
 } from "@/documents/document-range";
 import { base64ToBytes, bytesToBase64 } from "@/collaboration/canvas-document";
@@ -36,6 +37,11 @@ type DocumentEditToolName = Extract<
 
 const AI_DOCUMENT_ORIGIN = "ai.document.semantic";
 const DOCUMENT_UNDO_CONTEXT_LENGTH = 128;
+const undoRangeSchema = z.strictObject({
+  anchor: z.string().min(1).max(4_096),
+  head: z.string().min(1).max(4_096),
+  quote: z.string().max(1_000),
+});
 
 const documentUndoPayloadSchema = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -46,6 +52,7 @@ const documentUndoPayloadSchema = z.discriminatedUnion("kind", [
     afterText: z.string().max(100_000),
     leftContext: z.string().max(DOCUMENT_UNDO_CONTEXT_LENGTH),
     rightContext: z.string().max(DOCUMENT_UNDO_CONTEXT_LENGTH),
+    range: undoRangeSchema.optional(),
   }),
   z.strictObject({
     version: z.literal(1),
@@ -130,6 +137,34 @@ function documentTextBlocks(root: Y.XmlText) {
     );
 }
 
+function textPath(
+  root: Y.XmlText,
+  target: Y.AbstractType<unknown>,
+): number[] | null {
+  if (root === target) return [];
+  let index = 0;
+  for (const entry of root.toDelta() as Array<{ insert?: unknown }>) {
+    if (entry.insert instanceof Y.XmlText) {
+      const nested = textPath(entry.insert, target);
+      if (nested) return [index, ...nested];
+    }
+    index += typeof entry.insert === "string" ? entry.insert.length : 1;
+  }
+  return null;
+}
+
+function textAtPath(root: Y.XmlText, path: number[]): Y.XmlText | null {
+  if (!path.length) return root;
+  let index = 0;
+  for (const entry of root.toDelta() as Array<{ insert?: unknown }>) {
+    if (index === path[0] && entry.insert instanceof Y.XmlText) {
+      return textAtPath(entry.insert, path.slice(1));
+    }
+    index += typeof entry.insert === "string" ? entry.insert.length : 1;
+  }
+  return null;
+}
+
 function formatFlags(format: "plain" | "bold" | "italic" | "bold_italic") {
   if (format === "bold") return 1;
   if (format === "italic") return 2;
@@ -156,12 +191,10 @@ function blockNode(block: {
   format: "plain" | "bold" | "italic" | "bold_italic";
 }) {
   const blockNode = new Y.XmlText();
-  blockNode.setAttribute(
-    "__type",
-    block.kind.startsWith("heading")
-      ? `h${block.kind.slice("heading".length)}`
-      : "paragraph",
-  );
+  const heading = block.kind.startsWith("heading");
+  blockNode.setAttribute("__type", heading ? "heading" : "paragraph");
+  if (heading)
+    blockNode.setAttribute("__tag", `h${block.kind.slice("heading".length)}`);
   const child = textNode(block.text, block.format);
   blockNode.insertEmbed(0, child.metadata);
   if (child.text) blockNode.insert(1, child.text);
@@ -269,6 +302,11 @@ function applyTextOperations(input: {
         visibleEnd,
         visibleEnd + DOCUMENT_UNDO_CONTEXT_LENGTH,
       ),
+      range: {
+        anchor: currentRange.anchor,
+        head: currentRange.head,
+        quote: currentRange.quote,
+      },
     };
     anchor.type.delete(start, end - start);
     if (operation.text) {
@@ -359,12 +397,34 @@ export function applyDocumentSemanticUndo(
     };
   }
   const candidate = candidates[0]!;
+  const undoRange = payload.range
+    ? currentDocumentRange(document, payload.range)
+    : null;
   document.transact(() => {
     if (candidate.end > candidate.start) {
       candidate.block.delete(candidate.start, candidate.end - candidate.start);
     }
     if (payload.beforeText) {
       candidate.block.insert(candidate.start, payload.beforeText);
+    }
+    if (undoRange && payload.beforeText) {
+      relocateDocumentRange(document, undoRange, {
+        anchor: encodeDocumentRelativePosition(
+          Y.createRelativePositionFromTypeIndex(
+            candidate.block,
+            candidate.start,
+            0,
+          ),
+        ),
+        head: encodeDocumentRelativePosition(
+          Y.createRelativePositionFromTypeIndex(
+            candidate.block,
+            candidate.start + payload.beforeText.length,
+            -1,
+          ),
+        ),
+        quote: boundedDocumentRangeQuote(payload.beforeText),
+      });
     }
   }, "ai.document.semantic.undo");
   return { conflicts: [] as string[] };
@@ -445,6 +505,18 @@ export function buildValidatedDocumentEdit(input: {
   Y.applyUpdate(edited, Y.encodeStateAsUpdate(input.document));
   Y.applyUpdate(edited, review.tentativeUpdate);
   const root = getProductDocumentContentRoot(edited, documentObject.documentId);
+  const beforeRange = input.range
+    ? currentDocumentRange(edited, input.range)
+    : null;
+  const beforePositions = beforeRange
+    ? resolveDocumentRange(edited, beforeRange)
+    : null;
+  const beforeAnchorPath = beforePositions?.anchor
+    ? textPath(root, beforePositions.anchor.type)
+    : null;
+  const beforeHeadPath = beforePositions?.head
+    ? textPath(root, beforePositions.head.type)
+    : null;
   const undoManager = new Y.UndoManager(
     [root, edited.getMap(documentRangeReplacementsMapName)],
     {
@@ -463,6 +535,37 @@ export function buildValidatedDocumentEdit(input: {
   const tentativeUpdate = Y.encodeStateAsUpdate(edited, stateVector);
   const afterVector = Y.encodeStateVector(edited);
   undoManager.undo();
+  // Yjs undo restores deleted containers under new item IDs. Retarget the
+  // comment to those restored IDs in the inverse update, not the deleted ones.
+  if (
+    beforeRange &&
+    beforePositions?.anchor &&
+    beforePositions.head &&
+    beforeAnchorPath &&
+    beforeHeadPath
+  ) {
+    const restoredAnchor = textAtPath(root, beforeAnchorPath);
+    const restoredHead = textAtPath(root, beforeHeadPath);
+    if (restoredAnchor && restoredHead) {
+      relocateDocumentRange(edited, beforeRange, {
+        anchor: encodeDocumentRelativePosition(
+          Y.createRelativePositionFromTypeIndex(
+            restoredAnchor,
+            beforePositions.anchor.index,
+            0,
+          ),
+        ),
+        head: encodeDocumentRelativePosition(
+          Y.createRelativePositionFromTypeIndex(
+            restoredHead,
+            beforePositions.head.index,
+            -1,
+          ),
+        ),
+        quote: beforeRange.quote,
+      });
+    }
+  }
   const fallbackUndoUpdate = Y.encodeStateAsUpdate(edited, afterVector);
   undoManager.destroy();
   if (fallbackUndoUpdate.length <= 2) {

@@ -72,6 +72,36 @@ function fixture() {
 }
 
 describe("semantic AI document editing", () => {
+  it("creates headings using the editor's real heading node representation", () => {
+    const { document } = fixture();
+    const edit = buildValidatedDocumentEdit({
+      document,
+      canvasId,
+      actorId,
+      range: null,
+      toolName: "execute_document_changes",
+      arguments: {
+        summary: "Create an outline.",
+        documentObjectId: documentId,
+        operations: [
+          {
+            kind: "append_block",
+            block: { kind: "heading2", text: "Next steps", format: "plain" },
+          },
+        ],
+        whatChanged: "Added heading.",
+        why: "Requested outline.",
+      },
+    });
+    Y.applyUpdate(document, edit.tentativeUpdate);
+    const heading = getProductDocumentContentRoot(
+      document,
+      documentId,
+    ).toDelta()[1]!.insert as Y.XmlText;
+    expect(heading.getAttribute("__type")).toBe("heading");
+    expect(heading.getAttribute("__tag")).toBe("h2");
+    expect(plainText(heading)).toBe("Next steps");
+  });
   it.each([
     [false, false],
     [true, false],
@@ -191,11 +221,13 @@ describe("semantic AI document editing", () => {
         "Two benefits:",
       );
       applyDocumentSemanticUndo(document, followUp.documentUndoPayload);
+      expect(resolveDocumentRange(document, range).detached).toBe(false);
       const undo = applyDocumentSemanticUndo(
         document,
         edit.documentUndoPayload,
       );
       expect(undo.conflicts).toEqual([]);
+      expect(resolveDocumentRange(document, range).detached).toBe(false);
       expect(plainText(root.toDelta()[1]!.insert as Y.XmlText)).toBe(
         "Alpha beta gamma",
       );
@@ -241,6 +273,8 @@ describe("semantic AI document editing", () => {
     expect(undo.conflicts).toEqual([]);
     expect(plainText(paragraph)).toBe("Alpha beta gamma");
     expect(plainText(laterParagraph)).toBe(" human");
+    expect(resolveDocumentRange(document, range).detached).toBe(false);
+    expect(currentDocumentRange(document, range).quote).toBe("beta");
   });
 
   it("preserves user-edited AI text and reports a semantic undo conflict", () => {
