@@ -1428,6 +1428,30 @@ export type Database = {
           reply_id: string
         }[]
       }
+      create_document_comment_thread: {
+        Args: {
+          target_author_key: string | null
+          target_author_kind: Database["public"]["Enums"]["comment_author_kind"]
+          target_body: string
+          target_canvas_id: string
+          target_client_command_id: string
+          target_document_object_id: string
+          target_document_quoted_text: string
+          target_document_relative_anchor: string
+          target_document_relative_head: string
+          target_include_document_context: boolean
+          target_include_primary_ai: boolean
+          target_include_selected_text_context: boolean
+          target_ordered_context_ids: string[]
+          target_prompt_kind: Database["public"]["Enums"]["comment_prompt_kind"] | null
+          target_recipient_user_ids: string[] | null
+        }
+        Returns: {
+          ai_run_id: string
+          comment_id: string
+          created: boolean
+        }[]
+      }
       create_comment_thread: {
         Args: {
           target_anchor_x?: number

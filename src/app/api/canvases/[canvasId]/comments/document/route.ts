@@ -7,7 +7,7 @@ import { buildCompactedSnapshot } from "@/collaboration/persistence";
 import { decodeDocumentRelativePosition } from "@/documents/document-range";
 import { getAuthenticatedUser } from "@/lib/auth/session";
 import type { Database } from "@/lib/supabase/database.types";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 export async function POST(
   request: Request,
@@ -92,25 +92,30 @@ export async function POST(
       { status: 409 },
     );
   }
-  const args: Database["public"]["Functions"]["create_comment_thread"]["Args"] =
+  const context = command.data.documentAiContext ?? {
+    includeDocument: true,
+    includeSelectedText: true,
+  };
+  const args: Database["public"]["Functions"]["create_document_comment_thread"]["Args"] =
     {
       target_canvas_id: canvasId,
       target_client_command_id: command.data.commandId,
       target_body: command.data.body,
-      target_object_ids: [],
       target_ordered_context_ids: command.data.orderedContextIds,
       target_author_kind: command.data.authorKind,
-      target_author_key: command.data.authorKey ?? undefined,
-      target_prompt_kind: command.data.promptKind ?? undefined,
-      target_recipient_user_ids: command.data.routing?.recipientUserIds,
+      target_author_key: command.data.authorKey ?? null,
+      target_prompt_kind: command.data.promptKind ?? null,
+      target_recipient_user_ids: command.data.routing?.recipientUserIds ?? null,
       target_include_primary_ai:
-        command.data.routing?.includePrimaryAi ?? undefined,
+        command.data.routing?.includePrimaryAi ?? false,
       target_document_object_id: range.documentObjectId,
       target_document_relative_anchor: range.anchor,
       target_document_relative_head: range.head,
       target_document_quoted_text: range.quote,
+      target_include_document_context: context.includeDocument,
+      target_include_selected_text_context: context.includeSelectedText,
     };
-  const result = await supabase.rpc("create_comment_thread", args);
+  const result = await supabase.rpc("create_document_comment_thread", args);
   if (result.error || !result.data?.[0]) {
     return Response.json(
       {
@@ -118,23 +123,6 @@ export async function POST(
           result.error?.message ?? "The document comment could not be saved.",
       },
       { status: result.error?.code === "42501" ? 403 : 409 },
-    );
-  }
-  const context = command.data.documentAiContext ?? {
-    includeDocument: true,
-    includeSelectedText: true,
-  };
-  const contextUpdate = await createServiceClient()
-    .from("comment_document_targets")
-    .update({
-      include_document_context: context.includeDocument,
-      include_selected_text_context: context.includeSelectedText,
-    })
-    .eq("comment_id", result.data[0].comment_id);
-  if (contextUpdate.error) {
-    return Response.json(
-      { error: "The document comment context could not be saved." },
-      { status: 409 },
     );
   }
   return Response.json(result.data[0], {

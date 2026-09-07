@@ -38,6 +38,73 @@ select results_eq(
   'owner creates one durable document range thread'
 );
 
+select results_eq(
+  $$select include_document_context, include_selected_text_context
+    from public.comment_document_targets
+    where comment_id = (
+      select id from public.comments
+      where client_command_id = '79000000-0000-4000-8000-000000000001'
+    )$$,
+  $$values (true, true)$$,
+  'ordinary document range creation retains default AI context'
+);
+
+select results_eq(
+  $$select created from public.create_document_comment_thread(
+    target_canvas_id => '20000000-0000-4000-8000-000000000001',
+    target_client_command_id => '79000000-0000-4000-8000-000000000020',
+    target_body => 'Review this selected phrase',
+    target_ordered_context_ids => array['69000000-0000-4000-8000-000000000002']::uuid[],
+    target_prompt_kind => null,
+    target_author_kind => 'human',
+    target_author_key => null,
+    target_recipient_user_ids => null,
+    target_include_primary_ai => false,
+    target_document_object_id => '69000000-0000-4000-8000-000000000002',
+    target_document_relative_anchor => 'CAkKCw==',
+    target_document_relative_head => 'DA0ODw==',
+    target_document_quoted_text => 'selected context',
+    target_include_document_context => false,
+    target_include_selected_text_context => true
+  )$$,
+  array[true],
+  'document comment and its AI context are created atomically'
+);
+
+select results_eq(
+  $$select include_document_context, include_selected_text_context
+    from public.comment_document_targets
+    where comment_id = (
+      select id from public.comments
+      where client_command_id = '79000000-0000-4000-8000-000000000020'
+    )$$,
+  $$values (false, true)$$,
+  'the atomic document comment path persists the chosen AI context'
+);
+
+select throws_ok(
+  $$select * from public.create_document_comment_thread(
+    target_canvas_id => '20000000-0000-4000-8000-000000000001',
+    target_client_command_id => '79000000-0000-4000-8000-000000000020',
+    target_body => 'Review this selected phrase',
+    target_ordered_context_ids => array['69000000-0000-4000-8000-000000000002']::uuid[],
+    target_prompt_kind => null,
+    target_author_kind => 'human',
+    target_author_key => null,
+    target_recipient_user_ids => null,
+    target_include_primary_ai => false,
+    target_document_object_id => '69000000-0000-4000-8000-000000000002',
+    target_document_relative_anchor => 'CAkKCw==',
+    target_document_relative_head => 'DA0ODw==',
+    target_document_quoted_text => 'selected context',
+    target_include_document_context => true,
+    target_include_selected_text_context => true
+  )$$,
+  '23505',
+  'The comment command ID was reused with different content.',
+  'idempotent retries cannot silently change document AI context'
+);
+
 select lives_ok(
   $$select * from public.create_comment_reply(
     (select id from public.comments where client_command_id = '79000000-0000-4000-8000-000000000001'),
