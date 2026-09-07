@@ -35,6 +35,7 @@ import type { CommentThread } from "@/comments/comment-model";
 import { documentContentRootName } from "@/documents/document-schema";
 import {
   boundedDocumentRangeQuote,
+  currentDocumentRange,
   decodeDocumentRelativePosition,
   encodeDocumentRelativePosition,
   type DocumentRangeTarget,
@@ -188,14 +189,16 @@ export function ProductDocumentCollaboration({
               return [];
             }
             try {
+              const currentRange = currentDocumentRange(
+                canvasDocument,
+                thread.documentRange,
+              );
               const { anchorKey, anchorOffset, focusKey, focusOffset } =
                 $getAnchorAndFocusForUserState(binding, {
                   anchorPos: decodeDocumentRelativePosition(
-                    thread.documentRange.anchor,
+                    currentRange.anchor,
                   ),
-                  focusPos: decodeDocumentRelativePosition(
-                    thread.documentRange.head,
-                  ),
+                  focusPos: decodeDocumentRelativePosition(currentRange.head),
                   color: "#8b5cf6",
                   focusing: false,
                   name: thread.authorName,

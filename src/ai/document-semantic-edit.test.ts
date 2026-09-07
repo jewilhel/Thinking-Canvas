@@ -12,6 +12,8 @@ import {
 } from "@/canvas/canvas-document";
 import {
   encodeDocumentRelativePosition,
+  resolveDocumentRange,
+  currentDocumentRange,
   type DocumentRangeTarget,
 } from "@/documents/document-range";
 import {
@@ -70,79 +72,116 @@ function fixture() {
 }
 
 describe("semantic AI document editing", () => {
-  it("replaces a paragraph and nested list selection using real editor semantics", () => {
-    const { document, paragraph } = fixture();
-    const root = getProductDocumentContentRoot(document, documentId);
-    const list = new Y.XmlText();
-    list.setAttribute("__type", "list");
-    list.setAttribute("__listType", "bullet");
-    list.setAttribute("__tag", "ul");
-    list.setAttribute("__start", 1);
-    root.insertEmbed(root.length, list);
-    for (const value of ["First benefit", "Second benefit"]) {
-      const item = new Y.XmlText();
-      item.setAttribute("__type", "listitem");
-      item.setAttribute("__value", 1);
-      list.insertEmbed(list.length, item);
-      const metadata = new Y.Map<unknown>();
-      metadata.set("__type", "text");
-      metadata.set("__format", 0);
-      metadata.set("__style", "");
-      metadata.set("__mode", 0);
-      metadata.set("__detail", 0);
-      item.insertEmbed(0, metadata);
-      item.insert(1, value);
-    }
-    const lastItem = list.toDelta()[1]!.insert as Y.XmlText;
-    const range: DocumentRangeTarget = {
-      documentObjectId: documentId,
-      anchor: encodeDocumentRelativePosition(
-        Y.createRelativePositionFromTypeIndex(paragraph, 1),
-      ),
-      head: encodeDocumentRelativePosition(
-        Y.createRelativePositionFromTypeIndex(lastItem, lastItem.length),
-      ),
-      quote: "Alpha beta gamma\nFirst benefit\nSecond benefit",
-    };
-    const edit = buildValidatedDocumentEdit({
-      document,
-      canvasId,
-      actorId,
-      range,
-      toolName: "execute_document_changes",
-      arguments: {
-        summary: "Improve the introduction and benefits.",
+  it.each([false, true])(
+    "replaces and re-edits a paragraph/list selection (backward=%s)",
+    (backward) => {
+      const { document, paragraph } = fixture();
+      const root = getProductDocumentContentRoot(document, documentId);
+      const list = new Y.XmlText();
+      list.setAttribute("__type", "list");
+      list.setAttribute("__listType", "bullet");
+      list.setAttribute("__tag", "ul");
+      list.setAttribute("__start", 1);
+      root.insertEmbed(root.length, list);
+      for (const value of ["First benefit", "Second benefit"]) {
+        const item = new Y.XmlText();
+        item.setAttribute("__type", "listitem");
+        item.setAttribute("__value", 1);
+        list.insertEmbed(list.length, item);
+        const metadata = new Y.Map<unknown>();
+        metadata.set("__type", "text");
+        metadata.set("__format", 0);
+        metadata.set("__style", "");
+        metadata.set("__mode", 0);
+        metadata.set("__detail", 0);
+        item.insertEmbed(0, metadata);
+        item.insert(1, value);
+      }
+      const lastItem = list.toDelta()[1]!.insert as Y.XmlText;
+      const range: DocumentRangeTarget = {
         documentObjectId: documentId,
-        operations: [
-          {
-            kind: "replace_selection",
-            text: "What to expect:\n\n- Clear first benefit\n- Clear second benefit",
-            format: "plain",
-          },
-        ],
-        whatChanged: "Revised the selected section.",
-        why: "Approved wording.",
-      },
-    });
-    Y.applyUpdate(document, edit.tentativeUpdate);
-    const blocks = root
-      .toDelta()
-      .map((entry: { insert?: unknown }) => entry.insert as Y.XmlText);
-    expect(plainText(blocks[0]!)).toBe("What to expect:");
-    expect(blocks[1]!.getAttribute("__type")).toBe("list");
-    expect(
-      blocks[1]!
-        .toDelta()
-        .map((entry: { insert?: unknown }) =>
-          plainText(entry.insert as Y.XmlText),
+        anchor: encodeDocumentRelativePosition(
+          Y.createRelativePositionFromTypeIndex(paragraph, 1),
         ),
-    ).toEqual(["Clear first benefit", "Clear second benefit"]);
-    const undo = applyDocumentSemanticUndo(document, edit.documentUndoPayload);
-    expect(undo.conflicts).toEqual([]);
-    expect(plainText(root.toDelta()[0]!.insert as Y.XmlText)).toBe(
-      "Alpha beta gamma",
-    );
-  });
+        head: encodeDocumentRelativePosition(
+          Y.createRelativePositionFromTypeIndex(lastItem, lastItem.length),
+        ),
+        quote: "Alpha beta gamma\nFirst benefit\nSecond benefit",
+      };
+      if (backward) [range.anchor, range.head] = [range.head, range.anchor];
+      const edit = buildValidatedDocumentEdit({
+        document,
+        canvasId,
+        actorId,
+        range,
+        toolName: "execute_document_changes",
+        arguments: {
+          summary: "Improve the introduction and benefits.",
+          documentObjectId: documentId,
+          operations: [
+            {
+              kind: "replace_selection",
+              text: "What to expect:\n\n- Clear first benefit\n- Clear second benefit",
+              format: "plain",
+            },
+          ],
+          whatChanged: "Revised the selected section.",
+          why: "Approved wording.",
+        },
+      });
+      Y.applyUpdate(document, edit.tentativeUpdate);
+      const blocks = root
+        .toDelta()
+        .map((entry: { insert?: unknown }) => entry.insert as Y.XmlText);
+      expect(plainText(blocks[0]!)).toBe("What to expect:");
+      expect(blocks[1]!.getAttribute("__type")).toBe("list");
+      expect(resolveDocumentRange(document, range).detached).toBe(false);
+      expect(
+        blocks[1]!
+          .toDelta()
+          .map((entry: { insert?: unknown }) =>
+            plainText(entry.insert as Y.XmlText),
+          ),
+      ).toEqual(["Clear first benefit", "Clear second benefit"]);
+      const followUp = buildValidatedDocumentEdit({
+        document,
+        canvasId,
+        actorId,
+        range,
+        toolName: "execute_document_changes",
+        arguments: {
+          summary: "Shorten the revised section.",
+          documentObjectId: documentId,
+          operations: [
+            {
+              kind: "replace_selection",
+              text: "Two benefits:\n\n- First\n- Second",
+              format: "plain",
+            },
+          ],
+          whatChanged: "Shortened the current text.",
+          why: "Follow-up request.",
+        },
+      });
+      Y.applyUpdate(document, followUp.tentativeUpdate);
+      expect(resolveDocumentRange(document, range).detached).toBe(false);
+      expect(currentDocumentRange(document, range).quote).toContain(
+        "Two benefits:",
+      );
+      expect(plainText(root.toDelta()[0]!.insert as Y.XmlText)).toBe(
+        "Two benefits:",
+      );
+      applyDocumentSemanticUndo(document, followUp.documentUndoPayload);
+      const undo = applyDocumentSemanticUndo(
+        document,
+        edit.documentUndoPayload,
+      );
+      expect(undo.conflicts).toEqual([]);
+      expect(plainText(root.toDelta()[0]!.insert as Y.XmlText)).toBe(
+        "Alpha beta gamma",
+      );
+    },
+  );
 
   it("creates one validated update and an inverse that preserves later human text", () => {
     const { document, paragraph, range } = fixture();

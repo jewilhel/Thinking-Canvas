@@ -16,6 +16,11 @@ import {
 import { getProductDocumentContentRoot } from "@/documents/product-document";
 import {
   decodeDocumentRelativePosition,
+  currentDocumentRange,
+  documentRangeReplacementsMapName,
+  relocateDocumentRange,
+  encodeDocumentRelativePosition,
+  boundedDocumentRangeQuote,
   type DocumentRangeTarget,
 } from "@/documents/document-range";
 import { base64ToBytes, bytesToBase64 } from "@/collaboration/canvas-document";
@@ -215,23 +220,25 @@ function applyTextOperations(input: {
         "A selected-range edit requires a document range comment.",
       );
     }
+    const currentRange = currentDocumentRange(input.document, input.range);
     const anchor = Y.createAbsolutePositionFromRelativePosition(
-      decodeDocumentRelativePosition(input.range.anchor),
+      decodeDocumentRelativePosition(currentRange.anchor),
       input.document,
     );
     const head = Y.createAbsolutePositionFromRelativePosition(
-      decodeDocumentRelativePosition(input.range.head),
+      decodeDocumentRelativePosition(currentRange.head),
       input.document,
     );
     if (!anchor || !head || !(anchor.type instanceof Y.XmlText)) {
       throw new Error("The selected document range is detached.");
     }
-    if (anchor.type !== head.type) {
+    if (anchor.type !== head.type || operation.text.includes("\n")) {
       replaceStructuredDocumentSelection({
         document: input.document,
         documentId: input.documentId,
-        range: input.range,
+        range: currentRange,
         text: operation.text,
+        format: operation.format,
       });
       continue;
     }
@@ -260,13 +267,28 @@ function applyTextOperations(input: {
     };
     anchor.type.delete(start, end - start);
     if (operation.text) {
+      let insertedStart = start;
       if (existingFormat === formatFlags(operation.format)) {
         anchor.type.insert(start, operation.text);
       } else {
         const child = textNode(operation.text, operation.format);
         anchor.type.insertEmbed(start, child.metadata);
         anchor.type.insert(start + 1, child.text);
+        insertedStart += 1;
       }
+      relocateDocumentRange(input.document, currentRange, {
+        anchor: encodeDocumentRelativePosition(
+          Y.createRelativePositionFromTypeIndex(anchor.type, insertedStart, 0),
+        ),
+        head: encodeDocumentRelativePosition(
+          Y.createRelativePositionFromTypeIndex(
+            anchor.type,
+            insertedStart + operation.text.length,
+            -1,
+          ),
+        ),
+        quote: boundedDocumentRangeQuote(operation.text),
+      });
     }
   }
   return selectionUndo;
@@ -418,9 +440,12 @@ export function buildValidatedDocumentEdit(input: {
   Y.applyUpdate(edited, Y.encodeStateAsUpdate(input.document));
   Y.applyUpdate(edited, review.tentativeUpdate);
   const root = getProductDocumentContentRoot(edited, documentObject.documentId);
-  const undoManager = new Y.UndoManager(root, {
-    trackedOrigins: new Set([AI_DOCUMENT_ORIGIN]),
-  });
+  const undoManager = new Y.UndoManager(
+    [root, edited.getMap(documentRangeReplacementsMapName)],
+    {
+      trackedOrigins: new Set([AI_DOCUMENT_ORIGIN]),
+    },
+  );
   let selectionUndo: ReturnType<typeof applyTextOperations> = null;
   edited.transact(() => {
     selectionUndo = applyTextOperations({

@@ -429,6 +429,10 @@ Retain exact commit SHA, protected CI URL/run, immutable deploy ID/URL, screensh
 - Multi-container replacement now runs through an isolated Lexical/Yjs binding and the document Markdown node configuration instead of hand-editing a single text container. A regression covers paragraph plus list replacement, list structure, and undo in both DOM and Node test environments.
 - Local gates: 366 tests across 72 files, formatting, lint, typecheck, and production build passed before the diagnostic-only route logging addition. Hosted acceptance and repeated follow-up/undo/cancel/retry testing remain pending. This is not a fix or closure claim.
 - Failure logs now correlate a run and execution stage with stack frames without logging document content, prompts, or provider response bodies.
+- Hosted `8e88ba6`: after renewing expired Netlify edge access in the Codex browser, Retry applied the original approval to the real paragraph-and-four-bullet selection. Revised text was visible and the canvas reached Saved at sequence 246. A subsequent request in the same thread failed; this is one successful edit, not consistent acceptance.
+- Follow-up regression confirmed that the first replacement detached the original comment range. Range relocations now travel in the same Yjs update as the text; server context and client highlights follow them. The regression now applies two multi-block edits using the original comment range and undoes both.
+- Retry errors were being cleared by successful 1.5-second background refreshes. Load errors and action errors are now separate, and HTTP 401 preview/session failures explain that access needs renewal. Two hook tests cover retained errors and expired-preview messaging.
+- The remaining architecture audit and hosted matrix include repeated edits, comment reopening, undo, cancel/retry, proposal versus apply authority, and fresh text generation. No milestone closure or general reliability claim is made.
 
 Closure status: Not ready
 Closure approval: Pending

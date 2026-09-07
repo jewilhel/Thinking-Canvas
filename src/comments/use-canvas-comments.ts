@@ -10,6 +10,12 @@ import type {
 import { SupabaseCommentRepository } from "@/comments/supabase-comment-repository";
 import { createClient } from "@/lib/supabase/client";
 
+function aiRequestFailure(response: Response, fallback: string) {
+  return response.status === 401
+    ? "Preview or sign-in access has expired. Reload this preview to renew access, then try again. Your comment remains saved."
+    : `${fallback} (HTTP ${response.status})`;
+}
+
 export function useCanvasComments(
   canvasId: string,
   supabaseUrl: string,
@@ -32,6 +38,7 @@ export function useCanvasComments(
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const runControllers = useRef(new Map<string, AbortController>());
 
   const refresh = useCallback(async () => {
@@ -42,9 +49,9 @@ export function useCanvasComments(
       ]);
       setThreads(next);
       setCollaboration(nextCollaboration);
-      setError("");
+      setLoadError("");
     } catch (caught) {
-      setError(
+      setLoadError(
         caught instanceof Error
           ? caught.message
           : "Comments could not be loaded.",
@@ -103,7 +110,9 @@ export function useCanvasComments(
           signal: controller.signal,
         });
         if (!response.ok || !response.body) {
-          throw new Error("Thinking Canvas AI could not start.");
+          throw new Error(
+            aiRequestFailure(response, "Thinking Canvas AI could not start."),
+          );
         }
         const reader = response.body
           .pipeThrough(new TextDecoderStream())
@@ -201,7 +210,7 @@ export function useCanvasComments(
           throw new Error(
             typeof body?.error === "string"
               ? body.error
-              : "AI run could not be cancelled.",
+              : aiRequestFailure(response, "AI run could not be cancelled."),
           );
         }
         runControllers.current.get(runId)?.abort();
@@ -238,7 +247,7 @@ export function useCanvasComments(
           throw new Error(
             typeof body?.error === "string"
               ? body.error
-              : "AI run could not be retried.",
+              : aiRequestFailure(response, "AI run could not be retried."),
           );
         }
         void processAiRun(body.run_id);
@@ -295,7 +304,7 @@ export function useCanvasComments(
     collaboration,
     loading,
     pending,
-    error,
+    error: error || loadError,
     refresh,
     execute,
     setAiSettings,

@@ -85,7 +85,10 @@ import {
 } from "@/collaboration/canvas-document";
 import { buildCompactedSnapshot } from "@/collaboration/persistence";
 import { buildAiDocumentProjections } from "@/documents/document-ai-projection";
-import { resolveDocumentRange } from "@/documents/document-range";
+import {
+  currentDocumentRange,
+  resolveDocumentRange,
+} from "@/documents/document-range";
 import { getAuthenticatedUser } from "@/lib/auth/session";
 import type { Json } from "@/lib/supabase/database.types";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
@@ -292,12 +295,12 @@ export async function completeAiRun(
       ]
     : allowedAiToolNames(currentAuthority);
   const sourceDocumentRange = sourceDocumentTarget
-    ? {
+    ? currentDocumentRange(compacted.document, {
         documentObjectId: sourceDocumentTarget.document_object_id,
         anchor: sourceDocumentTarget.relative_anchor,
         head: sourceDocumentTarget.relative_head,
         quote: sourceDocumentTarget.quoted_text,
-      }
+      })
     : null;
   const aiDocumentRange =
     sourceDocumentTarget?.include_selected_text_context === false
@@ -370,7 +373,11 @@ export async function completeAiRun(
           documentTarget.include_selected_text_context !== false)
           ? {
               documentObjectId: documentTarget.document_object_id,
-              quote: documentTarget.quoted_text,
+              quote: currentDocumentRange(compacted.document, {
+                anchor: documentTarget.relative_anchor,
+                head: documentTarget.relative_head,
+                quote: documentTarget.quoted_text,
+              }).quote,
               detached: resolveDocumentRange(compacted.document, {
                 anchor: documentTarget.relative_anchor,
                 head: documentTarget.relative_head,
