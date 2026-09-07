@@ -433,6 +433,8 @@ Retain exact commit SHA, protected CI URL/run, immutable deploy ID/URL, screensh
 - Follow-up regression confirmed that the first replacement detached the original comment range. Range relocations now travel in the same Yjs update as the text; server context and client highlights follow them. The regression now applies two multi-block edits using the original comment range and undoes both.
 - Retry errors were being cleared by successful 1.5-second background refreshes. Load errors and action errors are now separate, and HTTP 401 preview/session failures explain that access needs renewal. Two hook tests cover retained errors and expired-preview messaging.
 - The remaining architecture audit and hosted matrix include repeated edits, comment reopening, undo, cancel/retry, proposal versus apply authority, and fresh text generation. No milestone closure or general reliability claim is made.
+- Hosted `f99013c`: a fresh paragraph/list comment applied its request, its edited-text highlight reopened the same conversation, and a second edit in that conversation reached Saved at sequence 248. Inspection caught paragraph-boundary merging and loss of bullet markers; these runs are not full visual acceptance.
+- The expanded audit found that the semantic projection omitted nested list/link text and misread real Lexical heading types. Projection now traverses nested content, carries list markers, and recognizes heading tags. Replacement instructions explicitly require Markdown structure; block-boundary selection normalization avoids merging an unselected preceding paragraph. Forward/backward boundary regressions cover that repair.
 
 Closure status: Not ready
 Closure approval: Pending

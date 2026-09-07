@@ -48,6 +48,24 @@ function relationships(object: CanvasObjectV2) {
   return [];
 }
 
+function semanticText(node: Y.XmlText): string {
+  const kind = node.getAttribute("__type");
+  return node
+    .toDelta()
+    .map((part: { insert?: unknown }) => {
+      if (typeof part.insert === "string") return part.insert;
+      if (!(part.insert instanceof Y.XmlText)) return "";
+      const text = semanticText(part.insert);
+      if (kind === "list")
+        return `${node.getAttribute("__listType") === "number" ? "1." : "-"} ${text}\n`;
+      if (kind === "table") return `${text}\n`;
+      if (kind === "tablerow") return `${text}\t`;
+      return text;
+    })
+    .join("")
+    .trimEnd();
+}
+
 export function buildAiDocumentProjections(input: {
   document: Y.Doc;
   objects: CanvasObjectV2[];
@@ -64,15 +82,14 @@ export function buildAiDocumentProjections(input: {
       .flatMap((operation: { insert?: unknown }) => {
         const value = operation.insert;
         if (!(value instanceof Y.XmlText) || remaining <= 0) return [];
-        const text = value
-          .toDelta()
-          .flatMap((child: { insert?: unknown }) =>
-            typeof child.insert === "string" ? [child.insert] : [],
-          )
-          .join("")
-          .slice(0, remaining);
+        const text = semanticText(value).slice(0, remaining);
         remaining -= text.length;
-        const kind = String(value.getAttribute("__type") ?? "paragraph");
+        const type = value.getAttribute("__type");
+        const kind = String(
+          type === "heading"
+            ? (value.getAttribute("__tag") ?? "h2")
+            : (type ?? "paragraph"),
+        );
         return [{ kind, text }];
       })
       .slice(0, AI_DOCUMENT_BLOCK_MAX_COUNT);

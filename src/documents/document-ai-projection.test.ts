@@ -31,9 +31,22 @@ describe("AI document projection", () => {
       }),
     );
     const heading = new Y.XmlText();
-    heading.setAttribute("__type", "h2");
+    heading.setAttribute("__type", "heading");
+    heading.setAttribute("__tag", "h2");
     heading.insert(0, "Outcomes");
     getProductDocumentContentRoot(document, documentId).insertEmbed(0, heading);
+    const list = new Y.XmlText();
+    list.setAttribute("__type", "list");
+    list.setAttribute("__listType", "bullet");
+    const item = new Y.XmlText();
+    item.setAttribute("__type", "listitem");
+    item.insert(0, "Read ");
+    const link = new Y.XmlText();
+    link.setAttribute("__type", "link");
+    link.insert(0, "the guide");
+    item.insertEmbed(5, link);
+    list.insertEmbed(0, item);
+    getProductDocumentContentRoot(document, documentId).insertEmbed(1, list);
     putCanvasObjectV2(document, {
       schemaVersion: 2,
       id: "61000000-0000-4000-8000-000000000002",
@@ -78,7 +91,10 @@ describe("AI document projection", () => {
       objectId: documentId,
       title: "Plan",
       outline: [{ level: 2, text: "Outcomes" }],
-      blocks: [{ kind: "h2", text: "Outcomes" }],
+      blocks: [
+        { kind: "h2", text: "Outcomes" },
+        { kind: "list", text: "- Read the guide" },
+      ],
       internalObjects: [
         {
           id: "61000000-0000-4000-8000-000000000002",

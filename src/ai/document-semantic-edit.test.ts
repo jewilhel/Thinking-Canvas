@@ -72,11 +72,24 @@ function fixture() {
 }
 
 describe("semantic AI document editing", () => {
-  it.each([false, true])(
-    "replaces and re-edits a paragraph/list selection (backward=%s)",
-    (backward) => {
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ])(
+    "replaces and re-edits a paragraph/list selection (backward=%s, boundary=%s)",
+    (backward, boundary) => {
       const { document, paragraph } = fixture();
       const root = getProductDocumentContentRoot(document, documentId);
+      const preceding = new Y.XmlText();
+      preceding.setAttribute("__type", "paragraph");
+      root.insertEmbed(0, preceding);
+      preceding.insertEmbed(
+        0,
+        new Y.Map((paragraph.toDelta()[0]!.insert as Y.Map<unknown>).entries()),
+      );
+      preceding.insert(1, "Keep this introduction.");
       const list = new Y.XmlText();
       list.setAttribute("__type", "list");
       list.setAttribute("__listType", "bullet");
@@ -101,7 +114,10 @@ describe("semantic AI document editing", () => {
       const range: DocumentRangeTarget = {
         documentObjectId: documentId,
         anchor: encodeDocumentRelativePosition(
-          Y.createRelativePositionFromTypeIndex(paragraph, 1),
+          Y.createRelativePositionFromTypeIndex(
+            boundary ? preceding : paragraph,
+            boundary ? preceding.length : 1,
+          ),
         ),
         head: encodeDocumentRelativePosition(
           Y.createRelativePositionFromTypeIndex(lastItem, lastItem.length),
@@ -132,7 +148,9 @@ describe("semantic AI document editing", () => {
       Y.applyUpdate(document, edit.tentativeUpdate);
       const blocks = root
         .toDelta()
-        .map((entry: { insert?: unknown }) => entry.insert as Y.XmlText);
+        .map((entry: { insert?: unknown }) => entry.insert as Y.XmlText)
+        .slice(1);
+      expect(plainText(preceding)).toBe("Keep this introduction.");
       expect(plainText(blocks[0]!)).toBe("What to expect:");
       expect(blocks[1]!.getAttribute("__type")).toBe("list");
       expect(resolveDocumentRange(document, range).detached).toBe(false);
@@ -168,7 +186,8 @@ describe("semantic AI document editing", () => {
       expect(currentDocumentRange(document, range).quote).toContain(
         "Two benefits:",
       );
-      expect(plainText(root.toDelta()[0]!.insert as Y.XmlText)).toBe(
+      expect(plainText(preceding)).toBe("Keep this introduction.");
+      expect(plainText(root.toDelta()[1]!.insert as Y.XmlText)).toBe(
         "Two benefits:",
       );
       applyDocumentSemanticUndo(document, followUp.documentUndoPayload);
@@ -177,7 +196,7 @@ describe("semantic AI document editing", () => {
         edit.documentUndoPayload,
       );
       expect(undo.conflicts).toEqual([]);
-      expect(plainText(root.toDelta()[0]!.insert as Y.XmlText)).toBe(
+      expect(plainText(root.toDelta()[1]!.insert as Y.XmlText)).toBe(
         "Alpha beta gamma",
       );
     },

@@ -25,6 +25,7 @@ import {
 } from "@/documents/document-range";
 import { base64ToBytes, bytesToBase64 } from "@/collaboration/canvas-document";
 import { replaceStructuredDocumentSelection } from "@/documents/server-document-selection";
+import { looksLikeDocumentMarkdown } from "@/documents/document-markdown";
 
 type DocumentEditToolName = Extract<
   AiToolName,
@@ -232,7 +233,11 @@ function applyTextOperations(input: {
     if (!anchor || !head || !(anchor.type instanceof Y.XmlText)) {
       throw new Error("The selected document range is detached.");
     }
-    if (anchor.type !== head.type || operation.text.includes("\n")) {
+    if (
+      anchor.type !== head.type ||
+      operation.text.includes("\n") ||
+      looksLikeDocumentMarkdown(operation.text)
+    ) {
       replaceStructuredDocumentSelection({
         document: input.document,
         documentId: input.documentId,

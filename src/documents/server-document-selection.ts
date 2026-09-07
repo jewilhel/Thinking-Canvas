@@ -132,6 +132,41 @@ export function replaceStructuredDocumentSelection(input: {
         );
         if (selection.isCollapsed())
           throw new Error("The selected document range is detached.");
+        // DOM selections can represent the start of a block as the end of
+        // its preceding text node. Keep unselected paragraph boundaries out
+        // of the replacement instead of merging the new heading into them.
+        const texts = $getRoot().getAllTextNodes();
+        const startPoint = selection.isBackward()
+          ? selection.focus
+          : selection.anchor;
+        const endPoint = selection.isBackward()
+          ? selection.anchor
+          : selection.focus;
+        const startNode = startPoint.getNode();
+        if (
+          $isTextNode(startNode) &&
+          startPoint.offset === startNode.getTextContentSize()
+        ) {
+          const next =
+            texts[
+              texts.findIndex((node) => node.getKey() === startNode.getKey()) +
+                1
+            ];
+          if (next) startPoint.set(next.getKey(), 0, "text");
+        }
+        const endNode = endPoint.getNode();
+        if ($isTextNode(endNode) && endPoint.offset === 0) {
+          const previous =
+            texts[
+              texts.findIndex((node) => node.getKey() === endNode.getKey()) - 1
+            ];
+          if (previous)
+            endPoint.set(
+              previous.getKey(),
+              previous.getTextContentSize(),
+              "text",
+            );
+        }
         $setSelection(selection);
         if (input.text) {
           const markdown = input.text.replace(/^([ \t]*)[•] /gm, "$1- ");
