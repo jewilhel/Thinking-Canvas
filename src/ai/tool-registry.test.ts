@@ -4,6 +4,7 @@ import {
   AiToolNotFoundError,
   AiToolPermissionError,
   allowedAiToolNames,
+  allowedDocumentRangeAiToolNames,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
 
@@ -50,6 +51,24 @@ describe("AI authority tool registry", () => {
       "stage_new_connectors",
       "stage_new_annotations",
       "execute_canvas_commands",
+      "execute_document_changes",
+    ]);
+  });
+
+  it("limits document range conversations to document-specific actions", () => {
+    expect(allowedDocumentRangeAiToolNames("comment_only")).toEqual([
+      "create_contextual_comment",
+    ]);
+    expect(allowedDocumentRangeAiToolNames("propose_changes")).toEqual([
+      "propose_document_changes",
+    ]);
+    expect(allowedDocumentRangeAiToolNames("edit_with_review")).toEqual([
+      "propose_document_changes",
+      "stage_document_changes",
+    ]);
+    expect(allowedDocumentRangeAiToolNames("trusted_editor")).toEqual([
+      "propose_document_changes",
+      "stage_document_changes",
       "execute_document_changes",
     ]);
   });

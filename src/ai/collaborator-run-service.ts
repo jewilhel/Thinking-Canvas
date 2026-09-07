@@ -47,6 +47,7 @@ import {
 } from "@/ai/review-scope";
 import {
   allowedAiToolNames,
+  allowedDocumentRangeAiToolNames,
   contextualCommentArgumentsSchema,
   documentChangesArgumentsSchema,
   executeArgumentsSchema,
@@ -189,7 +190,6 @@ export async function completeAiRun(
   if (accessResult.error || !currentAuthority) {
     throw new AiRunAccessError("The primary AI is no longer available.");
   }
-  const allowedToolNames = allowedAiToolNames(currentAuthority);
   if (run.status === "completed" && run.output_reply_id) {
     return { runId: run.id, replyId: run.output_reply_id, status: run.status };
   }
@@ -281,6 +281,9 @@ export async function completeAiRun(
   const sourceDocumentTarget = firstRelatedRow(
     commentResult.data.comment_document_targets,
   );
+  const allowedToolNames = sourceDocumentTarget
+    ? [...allowedDocumentRangeAiToolNames(currentAuthority)]
+    : allowedAiToolNames(currentAuthority);
   const sourceDocumentRange = sourceDocumentTarget
     ? {
         documentObjectId: sourceDocumentTarget.document_object_id,

@@ -482,7 +482,18 @@ describe("FakePrimaryAiGateway", () => {
           "execute_canvas_commands",
         ],
       }),
-    ).rejects.toThrow("does not match current authority");
+    ).rejects.toThrow("exceeds current authority");
+  });
+
+  it("accepts a scoped provider allowlist within current authority", async () => {
+    const gateway = new FakePrimaryAiGateway();
+    await expect(
+      gateway.request({
+        invocation,
+        projection,
+        allowedToolNames: ["create_contextual_comment"],
+      }),
+    ).resolves.toMatchObject({ status: "completed" });
   });
 
   it("keeps bounded visual refinement state independent per review scope", async () => {

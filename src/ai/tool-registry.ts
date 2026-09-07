@@ -293,6 +293,15 @@ export const documentChangesArgumentsSchema = z
     }
   });
 
+export const providerDocumentChangesArgumentsSchema = z.strictObject({
+  summary: z.string().trim().min(1).max(10_000),
+  documentObjectId: uuid,
+  operations: z.array(documentSemanticOperationSchema).min(1).max(50),
+  settings: documentSettingsSchema.optional(),
+  whatChanged: z.string().trim().min(1).max(2_000),
+  why: z.string().trim().min(1).max(4_000),
+});
+
 export const contextualCommentArgumentsSchema = z
   .strictObject({
     body: z.string().trim().min(1).max(100_000),
@@ -423,6 +432,21 @@ export function allowedAiToolNames(authority: AiAuthorityLevel) {
       authorityRank[authority] >=
       authorityRank[AI_TOOL_REGISTRY[name].minimumAuthority],
   );
+}
+
+const documentRangeToolNames = new Set<AiToolName>([
+  "propose_document_changes",
+  "stage_document_changes",
+  "execute_document_changes",
+]);
+
+export function allowedDocumentRangeAiToolNames(authority: AiAuthorityLevel) {
+  const allowed = allowedAiToolNames(authority).filter((name) =>
+    documentRangeToolNames.has(name),
+  );
+  return allowed.length > 0
+    ? allowed
+    : (["create_contextual_comment"] as const);
 }
 
 export class AiToolPermissionError extends Error {

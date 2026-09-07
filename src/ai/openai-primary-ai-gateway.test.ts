@@ -213,6 +213,91 @@ describe("OpenAiPrimaryAiGateway", () => {
     expect(serialized).not.toContain("new-shape:${shape.key}");
   });
 
+  it("keeps provider-facing document edits compact and validates them before returning", async () => {
+    const tool = buildSubmitTurnTool(["stage_document_changes"]);
+    const description = (
+      tool.parameters.properties.toolCalls.items.properties.argumentsJson as {
+        description: string;
+      }
+    ).description;
+    expect(description).toContain('"stage_document_changes"');
+    expect(description).not.toContain('"objectCommands"');
+
+    const client = clientReturning(
+      providerResponse({
+        body: "I applied the clearer wording.",
+        evidence: [],
+        contextualTargetObjectIds: [],
+        toolCalls: [
+          {
+            callKey: "document-edit",
+            toolName: "stage_document_changes",
+            argumentsJson: JSON.stringify({
+              summary: "Clarify the selection.",
+              documentObjectId: ids.object,
+              operations: [
+                {
+                  kind: "replace_selection",
+                  text: "Clearer selected wording.",
+                },
+              ],
+              whatChanged: "Replaced the selected wording.",
+              why: "The user approved the suggested clarification.",
+            }),
+          },
+        ],
+      }),
+    );
+    const gateway = new OpenAiPrimaryAiGateway({ apiKey: "test-key", client });
+
+    await expect(
+      gateway.request({
+        invocation: { ...invocation, authority: "edit_with_review" },
+        projection,
+        allowedToolNames: ["stage_document_changes"],
+      }),
+    ).resolves.toMatchObject({
+      toolCalls: [
+        {
+          arguments: {
+            operations: [{ format: "plain" }],
+            objectCommands: [],
+            objectExplanations: [],
+          },
+        },
+      ],
+    });
+  });
+
+  it("rejects malformed document actions inside the provider retry boundary", async () => {
+    const client = clientReturning(
+      providerResponse({
+        body: "I applied the wording.",
+        evidence: [],
+        contextualTargetObjectIds: [],
+        toolCalls: [
+          {
+            callKey: "document-edit",
+            toolName: "stage_document_changes",
+            argumentsJson: JSON.stringify({
+              documentObjectId: ids.object,
+              operations: [],
+            }),
+          },
+        ],
+      }),
+    );
+    const gateway = new OpenAiPrimaryAiGateway({ apiKey: "test-key", client });
+
+    await expect(
+      gateway.request({
+        invocation: { ...invocation, authority: "edit_with_review" },
+        projection,
+        allowedToolNames: ["stage_document_changes"],
+      }),
+    ).rejects.toThrow("invalid structured response");
+  });
+
   it("rejects a provider action outside current authority", async () => {
     const client = clientReturning(
       providerResponse({

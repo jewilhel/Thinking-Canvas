@@ -82,16 +82,12 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
     if (invocation.canvasId !== projection.canvasId) {
       throw new Error("The invocation and projection canvas must match.");
     }
-    const expectedTools = allowedAiToolNames(invocation.authority);
+    const expectedTools = new Set(allowedAiToolNames(invocation.authority));
     if (
-      input.allowedToolNames.length !== expectedTools.length ||
-      input.allowedToolNames.some(
-        (name, index) => name !== expectedTools[index],
-      )
+      new Set(input.allowedToolNames).size !== input.allowedToolNames.length ||
+      input.allowedToolNames.some((name) => !expectedTools.has(name))
     ) {
-      throw new Error(
-        "The AI tool allowlist does not match current authority.",
-      );
+      throw new Error("The AI tool allowlist exceeds current authority.");
     }
 
     const requestId = `fake-${invocation.runId}`;
