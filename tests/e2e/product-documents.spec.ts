@@ -151,9 +151,9 @@ test("creates, focuses, configures, restores, and reloads a product document", a
   await page.getByRole("button", { name: /document settings/i }).click();
   await page.getByLabel("Display font").selectOption("serif");
   await page.getByLabel("Reading size").selectOption("large");
-  await page.getByLabel("Layout").selectOption("a4-landscape");
+  await expect(page.getByLabel("Layout")).toHaveCount(0);
   await page.getByRole("button", { name: "Blue document background" }).click();
-  await expect(page.getByLabel("Layout")).toHaveValue("a4-landscape");
+  await expect(page.getByTestId("document-page-status")).toHaveCount(0);
   await expect(page.getByTestId("document-reading-surface")).toHaveCSS(
     "font-family",
     /Georgia/,
@@ -208,7 +208,9 @@ test("creates, focuses, configures, restores, and reloads a product document", a
     "A durable shared document body.",
   );
   await page.getByRole("button", { name: /document settings/i }).click();
-  await expect(page.getByLabel("Layout")).toHaveValue("a4-landscape");
+  await expect(page.getByLabel("Layout")).toHaveCount(0);
+  await expect(page.getByLabel("Display font")).toHaveValue("serif");
+  await expect(page.getByLabel("Reading size")).toHaveValue("large");
 });
 
 test("links selected text and inserts a table below its title", async ({
@@ -375,7 +377,7 @@ test("keeps document range comments attached across two participants", async ({
         );
         const name = style?.dataset.documentCommentHighlight;
         return name
-          ? (CSS.highlights.get(`document-comment-${name}`)?.size ?? 0)
+          ? (CSS.highlights.get(`document-comment-${name}-editor`)?.size ?? 0)
           : 0;
       }),
     )
@@ -384,7 +386,7 @@ test("keeps document range comments attached across two participants", async ({
     .getByText("Review this shared sentence.", { exact: true })
     .click({ position: { x: 70, y: 10 } });
   const reopenedOwnerThread = owner.getByRole("dialog", {
-    name: "Comment thread",
+    name: "comment thread",
   });
   await expect(reopenedOwnerThread.getByText(commentBody)).toBeVisible();
   await reopenedOwnerThread
@@ -398,7 +400,7 @@ test("keeps document range comments attached across two participants", async ({
         );
         const name = style?.dataset.documentCommentHighlight;
         return name
-          ? (CSS.highlights.get(`document-comment-${name}`)?.size ?? 0)
+          ? (CSS.highlights.get(`document-comment-${name}-editor`)?.size ?? 0)
           : 0;
       }),
     )
@@ -410,7 +412,7 @@ test("keeps document range comments attached across two participants", async ({
   const editorHistory = editor.getByRole("dialog", { name: "Comments" });
   await expect(editorHistory.getByText(commentBody)).toBeVisible();
   await editorHistory.getByText(commentBody).click();
-  const editorThread = editor.getByRole("dialog", { name: "Comment thread" });
+  const editorThread = editor.getByRole("dialog", { name: "comment thread" });
   await editorThread
     .getByRole("textbox", { name: "Reply" })
     .fill("Yes, I can revise it.");
@@ -441,7 +443,7 @@ test("keeps document range comments attached across two participants", async ({
         );
         const name = style?.dataset.documentCommentHighlight;
         return name
-          ? (CSS.highlights.get(`document-comment-${name}`)?.size ?? 0)
+          ? (CSS.highlights.get(`document-comment-${name}-editor`)?.size ?? 0)
           : 0;
       }),
     )
@@ -473,7 +475,7 @@ test("removes document range highlights after dismissal and deletion", async ({
       );
       const name = style?.dataset.documentCommentHighlight;
       return name
-        ? (CSS.highlights.get(`document-comment-${name}`)?.size ?? 0)
+        ? (CSS.highlights.get(`document-comment-${name}-editor`)?.size ?? 0)
         : 0;
     });
   const createComment = async (message: string) => {
@@ -564,7 +566,7 @@ test("applies and undoes a semantic AI document revision while preserving later 
   await expect(reloadedBody).toContainText("Human follow-up.");
 });
 
-test("paginates while keeping canvas objects outside the document", async ({
+test("scrolls continuous content while keeping canvas objects outside the document", async ({
   page,
 }) => {
   await signIn(page);
@@ -627,7 +629,7 @@ test("paginates while keeping canvas objects outside the document", async ({
   ).toHaveCount(0);
 
   await page.getByRole("button", { name: /document settings/i }).click();
-  await page.getByLabel("Layout").selectOption("letter-portrait");
+  await expect(page.getByLabel("Layout")).toHaveCount(0);
   await page.getByRole("button", { name: "Done" }).click();
   await page
     .getByLabel("Document body")
@@ -637,20 +639,22 @@ test("paginates while keeping canvas objects outside the document", async ({
         (_, index) => `Pagination line ${index + 1}`,
       ).join("\n"),
     );
-  await expect
-    .poll(async () => page.getByTestId("document-page-status").textContent())
-    .toMatch(/Page 1 of ([2-9]|[1-9][0-9]+)/);
+  await expect(page.getByTestId("document-page-status")).toHaveCount(0);
   const body = page.getByLabel("Document body");
   await body.selectText();
   const selectedText = await page.evaluate(() =>
     window.getSelection()?.toString(),
   );
-  await page.getByRole("button", { name: "Next page" }).click();
-  await expect(page.getByTestId("document-page-status")).toContainText(
-    "Page 2 of",
-  );
-
-  await page.getByRole("button", { name: "Previous page" }).click();
+  const scrollContainer = page.getByTestId("document-scroll-container");
+  await scrollContainer.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect
+    .poll(() => scrollContainer.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  await scrollContainer.evaluate((element) => {
+    element.scrollTop = 0;
+  });
   await expect
     .poll(() => page.evaluate(() => window.getSelection()?.toString()))
     .toBe(selectedText);
