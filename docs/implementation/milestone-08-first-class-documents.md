@@ -1,11 +1,17 @@
 # Milestone 8 — First-class documents
 
-Status: Approved for implementation
+Status: Product accepted; closure approved — engineering exit verification pending
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 Plan owner: Product owner
 Last updated: 2026-09-02
 
 ## Goal and user-visible outcome
+
+### Product-owner acceptance and closure authorization — 2026-09-07
+
+The product owner accepted the completed preview improvements and explicitly authorized milestone closure while reviewing runtime `a9eea31` (Netlify branch deploy `6a9f449c5a53e7731942b053`). This supersedes earlier statements that product-owner acceptance or closure approval is pending. The final light-grey resize-handle change passed focused panel tests, formatting, and the Netlify build.
+
+Engineering closure is not yet recorded as complete: read-only GitHub checks on 2026-09-07 returned no PR and no CI runs for `codex/milestone-8-first-class-documents`. CI runs on pull requests or pushes to main, not feature-branch pushes. The existing hosted role/reconnect, accessibility/responsive, and performance matrix still requires evidence reconciliation/completion. Exact-head protected CI and the remaining applicable exit gates must be verified before marking the milestone Closed. Superseded containment requirements and temporarily hidden paginated-layout controls must not be represented as newly tested. Creating a PR requires separate authorization; merge and production deployment are not authorized by this closure request.
 
 ### Approved follow-up slice — shared comment workspace (2026-09-07)
 

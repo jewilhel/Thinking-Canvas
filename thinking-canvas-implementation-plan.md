@@ -1,6 +1,6 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–7 closed; Milestone 8 implementation in progress; later milestones remain draft
+Status: Milestones 0–7 closed; Milestone 8 product accepted and closure approved, engineering exit verification pending; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
