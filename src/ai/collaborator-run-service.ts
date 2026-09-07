@@ -14,6 +14,7 @@ import {
 } from "@/ai/visual-grounding";
 import type { FakeAiScenario } from "@/ai/fake-collaborator-gateway";
 import { planDeterministicLayout } from "@/ai/deterministic-layout";
+import { isDocumentApplyInstruction } from "@/ai/document-turn-intent";
 import {
   createPrimaryAiGateway,
   parsePrimaryAiProviderEnvironment,
@@ -95,6 +96,7 @@ const runRequestSchema = z.strictObject({
 });
 
 const TARGETED_CAPTURE_RENDERER_VERSION = 1;
+const DOCUMENT_PROVIDER_ATTEMPT_LIMIT = 3;
 
 function firstRelatedRow<Row>(value: Row | Row[] | null | undefined) {
   return Array.isArray(value) ? value[0] : (value ?? undefined);
@@ -281,8 +283,13 @@ export async function completeAiRun(
   const sourceDocumentTarget = firstRelatedRow(
     commentResult.data.comment_document_targets,
   );
+  const instruction = replyResult.data?.body ?? commentResult.data.body;
   const allowedToolNames = sourceDocumentTarget
-    ? [...allowedDocumentRangeAiToolNames(currentAuthority)]
+    ? [
+        ...allowedDocumentRangeAiToolNames(currentAuthority, {
+          applyRequested: isDocumentApplyInstruction(instruction),
+        }),
+      ]
     : allowedAiToolNames(currentAuthority);
   const sourceDocumentRange = sourceDocumentTarget
     ? {
@@ -456,7 +463,6 @@ export async function completeAiRun(
       "This canvas is too large for a grounded AI response.",
     );
   }
-  const instruction = replyResult.data?.body ?? commentResult.data.body;
   const projection: AiProjectionEnvelope = aiProjectionEnvelopeSchema.parse({
     ...projectionBase,
     serializedBytes,
@@ -473,6 +479,9 @@ export async function completeAiRun(
   let gatewayResult = continuityResult;
   let providerAttemptCount = 0;
   const gateway = createPrimaryAiGateway();
+  const providerAttemptLimit = sourceDocumentTarget
+    ? DOCUMENT_PROVIDER_ATTEMPT_LIMIT
+    : AI_PROVIDER_ATTEMPT_LIMIT;
   const reviewVisualChange = continuityResult
     ? undefined
     : gateway.reviewVisualChange?.bind(gateway);
@@ -518,12 +527,12 @@ export async function completeAiRun(
         target_requester_id: run.requested_by,
         target_input_tokens: Math.min(
           1_000_000,
-          estimatedInputTokens * AI_PROVIDER_ATTEMPT_LIMIT,
+          estimatedInputTokens * providerAttemptLimit,
         ),
         target_output_tokens: Math.min(
           16_000,
           providerConfig.OPENAI_RESPONSES_MAX_OUTPUT_TOKENS *
-            AI_PROVIDER_ATTEMPT_LIMIT,
+            providerAttemptLimit,
         ),
       },
     );
@@ -548,7 +557,11 @@ export async function completeAiRun(
       );
     });
     throwIfAiRunAborted(options.signal);
-    const requested = await requestPrimaryAiWithRetry(gateway, gatewayInput);
+    const requested = await requestPrimaryAiWithRetry(
+      gateway,
+      gatewayInput,
+      providerAttemptLimit,
+    );
     gatewayResult = requested.result;
     providerAttemptCount = requested.attemptCount;
   }

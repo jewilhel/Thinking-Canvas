@@ -1,5 +1,8 @@
 import { ConnectedPathError } from "@/ai/grounding";
-import { AiProviderOutputError } from "@/ai/primary-ai-gateway";
+import {
+  AiProviderOutputError,
+  AiProviderTimeoutError,
+} from "@/ai/primary-ai-gateway";
 import { AiRunTimeoutError } from "@/ai/run-deadline";
 import {
   AiRunConflictError,
@@ -12,6 +15,7 @@ export function privacySafeAiRunErrorCode(error: unknown) {
     return `connected_path_${error.code}`;
   if (error instanceof AiRunLimitError) return "rate_or_budget_limit";
   if (error instanceof AiRunTimeoutError) return "provider_timeout";
+  if (error instanceof AiProviderTimeoutError) return "provider_timeout";
   if (error instanceof DOMException && error.name === "AbortError")
     return "run_interrupted";
   if (error instanceof AiProviderOutputError) return "provider_output_invalid";

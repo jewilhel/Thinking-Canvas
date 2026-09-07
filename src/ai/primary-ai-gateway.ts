@@ -13,6 +13,13 @@ export class AiProviderOutputError extends Error {
   }
 }
 
+export class AiProviderTimeoutError extends Error {
+  constructor() {
+    super("The AI provider request timed out.");
+    this.name = "AiProviderTimeoutError";
+  }
+}
+
 export type FakeAiScenario = "complete" | "cancelled" | "failed";
 
 export type PrimaryAiGatewayResult =
@@ -66,25 +73,19 @@ export const AI_PROVIDER_ATTEMPT_LIMIT = 2;
 export async function requestPrimaryAiWithRetry(
   gateway: PrimaryAiGateway,
   input: Parameters<PrimaryAiGateway["request"]>[0],
+  attemptLimit = AI_PROVIDER_ATTEMPT_LIMIT,
 ) {
   let result: PrimaryAiGatewayResult | null = null;
   let lastError: unknown;
 
-  for (
-    let attemptCount = 1;
-    attemptCount <= AI_PROVIDER_ATTEMPT_LIMIT;
-    attemptCount += 1
-  ) {
+  for (let attemptCount = 1; attemptCount <= attemptLimit; attemptCount += 1) {
     try {
       result = await gateway.request(input);
-      if (
-        result.status !== "failed" ||
-        attemptCount === AI_PROVIDER_ATTEMPT_LIMIT
-      ) {
+      if (result.status !== "failed" || attemptCount === attemptLimit) {
         return { result, attemptCount };
       }
     } catch (error) {
-      if (input.signal?.aborted || attemptCount === AI_PROVIDER_ATTEMPT_LIMIT) {
+      if (input.signal?.aborted || attemptCount === attemptLimit) {
         throw error;
       }
       lastError = error;
@@ -93,5 +94,5 @@ export async function requestPrimaryAiWithRetry(
 
   if (lastError) throw lastError;
   if (!result) throw new Error("The AI provider did not return a result.");
-  return { result, attemptCount: AI_PROVIDER_ATTEMPT_LIMIT };
+  return { result, attemptCount: attemptLimit };
 }

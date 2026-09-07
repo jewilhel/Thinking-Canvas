@@ -21,6 +21,7 @@ import {
   createPrimaryAiGateway,
   parsePrimaryAiProviderEnvironment,
 } from "@/ai/primary-ai-gateway-factory";
+import { AiProviderTimeoutError } from "@/ai/primary-ai-gateway";
 import { allowedAiToolNames } from "@/ai/tool-registry";
 
 const ids = {
@@ -119,6 +120,16 @@ function providerResponse(
 }
 
 function clientReturning(response: Response) {
+  const create = vi.fn(
+    async (
+      body: Parameters<NonNullable<StreamingResponsesClient["create"]>>[0],
+      options: Parameters<NonNullable<StreamingResponsesClient["create"]>>[1],
+    ) => {
+      void body;
+      void options;
+      return response;
+    },
+  );
   const stream = vi.fn(
     (body: ResponseCreateParamsStreaming, options: { signal?: AbortSignal }) =>
       ({
@@ -133,7 +144,7 @@ function clientReturning(response: Response) {
         options,
       }) as ReturnType<StreamingResponsesClient["stream"]>,
   );
-  return { stream };
+  return { create, stream };
 }
 
 describe("OpenAiPrimaryAiGateway", () => {
@@ -174,16 +185,16 @@ describe("OpenAiPrimaryAiGateway", () => {
         outputTokens: 45,
       },
     });
-    const [body, options] = client.stream.mock.calls[0];
+    const [body, options] = client.create.mock.calls[0];
     expect(body).toMatchObject({
       model: "gpt-5.6-terra",
       max_output_tokens: 4_000,
       parallel_tool_calls: false,
       reasoning: { effort: "medium" },
       store: false,
-      stream: true,
       tool_choice: { type: "function", name: "submit_primary_ai_turn" },
     });
+    expect(body).not.toHaveProperty("stream");
     expect(body.safety_identifier).toHaveLength(64);
     expect(body.safety_identifier).not.toContain(ids.user);
     expect(options.signal).toBe(signal);
@@ -342,7 +353,25 @@ describe("OpenAiPrimaryAiGateway", () => {
         signal: controller.signal,
       }),
     ).rejects.toMatchObject({ name: "AbortError" });
+    expect(client.create).not.toHaveBeenCalled();
     expect(client.stream).not.toHaveBeenCalled();
+  });
+
+  it("classifies an upstream gateway timeout", async () => {
+    const client = clientReturning(providerResponse({}));
+    client.create.mockRejectedValueOnce(new Error("Request timed out."));
+    const gateway = new OpenAiPrimaryAiGateway({
+      apiKey: "test-key",
+      client,
+    });
+
+    await expect(
+      gateway.request({
+        invocation,
+        projection,
+        allowedToolNames: allowedAiToolNames("comment_only"),
+      }),
+    ).rejects.toBeInstanceOf(AiProviderTimeoutError);
   });
 
   it("submits targeted before and after captures to a separate visual gate", async () => {
