@@ -59,6 +59,7 @@ function DocumentCommentComposer({
   onThreadsChange,
 }: Props & { service: CommentService }) {
   const workspace = useCommentWorkspace();
+  const composerKey = `document-composer:${documentObjectId}`;
   const { threads, collaboration, loading, pending, error, execute } = service;
   const [draft, setDraft] = useCommentDraft(
     `document:${documentObjectId}:draft`,
@@ -92,9 +93,9 @@ function DocumentCommentComposer({
   }, [documentThreads, onThreadsChange]);
 
   useEffect(() => {
-    if (open && workspace.active === "document-composer")
+    if (open && workspace.active === composerKey)
       requestAnimationFrame(() => composerRef.current?.focus());
-  }, [open, workspace.active]);
+  }, [open, workspace.active, composerKey]);
 
   function close() {
     if (pending) return;
@@ -140,16 +141,11 @@ function DocumentCommentComposer({
     setDraft("");
     setDraftRecipients([]);
     setPromptKind(null);
-    workspace.finishCreation(
-      "document-composer",
-      id,
-      anchorPosition ?? undefined,
-    );
+    workspace.finishCreation(composerKey, id, anchorPosition ?? undefined);
     onOpenChange(false);
   }
 
-  if (!open || !anchorPosition || workspace.active !== "document-composer")
-    return null;
+  if (!open || !anchorPosition || workspace.active !== composerKey) return null;
 
   return (
     <CommentPanel

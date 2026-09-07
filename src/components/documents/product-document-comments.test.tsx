@@ -14,7 +14,7 @@ function TestWorkspace({ children }: { children: ReactNode }) {
   const service = useCanvasComments("test", "test", "test");
   return (
     <CommentWorkspaceProvider
-      initialActive="document-composer"
+      initialActive={`document-composer:${selectedRange.documentObjectId}`}
       initialService={service}
     >
       {children}

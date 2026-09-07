@@ -293,7 +293,7 @@ export function ProductDocumentEditor({
               if (!workspace.drafts[`document:${documentObject.id}:draft`])
                 setCommentTargetRange(selectedRange);
               setCommentsOpen(true);
-              workspace.show("document-composer");
+              workspace.show(`document-composer:${documentObject.id}`);
             }}
             onSelectionPositionChange={setSelectionPosition}
             onTitleChange={(title) => onUpdate({ title })}
