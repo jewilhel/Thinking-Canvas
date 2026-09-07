@@ -7,6 +7,7 @@ import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import type * as Y from "yjs";
 
 import { ProductDocumentCollaboration } from "@/components/documents/product-document-collaboration";
+import { useCommentWorkspace } from "@/components/comments/comment-workspace";
 import {
   productDocumentLexicalNodes,
   productDocumentLexicalTheme,
@@ -34,6 +35,7 @@ export function ProductDocumentPreview({
     height: number;
   };
 }) {
+  const { threads } = useCommentWorkspace();
   const settings = documentObject.settings;
   const reading = documentReadingMetrics[settings.readingSize];
   const surfaceWidth = documentReadingSurfaceWidth(settings);
@@ -105,6 +107,7 @@ export function ProductDocumentPreview({
               username="Document preview"
               cursorColor="#7c3aed"
               documentObjectId={documentObject.id}
+              commentThreads={threads}
               preview
             />
           </div>

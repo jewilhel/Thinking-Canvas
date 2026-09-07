@@ -1,6 +1,7 @@
 "use client";
 
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { useCommentWorkspace } from "@/components/comments/comment-workspace";
 import {
   $getAnchorAndFocusForUserState,
   createUndoManager,
@@ -133,6 +134,17 @@ export function ProductDocumentCollaboration({
   const commentThreadsRef = useRef(commentThreads);
   const onCommentThreadOpenRef = useRef(onCommentThreadOpen);
   const commentRangesRef = useRef(new Map<string, Range>());
+  const { registerAnchors } = useCommentWorkspace();
+  useEffect(
+    () =>
+      registerAnchors(documentObjectId, (threadId) => {
+        const range = commentRangesRef.current.get(threadId);
+        if (!range) return null;
+        const bounds = range.getBoundingClientRect();
+        return { left: bounds.left, top: bounds.bottom + 12, documentObjectId };
+      }),
+    [documentObjectId, registerAnchors],
+  );
   const syncCommentHighlightsRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
@@ -156,12 +168,10 @@ export function ProductDocumentCollaboration({
       rootName: documentContentRootName(documentId),
     });
     const sharedRoot = binding.root.getSharedType();
-    const highlightName = `document-comment-${documentObjectId}`;
+    const highlightName = `document-comment-${documentObjectId}-${preview ? "preview" : "editor"}`;
     const rootElement = editor.getRootElement();
     const ownerDocument = rootElement?.ownerDocument;
-    const highlightStyle = preview
-      ? null
-      : (ownerDocument?.createElement("style") ?? null);
+    const highlightStyle = ownerDocument?.createElement("style") ?? null;
     if (highlightStyle) {
       highlightStyle.dataset.documentCommentHighlight = documentObjectId;
       highlightStyle.textContent = `::highlight(${highlightName}) { background-color: color-mix(in srgb, #8b5cf6 28%, transparent); color: inherit; }`;
@@ -176,7 +186,6 @@ export function ProductDocumentCollaboration({
       registry?.delete(highlightName);
     };
     const syncCommentHighlights = () => {
-      if (preview) return;
       window.cancelAnimationFrame(highlightFrame);
       highlightFrame = window.requestAnimationFrame(() => {
         if (typeof Highlight === "undefined" || !CSS.highlights) return;
@@ -262,7 +271,12 @@ export function ProductDocumentCollaboration({
     sharedRoot.observeDeep(observeSharedRoot);
 
     if (preview) {
+      const removePreviewListener = editor.registerUpdateListener(
+        syncCommentHighlights,
+      );
+      syncCommentHighlights();
       return () => {
+        removePreviewListener();
         window.cancelAnimationFrame(highlightFrame);
         clearCommentHighlights();
         highlightStyle?.remove();

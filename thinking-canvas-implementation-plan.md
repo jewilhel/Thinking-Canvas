@@ -523,6 +523,12 @@ These are retained as cross-feature release tests rather than substitutes for th
 
 ## Explicitly deferred
 
+### Approved Milestone 8 presentation refinement — 2026-09-07
+
+The product owner approved temporarily hiding the Layout selector under `PD-003` and `FR-090`. New documents remain Continuous; existing saved pagination and its implementation remain readable and unchanged. Selecting paginated layouts and their active acceptance scenario are temporarily deferred, not deleted.
+
+Under `FR-052` and `PD-002`, open comment ranges remain highlighted in closed document previews. Canvas and document comments share a movable, resizable floating panel and an optional right-side dock. In docked mode, opening any comment or Comments history replaces the same panel's contents. Undocking a thread returns it beside its current document range or canvas anchor. Geometry and docking are local workspace-session state; switching views preserves drafts and ongoing AI work. These refinements require automated and hosted verification before closure.
+
 - [ ] Do not implement specialist AI agents spawned by the primary AI.
 - [ ] Do not implement branching guided stories.
 - [ ] Do not preserve versioned canvas snapshots inside stories.

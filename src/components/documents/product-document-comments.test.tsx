@@ -1,5 +1,30 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  fireEvent,
+  render as renderUI,
+  screen,
+  within,
+  cleanup,
+} from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CommentWorkspaceProvider } from "@/components/comments/comment-workspace";
+import { useCanvasComments } from "@/comments/use-canvas-comments";
+
+function TestWorkspace({ children }: { children: ReactNode }) {
+  const service = useCanvasComments("test", "test", "test");
+  return (
+    <CommentWorkspaceProvider
+      initialActive="document-composer"
+      initialService={service}
+    >
+      {children}
+    </CommentWorkspaceProvider>
+  );
+}
+function render(ui: ReactNode) {
+  return renderUI(ui, { wrapper: TestWorkspace });
+}
+afterEach(cleanup);
 
 import { ProductDocumentComments } from "@/components/documents/product-document-comments";
 import type { DocumentRangeTarget } from "@/documents/document-range";
@@ -75,7 +100,7 @@ describe("ProductDocumentComments", () => {
     );
 
     expect(screen.getByRole("dialog", { name: "New comment" })).toHaveClass(
-      "rounded-3xl",
+      "rounded-2xl",
     );
     const composer = screen.getByLabelText("Comment");
     expect(composer).toHaveAttribute("placeholder", "Add a comment or type @");

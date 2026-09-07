@@ -17,6 +17,10 @@ import { Button } from "@/components/ui/button";
 import { ProductDocumentCollaboration } from "@/components/documents/product-document-collaboration";
 import { ProductDocumentComments } from "@/components/documents/product-document-comments";
 import {
+  useCommentWorkspace,
+  useCommentDraft,
+} from "@/components/comments/comment-workspace";
+import {
   productDocumentLexicalNodes,
   productDocumentLexicalTheme,
 } from "@/components/documents/product-document-lexical-config";
@@ -74,6 +78,8 @@ function layoutValue(settings: DocumentSettings) {
   return `${settings.layout.pageSize}-${settings.layout.orientation}`;
 }
 
+// Temporarily hide page-layout choices without removing saved-layout support.
+const documentLayoutSelectionEnabled = false;
 function parseLayout(value: string): DocumentSettings["layout"] {
   if (value === "continuous") return { mode: "continuous" };
   const [pageSize, orientation] = value.split("-");
@@ -116,8 +122,12 @@ export function ProductDocumentEditor({
   const [pageCount, setPageCount] = useState(1);
   const [selectedRange, setSelectedRange] =
     useState<DocumentRangeTarget | null>(null);
+  const workspace = useCommentWorkspace();
   const [commentTargetRange, setCommentTargetRange] =
-    useState<DocumentRangeTarget | null>(null);
+    useCommentDraft<DocumentRangeTarget | null>(
+      `document:${documentObject.id}:range`,
+      null,
+    );
   const [requestedCommentThreadId, setRequestedCommentThreadId] = useState<
     string | null
   >(null);
@@ -180,6 +190,11 @@ export function ProductDocumentEditor({
 
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-comment-panel]")
+      )
+        return;
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
@@ -275,8 +290,10 @@ export function ProductDocumentEditor({
             commentsOpen={commentsOpen}
             onCommentsOpen={() => {
               setRequestedCommentThreadId(null);
-              setCommentTargetRange(selectedRange);
+              if (!workspace.drafts[`document:${documentObject.id}:draft`])
+                setCommentTargetRange(selectedRange);
               setCommentsOpen(true);
+              workspace.show("document-composer");
             }}
             onSelectionPositionChange={setSelectionPosition}
             onTitleChange={(title) => onUpdate({ title })}
@@ -309,11 +326,17 @@ export function ProductDocumentEditor({
             onSelectEvidence={onSelectCommentEvidence}
             open={commentsOpen}
             requestedThreadId={requestedCommentThreadId}
-            anchorPosition={selectionPosition}
+            anchorPosition={
+              selectionPosition
+                ? {
+                    left: screenBounds.left + selectionPosition.left - 200,
+                    top: screenBounds.top + selectionPosition.top + 48,
+                  }
+                : null
+            }
             onOpenChange={(open) => {
               setCommentsOpen(open);
               if (!open) {
-                setCommentTargetRange(null);
                 setRequestedCommentThreadId(null);
               }
             }}
@@ -438,10 +461,11 @@ export function ProductDocumentEditor({
                   );
                   if (!thread?.documentRange || thread.status !== "open")
                     return;
-                  setCommentTargetRange(thread.documentRange);
-                  setSelectionPosition(position);
-                  setRequestedCommentThreadId(threadId);
-                  setCommentsOpen(true);
+                  workspace.openThread(threadId, {
+                    left: screenBounds.left + position.left - 200,
+                    top: screenBounds.top + position.top + 48,
+                    documentObjectId: documentObject.id,
+                  });
                 }}
                 commentThreads={documentCommentThreads}
               />
@@ -536,23 +560,27 @@ export function ProductDocumentEditor({
                 <option value="large">Large</option>
               </select>
             </label>
-            <label className="mt-5 block text-sm font-medium">
-              Layout
-              <select
-                value={layoutValue(settings)}
-                disabled={!canEdit}
-                className="mt-2 h-11 w-full rounded-lg border border-zinc-300 bg-white px-3"
-                onChange={(event) =>
-                  updateSettings({ layout: parseLayout(event.target.value) })
-                }
-              >
-                <option value="continuous">Continuous</option>
-                <option value="letter-portrait">US Letter · portrait</option>
-                <option value="letter-landscape">US Letter · landscape</option>
-                <option value="a4-portrait">A4 · portrait</option>
-                <option value="a4-landscape">A4 · landscape</option>
-              </select>
-            </label>
+            {documentLayoutSelectionEnabled ? (
+              <label className="mt-5 block text-sm font-medium">
+                Layout
+                <select
+                  value={layoutValue(settings)}
+                  disabled={!canEdit}
+                  className="mt-2 h-11 w-full rounded-lg border border-zinc-300 bg-white px-3"
+                  onChange={(event) =>
+                    updateSettings({ layout: parseLayout(event.target.value) })
+                  }
+                >
+                  <option value="continuous">Continuous</option>
+                  <option value="letter-portrait">US Letter · portrait</option>
+                  <option value="letter-landscape">
+                    US Letter · landscape
+                  </option>
+                  <option value="a4-portrait">A4 · portrait</option>
+                  <option value="a4-landscape">A4 · landscape</option>
+                </select>
+              </label>
+            ) : null}
             <p className="mt-5 text-xs leading-5 text-zinc-500">
               Font, reading size, background, and page presentation affect only
               how the document appears. They are excluded from Markdown.

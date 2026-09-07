@@ -1,20 +1,20 @@
 "use client";
 
 import { ArrowUp, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { CommentPanel } from "@/components/comments/comment-panel";
+import {
+  useCommentWorkspace,
+  useCommentDraft,
+} from "@/components/comments/comment-workspace";
 
 import type {
-  CommentPrompt,
   CommentPromptKind,
   CommentRecipient,
   CommentThread,
-  PromptResponseValue,
 } from "@/comments/comment-model";
-import { useCanvasComments } from "@/comments/use-canvas-comments";
-import {
-  RecipientComposer,
-  ThreadBody,
-} from "@/components/comments/canvas-comments";
+import type { CommentService } from "@/components/comments/comment-workspace";
+import { RecipientComposer } from "@/components/comments/canvas-comments";
 import { Button } from "@/components/ui/button";
 import type { DocumentRangeTarget } from "@/documents/document-range";
 import type { CanvasRole } from "@/domain/command";
@@ -38,51 +38,46 @@ type Props = {
   onThreadsChange: (threads: CommentThread[]) => void;
 };
 
-export function ProductDocumentComments({
+export function ProductDocumentComments(props: Props) {
+  const { service } = useCommentWorkspace();
+  return service ? (
+    <DocumentCommentComposer {...props} service={service} />
+  ) : null;
+}
+
+function DocumentCommentComposer({
   canvasId,
   userId,
   canvasRole,
   documentObjectId,
   documentTitle,
   selectedRange,
-  supabaseUrl,
-  supabasePublishableKey,
-  onAiTransactionApplied,
-  onUndoAiTransaction,
-  onSelectEvidence,
+  service,
   open,
-  requestedThreadId = null,
   anchorPosition,
   onOpenChange,
   onThreadsChange,
-}: Props) {
-  const {
-    threads,
-    collaboration,
-    loading,
-    pending,
-    error,
-    refresh,
-    execute,
-    cancelAiRun,
-    retryAiRun,
-  } = useCanvasComments(
-    canvasId,
-    supabaseUrl,
-    supabasePublishableKey,
-    onAiTransactionApplied,
+}: Props & { service: CommentService }) {
+  const workspace = useCommentWorkspace();
+  const { threads, collaboration, loading, pending, error, execute } = service;
+  const [draft, setDraft] = useCommentDraft(
+    `document:${documentObjectId}:draft`,
+    "",
   );
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [draftRecipients, setDraftRecipients] = useState<CommentRecipient[]>(
-    [],
+  const [draftRecipients, setDraftRecipients] = useCommentDraft<
+    CommentRecipient[]
+  >(`document:${documentObjectId}:recipients`, []);
+  const [promptKind, setPromptKind] = useCommentDraft<CommentPromptKind | null>(
+    `document:${documentObjectId}:prompt`,
+    null,
   );
-  const [promptKind, setPromptKind] = useState<CommentPromptKind | null>(null);
-  const [includeDocumentContext, setIncludeDocumentContext] = useState(true);
+  const [includeDocumentContext, setIncludeDocumentContext] = useCommentDraft(
+    `document:${documentObjectId}:include-document`,
+    true,
+  );
   const [includeSelectedTextContext, setIncludeSelectedTextContext] =
-    useState(true);
+    useCommentDraft(`document:${documentObjectId}:include-selection`, true);
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const panelRef = useRef<HTMLElement>(null);
   const documentThreads = useMemo(
     () =>
       threads.filter(
@@ -90,9 +85,6 @@ export function ProductDocumentComments({
       ),
     [documentObjectId, threads],
   );
-  const activeThreadId = requestedThreadId ?? selectedThreadId;
-  const selectedThread =
-    documentThreads.find((thread) => thread.id === activeThreadId) ?? null;
   const canComment = canvasRole !== "viewer";
 
   useEffect(() => {
@@ -100,43 +92,13 @@ export function ProductDocumentComments({
   }, [documentThreads, onThreadsChange]);
 
   useEffect(() => {
-    if (open && !activeThreadId) {
+    if (open && workspace.active === "document-composer")
       requestAnimationFrame(() => composerRef.current?.focus());
-    }
-  }, [activeThreadId, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function dismissOutside(event: PointerEvent) {
-      const target = event.target;
-      if (
-        pending ||
-        !(target instanceof Node) ||
-        panelRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setSelectedThreadId(null);
-      setDraft("");
-      setDraftRecipients([]);
-      setPromptKind(null);
-      setIncludeDocumentContext(true);
-      setIncludeSelectedTextContext(true);
-      onOpenChange(false);
-    }
-    window.addEventListener("pointerdown", dismissOutside, true);
-    return () =>
-      window.removeEventListener("pointerdown", dismissOutside, true);
-  }, [onOpenChange, open, pending]);
+  }, [open, workspace.active]);
 
   function close() {
     if (pending) return;
-    setSelectedThreadId(null);
-    setDraft("");
-    setDraftRecipients([]);
-    setPromptKind(null);
-    setIncludeDocumentContext(true);
-    setIncludeSelectedTextContext(true);
+    workspace.show(null);
     onOpenChange(false);
   }
 
@@ -173,136 +135,26 @@ export function ProductDocumentComments({
       result && typeof result === "object" && "comment_id" in result
         ? String(result.comment_id)
         : null;
+    if (!id) return;
+    workspace.saveDraft(`document:${documentObjectId}:range`, null);
     setDraft("");
     setDraftRecipients([]);
     setPromptKind(null);
-    if (id) setSelectedThreadId(id);
+    if (workspace.active === "document-composer")
+      workspace.openThread(id, anchorPosition ?? undefined);
+    onOpenChange(false);
   }
 
-  async function reply(
-    thread: CommentThread,
-    body: string,
-    recipients: CommentRecipient[] | undefined,
-  ) {
-    await execute({
-      type: "comment.reply",
-      commandId: crypto.randomUUID(),
-      commentId: thread.id,
-      body,
-      routing: recipients
-        ? {
-            recipientUserIds: recipients
-              .filter((recipient) => recipient.kind === "human")
-              .map((recipient) => recipient.key),
-            includePrimaryAi: recipients.some(
-              (recipient) => recipient.kind === "ai",
-            ),
-          }
-        : undefined,
-    });
-  }
-
-  async function respond(prompt: CommentPrompt, value: PromptResponseValue) {
-    await execute({
-      type: "comment.respond",
-      commandId: crypto.randomUUID(),
-      promptId: prompt.id,
-      promptKind: prompt.kind,
-      value,
-    });
-  }
-
-  if (!open || !anchorPosition) return null;
-
-  const sharedPosition = {
-    left: anchorPosition.left,
-    top: anchorPosition.top + 48,
-  };
-
-  if (selectedThread) {
-    return (
-      <aside
-        ref={panelRef}
-        role="dialog"
-        aria-label="Comment thread"
-        className="absolute z-[90] max-h-[min(28rem,calc(100%-2rem))] w-[min(24rem,calc(100%-2rem))] -translate-x-1/2 overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 text-zinc-900 shadow-2xl"
-        style={sharedPosition}
-        aria-busy={pending}
-      >
-        <div className="mb-3 flex items-center justify-between border-b border-zinc-100 pb-2">
-          <p className="font-semibold">Comment</p>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Close comment thread"
-            disabled={pending}
-            onClick={close}
-          >
-            <X aria-hidden="true" />
-          </Button>
-        </div>
-        <ThreadBody
-          thread={selectedThread}
-          userId={userId}
-          role={canvasRole}
-          pending={pending}
-          collaborators={collaboration?.collaborators ?? []}
-          onReply={(body, recipients) =>
-            reply(selectedThread, body, recipients)
-          }
-          onRespond={respond}
-          onPromptChange={async (kind) => {
-            await execute({
-              type: "comment.prompt.set",
-              commentId: selectedThread.id,
-              promptKind: kind,
-            });
-          }}
-          onBodyChange={async (body) => {
-            await execute({
-              type: "comment.body.update",
-              commentId: selectedThread.id,
-              body,
-            });
-          }}
-          onStatus={async (status) => {
-            await execute({
-              type: "comment.status",
-              commentId: selectedThread.id,
-              status,
-            });
-            close();
-          }}
-          onDelete={async () => {
-            await execute({
-              type: "comment.delete",
-              commentId: selectedThread.id,
-            });
-            close();
-          }}
-          onNavigateEvidence={onSelectEvidence}
-          onUndoAiTransaction={async (changeSetId) => {
-            const result = await onUndoAiTransaction(changeSetId);
-            await refresh();
-            return result;
-          }}
-          onCancelAiRun={cancelAiRun}
-          onRetryAiRun={retryAiRun}
-          operationError={error}
-        />
-      </aside>
-    );
-  }
+  if (!open || !anchorPosition || workspace.active !== "document-composer")
+    return null;
 
   return (
-    <aside
-      ref={panelRef}
-      role="dialog"
-      aria-label="New comment"
-      className="group absolute z-[90] w-[min(30rem,calc(100%-2rem))] -translate-x-1/2 rounded-3xl border border-zinc-200 bg-white p-2 text-zinc-900 shadow-2xl"
-      style={sharedPosition}
-      aria-busy={pending}
+    <CommentPanel
+      title="New comment"
+      anchor={anchorPosition}
+      onClose={close}
+      busy={pending}
+      initialHeight={300}
     >
       <div className="mb-1 flex flex-wrap items-center gap-1 px-2">
         <span className="text-xs font-medium text-zinc-500">Context</span>
@@ -414,6 +266,6 @@ export function ProductDocumentComments({
           {error}
         </p>
       ) : null}
-    </aside>
+    </CommentPanel>
   );
 }

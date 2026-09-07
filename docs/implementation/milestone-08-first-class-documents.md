@@ -7,6 +7,18 @@ Last updated: 2026-09-02
 
 ## Goal and user-visible outcome
 
+### Approved follow-up slice — shared comment workspace (2026-09-07)
+
+The product owner confirmed that the latest AI repairs work and approved this additional slice, including History/thread replacement in both directions inside the right dock. This is not milestone closure.
+
+- Hide the Layout selector behind a reversible presentation flag; preserve saved page layouts and pagination code.
+- Reuse live open-thread range targets for read-only preview highlights, with independent highlight registry names and no preview writes or undo/presence registration.
+- Introduce one local comment workspace controller and movable/resizable panel shell. Persisted document and canvas threads use the existing shared thread body and command callbacks; Comments history uses the same shell. Docked navigation selects exactly one visible surface; undocking restores the current target-relative placement. Keep position/size/docking local to this mounted workspace, retain draft text/routing during navigation, and do not cancel server AI work on panel switches.
+- Test viewport clamping, pointer/keyboard movement and resizing, history/thread replacement, cross-document/canvas selection, draft isolation, existing AI actions, and open/closed preview highlight lifecycle.
+- Verify the replacement branch preview in Codex's built-in browser before presenting it for hands-on acceptance. No migration, authority change, production deploy, or merge is included.
+
+Status: Approved for implementation; verification pending.
+
 Turn the Milestone 0 document feasibility spike into a first-class collaborative canvas object. A participant can add a page-like document, understand it at board zoom, enter a focused editor, write and collaboratively format Markdown-aligned rich text, choose continuous or paginated presentation, and return to the parent canvas without losing context.
 
 The document owns its text, settings, text-range comments, and AI edits. Canvas shapes, icons, text objects, connectors, tables, annotations, and groups remain independent on the parent canvas even when they overlap a document. Native copy/paste plus direct import/export provide a Markdown interoperability path without pretending that document display settings are native Markdown.

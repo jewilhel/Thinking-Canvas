@@ -168,6 +168,10 @@ import {
 } from "@/components/canvas/workspace-primary-dock";
 import { WorkspacePanel } from "@/components/canvas/workspace-panel";
 import { CanvasComments } from "@/components/comments/canvas-comments";
+import {
+  CommentWorkspaceProvider,
+  useCommentWorkspace,
+} from "@/components/comments/comment-workspace";
 import { ProductDocumentEditor } from "@/components/documents/product-document-editor";
 import { ProductDocumentPreview } from "@/components/documents/product-document-preview";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -377,7 +381,15 @@ function tableText(object: Extract<CanvasObjectV2, { type: "table" }>) {
 
 const simulatedAiActorId = "90000000-0000-4000-8000-000000000001";
 
-export function ProductCanvas({
+export function ProductCanvas(props: Props) {
+  return (
+    <CommentWorkspaceProvider key={`${props.canvasId}:${props.userId}`}>
+      <ProductCanvasWorkspace {...props} />
+    </CommentWorkspaceProvider>
+  );
+}
+
+function ProductCanvasWorkspace({
   canvasId,
   title,
   userId,
@@ -387,6 +399,7 @@ export function ProductCanvas({
   supabasePublishableKey,
   simulatedAiEnabled,
 }: Props) {
+  const commentWorkspace = useCommentWorkspace();
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -2405,6 +2418,16 @@ export function ProductCanvas({
   }
 
   function toggleSharedPanel(panel: SharedPanel, invoker: HTMLButtonElement) {
+    if (panel === "comments") {
+      setCommentPlacementActive(false);
+      setContextPanel(null);
+      commentWorkspace.show(
+        commentWorkspace.active === "history" ? null : "history",
+      );
+      setSharedPanel(null);
+      setSharedPanelInvoker(invoker);
+      return;
+    }
     if (sharedPanel === panel) {
       setSharedPanel(null);
       return;
@@ -4633,7 +4656,7 @@ export function ProductCanvas({
             size="icon"
             variant="outline"
             aria-label="Open comment history and AI settings"
-            aria-expanded={sharedPanel === "comments"}
+            aria-expanded={commentWorkspace.active === "history"}
             aria-controls="workspace-shared-panel"
             title="Comment history and AI settings"
             className="size-11 border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700"
@@ -4848,7 +4871,7 @@ export function ProductCanvas({
         selectedIds={selectedIds}
         viewport={viewport}
         size={size}
-        panelOpen={sharedPanel === "comments"}
+        panelOpen={commentWorkspace.active === "history"}
         panelInvoker={sharedPanelInvoker}
         placementActive={commentPlacementActive}
         onDismissPanel={() => setSharedPanel(null)}
