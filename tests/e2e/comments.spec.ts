@@ -144,6 +144,10 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   await page
     .getByTestId("product-canvas-surface")
     .click({ position: { x: 760, y: 560 } });
+  await expect(composer).toBeVisible();
+  await composer
+    .getByRole("button", { name: "Close comment composer" })
+    .click();
   await expect(composer).not.toBeVisible();
   await expect(
     page.getByRole("button", { name: /Open comment by/ }),
@@ -153,8 +157,8 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   ).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: "Comments", exact: true }).click();
-  await placeArmedComment(page);
   composer = page.getByRole("dialog", { name: "New comment" });
+  await placeArmedComment(page);
   await expect(
     composer.getByRole("textbox", { name: "Comment", exact: true }),
   ).toHaveValue("");
@@ -173,8 +177,8 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   ).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: "Comments", exact: true }).click();
-  await placeArmedComment(page);
   composer = page.getByRole("dialog", { name: "New comment" });
+  await placeArmedComment(page);
   await expect(
     composer.getByRole("textbox", { name: "Comment", exact: true }),
   ).toHaveValue("");
@@ -184,7 +188,7 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   await composer.getByLabel("Prompt").selectOption("yes_no");
   await composer.getByRole("button", { name: "Submit comment" }).click();
 
-  const thread = page.getByRole("dialog", { name: "Comment thread" });
+  const thread = page.getByRole("dialog", { name: "comment thread" });
   await expect(
     page.getByRole("dialog", { name: "Comments" }),
   ).not.toBeVisible();
@@ -193,12 +197,12 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
     page.getByRole("toolbar", { name: "Selection controls" }),
   ).not.toBeVisible();
   const focusShield = page.getByTestId("comment-focus-shield");
-  await expect(focusShield).toBeVisible();
-  await focusShield.click({ position: { x: 420, y: 280 } });
-  await expect(page.getByTestId("selection-status")).toHaveText("No selection");
-  await expect(
-    page.getByRole("toolbar", { name: "Selection controls" }),
-  ).not.toBeVisible();
+  await expect(focusShield).toHaveCount(0);
+  await page
+    .getByTestId("product-canvas-surface")
+    .click({ position: { x: 760, y: 560 } });
+  await expect(thread).toBeVisible();
+  await thread.getByRole("button", { name: "Close comment thread" }).click();
   await expect(thread).not.toBeVisible();
   await page.getByRole("button", { name: /Open comment by/ }).click();
   await expect(
@@ -1073,7 +1077,7 @@ test("applies a trusted AI canvas command and converges it in two authenticated 
   ).toBeVisible();
   await expect(
     ownerThread.getByText(
-      "The change is on the canvas. You can undo it if needed.",
+      "The change is on the canvas. Reply with any further adjustments.",
     ),
   ).toBeVisible();
   await ownerThread

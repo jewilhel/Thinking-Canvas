@@ -4657,7 +4657,7 @@ function ProductCanvasWorkspace({
             variant="outline"
             aria-label="Open comment history and AI settings"
             aria-expanded={commentWorkspace.active === "history"}
-            aria-controls="workspace-shared-panel"
+            aria-controls="comment-workspace-panel"
             title="Comment history and AI settings"
             className="size-11 border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700"
             onClick={(event) =>

@@ -172,7 +172,8 @@ export function CommentPanel({
   }
   if (typeof document === "undefined") return null;
   return createPortal(
-    <aside
+    <div
+      id="comment-workspace-panel"
       role="dialog"
       aria-label={label}
       aria-busy={busy}
@@ -291,7 +292,7 @@ export function CommentPanel({
           </svg>
         </button>
       ) : null}
-    </aside>,
+    </div>,
     document.body,
   );
 }

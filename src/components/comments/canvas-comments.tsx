@@ -1157,6 +1157,7 @@ export function CanvasComments({
   viewport,
   size,
   panelOpen,
+  panelInvoker,
   placementActive,
   onDismissPanel,
   onPlacementModeChange,
@@ -1681,6 +1682,7 @@ export function CanvasComments({
           onClose={() => {
             workspace.show(null);
             onDismissPanel();
+            panelInvoker?.focus();
           }}
           initialHeight={600}
         >
