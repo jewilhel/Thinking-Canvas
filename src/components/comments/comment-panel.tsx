@@ -19,7 +19,7 @@ export function clampCommentPanel(
   viewport: { width: number; height: number },
 ): Box {
   const width = Math.min(
-    Math.max(280, box.width),
+    Math.min(640, Math.max(320, box.width)),
     Math.max(0, viewport.width - 16),
   );
   const height = Math.min(
@@ -32,6 +32,20 @@ export function clampCommentPanel(
     left: Math.max(8, Math.min(box.left, viewport.width - width - 8)),
     top: Math.max(8, Math.min(box.top, viewport.height - height - 8)),
   };
+}
+
+export function resizeCommentPanelLeft(
+  box: Box,
+  delta: number,
+  viewport: { width: number; height: number },
+): Box {
+  const right = box.left + box.width;
+  const next = clampCommentPanel(
+    { ...box, width: box.width - delta },
+    viewport,
+  );
+  const width = Math.min(next.width, right - 8);
+  return { ...next, width, left: right - width };
 }
 
 export function CommentPanel({
@@ -69,7 +83,7 @@ export function CommentPanel({
     x: number;
     y: number;
     box: Box;
-    mode: "move" | "resize";
+    mode: "move" | "resize" | "left";
   } | null>(null);
   useEffect(() => {
     const measure = () =>
@@ -90,9 +104,9 @@ export function CommentPanel({
   );
   function start(
     event: PointerEvent<HTMLButtonElement>,
-    mode: "move" | "resize",
+    mode: "move" | "resize" | "left",
   ) {
-    if (event.button !== 0 || docked) return;
+    if (event.button !== 0 || (docked && mode !== "left")) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     gesture.current = { x: event.clientX, y: event.clientY, box, mode };
@@ -102,26 +116,29 @@ export function CommentPanel({
     if (!current) return;
     const dx = event.clientX - current.x,
       dy = event.clientY - current.y;
-    const next = clampCommentPanel(
-      current.mode === "move"
-        ? {
-            ...current.box,
-            left: current.box.left + dx,
-            top: current.box.top + dy,
-          }
-        : {
-            ...current.box,
-            width: current.box.width + dx,
-            height: current.box.height + dy,
-          },
-      viewport,
-    );
+    const next =
+      current.mode === "left"
+        ? resizeCommentPanelLeft(current.box, dx, viewport)
+        : clampCommentPanel(
+            current.mode === "move"
+              ? {
+                  ...current.box,
+                  left: current.box.left + dx,
+                  top: current.box.top + dy,
+                }
+              : {
+                  ...current.box,
+                  width: current.box.width + dx,
+                  height: current.box.height + dy,
+                },
+            viewport,
+          );
     setPlacement(next);
     setDimensions({ width: next.width, height: next.height });
   }
   function keyboard(
     event: KeyboardEvent<HTMLButtonElement>,
-    mode: "move" | "resize",
+    mode: "move" | "resize" | "left",
   ) {
     const direction = {
       ArrowLeft: [-1, 0],
@@ -129,20 +146,27 @@ export function CommentPanel({
       ArrowUp: [0, -1],
       ArrowDown: [0, 1],
     }[event.key];
-    if (!direction || docked) return;
+    if (!direction || (docked && mode !== "left")) return;
     event.preventDefault();
     const step = event.shiftKey ? 40 : 10;
     const [dx, dy] = direction;
-    const next = clampCommentPanel(
-      mode === "move"
-        ? { ...box, left: box.left + dx! * step, top: box.top + dy! * step }
-        : {
-            ...box,
-            width: box.width + dx! * step,
-            height: box.height + dy! * step,
-          },
-      viewport,
-    );
+    const next =
+      mode === "left"
+        ? resizeCommentPanelLeft(box, dx! * step, viewport)
+        : clampCommentPanel(
+            mode === "move"
+              ? {
+                  ...box,
+                  left: box.left + dx! * step,
+                  top: box.top + dy! * step,
+                }
+              : {
+                  ...box,
+                  width: box.width + dx! * step,
+                  height: box.height + dy! * step,
+                },
+            viewport,
+          );
     setPlacement(next);
     setDimensions({ width: next.width, height: next.height });
   }
@@ -218,9 +242,27 @@ export function CommentPanel({
           <X aria-hidden="true" />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+      <div className="comment-panel-content min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-4 [overflow-wrap:anywhere]">
         {children}
       </div>
+      <button
+        type="button"
+        aria-label="Resize comment panel from left edge"
+        title="Drag to resize; left and right arrow keys also resize"
+        className="absolute top-8 bottom-8 left-0 w-2 cursor-ew-resize touch-none rounded-full hover:bg-violet-200 focus-visible:bg-violet-200 focus-visible:outline-none"
+        onPointerDown={(event) => start(event, "left")}
+        onPointerMove={move}
+        onPointerUp={() => {
+          gesture.current = null;
+        }}
+        onPointerCancel={() => {
+          gesture.current = null;
+        }}
+        onLostPointerCapture={() => {
+          gesture.current = null;
+        }}
+        onKeyDown={(event) => keyboard(event, "left")}
+      />
       {!docked ? (
         <button
           type="button"

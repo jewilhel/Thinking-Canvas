@@ -4,7 +4,11 @@ import {
   CommentWorkspaceProvider,
   useCommentWorkspace,
 } from "./comment-workspace";
-import { CommentPanel, clampCommentPanel } from "./comment-panel";
+import {
+  CommentPanel,
+  clampCommentPanel,
+  resizeCommentPanelLeft,
+} from "./comment-panel";
 import { CanvasComments } from "./canvas-comments";
 import type { CommentThread } from "@/comments/comment-model";
 
@@ -102,6 +106,47 @@ function Harness() {
   );
 }
 describe("shared comment workspace", () => {
+  it("bounds left-edge resizing while keeping the right edge fixed", () => {
+    const box = { left: 500, top: 100, width: 400, height: 440 };
+    const viewport = { width: 1024, height: 768 };
+    expect(resizeCommentPanelLeft(box, 1000, viewport)).toMatchObject({
+      left: 580,
+      width: 320,
+    });
+    expect(resizeCommentPanelLeft(box, -1000, viewport)).toMatchObject({
+      left: 260,
+      width: 640,
+    });
+  });
+  it("resizes the dock from its left edge and retains wrapping padding", () => {
+    render(
+      <CommentWorkspaceProvider>
+        <CommentPanel
+          title="Comment"
+          anchor={{ left: 100, top: 100 }}
+          onClose={fixture.noop}
+        >
+          Long content
+        </CommentPanel>
+      </CommentWorkspaceProvider>,
+    );
+    fireEvent.click(screen.getByLabelText("Dock comment panel right"));
+    const panel = screen.getByRole("dialog");
+    const right = parseFloat(panel.style.left) + parseFloat(panel.style.width);
+    fireEvent.keyDown(
+      screen.getByLabelText("Resize comment panel from left edge"),
+      { key: "ArrowLeft" },
+    );
+    expect(panel).toHaveStyle({ width: "410px" });
+    expect(parseFloat(panel.style.left) + parseFloat(panel.style.width)).toBe(
+      right,
+    );
+    expect(panel.querySelector(".comment-panel-content")).toHaveClass(
+      "overflow-x-hidden",
+      "p-4",
+      "[overflow-wrap:anywhere]",
+    );
+  });
   it("replaces docked history with either comment type and retains isolated reply drafts", () => {
     fixture.threads = [thread("canvas"), thread("document", true)];
     render(
