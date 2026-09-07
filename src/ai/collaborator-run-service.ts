@@ -14,7 +14,6 @@ import {
 } from "@/ai/visual-grounding";
 import type { FakeAiScenario } from "@/ai/fake-collaborator-gateway";
 import { planDeterministicLayout } from "@/ai/deterministic-layout";
-import { isDocumentApplyInstruction } from "@/ai/document-turn-intent";
 import { commentHistorySummary } from "@/ai/comment-history-summary";
 import {
   createPrimaryAiGateway,
@@ -289,11 +288,7 @@ export async function completeAiRun(
   );
   const instruction = replyResult.data?.body ?? commentResult.data.body;
   const allowedToolNames = sourceDocumentTarget
-    ? [
-        ...allowedDocumentRangeAiToolNames(currentAuthority, {
-          applyRequested: isDocumentApplyInstruction(instruction),
-        }),
-      ]
+    ? [...allowedDocumentRangeAiToolNames(currentAuthority)]
     : allowedAiToolNames(currentAuthority);
   const sourceDocumentRange = sourceDocumentTarget
     ? currentDocumentRange(compacted.document, {

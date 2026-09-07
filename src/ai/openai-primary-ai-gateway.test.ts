@@ -225,7 +225,16 @@ describe("OpenAiPrimaryAiGateway", () => {
   });
 
   it("keeps provider-facing document edits compact and validates them before returning", async () => {
-    const tool = buildSubmitTurnTool(["stage_document_changes"]);
+    const tool = buildSubmitTurnTool([
+      "propose_document_changes",
+      "stage_document_changes",
+    ]);
+    expect(
+      tool.parameters.properties.toolCalls.items.properties,
+    ).not.toHaveProperty("argumentsJson");
+    expect(
+      tool.parameters.properties.toolCalls.items.properties.toolName.enum,
+    ).toEqual(["propose_document_changes", "stage_document_changes"]);
     const documentArguments = (
       tool.parameters.properties.toolCalls.items.properties as unknown as {
         arguments: {
@@ -278,7 +287,10 @@ describe("OpenAiPrimaryAiGateway", () => {
       gateway.request({
         invocation: { ...invocation, authority: "edit_with_review" },
         projection,
-        allowedToolNames: ["stage_document_changes"],
+        allowedToolNames: [
+          "propose_document_changes",
+          "stage_document_changes",
+        ],
       }),
     ).resolves.toMatchObject({
       toolCalls: [

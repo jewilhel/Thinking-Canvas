@@ -64,20 +64,12 @@ describe("AI authority tool registry", () => {
     ]);
     expect(allowedDocumentRangeAiToolNames("edit_with_review")).toEqual([
       "propose_document_changes",
+      "stage_document_changes",
     ]);
     expect(allowedDocumentRangeAiToolNames("trusted_editor")).toEqual([
       "propose_document_changes",
+      "execute_document_changes",
     ]);
-    expect(
-      allowedDocumentRangeAiToolNames("edit_with_review", {
-        applyRequested: true,
-      }),
-    ).toEqual(["stage_document_changes"]);
-    expect(
-      allowedDocumentRangeAiToolNames("trusted_editor", {
-        applyRequested: true,
-      }),
-    ).toEqual(["execute_document_changes"]);
   });
 
   it("validates semantic document actions without accepting raw Yjs state", () => {

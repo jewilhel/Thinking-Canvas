@@ -440,20 +440,12 @@ const documentRangeToolNames = new Set<AiToolName>([
   "execute_document_changes",
 ]);
 
-export function allowedDocumentRangeAiToolNames(
-  authority: AiAuthorityLevel,
-  options: { applyRequested?: boolean } = {},
-) {
-  if (!options.applyRequested) {
-    return authorityRank[authority] >= authorityRank.propose_changes
-      ? (["propose_document_changes"] as const)
-      : (["create_contextual_comment"] as const);
-  }
+export function allowedDocumentRangeAiToolNames(authority: AiAuthorityLevel) {
   if (authority === "trusted_editor") {
-    return ["execute_document_changes"] as const;
+    return ["propose_document_changes", "execute_document_changes"] as const;
   }
   if (authority === "edit_with_review") {
-    return ["stage_document_changes"] as const;
+    return ["propose_document_changes", "stage_document_changes"] as const;
   }
   const allowed = allowedAiToolNames(authority).filter((name) =>
     documentRangeToolNames.has(name),
