@@ -15,6 +15,7 @@ import {
 import type { FakeAiScenario } from "@/ai/fake-collaborator-gateway";
 import { planDeterministicLayout } from "@/ai/deterministic-layout";
 import { isDocumentApplyInstruction } from "@/ai/document-turn-intent";
+import { commentHistorySummary } from "@/ai/comment-history-summary";
 import {
   createPrimaryAiGateway,
   parsePrimaryAiProviderEnvironment,
@@ -418,9 +419,7 @@ export async function completeAiRun(
     status: thread.status,
     targetObjectIds: thread.targetObjectIds,
     documentRange: thread.documentRange,
-    summary: [thread.body, ...thread.replies.map((reply) => reply.body)]
-      .join("\n")
-      .slice(0, 10_000),
+    summary: commentHistorySummary(thread),
     participantKeys: thread.participantKeys,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
@@ -747,7 +746,7 @@ export async function completeAiRun(
         created,
       });
       replySections.push(
-        "The change is on the canvas. You can undo it if needed.",
+        "The change is on the canvas. Reply with any further adjustments.",
       );
       continue;
     }

@@ -365,6 +365,8 @@ Evidence: [Milestone 7 implementation and verification record](docs/implementati
 
 Implementation and local verification are recorded in the [Milestone 8 first-class documents plan](docs/implementation/milestone-08-first-class-documents.md). Slices 1–5 and the clean local Slice 6 regression gate are complete; exact-head CI, an immutable hosted preview, hosted performance/role/reconnect evidence, product-owner acceptance, and closure remain pending.
 
+The 2026-09-07 AI reliability audit has now verified consecutive selected-range edits, retained paragraph/list structure, reopened edited highlights, read-only feedback, cancellation/retry, and reload persistence in Codex's hosted browser on `59ecd97`. The detailed plan distinguishes these observed results from remaining authority/undo/generation checks and subsequent integration changes; this does not close the milestone.
+
 ## Milestone 9 — Guided canvas stories
 
 ### Product requirements

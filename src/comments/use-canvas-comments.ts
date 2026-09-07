@@ -76,7 +76,8 @@ export function useCanvasComments(
         unsubscribe = next;
       })
       .catch((caught) => {
-        setError(
+        if (disposed) return;
+        setLoadError(
           caught instanceof Error
             ? caught.message
             : "Live comment updates are unavailable.",

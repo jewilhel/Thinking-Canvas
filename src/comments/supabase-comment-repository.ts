@@ -14,6 +14,7 @@ import {
   type CommentThread,
 } from "@/comments/comment-model";
 import type { Database, Json } from "@/lib/supabase/database.types";
+import { subscribeToComments } from "@/comments/comment-realtime";
 
 type CommentRow = Database["public"]["Tables"]["comments"]["Row"];
 type ReplyRow = Database["public"]["Tables"]["comment_replies"]["Row"];
@@ -389,7 +390,10 @@ export class SupabaseCommentRepository {
         } | null;
         if (!response.ok || !result) {
           throw new Error(
-            result?.error ?? "The document comment could not be saved.",
+            result?.error ??
+              (response.status === 401
+                ? "Preview or sign-in access has expired. Renew access in another preview tab, then submit this draft again. This comment has not been saved."
+                : `The document comment could not be saved (HTTP ${response.status}).`),
           );
         }
         return result;
@@ -529,35 +533,14 @@ export class SupabaseCommentRepository {
   }
 
   async subscribe(canvasId: string, onInvalidated: () => void) {
-    const { data } = await this.supabase.auth.getSession();
-    if (!data.session) throw new Error("An authenticated session is required.");
-    await this.supabase.realtime.setAuth(data.session.access_token);
-    const channel = this.supabase.channel(`comments:${canvasId}`, {
-      config: { private: true, broadcast: { ack: false, self: false } },
-    });
+    const { channel, unsubscribe } = await subscribeToComments(
+      this.supabase,
+      canvasId,
+      onInvalidated,
+    );
     this.channel = channel;
-    channel.on("broadcast", { event: "comments-invalidated" }, onInvalidated);
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(
-        () => reject(new Error("Comment updates could not connect.")),
-        10_000,
-      );
-      channel.subscribe((status, error) => {
-        if (status === "SUBSCRIBED") {
-          window.clearTimeout(timeout);
-          resolve();
-        } else if (
-          status === "CHANNEL_ERROR" ||
-          status === "TIMED_OUT" ||
-          error
-        ) {
-          window.clearTimeout(timeout);
-          reject(error ?? new Error(`Comment updates failed: ${status}`));
-        }
-      });
-    });
     return async () => {
-      await this.supabase.removeChannel(channel);
+      await unsubscribe();
       if (this.channel === channel) this.channel = null;
     };
   }
