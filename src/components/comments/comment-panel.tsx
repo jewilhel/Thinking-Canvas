@@ -42,6 +42,7 @@ export function CommentPanel({
   onClose,
   busy = false,
   initialHeight = 440,
+  closeLabel,
 }: {
   title: string;
   label?: string;
@@ -50,6 +51,7 @@ export function CommentPanel({
   onClose: () => void;
   busy?: boolean;
   initialHeight?: number;
+  closeLabel?: string;
 }) {
   const {
     docked,
@@ -209,7 +211,7 @@ export function CommentPanel({
         <Button
           size="icon-sm"
           variant="ghost"
-          aria-label={`Close ${label}`}
+          aria-label={closeLabel ?? `Close ${label}`}
           disabled={busy}
           onClick={onClose}
         >

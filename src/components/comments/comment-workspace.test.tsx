@@ -58,6 +58,13 @@ function Harness() {
       <button onClick={() => workspace.show("history")}>Open history</button>
       <button
         onClick={() =>
+          workspace.finishCreation("document-composer", "document")
+        }
+      >
+        Finish background creation
+      </button>
+      <button
+        onClick={() =>
           workspace.openThread("document", {
             left: 120,
             top: 160,
@@ -103,6 +110,8 @@ describe("shared comment workspace", () => {
       </CommentWorkspaceProvider>,
     );
     fireEvent.click(screen.getByText("Open history"));
+    fireEvent.click(screen.getByText("Finish background creation"));
+    expect(screen.getByRole("heading", { name: "Comments" })).toBeVisible();
     fireEvent.click(screen.getByLabelText("Dock comment panel right"));
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     fireEvent.click(screen.getByText("Open highlighted text"));

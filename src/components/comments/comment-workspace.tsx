@@ -30,6 +30,7 @@ type Workspace = {
   getAnchor: (thread: CommentThread) => CommentAnchor | null;
   show: (active: string | null) => void;
   openThread: (id: string, anchor?: CommentAnchor) => void;
+  finishCreation: (source: string, id: string, anchor?: CommentAnchor) => void;
   setDocked: (docked: boolean) => void;
   setThreads: (threads: CommentThread[]) => void;
   saveDraft: (key: string, value: unknown) => void;
@@ -67,6 +68,12 @@ function createWorkspace(
     show: (active) => set({ active }),
     openThread: (threadId, anchor) =>
       set({ active: "thread", threadId, anchor: anchor ?? null }),
+    finishCreation: (source, threadId, anchor) =>
+      set((state) =>
+        state.active === source
+          ? { active: "thread", threadId, anchor: anchor ?? null }
+          : state,
+      ),
     setDocked: (docked) => set({ docked }),
     setThreads: (threads) => set({ threads }),
     saveDraft: (key, value) =>

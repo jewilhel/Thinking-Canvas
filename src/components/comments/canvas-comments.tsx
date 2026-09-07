@@ -1345,11 +1345,12 @@ export function CanvasComments({
       result && typeof result === "object" && "comment_id" in result
         ? String(result.comment_id)
         : null;
+    if (!id) return;
     setDraft("");
     setPromptKind(null);
     closeComposer();
     onOverlayVisibilityChange(true);
-    if (id) focusThread(id);
+    workspace.finishCreation("canvas-composer", id);
   }
 
   async function reply(
@@ -1559,6 +1560,7 @@ export function CanvasComments({
       composerCardPosition ? (
         <CommentPanel
           title="New comment"
+          closeLabel="Close comment composer"
           anchor={composerCardPosition}
           onClose={cancelComposer}
           busy={pending}
@@ -1624,16 +1626,6 @@ export function CanvasComments({
               <option value="review">Review</option>
               <option value="rating">Rating 1–5</option>
             </select>
-            <Button
-              className="ml-auto"
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Close comment composer"
-              onClick={cancelComposer}
-            >
-              <X aria-hidden="true" />
-            </Button>
           </div>
         </CommentPanel>
       ) : null}

@@ -140,8 +140,11 @@ function DocumentCommentComposer({
     setDraft("");
     setDraftRecipients([]);
     setPromptKind(null);
-    if (workspace.active === "document-composer")
-      workspace.openThread(id, anchorPosition ?? undefined);
+    workspace.finishCreation(
+      "document-composer",
+      id,
+      anchorPosition ?? undefined,
+    );
     onOpenChange(false);
   }
 
@@ -151,6 +154,7 @@ function DocumentCommentComposer({
   return (
     <CommentPanel
       title="New comment"
+      closeLabel="Close comment composer"
       anchor={anchorPosition}
       onClose={close}
       busy={pending}
@@ -241,17 +245,6 @@ function DocumentCommentComposer({
           <option value="review">Review</option>
           <option value="rating">Rating 1–5</option>
         </select>
-        <Button
-          className="ml-auto"
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Close comment composer"
-          disabled={pending}
-          onClick={close}
-        >
-          <X aria-hidden="true" />
-        </Button>
       </div>
       {loading ? (
         <p className="px-2 pb-1 text-xs text-zinc-500">Loading comments…</p>
