@@ -1228,6 +1228,7 @@ export type Database = {
           created_at: string
           id: string
           kind: string
+          revision: number
           review_change_set_id: string | null
           title: string
           updated_at: string
@@ -1238,6 +1239,7 @@ export type Database = {
           created_at?: string
           id?: string
           kind?: string
+          revision?: number
           review_change_set_id?: string | null
           title: string
           updated_at?: string
@@ -1248,6 +1250,7 @@ export type Database = {
           created_at?: string
           id?: string
           kind?: string
+          revision?: number
           review_change_set_id?: string | null
           title?: string
           updated_at?: string
@@ -1286,6 +1289,7 @@ export type Database = {
           position: number
           story_id: string
           target: Json
+          title: string
           updated_at: string
         }
         Insert: {
@@ -1297,6 +1301,7 @@ export type Database = {
           position: number
           story_id: string
           target: Json
+          title: string
           updated_at?: string
         }
         Update: {
@@ -1308,6 +1313,7 @@ export type Database = {
           position?: number
           story_id?: string
           target?: Json
+          title?: string
           updated_at?: string
         }
         Relationships: [
@@ -1332,6 +1338,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      capture_primary_story_scene: {
+        Args: {
+          target_camera: Json
+          target_canvas_id: string
+          target_expected_revision?: number | null
+          target_region: Json
+          target_title: string
+        }
+        Returns: {
+          scene_camera: Json
+          scene_created_at: string
+          scene_id: string
+          scene_narration: string | null
+          scene_position: number
+          scene_target: Json
+          scene_title: string
+          scene_updated_at: string
+          story_id: string
+          story_revision: number
+        }[]
+      }
       activate_ai_review_stage: {
         Args: {
           target_change_set_id: string

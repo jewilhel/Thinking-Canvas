@@ -4,7 +4,7 @@ Status: Milestones 0–7 closed; Milestone 8 product accepted and closure approv
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-09-02
+Last updated: 2026-09-07
 
 ## Purpose
 
@@ -382,6 +382,7 @@ The [2026-09-07 AI reliability audit](docs/implementation/milestone-08-ai-reliab
 - [ ] **FR-060 — AI narration.** The primary AI can narrate a story through the approved live-voice path, with captions or equivalent text available.
 - [ ] **FR-061 — Live-linked story.** Story order, framing, and narration persist while rendered canvas content reflects current board state.
 - [ ] **FR-062 — Linear-only first version.** Creation and playback expose one ordered path and do not imply unsupported branching.
+- [ ] **FR-092 — Viewport-captured scene management.** A participant can position and zoom the canvas, add the current view as a scene, see the scene in an ordered list, drag scenes into a new order, rename a scene, replace its captured view from the current viewport, delete it, and move to the previous or next scene through dedicated controls. Reordering and every row action have keyboard-accessible equivalents. Scene management does not expose print or PDF export actions.
 
 ### Exit gate
 
@@ -522,6 +523,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [x] **PD-021 — Markdown-aligned document formatting:** supersede the first-version underline portion of sourced `FR-047` and limit selected-range document text controls to the Markdown-aligned semantic formatting in `FR-091`. Range-level typeface, font size, color, alignment, and underline remain outside Milestone 8; document-wide display font and reading size are permitted only as the non-semantic settings defined by `FR-090`. Approved by the product owner on 2026-09-02.
 - [x] **PD-022 — Documents do not contain canvas objects:** remove document nesting for shapes, icons, text objects, connectors, tables, annotations, and groups. Overlap and modifier-drag leave those objects on the parent canvas; do not expose place/remove actions or an embedded-object layer. Retain compatibility reads for previously saved ownership fields without silently deleting saved objects. Approved by the product owner after hosted-preview review on 2026-09-04.
 - [x] **PD-023 — Immediate Markdown file actions:** export downloads immediately without a loss-confirmation dialog. Import validates and replaces the document immediately, converts filename dashes and underscores to spaces, capitalizes each word, and keeps the resulting title freely editable. Native Command/Control-C and Command/Control-V remain the clipboard interactions. Approved by the product owner after hosted-preview review on 2026-09-04.
+- [x] **PD-024 — Viewport-captured scene workflow:** create a scene by capturing the canvas's current position and zoom through an **Add Scene** action; present scenes as an ordered, draggable list; allow rename, replacement from the current view, and deletion; and provide previous/next scene controls whose canvas transitions feel exceptionally smooth. Do not add scene printing or PDF export. Approved by the product owner for Milestone 9 on 2026-09-07 using three supplied interaction-reference screenshots.
 
 ## Explicitly deferred
 

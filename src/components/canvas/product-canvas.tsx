@@ -18,6 +18,7 @@ import {
   MessageSquareText,
   Minus,
   Plus,
+  Presentation,
   Share2,
   AlignJustify,
   Trash2,
@@ -179,6 +180,13 @@ import type { CanvasRole } from "@/domain/command";
 import { focusedDocumentViewport } from "@/documents/document-presentation";
 import { documentFullyContainsGeometry } from "@/documents/document-containment";
 import { createProductDocumentObject } from "@/documents/product-document";
+import { ScenePanel } from "@/components/stories/scene-panel";
+import {
+  captureStoryFraming,
+  viewportForStoryCamera,
+  type StoryScene,
+} from "@/stories/story-model";
+import { useCanvasStory } from "@/stories/use-canvas-story";
 
 type Props = {
   canvasId: string;
@@ -511,6 +519,9 @@ function ProductCanvasWorkspace({
       return defaultViewport;
     }
   });
+  const [scenePanelOpen, setScenePanelOpen] = useState(false);
+  const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
+  const storyState = useCanvasStory(canvasId);
   const selectionAffordanceFactor = selectionAffordanceScale(viewport.scale);
   const selectionAffordancesVisible = selectionAffordanceFactor > 0;
   const selectionTransformAffordancesVisible =
@@ -2415,6 +2426,23 @@ function ProductCanvasWorkspace({
       x: (size.width - contentWidth * scale) / 2 - bounds.x * scale,
       y: (size.height - contentHeight * scale) / 2 - bounds.y * scale,
     });
+  }
+
+  async function addCurrentScene() {
+    if (!canMutateCanvas || saveStatus !== "Saved") return;
+    const framing = captureStoryFraming(viewport, size);
+    const saved = await storyState.capture({
+      title: `Scene ${(storyState.story?.scenes.length ?? 0) + 1}`,
+      expectedRevision: storyState.story?.revision ?? null,
+      ...framing,
+    });
+    const scene = saved?.scenes.at(-1);
+    if (scene) setActiveSceneId(scene.id);
+  }
+
+  function chooseScene(scene: StoryScene) {
+    setViewport(viewportForStoryCamera(scene.camera, size));
+    setActiveSceneId(scene.id);
   }
 
   function toggleSharedPanel(panel: SharedPanel, invoker: HTMLButtonElement) {
@@ -4785,7 +4813,32 @@ function ProductCanvasWorkspace({
         />
       ) : null}
 
+      <ScenePanel
+        open={scenePanelOpen}
+        story={storyState.story}
+        objects={objects}
+        loading={storyState.loading}
+        saving={storyState.saving}
+        error={storyState.error}
+        canCapture={canMutateCanvas && saveStatus === "Saved"}
+        activeSceneId={activeSceneId}
+        onAdd={() => void addCurrentScene()}
+        onChoose={chooseScene}
+        onDismiss={() => setScenePanelOpen(false)}
+      />
+
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label="Open scenes"
+          aria-expanded={scenePanelOpen}
+          aria-controls="scene-panel"
+          onClick={() => setScenePanelOpen((current) => !current)}
+        >
+          <Presentation aria-hidden="true" />
+        </Button>
         <Button
           type="button"
           size="icon-sm"
