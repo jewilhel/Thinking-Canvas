@@ -55,6 +55,7 @@ export class SupabaseCommentRepository {
     const [
       targetsResult,
       documentTargetsResult,
+      sceneTargetsResult,
       repliesResult,
       promptsResult,
       participantsResult,
@@ -72,6 +73,10 @@ export class SupabaseCommentRepository {
         .select(
           "comment_id,document_object_id,relative_anchor,relative_head,quoted_text,created_at,updated_at",
         )
+        .in("comment_id", commentIds),
+      this.supabase
+        .from("comment_scene_targets")
+        .select("comment_id,scene_id,created_at")
         .in("comment_id", commentIds),
       this.supabase
         .from("comment_replies")
@@ -115,6 +120,18 @@ export class SupabaseCommentRepository {
       documentTargetsResult.data,
       documentTargetsResult.error,
     );
+    const sceneTargets = requireData(
+      sceneTargetsResult.data,
+      sceneTargetsResult.error,
+    );
+    const sceneIds = sceneTargets.map((target) => target.scene_id);
+    const scenesResult = sceneIds.length
+      ? await this.supabase
+          .from("story_scenes")
+          .select("id,title,deleted_at")
+          .in("id", sceneIds)
+      : { data: [], error: null };
+    const scenes = requireData(scenesResult.data, scenesResult.error);
     const replies = requireData(
       repliesResult.data,
       repliesResult.error,
@@ -316,6 +333,21 @@ export class SupabaseCommentRepository {
               }
             : null;
         })(),
+        sceneTarget: (() => {
+          const target = sceneTargets.find(
+            (candidate) => candidate.comment_id === comment.id,
+          );
+          const scene = target
+            ? scenes.find((candidate) => candidate.id === target.scene_id)
+            : null;
+          return target && scene
+            ? {
+                sceneId: target.scene_id,
+                title: scene.title,
+                deleted: scene.deleted_at !== null,
+              }
+            : null;
+        })(),
         replies: replies
           .filter((reply) => reply.comment_id === comment.id)
           .map((reply) => ({
@@ -373,6 +405,20 @@ export class SupabaseCommentRepository {
   async execute(input: CommentCommand) {
     const command = commentCommandSchema.parse(input);
     if (command.type === "comment.create") {
+      if (command.sceneId) {
+        const result = await this.supabase.rpc("create_scene_comment_thread", {
+          target_canvas_id: command.canvasId,
+          target_scene_id: command.sceneId,
+          target_client_command_id: command.commandId,
+          target_body: command.body,
+          target_prompt_kind: command.promptKind,
+          target_author_kind: command.authorKind,
+          target_author_key: command.authorKey,
+          target_recipient_user_ids: command.routing?.recipientUserIds ?? null,
+          target_include_primary_ai: command.routing?.includePrimaryAi ?? false,
+        });
+        return requireData(result.data, result.error).at(0);
+      }
       if (command.documentRange) {
         const response = await fetch(
           `/api/canvases/${command.canvasId}/comments/document`,

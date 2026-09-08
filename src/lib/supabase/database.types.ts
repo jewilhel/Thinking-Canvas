@@ -951,6 +951,39 @@ export type Database = {
           },
         ]
       }
+      comment_scene_targets: {
+        Row: {
+          comment_id: string
+          created_at: string
+          scene_id: string
+        }
+        Insert: {
+          comment_id: string
+          created_at?: string
+          scene_id: string
+        }
+        Update: {
+          comment_id?: string
+          created_at?: string
+          scene_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comment_scene_targets_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: true
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_scene_targets_scene_id_fkey"
+            columns: ["scene_id"]
+            isOneToOne: false
+            referencedRelation: "story_scenes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       comment_targets: {
         Row: {
           comment_id: string
@@ -1228,8 +1261,8 @@ export type Database = {
           created_at: string
           id: string
           kind: string
-          revision: number
           review_change_set_id: string | null
+          revision: number
           title: string
           updated_at: string
         }
@@ -1239,8 +1272,8 @@ export type Database = {
           created_at?: string
           id?: string
           kind?: string
-          revision?: number
           review_change_set_id?: string | null
+          revision?: number
           title: string
           updated_at?: string
         }
@@ -1250,8 +1283,8 @@ export type Database = {
           created_at?: string
           id?: string
           kind?: string
-          revision?: number
           review_change_set_id?: string | null
+          revision?: number
           title?: string
           updated_at?: string
         }
@@ -1303,7 +1336,7 @@ export type Database = {
           position: number
           story_id: string
           target: Json
-          title: string
+          title?: string
           updated_at?: string
         }
         Update: {
@@ -1341,62 +1374,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      capture_primary_story_scene: {
-        Args: {
-          target_camera: Json
-          target_canvas_id: string
-          target_expected_revision?: number | null
-          target_region: Json
-          target_title: string
-        }
-        Returns: {
-          scene_camera: Json
-          scene_created_at: string
-          scene_id: string
-          scene_narration: string | null
-          scene_position: number
-          scene_target: Json
-          scene_title: string
-          scene_updated_at: string
-          story_id: string
-          story_revision: number
-        }[]
-      }
-      delete_primary_story_scene: {
-        Args: {
-          target_canvas_id: string
-          target_expected_revision: number
-          target_scene_id: string
-        }
-        Returns: number
-      }
-      reorder_primary_story_scenes: {
-        Args: {
-          target_canvas_id: string
-          target_expected_revision: number
-          target_scene_ids: string[]
-        }
-        Returns: number
-      }
-      restore_primary_story_scene: {
-        Args: {
-          target_canvas_id: string
-          target_expected_revision: number
-          target_scene_id: string
-        }
-        Returns: number
-      }
-      update_primary_story_scene: {
-        Args: {
-          target_camera?: Json | null
-          target_canvas_id: string
-          target_expected_revision: number
-          target_region?: Json | null
-          target_scene_id: string
-          target_title?: string | null
-        }
-        Returns: number
-      }
       activate_ai_review_stage: {
         Args: {
           target_change_set_id: string
@@ -1447,6 +1424,27 @@ export type Database = {
           status: Database["public"]["Enums"]["ai_run_status"]
         }[]
       }
+      capture_primary_story_scene: {
+        Args: {
+          target_camera: Json
+          target_canvas_id: string
+          target_expected_revision?: number
+          target_region: Json
+          target_title: string
+        }
+        Returns: {
+          scene_camera: Json
+          scene_created_at: string
+          scene_id: string
+          scene_narration: string
+          scene_position: number
+          scene_target: Json
+          scene_title: string
+          scene_updated_at: string
+          story_id: string
+          story_revision: number
+        }[]
+      }
       complete_ai_run: {
         Args: {
           target_body: string
@@ -1493,6 +1491,31 @@ export type Database = {
           reply_id: string
         }[]
       }
+      create_comment_thread: {
+        Args: {
+          target_anchor_x?: number
+          target_anchor_y?: number
+          target_author_key?: string
+          target_author_kind?: Database["public"]["Enums"]["comment_author_kind"]
+          target_body: string
+          target_canvas_id: string
+          target_client_command_id: string
+          target_document_object_id?: string
+          target_document_quoted_text?: string
+          target_document_relative_anchor?: string
+          target_document_relative_head?: string
+          target_include_primary_ai?: boolean
+          target_object_ids?: string[]
+          target_ordered_context_ids?: string[]
+          target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
+          target_recipient_user_ids?: string[]
+        }
+        Returns: {
+          ai_run_id: string
+          comment_id: string
+          created: boolean
+        }[]
+      }
       create_document_comment_thread: {
         Args: {
           target_author_key: string | null
@@ -1517,24 +1540,17 @@ export type Database = {
           created: boolean
         }[]
       }
-      create_comment_thread: {
+      create_scene_comment_thread: {
         Args: {
-          target_anchor_x?: number
-          target_anchor_y?: number
-          target_author_key?: string
+          target_author_key?: string | null
           target_author_kind?: Database["public"]["Enums"]["comment_author_kind"]
           target_body: string
           target_canvas_id: string
           target_client_command_id: string
-          target_document_object_id?: string
-          target_document_quoted_text?: string
-          target_document_relative_anchor?: string
-          target_document_relative_head?: string
           target_include_primary_ai?: boolean
-          target_object_ids?: string[]
-          target_ordered_context_ids?: string[]
-          target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
-          target_recipient_user_ids?: string[]
+          target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"] | null
+          target_recipient_user_ids?: string[] | null
+          target_scene_id: string
         }
         Returns: {
           ai_run_id: string
@@ -1563,6 +1579,14 @@ export type Database = {
       delete_comment_thread: {
         Args: { target_comment_id: string }
         Returns: string
+      }
+      delete_primary_story_scene: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_scene_id: string
+        }
+        Returns: number
       }
       execute_ai_canvas_commands: {
         Args: {
@@ -1693,6 +1717,14 @@ export type Database = {
           tool_execution_id: string
         }[]
       }
+      reorder_primary_story_scenes: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_scene_ids: string[]
+        }
+        Returns: number
+      }
       reserve_ai_run_budget: {
         Args: {
           target_input_tokens: number
@@ -1717,6 +1749,14 @@ export type Database = {
           created: boolean
           response_id: string
         }[]
+      }
+      restore_primary_story_scene: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_scene_id: string
+        }
+        Returns: number
       }
       retry_ai_run: {
         Args: { target_idempotency_key: string; target_run_id: string }
@@ -1798,6 +1838,17 @@ export type Database = {
       update_comment_body: {
         Args: { target_body: string; target_comment_id: string }
         Returns: string
+      }
+      update_primary_story_scene: {
+        Args: {
+          target_camera?: Json
+          target_canvas_id: string
+          target_expected_revision: number
+          target_region?: Json
+          target_scene_id: string
+          target_title?: string
+        }
+        Returns: number
       }
     }
     Enums: {

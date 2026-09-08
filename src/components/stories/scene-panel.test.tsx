@@ -7,6 +7,7 @@ import {
   resizeScenePanelLeft,
   ScenePanel,
 } from "@/components/stories/scene-panel";
+import type { CommentThread } from "@/comments/comment-model";
 import type { PrimaryStory } from "@/stories/story-model";
 
 afterEach(cleanup);
@@ -60,6 +61,7 @@ function renderPanel(
     canCapture: true,
     activeSceneId: null,
     loopEnabled: true,
+    sceneThreads: [],
     onAdd: vi.fn(),
     onChoose: vi.fn(),
     onRename: vi.fn(),
@@ -69,6 +71,8 @@ function renderPanel(
     deletedScene: null,
     onUndoDelete: vi.fn(),
     onLoopChange: vi.fn(),
+    onAddSceneComment: vi.fn(),
+    onOpenSceneThread: vi.fn(),
     onDismiss: vi.fn(),
     ...overrides,
   };
@@ -98,6 +102,26 @@ describe("ScenePanel", () => {
     expect(sceneButton).toHaveAttribute("aria-current", "step");
     fireEvent.click(sceneButton);
     expect(props.onChoose).toHaveBeenCalledWith(story.scenes[0]);
+  });
+
+  it("shows only the supplied active-scene context and opens its composer", () => {
+    const sceneThread = {
+      id: "30000000-0000-4000-8000-000000000001",
+      authorName: "Jason",
+      body: "Pause here for discussion",
+      status: "open",
+    } as CommentThread;
+    const props = renderPanel({
+      story,
+      activeSceneId: story.scenes[0]!.id,
+      sceneThreads: [sceneThread],
+    });
+
+    expect(screen.getByText("Pause here for discussion")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    expect(props.onAddSceneComment).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByText("Pause here for discussion"));
+    expect(props.onOpenSceneThread).toHaveBeenCalledWith(sceneThread.id);
   });
 
   it("blocks capture while the canvas is not durably saved", () => {

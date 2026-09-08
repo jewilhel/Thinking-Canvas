@@ -557,6 +557,14 @@ function ProductCanvasWorkspace({
   const activeSceneIndex = storyScenes.findIndex(
     (scene) => scene.id === activeSceneId,
   );
+  const activeScene =
+    activeSceneIndex >= 0 ? storyScenes[activeSceneIndex]! : null;
+  const activeSceneThreads = commentWorkspace.threads.filter(
+    (thread) =>
+      thread.sceneTarget?.sceneId === activeSceneId &&
+      thread.status === "open" &&
+      !thread.sceneTarget.deleted,
+  );
   useEffect(() => {
     if (!deletedScene) return;
     const timeout = window.setTimeout(() => setDeletedScene(null), 8000);
@@ -4965,6 +4973,7 @@ function ProductCanvasWorkspace({
         canCapture={canMutateCanvas && saveStatus === "Saved"}
         activeSceneId={activeSceneId}
         loopEnabled={sceneLoopEnabled}
+        sceneThreads={activeSceneThreads}
         onAdd={() => void addCurrentScene()}
         onChoose={chooseScene}
         onRename={(scene, title) => void renameScene(scene, title)}
@@ -4974,6 +4983,14 @@ function ProductCanvasWorkspace({
         deletedScene={deletedScene}
         onUndoDelete={() => void undoDeleteScene()}
         onLoopChange={setSceneLoopEnabled}
+        onAddSceneComment={() => {
+          setScenePanelOpen(false);
+          commentWorkspace.show("scene-composer");
+        }}
+        onOpenSceneThread={(threadId) => {
+          setScenePanelOpen(false);
+          commentWorkspace.openThread(threadId);
+        }}
         onDismiss={() => setScenePanelOpen(false)}
       />
 
@@ -5109,6 +5126,7 @@ function ProductCanvasWorkspace({
         selectedIds={selectedIds}
         viewport={viewport}
         size={size}
+        activeScene={activeScene}
         panelOpen={commentWorkspace.active === "history"}
         panelInvoker={sharedPanelInvoker}
         placementActive={commentPlacementActive}

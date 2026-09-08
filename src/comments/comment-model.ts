@@ -46,6 +46,7 @@ export const commentCreateCommandSchema = z
       })
       .nullable(),
     documentRange: documentRangeTargetSchema.nullable(),
+    sceneId: uuid.nullable().optional(),
     documentAiContext: z
       .strictObject({
         includeDocument: z.boolean(),
@@ -62,12 +63,13 @@ export const commentCreateCommandSchema = z
       command.targetObjectIds.length > 0,
       command.canvasAnchor !== null,
       command.documentRange !== null,
+      command.sceneId != null,
     ].filter(Boolean).length;
     if (targetFamilies !== 1) {
       context.addIssue({
         code: "custom",
         message:
-          "Choose exactly one object target set, canvas position, or document range.",
+          "Choose exactly one object target set, canvas position, document range, or scene.",
         path: ["targetObjectIds"],
       });
     }
@@ -236,6 +238,11 @@ export type CommentThread = {
   targetObjectIds: string[];
   canvasAnchor: { x: number; y: number } | null;
   documentRange: DocumentRangeTarget | null;
+  sceneTarget?: {
+    sceneId: string;
+    title: string;
+    deleted: boolean;
+  } | null;
   replies: CommentReply[];
   recipients: CommentRecipient[];
   activeParticipants: CommentRecipient[];

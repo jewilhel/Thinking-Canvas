@@ -125,6 +125,23 @@ test("manages and reloads live canvas viewport scenes", async ({
   ).toBeDisabled();
   await page.getByRole("switch", { name: "Loop" }).click();
 
+  await page.getByRole("button", { name: "Add comment" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Comment on Scene 1" }),
+  ).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Comment", exact: true })
+    .fill("Opening context only");
+  await page.getByRole("button", { name: "Submit comment" }).click();
+  await expect(page.getByText("Opening context only")).toBeVisible();
+  await page.getByRole("button", { name: "Close comment thread" }).click();
+  await page.getByRole("button", { name: "Open scenes" }).click();
+  await expect(page.getByText("Opening context only")).toBeVisible();
+  await page.getByRole("button", { name: "Scene 3", exact: true }).click();
+  await expect(page.getByText("Opening context only")).toHaveCount(0);
+  await page.getByRole("button", { name: "Scene 1", exact: true }).click();
+  await expect(page.getByText("Opening context only")).toBeVisible();
+
   const secondContext = await browser.newContext();
   const secondPage = await secondContext.newPage();
   await signIn(secondPage);
@@ -136,6 +153,10 @@ test("manages and reloads live canvas viewport scenes", async ({
   await expect(
     secondPage.getByRole("list", { name: "Story scenes" }),
   ).toContainText(/Scene 1[\s\S]*Scene 3[\s\S]*Detail/);
+  await secondPage
+    .getByRole("button", { name: "Scene 1", exact: true })
+    .click();
+  await expect(secondPage.getByText("Opening context only")).toBeVisible();
   await secondContext.close();
 
   await page.getByRole("button", { name: "Zoom out" }).click();

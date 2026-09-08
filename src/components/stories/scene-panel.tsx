@@ -2,6 +2,7 @@
 
 import {
   LoaderCircle,
+  MessageCircle,
   MoreHorizontal,
   Plus,
   Repeat2,
@@ -18,6 +19,7 @@ import {
 import { createPortal } from "react-dom";
 
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
+import type { CommentThread } from "@/comments/comment-model";
 import { Button } from "@/components/ui/button";
 import type { PrimaryStory, StoryScene } from "@/stories/story-model";
 
@@ -31,6 +33,7 @@ type Props = {
   canCapture: boolean;
   activeSceneId: string | null;
   loopEnabled: boolean;
+  sceneThreads: CommentThread[];
   onAdd: () => void;
   onChoose: (scene: StoryScene) => void;
   onRename: (scene: StoryScene, title: string) => void;
@@ -40,6 +43,8 @@ type Props = {
   deletedScene: Pick<StoryScene, "id" | "title"> | null;
   onUndoDelete: () => void;
   onLoopChange: (enabled: boolean) => void;
+  onAddSceneComment: () => void;
+  onOpenSceneThread: (threadId: string) => void;
   onDismiss: () => void;
 };
 
@@ -144,6 +149,7 @@ export function ScenePanel({
   canCapture,
   activeSceneId,
   loopEnabled,
+  sceneThreads,
   onAdd,
   onChoose,
   onRename,
@@ -153,6 +159,8 @@ export function ScenePanel({
   deletedScene,
   onUndoDelete,
   onLoopChange,
+  onAddSceneComment,
+  onOpenSceneThread,
   onDismiss,
 }: Props) {
   const panelRef = useRef<HTMLElement>(null);
@@ -510,6 +518,53 @@ export function ScenePanel({
                 </li>
               ))}
             </ol>
+            {activeSceneId ? (
+              <section
+                aria-labelledby="active-scene-context-title"
+                className="mt-4 rounded-xl border border-zinc-700 bg-zinc-950/40 p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <h3
+                    id="active-scene-context-title"
+                    className="text-sm font-semibold text-zinc-200"
+                  >
+                    Scene comments
+                  </h3>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-violet-200 hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:outline-none"
+                    onClick={onAddSceneComment}
+                  >
+                    <MessageCircle aria-hidden="true" className="size-4" />
+                    Add comment
+                  </button>
+                </div>
+                {sceneThreads.length ? (
+                  <div className="mt-2 space-y-1">
+                    {sceneThreads.map((thread) => (
+                      <button
+                        key={thread.id}
+                        type="button"
+                        className="block w-full rounded-lg px-2 py-2 text-left hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:outline-none"
+                        onClick={() => onOpenSceneThread(thread.id)}
+                      >
+                        <span className="flex items-center justify-between gap-2 text-xs text-zinc-400">
+                          <span>{thread.authorName}</span>
+                          <span>{thread.status}</span>
+                        </span>
+                        <span className="mt-1 line-clamp-2 block text-sm text-zinc-200">
+                          {thread.body}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-zinc-500">
+                    No comments for this scene.
+                  </p>
+                )}
+              </section>
+            ) : null}
           </div>
         ) : (
           <div className="flex min-h-52 flex-col items-center justify-center px-5 text-center">
