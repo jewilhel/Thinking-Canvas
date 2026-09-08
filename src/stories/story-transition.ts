@@ -18,14 +18,24 @@ export function interpolateViewport(
   to: Viewport,
   progress: number,
 ): Viewport {
+  // Preserve exact saved endpoints, including the maximum zoom. Log/exp
+  // interpolation can otherwise leave 3.0000000000000004 at a target of 3.
+  if (progress <= 0) return { ...from };
+  if (progress >= 1) return { ...to };
   const eased =
     progress < 0.5 ? 4 * progress ** 3 : 1 - (-2 * progress + 2) ** 3 / 2;
   return {
     x: from.x + (to.x - from.x) * eased,
     y: from.y + (to.y - from.y) * eased,
-    scale: Math.exp(
-      Math.log(from.scale) +
-        (Math.log(to.scale) - Math.log(from.scale)) * eased,
+    scale: Math.min(
+      Math.max(from.scale, to.scale),
+      Math.max(
+        Math.min(from.scale, to.scale),
+        Math.exp(
+          Math.log(from.scale) +
+            (Math.log(to.scale) - Math.log(from.scale)) * eased,
+        ),
+      ),
     ),
   };
 }

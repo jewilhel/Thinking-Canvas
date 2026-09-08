@@ -123,16 +123,26 @@ export function captureStoryFraming(
   size: CanvasViewportSize,
 ): { camera: StoryCamera; target: StoryTarget } {
   requireViewportSize(size);
+  // Normalize only floating-point spill at a zoom boundary. Truly invalid
+  // camera values still fail validation instead of silently changing framing.
+  const boundedScale = Math.min(
+    maxCanvasScale,
+    Math.max(minCanvasScale, viewport.scale),
+  );
+  const scale =
+    Math.abs(boundedScale - viewport.scale) < 1e-12
+      ? boundedScale
+      : viewport.scale;
   const camera = storyCameraSchema.parse({
     version: 1,
     center: {
-      x: (size.width / 2 - viewport.x) / viewport.scale,
-      y: (size.height / 2 - viewport.y) / viewport.scale,
+      x: (size.width / 2 - viewport.x) / scale,
+      y: (size.height / 2 - viewport.y) / scale,
     },
-    zoom: viewport.scale,
+    zoom: scale,
   });
-  const worldWidth = size.width / viewport.scale;
-  const worldHeight = size.height / viewport.scale;
+  const worldWidth = size.width / scale;
+  const worldHeight = size.height / scale;
   return {
     camera,
     target: storyTargetSchema.parse({

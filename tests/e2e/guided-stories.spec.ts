@@ -3,6 +3,60 @@ import { expect, test, type Page } from "@playwright/test";
 
 const password = "LocalPassword1!";
 
+test("captures repeated scenes after navigation to maximum zoom without moving the camera", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.getByLabel("Canvas name").fill(`Same framing ${Date.now()}`);
+  await page.getByRole("button", { name: "Create canvas" }).click();
+  await expect(page).toHaveURL(/\/app\/canvases\/[0-9a-f-]+$/);
+  await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
+  for (let click = 0; click < 16; click++)
+    await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await page.getByRole("button", { name: "Open scenes", exact: true }).click();
+  await page.getByRole("button", { name: "Add Scene", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Scene 1", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Zoom out", exact: true }).click();
+  await page.getByRole("button", { name: "Scene 1", exact: true }).click();
+  await expect(page.getByTestId("product-canvas-surface")).toHaveAttribute(
+    "data-viewport-scale",
+    "3",
+  );
+  for (const number of [2, 3]) {
+    await page.getByRole("button", { name: "Add Scene", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: `Scene ${number}`, exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", {
+        name: `Edit narration for Scene ${number}`,
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("textbox", {
+        name: `Narration for Scene ${number}`,
+        exact: true,
+      })
+      .fill(`Caption ${number} on the same view.`);
+    await page
+      .getByRole("button", { name: "Save narration", exact: true })
+      .click();
+    await expect(page.getByTestId("active-scene-caption")).toHaveText(
+      `Caption ${number} on the same view.`,
+    );
+  }
+  const canvasId = new URL(page.url()).pathname.split("/").at(-1);
+  const response = await page.request.get(`/api/canvases/${canvasId}/stories`);
+  const { story } = await response.json();
+  expect(story.scenes).toHaveLength(3);
+  expect(story.scenes[2].camera).toEqual(story.scenes[1].camera);
+  expect(story.scenes[2].target).toEqual(story.scenes[1].target);
+  expect(story.scenes[2].narration).not.toEqual(story.scenes[1].narration);
+});
+
 async function signIn(page: Page) {
   await page.goto("/auth/sign-in");
   await page.getByLabel("Email").fill("owner@thinking-canvas.local");
@@ -171,6 +225,11 @@ test("manages and reloads live canvas viewport scenes", async ({
     "Introduce the full canvas before focusing on details.",
   );
   const caption = page.getByTestId("story-caption-overlay");
+  // Let the scene camera finish moving before measuring a world-anchored caption.
+  await expect(page.getByTestId("product-canvas-surface")).toHaveAttribute(
+    "data-viewport-scale",
+    capturedScale!,
+  );
   const captionBefore = await caption.boundingBox();
   await page
     .getByRole("button", { name: "Move narration bubble" })

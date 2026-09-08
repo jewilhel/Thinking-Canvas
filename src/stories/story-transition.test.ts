@@ -10,6 +10,19 @@ const from = { x: 0, y: 0, scale: 1 };
 const to = { x: 800, y: -400, scale: 2 };
 
 describe("story viewport transitions", () => {
+  it("keeps every frame within zoom endpoints and lands exactly at 300 percent", () => {
+    const origin = { x: -1, y: 2, scale: 2.8 };
+    const target = { x: -1751, y: -444, scale: 3 };
+    for (let step = 0; step <= 1000; step++) {
+      const frame = interpolateViewport(origin, target, step / 1000);
+      expect(frame.scale).toBeGreaterThanOrEqual(2.8);
+      expect(frame.scale).toBeLessThanOrEqual(3);
+    }
+    expect(interpolateViewport(origin, target, 1)).toEqual(target);
+    expect(
+      interpolateViewport(target, { ...origin, scale: 0.25 }, 1).scale,
+    ).toBe(0.25);
+  });
   it("uses bounded distance-aware timing", () => {
     expect(viewportTransitionDuration(from, from)).toBe(320);
     expect(viewportTransitionDuration(from, to)).toBeGreaterThan(320);

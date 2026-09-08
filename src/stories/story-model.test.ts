@@ -8,6 +8,16 @@ import {
 } from "@/stories/story-model";
 
 describe("story viewport framing", () => {
+  it("captures repeated identical views at the zoom limit despite floating-point spill", () => {
+    const viewport = { x: -1751, y: -444, scale: 3.0000000000000004 };
+    const size = { width: 816, height: 951 };
+    const first = captureStoryFraming(viewport, size);
+    expect(first.camera.zoom).toBe(3);
+    expect(captureStoryFraming(viewport, size)).toEqual(first);
+    expect(() =>
+      captureStoryFraming({ ...viewport, scale: 99 }, size),
+    ).toThrow();
+  });
   it("round trips the current viewport through a world-space camera", () => {
     const viewport = { x: -320, y: 140, scale: 1.75 };
     const size = { width: 1280, height: 720 };
