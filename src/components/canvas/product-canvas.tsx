@@ -440,6 +440,7 @@ function ProductCanvasWorkspace({
   const frameStartedAt = useRef(0);
   const documentStorageKey = `thinking-canvas:document:${canvasId}`;
   const viewportStorageKey = `thinking-canvas:viewport:${userId}:${canvasId}`;
+  const sceneLoopStorageKey = `thinking-canvas:scene-loop:${userId}:${canvasId}`;
   const overlayVisibilityKey = `thinking-canvas:comments-visible:${userId}:${canvasId}`;
   const document = useMemo(() => {
     const next = createProductCanvasDocument(canvasId);
@@ -537,6 +538,12 @@ function ProductCanvasWorkspace({
   useEffect(() => () => cancelSceneTransition(), [cancelSceneTransition]);
   const [scenePanelOpen, setScenePanelOpen] = useState(false);
   const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
+  const [sceneLoopEnabled, setSceneLoopEnabled] = useState(
+    () => window.localStorage.getItem(sceneLoopStorageKey) !== "false",
+  );
+  useEffect(() => {
+    window.localStorage.setItem(sceneLoopStorageKey, String(sceneLoopEnabled));
+  }, [sceneLoopEnabled, sceneLoopStorageKey]);
   const [deletedScene, setDeletedScene] = useState<Pick<
     StoryScene,
     "id" | "title"
@@ -2501,12 +2508,15 @@ function ProductCanvasWorkspace({
     const currentIndex = scenes.findIndex(
       (scene) => scene.id === activeSceneId,
     );
-    const targetIndex =
+    let targetIndex =
       currentIndex < 0
         ? direction === 1
           ? 0
           : scenes.length - 1
         : currentIndex + direction;
+    if (sceneLoopEnabled && scenes.length > 1) {
+      targetIndex = (targetIndex + scenes.length) % scenes.length;
+    }
     const scene = scenes[targetIndex];
     if (scene) chooseScene(scene);
   }
@@ -4954,6 +4964,7 @@ function ProductCanvasWorkspace({
         error={storyState.error}
         canCapture={canMutateCanvas && saveStatus === "Saved"}
         activeSceneId={activeSceneId}
+        loopEnabled={sceneLoopEnabled}
         onAdd={() => void addCurrentScene()}
         onChoose={chooseScene}
         onRename={(scene, title) => void renameScene(scene, title)}
@@ -4962,6 +4973,7 @@ function ProductCanvasWorkspace({
         onDelete={(scene) => void deleteScene(scene)}
         deletedScene={deletedScene}
         onUndoDelete={() => void undoDeleteScene()}
+        onLoopChange={setSceneLoopEnabled}
         onDismiss={() => setScenePanelOpen(false)}
       />
 
@@ -4971,10 +4983,25 @@ function ProductCanvasWorkspace({
           size="icon-sm"
           variant="outline"
           aria-label="Previous scene"
-          disabled={!storyScenes.length || activeSceneIndex === 0}
+          disabled={
+            !storyScenes.length ||
+            storyScenes.length === 1 ||
+            (!sceneLoopEnabled && activeSceneIndex === 0)
+          }
           onClick={() => navigateScene(-1)}
         >
           <ChevronLeft aria-hidden="true" />
+        </Button>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label="Open scenes"
+          aria-expanded={scenePanelOpen}
+          aria-controls="scene-panel"
+          onClick={() => setScenePanelOpen((current) => !current)}
+        >
+          <Presentation aria-hidden="true" />
         </Button>
         <output className="sr-only" aria-live="polite">
           {activeSceneIndex >= 0
@@ -4989,22 +5016,13 @@ function ProductCanvasWorkspace({
           variant="outline"
           aria-label="Next scene"
           disabled={
-            !storyScenes.length || activeSceneIndex === storyScenes.length - 1
+            !storyScenes.length ||
+            storyScenes.length === 1 ||
+            (!sceneLoopEnabled && activeSceneIndex === storyScenes.length - 1)
           }
           onClick={() => navigateScene(1)}
         >
           <ChevronRight aria-hidden="true" />
-        </Button>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="outline"
-          aria-label="Open scenes"
-          aria-expanded={scenePanelOpen}
-          aria-controls="scene-panel"
-          onClick={() => setScenePanelOpen((current) => !current)}
-        >
-          <Presentation aria-hidden="true" />
         </Button>
         <Button
           type="button"

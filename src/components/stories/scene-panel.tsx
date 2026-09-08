@@ -6,6 +6,7 @@ import {
   LoaderCircle,
   MoreHorizontal,
   Plus,
+  Repeat2,
   Sparkles,
   X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ type Props = {
   error: string;
   canCapture: boolean;
   activeSceneId: string | null;
+  loopEnabled: boolean;
   onAdd: () => void;
   onChoose: (scene: StoryScene) => void;
   onRename: (scene: StoryScene, title: string) => void;
@@ -32,6 +34,7 @@ type Props = {
   onDelete: (scene: StoryScene) => void;
   deletedScene: Pick<StoryScene, "id" | "title"> | null;
   onUndoDelete: () => void;
+  onLoopChange: (enabled: boolean) => void;
   onDismiss: () => void;
 };
 
@@ -97,6 +100,7 @@ export function ScenePanel({
   error,
   canCapture,
   activeSceneId,
+  loopEnabled,
   onAdd,
   onChoose,
   onRename,
@@ -105,6 +109,7 @@ export function ScenePanel({
   onDelete,
   deletedScene,
   onUndoDelete,
+  onLoopChange,
   onDismiss,
 }: Props) {
   const [menuSceneId, setMenuSceneId] = useState<string | null>(null);
@@ -113,6 +118,10 @@ export function ScenePanel({
   const [draggedSceneId, setDraggedSceneId] = useState<string | null>(null);
   if (!open) return null;
   const scenes = story?.scenes ?? [];
+  const activeSceneIndex = scenes.findIndex(
+    (scene) => scene.id === activeSceneId,
+  );
+  const activeScene = scenes[activeSceneIndex];
 
   function moveScene(sceneId: string, targetIndex: number) {
     const currentIndex = scenes.findIndex((scene) => scene.id === sceneId);
@@ -138,20 +147,36 @@ export function ScenePanel({
       data-testid="scene-panel"
       className="absolute right-4 bottom-20 z-40 flex max-h-[min(34rem,calc(100dvh-8rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-3xl border border-zinc-700 bg-zinc-900 text-zinc-50 shadow-2xl"
     >
-      <header className="flex items-center justify-between border-b border-zinc-700 px-5 py-4">
+      <header className="flex items-center justify-between gap-3 border-b border-zinc-700 px-5 py-4">
         <h2 id="scene-panel-title" className="text-lg font-semibold">
           Scenes
         </h2>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          aria-label="Close scenes"
-          className="text-zinc-300 hover:bg-zinc-800 hover:text-white"
-          onClick={onDismiss}
-        >
-          <X aria-hidden="true" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={loopEnabled}
+            className={`flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm transition-colors ${
+              loopEnabled
+                ? "bg-violet-500/25 text-violet-100"
+                : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+            }`}
+            onClick={() => onLoopChange(!loopEnabled)}
+          >
+            <Repeat2 aria-hidden="true" className="size-4" />
+            Loop
+          </button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Close scenes"
+            className="text-zinc-300 hover:bg-zinc-800 hover:text-white"
+            onClick={onDismiss}
+          >
+            <X aria-hidden="true" />
+          </Button>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -161,144 +186,167 @@ export function ScenePanel({
             Loading scenes…
           </p>
         ) : scenes.length ? (
-          <ol className="space-y-2" aria-label="Story scenes">
-            {scenes.map((scene, index) => (
-              <li
-                key={scene.id}
-                draggable={!saving && editingSceneId !== scene.id}
-                onDragStart={() => setDraggedSceneId(scene.id)}
-                onDragEnd={() => setDraggedSceneId(null)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => {
-                  if (draggedSceneId) moveScene(draggedSceneId, index);
-                  setDraggedSceneId(null);
-                }}
-                className={
-                  draggedSceneId === scene.id ? "opacity-50" : undefined
-                }
-              >
-                <div
-                  className={`relative flex items-center gap-1 rounded-xl border px-2 py-2 transition-colors focus-within:ring-2 focus-within:ring-violet-300 ${
-                    activeSceneId === scene.id
-                      ? "border-violet-300 bg-violet-700 text-white"
-                      : "border-zinc-700 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+          <div>
+            <ol
+              className="overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900"
+              aria-label="Story scenes"
+            >
+              {scenes.map((scene, index) => (
+                <li
+                  key={scene.id}
+                  draggable={!saving && editingSceneId !== scene.id}
+                  onDragStart={() => setDraggedSceneId(scene.id)}
+                  onDragEnd={() => setDraggedSceneId(null)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => {
+                    if (draggedSceneId) moveScene(draggedSceneId, index);
+                    setDraggedSceneId(null);
+                  }}
+                  className={`border-b border-zinc-700/70 last:border-b-0 ${
+                    draggedSceneId === scene.id ? "opacity-50" : ""
                   }`}
                 >
-                  {editingSceneId === scene.id ? (
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <ScenePreview scene={scene} objects={objects} />
-                      <input
-                        aria-label={`Rename ${scene.title}`}
-                        autoFocus
-                        maxLength={120}
-                        value={draftTitle}
-                        className="min-w-0 flex-1 rounded-md bg-white px-2 py-1 text-zinc-900"
-                        onChange={(event) => setDraftTitle(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape") setEditingSceneId(null);
-                          if (event.key === "Enter" && draftTitle.trim()) {
-                            onRename(scene, draftTitle.trim());
-                            setEditingSceneId(null);
+                  <div
+                    className={`relative flex items-center gap-1 border-l-2 px-3 py-2 transition-colors focus-within:ring-2 focus-within:ring-violet-300 focus-within:ring-inset ${
+                      activeSceneId === scene.id
+                        ? "border-l-violet-400 bg-violet-500/20 text-violet-50"
+                        : "border-l-transparent text-zinc-200 hover:bg-zinc-800/70"
+                    }`}
+                  >
+                    {editingSceneId === scene.id ? (
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <ScenePreview scene={scene} objects={objects} />
+                        <input
+                          aria-label={`Rename ${scene.title}`}
+                          autoFocus
+                          maxLength={120}
+                          value={draftTitle}
+                          className="min-w-0 flex-1 rounded-md bg-white px-2 py-1 text-zinc-900"
+                          onChange={(event) =>
+                            setDraftTitle(event.target.value)
                           }
-                        }}
-                        onBlur={() => {
-                          if (
-                            draftTitle.trim() &&
-                            draftTitle.trim() !== scene.title
-                          )
-                            onRename(scene, draftTitle.trim());
-                          setEditingSceneId(null);
-                        }}
-                      />
-                    </div>
-                  ) : (
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") setEditingSceneId(null);
+                            if (event.key === "Enter" && draftTitle.trim()) {
+                              onRename(scene, draftTitle.trim());
+                              setEditingSceneId(null);
+                            }
+                          }}
+                          onBlur={() => {
+                            if (
+                              draftTitle.trim() &&
+                              draftTitle.trim() !== scene.title
+                            )
+                              onRename(scene, draftTitle.trim());
+                            setEditingSceneId(null);
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-current={
+                          activeSceneId === scene.id ? "step" : undefined
+                        }
+                        aria-label={scene.title}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none"
+                        onClick={() => onChoose(scene)}
+                      >
+                        <ScenePreview scene={scene} objects={objects} />
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {scene.title}
+                        </span>
+                      </button>
+                    )}
                     <button
                       type="button"
-                      aria-current={
-                        activeSceneId === scene.id ? "step" : undefined
+                      aria-label={`Scene actions for ${scene.title}`}
+                      aria-expanded={menuSceneId === scene.id}
+                      className="grid size-9 shrink-0 place-items-center rounded-lg hover:bg-black/20 focus-visible:outline-none"
+                      onClick={() =>
+                        setMenuSceneId((current) =>
+                          current === scene.id ? null : scene.id,
+                        )
                       }
-                      aria-label={scene.title}
-                      className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none"
-                      onClick={() => onChoose(scene)}
                     >
-                      <ScenePreview scene={scene} objects={objects} />
-                      <span className="min-w-0 flex-1 truncate font-medium">
-                        {scene.title}
-                      </span>
+                      <MoreHorizontal aria-hidden="true" className="size-4" />
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    aria-label={`Scene actions for ${scene.title}`}
-                    aria-expanded={menuSceneId === scene.id}
-                    className="grid size-9 shrink-0 place-items-center rounded-lg hover:bg-black/20 focus-visible:outline-none"
-                    onClick={() =>
-                      setMenuSceneId((current) =>
-                        current === scene.id ? null : scene.id,
-                      )
-                    }
-                  >
-                    <MoreHorizontal aria-hidden="true" className="size-4" />
-                  </button>
-                  {menuSceneId === scene.id ? (
-                    <div className="absolute top-full right-2 z-10 mt-1 w-44 rounded-xl border border-zinc-600 bg-zinc-950 p-1 shadow-xl">
-                      <button
-                        type="button"
-                        className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-800"
-                        onClick={() => {
-                          setDraftTitle(scene.title);
-                          setEditingSceneId(scene.id);
-                          setMenuSceneId(null);
-                        }}
-                      >
-                        Rename
-                      </button>
-                      <button
-                        type="button"
-                        className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-800"
-                        onClick={() => {
-                          onReplace(scene);
-                          setMenuSceneId(null);
-                        }}
-                      >
-                        Replace
-                      </button>
-                      <button
-                        type="button"
-                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-rose-300 hover:bg-zinc-800"
-                        onClick={() => {
-                          onDelete(scene);
-                          setMenuSceneId(null);
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-                <div className="mt-1 flex justify-end gap-1">
-                  <button
-                    type="button"
-                    aria-label={`Move ${scene.title} earlier`}
-                    disabled={saving || index === 0}
-                    className="rounded p-1 text-zinc-400 hover:bg-zinc-800 disabled:opacity-30"
-                    onClick={() => moveScene(scene.id, index - 1)}
-                  >
-                    <ChevronUp aria-hidden="true" className="size-4" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Move ${scene.title} later`}
-                    disabled={saving || index === scenes.length - 1}
-                    className="rounded p-1 text-zinc-400 hover:bg-zinc-800 disabled:opacity-30"
-                    onClick={() => moveScene(scene.id, index + 1)}
-                  >
-                    <ChevronDown aria-hidden="true" className="size-4" />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ol>
+                    {menuSceneId === scene.id ? (
+                      <div className="absolute top-full right-2 z-10 mt-1 w-44 rounded-xl border border-zinc-600 bg-zinc-950 p-1 shadow-xl">
+                        <button
+                          type="button"
+                          className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-800"
+                          onClick={() => {
+                            setDraftTitle(scene.title);
+                            setEditingSceneId(scene.id);
+                            setMenuSceneId(null);
+                          }}
+                        >
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-800"
+                          onClick={() => {
+                            onReplace(scene);
+                            setMenuSceneId(null);
+                          }}
+                        >
+                          Replace
+                        </button>
+                        <button
+                          type="button"
+                          className="w-full rounded-lg px-3 py-2 text-left text-sm text-rose-300 hover:bg-zinc-800"
+                          onClick={() => {
+                            onDelete(scene);
+                            setMenuSceneId(null);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <div
+              className="mt-3 flex items-center justify-end gap-1"
+              aria-label="Reorder selected scene"
+            >
+              <span className="mr-2 text-xs text-zinc-400">
+                {activeScene
+                  ? `Move ${activeScene.title}`
+                  : "Select a scene to move"}
+              </span>
+              <button
+                type="button"
+                aria-label="Move selected scene earlier"
+                disabled={saving || !activeScene || activeSceneIndex === 0}
+                className="grid size-9 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30"
+                onClick={() =>
+                  activeScene && moveScene(activeScene.id, activeSceneIndex - 1)
+                }
+              >
+                <ChevronUp aria-hidden="true" className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Move selected scene later"
+                disabled={
+                  saving ||
+                  !activeScene ||
+                  activeSceneIndex === scenes.length - 1
+                }
+                className="grid size-9 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30"
+                onClick={() =>
+                  activeScene && moveScene(activeScene.id, activeSceneIndex + 1)
+                }
+              >
+                <ChevronDown aria-hidden="true" className="size-4" />
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="flex min-h-52 flex-col items-center justify-center px-5 text-center">
             <span className="mb-4 grid size-16 place-items-center rounded-2xl border border-zinc-700 text-zinc-500">

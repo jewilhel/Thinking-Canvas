@@ -55,6 +55,7 @@ function renderPanel(
     error: "",
     canCapture: true,
     activeSceneId: null,
+    loopEnabled: true,
     onAdd: vi.fn(),
     onChoose: vi.fn(),
     onRename: vi.fn(),
@@ -63,6 +64,7 @@ function renderPanel(
     onDelete: vi.fn(),
     deletedScene: null,
     onUndoDelete: vi.fn(),
+    onLoopChange: vi.fn(),
     onDismiss: vi.fn(),
     ...overrides,
   };
@@ -100,6 +102,15 @@ describe("ScenePanel", () => {
     expect(screen.getByRole("button", { name: "Add Scene" })).toBeDisabled();
   });
 
+  it("toggles continuous scene looping", () => {
+    const props = renderPanel({ story, loopEnabled: true });
+
+    const loop = screen.getByRole("switch", { name: "Loop" });
+    expect(loop).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(loop);
+    expect(props.onLoopChange).toHaveBeenCalledWith(false);
+  });
+
   it("renames and replaces a scene from its scoped actions menu", () => {
     const props = renderPanel({ story });
 
@@ -125,14 +136,15 @@ describe("ScenePanel", () => {
   it("reorders with accessible move controls and deletes with undo", () => {
     const props = renderPanel({
       story: twoSceneStory,
+      activeSceneId: twoSceneStory.scenes[0]!.id,
       deletedScene: { id: story.scenes[0]!.id, title: "Opening view" },
     });
 
     expect(
-      screen.getByRole("button", { name: "Move Opening view earlier" }),
+      screen.getByRole("button", { name: "Move selected scene earlier" }),
     ).toBeDisabled();
     fireEvent.click(
-      screen.getByRole("button", { name: "Move Opening view later" }),
+      screen.getByRole("button", { name: "Move selected scene later" }),
     );
     expect(props.onReorder).toHaveBeenCalledWith([
       twoSceneStory.scenes[1]!.id,

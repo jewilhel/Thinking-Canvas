@@ -53,7 +53,9 @@ test("manages and reloads live canvas viewport scenes", async ({
     page.getByRole("button", { name: "Detail", exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Move Scene 3 earlier" }).click();
+  await page
+    .getByRole("button", { name: "Move selected scene earlier" })
+    .click();
   await expect(page.getByRole("list", { name: "Story scenes" })).toContainText(
     /Scene 1[\s\S]*Scene 3[\s\S]*Detail/,
   );
@@ -65,6 +67,31 @@ test("manages and reloads live canvas viewport scenes", async ({
   await expect(
     page.getByRole("button", { name: "Scene 3", exact: true }),
   ).toHaveAttribute("aria-current", "step");
+  expect(
+    await page
+      .getByRole("button", { name: "Previous scene" })
+      .evaluate((button) =>
+        [...(button.parentElement?.querySelectorAll("button") ?? [])]
+          .slice(0, 3)
+          .map((item) => item.getAttribute("aria-label")),
+      ),
+  ).toEqual(["Previous scene", "Open scenes", "Next scene"]);
+
+  await page.getByRole("button", { name: "Scene 1", exact: true }).click();
+  await page.getByRole("button", { name: "Previous scene" }).click();
+  await expect(
+    page.getByRole("button", { name: "Detail", exact: true }),
+  ).toHaveAttribute("aria-current", "step");
+  await page.getByRole("button", { name: "Next scene" }).click();
+  await expect(
+    page.getByRole("button", { name: "Scene 1", exact: true }),
+  ).toHaveAttribute("aria-current", "step");
+  await page.getByRole("switch", { name: "Loop" }).click();
+  await page.getByRole("button", { name: "Scene 1", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Previous scene" }),
+  ).toBeDisabled();
+  await page.getByRole("switch", { name: "Loop" }).click();
 
   const secondContext = await browser.newContext();
   const secondPage = await secondContext.newPage();
@@ -106,6 +133,10 @@ test("manages and reloads live canvas viewport scenes", async ({
   await page.reload();
   await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
   await page.getByRole("button", { name: "Open scenes" }).click();
+  await expect(page.getByRole("switch", { name: "Loop" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
   await expect(
     page.getByRole("button", { name: "Scene 1", exact: true }),
   ).toBeVisible();
