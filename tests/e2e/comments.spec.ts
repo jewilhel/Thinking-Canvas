@@ -6,6 +6,48 @@ const password = "LocalPassword1!";
 const seedCanvasId = "20000000-0000-4000-8000-000000000001";
 const editorUserId = "10000000-0000-4000-8000-000000000002";
 
+async function clickUncoveredCanvas(page: Page) {
+  const surface = page.getByTestId("product-canvas-surface");
+  let position: { x: number; y: number } | null = null;
+  await expect
+    .poll(
+      async () => {
+        position = await surface.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          for (
+            let y = Math.max(24, bounds.top + 24);
+            y < Math.min(innerHeight, bounds.bottom) - 24;
+            y += 32
+          ) {
+            for (
+              let x = Math.max(24, bounds.left + 24);
+              x < Math.min(innerWidth, bounds.right) - 24;
+              x += 32
+            ) {
+              const hit = document.elementFromPoint(x, y);
+              if (
+                hit === element ||
+                (hit instanceof HTMLCanvasElement && element.contains(hit))
+              ) {
+                return {
+                  x: x - bounds.left - element.clientLeft,
+                  y: y - bounds.top - element.clientTop,
+                };
+              }
+            }
+          }
+          return null;
+        });
+        return position !== null;
+      },
+      {
+        message: "The open comment panel must leave an uncovered canvas point",
+      },
+    )
+    .toBe(true);
+  await surface.click({ position: position! });
+}
+
 async function settleButtonTransition(button: Locator) {
   await button.evaluate(async (element) => {
     await Promise.all(
@@ -141,9 +183,7 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   await composer
     .getByRole("textbox", { name: "Comment", exact: true })
     .fill("Discard this unsent draft.");
-  await page
-    .getByTestId("product-canvas-surface")
-    .click({ position: { x: 760, y: 560 } });
+  await clickUncoveredCanvas(page);
   await expect(composer).toBeVisible();
   await composer
     .getByRole("button", { name: "Close comment composer" })
@@ -198,9 +238,7 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   ).not.toBeVisible();
   const focusShield = page.getByTestId("comment-focus-shield");
   await expect(focusShield).toHaveCount(0);
-  await page
-    .getByTestId("product-canvas-surface")
-    .click({ position: { x: 760, y: 560 } });
+  await clickUncoveredCanvas(page);
   await expect(thread).toBeVisible();
   await thread.getByRole("button", { name: "Close comment thread" }).click();
   await expect(thread).not.toBeVisible();
