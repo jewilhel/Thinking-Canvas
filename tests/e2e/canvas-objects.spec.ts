@@ -40,6 +40,10 @@ async function createAt(
   position: { x: number; y: number },
 ) {
   if (["Rectangle", "Ellipse", "Diamond"].includes(tool)) {
+    // Close selection popovers/toolbars left by the prior object before opening
+    // the bottom-dock catalog; under parallel load they can overlap its tiles.
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Shapes", exact: true }).click();
     await page
       .getByTestId("catalog-results")
@@ -49,6 +53,7 @@ async function createAt(
     await page.getByRole("button", { name: tool, exact: true }).click();
   }
   await page.getByTestId("product-canvas-surface").click({ position });
+  await ensureObjectNavigator(page);
   await expect(page.getByTestId("canvas-inspector-selection")).toBeVisible();
 }
 
