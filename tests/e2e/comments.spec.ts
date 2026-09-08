@@ -184,7 +184,15 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
     .getByRole("textbox", { name: "Comment", exact: true })
     .fill("Discard this unsent draft.");
   await clickUncoveredCanvas(page);
+  await expect(composer).not.toBeVisible();
+  await page
+    .getByRole("button", { name: "Open comment history and AI settings" })
+    .click();
+  await page.getByRole("button", { name: "New comment", exact: true }).click();
   await expect(composer).toBeVisible();
+  await expect(
+    composer.getByRole("textbox", { name: "Comment", exact: true }),
+  ).toHaveValue("Discard this unsent draft.");
   await composer
     .getByRole("button", { name: "Close comment composer" })
     .click();
@@ -239,6 +247,8 @@ test("creates an anchored structured thread, replies, responds, hides, and reloa
   const focusShield = page.getByTestId("comment-focus-shield");
   await expect(focusShield).toHaveCount(0);
   await clickUncoveredCanvas(page);
+  await expect(thread).not.toBeVisible();
+  await page.getByRole("button", { name: /Open comment by/ }).click();
   await expect(thread).toBeVisible();
   await thread.getByRole("button", { name: "Close comment thread" }).click();
   await expect(thread).not.toBeVisible();
@@ -1306,6 +1316,7 @@ test("captures a connected selection as ordered AI path context", async ({
 }) => {
   await openFreshCanvas(page);
   await addRectangle(page);
+  await clickUncoveredCanvas(page);
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page
     .getByTestId("catalog-results")
@@ -1359,6 +1370,7 @@ test("repeats an inherited multi-object layout request after undo", async ({
 }) => {
   await openFreshCanvas(page);
   await addRectangle(page);
+  await clickUncoveredCanvas(page);
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page
     .getByTestId("catalog-results")
@@ -1429,6 +1441,7 @@ test("keeps an unconnected ordered-path request and reports the path error inlin
 }) => {
   await openFreshCanvas(page);
   await addRectangle(page);
+  await clickUncoveredCanvas(page);
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page
     .getByTestId("catalog-results")
@@ -1477,6 +1490,7 @@ test("anchors one thread to a complete group and preserves it after target delet
 }) => {
   await openFreshCanvas(page);
   await addRectangle(page);
+  await clickUncoveredCanvas(page);
   await page.getByRole("button", { name: "Shapes", exact: true }).click();
   await page
     .getByTestId("catalog-results")

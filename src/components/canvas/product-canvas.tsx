@@ -2939,6 +2939,11 @@ function ProductCanvasWorkspace({
   }
 
   function onSurfacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.isPrimary && event.button === 0) {
+      setScenePanelOpen(false);
+      // Hide the shared surface without cancelling drafts or workspace AI runs.
+      commentWorkspace.show(null);
+    }
     cancelSceneTransition();
     if (focusedDocumentId !== null) {
       event.preventDefault();

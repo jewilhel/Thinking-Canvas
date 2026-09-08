@@ -400,6 +400,11 @@ The product owner approved the complete plan and its recommended D1–D5 options
 - Additional user request: omit both previous/next buttons entirely while the story has fewer than two scenes; retain the Scenes button and existing navigation/loop behavior once two scenes exist. Browser coverage checks zero, one, multiple, and deletion back to one scene.
 - Verification: `pnpm check` passes (411 unit tests, formatting/lint/types/build); both guided-story Chromium tests pass (15.7s). Runtime commit `9100117` pushed; preview `6aa078c6582d0eed9233ea47` visually verified in Codex internal browser. Original Scene 4 menu exposes all three actions without clipping; selecting another scene dismisses it. Separate hosted `Scene UI regression QA 2026-09-08` fixture verified zero → one → two → one → zero scenes, actual Delete clicks, and arrows present only at two. Both fixture scenes were soft-deleted; the empty QA canvas remains reusable and all four original user scenes are intact. No production deploy, closure, or merge.
 
+### Canvas-click panel dismissal — 2026-09-08
+
+- User authorizes dismissing Scenes and comment panels by clicking the canvas outside them. Primary canvas pointer-down hides these surfaces, without stopping the intended canvas interaction. Panel and toolbar interactions do not dismiss them.
+- Comments use the shared workspace's visibility-only `show(null)` action: drafts, thread identity, and the workspace-level AI service remain alive; no cancellation or deletion is issued. Scene editor state remains mounted as before. Verification pending.
+
 ## Change record
 
 | Date       | Change or decision                                                                                                                             | Rationale                                                                                                                                                           | Impact                                                                                                                                                                                                         | Approved by                                       |

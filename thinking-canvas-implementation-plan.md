@@ -390,6 +390,8 @@ The [2026-09-07 AI reliability audit](docs/implementation/milestone-08-ai-reliab
 
 `FR-092` UI refinement approved 2026-09-08: previous/next scene buttons occupy no toolbar space for zero or one scene; both appear when at least two scenes exist. The scene-editor button remains available at every scene count.
 
+Panel dismissal refinement approved 2026-09-08: clicking the canvas outside Scenes or a comment panel closes the panel, in addition to the close icon. Dismissal preserves unsent comment drafts and does not cancel active workspace AI work.
+
 ## Milestone 10 — Live conversation
 
 ### Product requirements

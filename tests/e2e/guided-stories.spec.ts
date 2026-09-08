@@ -3,6 +3,49 @@ import { expect, test, type Page } from "@playwright/test";
 
 const password = "LocalPassword1!";
 
+test("dismisses scene and comment panels on canvas clicks without losing a draft", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.getByLabel("Canvas name").fill(`Panel dismissal ${Date.now()}`);
+  await page.getByRole("button", { name: "Create canvas" }).click();
+  await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
+  await page.getByRole("button", { name: "Open scenes", exact: true }).click();
+  await page.getByRole("heading", { name: "No scenes", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Scenes", exact: true }),
+  ).toBeVisible();
+  await page.mouse.click(100, 200);
+  await expect(
+    page.getByRole("dialog", { name: "Scenes", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Open comment history and AI settings" })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "Comments", exact: true }),
+  ).toBeVisible();
+  await page.mouse.click(100, 200);
+  await expect(
+    page.getByRole("dialog", { name: "Comments", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Open scenes", exact: true }).click();
+  await page.getByRole("button", { name: "Add Scene", exact: true }).click();
+  await page.getByRole("button", { name: "Add comment", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Comment", exact: true })
+    .fill("Keep this unsent draft");
+  await page.mouse.click(100, 200);
+  await expect(
+    page.getByRole("textbox", { name: "Comment", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Open scenes", exact: true }).click();
+  await page.getByRole("button", { name: "Add comment", exact: true }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Comment", exact: true }),
+  ).toHaveValue("Keep this unsent draft");
+});
+
 test("captures repeated scenes after navigation to maximum zoom without moving the camera", async ({
   page,
 }) => {
@@ -132,7 +175,9 @@ test("manages and reloads live canvas viewport scenes", async ({
     .getAttribute("data-viewport-scale");
 
   await page.getByRole("button", { name: "Open scenes" }).click();
-  await expect(page.getByText("No scenes")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "No scenes", exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Add Scene" }).click();
   await expect(
     page.getByRole("button", { name: "Scene 1", exact: true }),
