@@ -119,6 +119,7 @@ export async function prepareSceneNarration(
   if (!claim.data) return await readNarrationAudio(canvasId, sceneId);
 
   const path = narrationAudioPath(canvasId, sceneId, cached.version);
+  let stage = "scene";
   try {
     const scene = await db
       .from("story_scenes")
@@ -130,15 +131,18 @@ export async function prepareSceneNarration(
     // A recovered lease reuses an already-uploaded file after an interrupted publication.
     const existing = await db.storage.from(bucket).download(path);
     if (existing.error) {
+      stage = "speech";
       const audio = await generateSpeech(scene.data.narration);
       const current = await readNarrationAudio(canvasId, sceneId);
       if (current?.version !== cached.version || current.lease_token !== token)
         return current;
+      stage = "upload";
       const upload = await db.storage
         .from(bucket)
         .upload(path, audio, { contentType: "audio/mpeg", upsert: false });
       if (upload.error) throw upload.error;
     }
+    stage = "publish";
     const published = await db
       .from("scene_narration_audio")
       .update({
@@ -160,7 +164,19 @@ export async function prepareSceneNarration(
       return current;
     }
     return published.data;
-  } catch {
+  } catch (error) {
+    console.error("Scene narration generation failed", {
+      stage,
+      speechConfigured: Boolean(process.env.OPENAI_API_KEY),
+      status:
+        error && typeof error === "object" && "status" in error
+          ? error.status
+          : undefined,
+      code:
+        error && typeof error === "object" && "code" in error
+          ? error.code
+          : undefined,
+    });
     await db
       .from("scene_narration_audio")
       .update({ state: "failed", lease_token: null, lease_until: null })

@@ -66,8 +66,13 @@ export function useStoryNarration(
               retry: retry > 0 && attempt === 0,
             }),
           });
-          if (!response.ok)
-            throw new Error("Narration audio could not be prepared.");
+          if (!response.ok) {
+            const failure = await response.json().catch(() => null);
+            throw new Error(
+              failure?.error ??
+                `Narration audio could not be prepared (${response.status}).`,
+            );
+          }
           const metadata = (await response.json()) as {
             state: string;
             version: string;

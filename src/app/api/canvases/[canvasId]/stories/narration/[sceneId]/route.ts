@@ -45,8 +45,13 @@ export async function POST(request: Request, context: Context) {
     .is("deleted_at", null)
     .eq("stories.canvas_id", ids.canvasId)
     .maybeSingle();
-  if (scene.error || !scene.data)
+  if (scene.error || !scene.data) {
+    console.error("Narration scene lookup failed", {
+      code: scene.error?.code,
+      sceneId: ids.sceneId,
+    });
     return Response.json({ error: "Scene unavailable." }, { status: 404 });
+  }
   if (scene.data.narration !== input.data.narration)
     return Response.json(
       { error: "Narration changed. Reload the story." },
@@ -81,7 +86,14 @@ export async function POST(request: Request, context: Context) {
       { state: audio.state, version: audio.version },
       { headers: { "cache-control": "no-store" } },
     );
-  } catch {
+  } catch (error) {
+    console.error("Narration preparation request failed", {
+      code:
+        error && typeof error === "object" && "code" in error
+          ? error.code
+          : undefined,
+      name: error instanceof Error ? error.name : undefined,
+    });
     return Response.json(
       { error: "Audio preparation failed. Try again." },
       { status: 503 },

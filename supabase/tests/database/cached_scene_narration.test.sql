@@ -1,6 +1,10 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
+set local role service_role;
+select lives_ok($$select s.id, s.narration, s.deleted_at, t.canvas_id from public.story_scenes s join public.stories t on t.id = s.story_id limit 1$$, 'audio worker can read saved narration and canvas association');
+select throws_ok($$select camera from public.story_scenes$$, '42501', null, 'audio worker has no unrelated scene column access');
+reset role;
 delete from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general';
 set local role authenticated;
 select set_config('request.jwt.claim.role', 'authenticated', true);
