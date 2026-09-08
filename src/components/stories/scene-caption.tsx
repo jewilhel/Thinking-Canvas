@@ -10,11 +10,10 @@ export function captionScreenBounds(
   layout: SceneCaptionLayout | null | undefined,
   viewport: Viewport,
   size: Size,
+  contentSize: Size = { width: Math.min(320, size.width - 32), height: 64 },
 ) {
-  const width = layout
-    ? layout.width * viewport.scale
-    : Math.min(560, size.width - 32);
-  const height = layout ? layout.height * viewport.scale : 112;
+  const width = layout ? layout.width * viewport.scale : contentSize.width;
+  const height = layout ? layout.height * viewport.scale : contentSize.height;
   return {
     x: layout
       ? layout.x * viewport.scale + viewport.x
@@ -54,11 +53,20 @@ export function SceneCaption({
   const [draft, setDraft] = useState<SceneCaptionLayout | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const bounds = captionScreenBounds(
-    draft ?? scene.captionLayout,
-    viewport,
-    size,
-  );
+  const bubble = useRef<HTMLElement>(null);
+  const layout = draft ?? scene.captionLayout;
+  const bounds = captionScreenBounds(layout, viewport, size);
+  function measuredBounds() {
+    const element = bubble.current;
+    return captionScreenBounds(
+      layout,
+      viewport,
+      size,
+      element
+        ? { width: element.offsetWidth, height: element.offsetHeight }
+        : undefined,
+    );
+  }
   const gesture = useRef<{
     x: number;
     y: number;
@@ -74,6 +82,7 @@ export function SceneCaption({
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    const bounds = measuredBounds();
     gesture.current = {
       x: event.clientX,
       y: event.clientY,
@@ -145,6 +154,7 @@ export function SceneCaption({
       return;
     event.preventDefault();
     event.stopPropagation();
+    const bounds = measuredBounds();
     const delta = event.shiftKey ? 20 : 5;
     const dx =
       event.key === "ArrowLeft"
@@ -168,14 +178,23 @@ export function SceneCaption({
   }
   return (
     <aside
+      ref={bubble}
       aria-label={`Caption for ${scene.title}`}
       data-testid="story-caption-overlay"
-      className="absolute z-20 flex flex-col overflow-hidden rounded-xl border border-zinc-600 bg-zinc-950/90 text-sm text-white shadow-lg"
+      className="group/caption absolute z-20 flex flex-col overflow-hidden rounded-xl border border-zinc-600 bg-zinc-950/90 text-sm text-white shadow-lg"
       style={{
-        left: bounds.x,
-        top: bounds.y,
-        width: bounds.width,
-        height: bounds.height,
+        left: layout ? bounds.x : "50%",
+        top: layout ? bounds.y : undefined,
+        bottom: layout ? undefined : 90,
+        transform: layout ? undefined : "translateX(-50%)",
+        width: layout ? bounds.width : "max-content",
+        height: layout ? bounds.height : "auto",
+        maxWidth: layout
+          ? undefined
+          : Math.max(120, Math.min(320, size.width - 32)),
+        maxHeight: layout
+          ? undefined
+          : Math.max(48, Math.min(240, size.height - 122)),
         minWidth: 120,
         minHeight: 48,
       }}
@@ -188,7 +207,7 @@ export function SceneCaption({
           aria-label="Move narration bubble"
           title="Drag to move; arrow keys also move the caption"
           disabled={saving}
-          className="flex h-5 shrink-0 cursor-grab touch-none items-center justify-center hover:bg-zinc-800 focus-visible:bg-zinc-700"
+          className="absolute inset-x-0 top-0 flex h-4 cursor-grab touch-none items-center justify-center opacity-0 group-hover/caption:opacity-100 hover:bg-zinc-800 focus-visible:bg-zinc-700 focus-visible:opacity-100 active:opacity-100"
           onPointerDown={(event) => begin(event, "move")}
           onPointerMove={update}
           onPointerUp={finish}
@@ -204,7 +223,7 @@ export function SceneCaption({
           />
         </button>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-2 leading-6 [overflow-wrap:anywhere] whitespace-pre-wrap">
+      <div className="min-h-0 flex-1 overflow-auto px-4 py-4 leading-6 [overflow-wrap:anywhere] whitespace-pre-wrap">
         {scene.narration}
       </div>
       {error ? (
@@ -218,7 +237,7 @@ export function SceneCaption({
           aria-label="Resize narration bubble"
           title="Drag to resize; arrow keys also resize the caption"
           disabled={saving}
-          className="absolute right-0 bottom-0 grid size-5 cursor-nwse-resize touch-none place-items-center rounded-tl bg-zinc-800 text-zinc-400"
+          className="absolute right-0 bottom-0 grid size-5 cursor-nwse-resize touch-none place-items-center rounded-tl bg-zinc-800 text-zinc-400 opacity-0 group-hover/caption:opacity-100 focus-visible:opacity-100 active:opacity-100"
           onPointerDown={(event) => begin(event, "resize")}
           onPointerMove={update}
           onPointerUp={finish}

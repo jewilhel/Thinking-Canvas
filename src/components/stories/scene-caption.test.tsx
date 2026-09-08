@@ -14,6 +14,50 @@ import {
 import type { StoryScene } from "@/stories/story-model";
 afterEach(cleanup);
 describe("scene caption placement", () => {
+  it("hugs unsized text and measures its real bounds before the first author move", async () => {
+    const onSave = vi.fn(async () => true);
+    render(
+      <SceneCaption
+        scene={
+          {
+            id: "a",
+            title: "Opening",
+            narration: "Short caption",
+          } as StoryScene
+        }
+        viewport={{ x: 0, y: 0, scale: 1 }}
+        size={{ width: 1000, height: 800 }}
+        editable
+        onSave={onSave}
+      />,
+    );
+    const bubble = screen.getByRole("complementary");
+    expect(bubble).toHaveStyle({
+      width: "max-content",
+      height: "auto",
+      maxWidth: "320px",
+    });
+    Object.defineProperties(bubble, {
+      offsetWidth: { value: 200 },
+      offsetHeight: { value: 56 },
+    });
+    const move = screen.getByRole("button", { name: "Move narration bubble" });
+    expect(move).toHaveClass(
+      "opacity-0",
+      "group-hover/caption:opacity-100",
+      "focus-visible:opacity-100",
+    );
+    expect(
+      screen.getByRole("button", { name: "Resize narration bubble" }),
+    ).toHaveClass("opacity-0", "group-hover/caption:opacity-100");
+    await act(async () => fireEvent.keyDown(move, { key: "ArrowRight" }));
+    expect(onSave).toHaveBeenCalledWith({
+      x: 405,
+      y: 654,
+      width: 200,
+      height: 56,
+    });
+  });
   it("round-trips layout in world coordinates as the camera moves", () => {
     const layout = { x: 20, y: 40, width: 300, height: 100 };
     const viewport = { x: -100, y: 60, scale: 2 };

@@ -372,6 +372,12 @@ The product owner approved the complete plan and its recommended D1–D5 options
 - Hosted storage evidence: Stage 1 retained version `e00ae134-647d-4be5-9f32-b301fd6f993e`, 67,968 bytes, created at 18:37:55 UTC, across navigation and unrelated scene edits. Temporary scene `75034509-eaee-4929-a7b3-cc4ce250cc8e` generated version `82d51444-675a-4dfc-8d94-615fb9b28598` (192,768 bytes), then editing narration produced only a new version `8f441fab-d2b3-4c1a-886a-785a134582ff` (93,696 bytes). Clearing narration through ordinary keyboard editing removed its metadata and all stored files, with zero cleanup tasks remaining.
 - Removed the temporary fourth scene using the normal recoverable soft-delete action. Original three scenes, narration, caption placement, and Primary AI settings were preserved. No production deployment, PR, merge, protected-CI acceptance, or milestone closure is claimed.
 
+### Caption visual refinement — 2026-09-08
+
+- Product-owner screenshots requested a compact initial caption that hugs its text and hover-only move/resize affordances. Unsized captions now use intrinsic width capped at 320 px, content-driven height capped at 240 px (both constrained by the viewport), and internal scrolling for longer scripts. Existing authored rectangles remain unchanged.
+- Handles are absolutely positioned, hidden at rest, and revealed on bubble hover or their own keyboard-visible focus; they no longer reserve a separate top row. First pointer/keyboard movement measures the actual content-sized rectangle before persisting world coordinates, avoiding a size or position jump.
+- Verification pending: full source gate and hosted compact/wrapped text, hover/focus, first movement, and preserved authored sizing checks.
+
 ## Change record
 
 | Date       | Change or decision                                                                                                                             | Rationale                                                                                                                                                           | Impact                                                                                                                                                                                                         | Approved by                                       |
