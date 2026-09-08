@@ -170,6 +170,26 @@ test("manages and reloads live canvas viewport scenes", async ({
   await expect(page.getByTestId("story-caption-overlay")).toHaveText(
     "Introduce the full canvas before focusing on details.",
   );
+  const caption = page.getByTestId("story-caption-overlay");
+  const captionBefore = await caption.boundingBox();
+  await page
+    .getByRole("button", { name: "Move narration bubble" })
+    .press("ArrowLeft");
+  await expect
+    .poll(async () => (await caption.boundingBox())?.x)
+    .toBeLessThan(captionBefore!.x);
+  await page
+    .getByRole("button", { name: "Resize narration bubble" })
+    .press("ArrowDown");
+  await expect
+    .poll(async () => (await caption.boundingBox())?.height)
+    .toBeGreaterThan(captionBefore!.height);
+  await expect(
+    page.getByRole("switch", { name: "AI narration" }),
+  ).toHaveAttribute("aria-checked", "false");
+  await expect(
+    page.getByRole("button", { name: "Play narration" }),
+  ).toHaveCount(0);
 
   await page.getByRole("button", { name: "Close scenes" }).click();
   await enableTrustedPrimaryAi(page);

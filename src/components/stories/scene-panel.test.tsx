@@ -74,7 +74,10 @@ function renderPanel(
     onAddSceneComment: vi.fn(),
     onOpenSceneThread: vi.fn(),
     onNarrationChange: vi.fn(),
-    narrationPlayingSceneId: null,
+    narrationEnabled: false,
+    narrationStatus: "AI narration ready",
+    narrationPreparing: false,
+    onRetryNarration: vi.fn(),
     narrationError: "",
     onToggleNarration: vi.fn(),
     onDismiss: vi.fn(),
@@ -85,6 +88,23 @@ function renderPanel(
 }
 
 describe("ScenePanel", () => {
+  it("dismisses scene actions outside the menu, on another scene, and with Escape", () => {
+    renderPanel({ story: twoSceneStory, activeSceneId: story.scenes[0]!.id });
+    const menu = screen.getByRole("button", {
+      name: "Scene actions for Opening view",
+    });
+    fireEvent.click(menu);
+    expect(screen.getByRole("button", { name: "Rename" })).toBeVisible();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+    fireEvent.click(menu);
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
+    expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+    fireEvent.click(menu);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+    expect(menu).toHaveFocus();
+  });
   it("explains viewport capture in the empty state", () => {
     const props = renderPanel();
 
@@ -160,10 +180,9 @@ describe("ScenePanel", () => {
       narratedStory.scenes[0],
       "Revised opening.",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Play narration" }));
-    expect(props.onToggleNarration).toHaveBeenCalledWith(
-      narratedStory.scenes[0],
-    );
+    expect(screen.queryByRole("button", { name: "Play narration" })).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "AI narration" }));
+    expect(props.onToggleNarration).toHaveBeenCalledOnce();
   });
 
   it("blocks capture while the canvas is not durably saved", () => {

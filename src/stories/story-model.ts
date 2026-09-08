@@ -25,6 +25,14 @@ export const storyTargetSchema = z.strictObject({
   }),
 });
 
+export const sceneCaptionLayoutSchema = z.strictObject({
+  x: finiteNumber.min(-1e9).max(1e9),
+  y: finiteNumber.min(-1e9).max(1e9),
+  width: finiteNumber.positive().max(1e7),
+  height: finiteNumber.positive().max(1e7),
+});
+export type SceneCaptionLayout = z.infer<typeof sceneCaptionLayoutSchema>;
+
 export const storySceneSchema = z.strictObject({
   id: z.uuid(),
   title: z.string().trim().min(1).max(120),
@@ -32,6 +40,7 @@ export const storySceneSchema = z.strictObject({
   camera: storyCameraSchema,
   target: storyTargetSchema,
   narration: z.string().max(100_000).nullable(),
+  captionLayout: sceneCaptionLayoutSchema.nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -60,6 +69,11 @@ const sceneMutationBase = {
 };
 
 export const storyMutationRequestSchema = z.discriminatedUnion("action", [
+  z.strictObject({
+    action: z.literal("caption_layout"),
+    ...sceneMutationBase,
+    layout: sceneCaptionLayoutSchema.nullable(),
+  }),
   z.strictObject({
     action: z.literal("rename"),
     ...sceneMutationBase,

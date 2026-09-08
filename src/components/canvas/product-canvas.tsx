@@ -193,11 +193,8 @@ import {
   startViewportTransition,
   type ViewportTransition,
 } from "@/stories/story-transition";
-import {
-  connectRealtimeNarration,
-  narrationEventOutcome,
-  type RealtimeConnection,
-} from "@/voice/realtime-webrtc";
+import { useStoryNarration } from "@/stories/use-story-narration";
+import { SceneCaption } from "@/components/stories/scene-caption";
 
 type Props = {
   canvasId: string;
@@ -563,20 +560,12 @@ function ProductCanvasWorkspace({
     () => void reloadStory(),
     [reloadStory],
   );
-  const narrationConnectionRef = useRef<RealtimeConnection | null>(null);
-  const narrationRequestRef = useRef(0);
-  const [narrationPlayingSceneId, setNarrationPlayingSceneId] = useState<
-    string | null
-  >(null);
-  const [narrationError, setNarrationError] = useState("");
-  useEffect(
-    () => () => {
-      narrationRequestRef.current += 1;
-      narrationConnectionRef.current?.disconnect();
-    },
-    [],
-  );
   const storyScenes = storyState.story?.scenes ?? [];
+  const narrationAudio = useStoryNarration(
+    canvasId,
+    storyScenes,
+    activeSceneId,
+  );
   const activeSceneIndex = storyScenes.findIndex(
     (scene) => scene.id === activeSceneId,
   );
@@ -2516,6 +2505,7 @@ function ProductCanvasWorkspace({
 
   function chooseScene(scene: StoryScene) {
     stopSceneNarration();
+    narrationAudio.revisit();
     cancelSceneTransition();
     if (scene.id !== activeSceneId) {
       const openThread = commentWorkspace.threads.find(
@@ -2587,51 +2577,7 @@ function ProductCanvasWorkspace({
   }
 
   function stopSceneNarration() {
-    narrationRequestRef.current += 1;
-    narrationConnectionRef.current?.disconnect();
-    narrationConnectionRef.current = null;
-    setNarrationPlayingSceneId(null);
-  }
-
-  async function toggleSceneNarration(scene: StoryScene) {
-    if (narrationPlayingSceneId === scene.id) {
-      stopSceneNarration();
-      return;
-    }
-    stopSceneNarration();
-    if (!scene.narration) return;
-    const requestId = narrationRequestRef.current;
-    setNarrationError("");
-    setNarrationPlayingSceneId(scene.id);
-    try {
-      const connection = await connectRealtimeNarration(
-        canvasId,
-        scene.narration,
-        (event) => {
-          if (requestId !== narrationRequestRef.current) return;
-          // Generation can finish while seconds of audio remain buffered.
-          const outcome = narrationEventOutcome(event);
-          if (outcome === "ended") stopSceneNarration();
-          if (outcome === "failed") {
-            setNarrationError("Narration audio could not be completed.");
-            stopSceneNarration();
-          }
-        },
-      );
-      if (requestId !== narrationRequestRef.current) {
-        connection.disconnect();
-        return;
-      }
-      narrationConnectionRef.current = connection;
-    } catch (error) {
-      if (requestId !== narrationRequestRef.current) return;
-      setNarrationError(
-        error instanceof Error
-          ? error.message
-          : "Narration audio could not be started.",
-      );
-      stopSceneNarration();
-    }
+    narrationAudio.stop();
   }
 
   async function replaceScene(scene: StoryScene) {
@@ -5090,20 +5036,33 @@ function ProductCanvasWorkspace({
         onNarrationChange={(scene, narration) =>
           void saveSceneNarration(scene, narration)
         }
-        narrationPlayingSceneId={narrationPlayingSceneId}
-        narrationError={narrationError}
-        onToggleNarration={(scene) => void toggleSceneNarration(scene)}
+        narrationEnabled={narrationAudio.enabled}
+        narrationError={narrationAudio.error}
+        narrationStatus={narrationAudio.status}
+        narrationPreparing={narrationAudio.preparing}
+        onToggleNarration={() => void narrationAudio.toggle()}
+        onRetryNarration={narrationAudio.retry}
         onDismiss={() => setScenePanelOpen(false)}
       />
 
       {activeScene?.narration ? (
-        <aside
-          aria-label={`Caption for ${activeScene.title}`}
-          data-testid="story-caption-overlay"
-          className="pointer-events-none absolute bottom-20 left-1/2 z-20 max-w-[min(42rem,calc(100%_-_2rem))] -translate-x-1/2 rounded-xl bg-zinc-950/85 px-4 py-2 text-center text-sm leading-6 text-white shadow-lg"
-        >
-          {activeScene.narration}
-        </aside>
+        <SceneCaption
+          key={activeScene.id}
+          scene={activeScene}
+          viewport={viewport}
+          size={size}
+          editable={canMutateCanvas && !storyState.saving}
+          onSave={async (layout) =>
+            Boolean(
+              await storyState.mutate({
+                action: "caption_layout",
+                sceneId: activeScene.id,
+                expectedRevision: storyState.story?.revision ?? 0,
+                layout,
+              }),
+            )
+          }
+        />
       ) : null}
 
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">

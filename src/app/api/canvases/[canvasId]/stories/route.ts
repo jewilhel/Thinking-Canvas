@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { after } from "next/server";
+import { prepareCanvasNarration } from "@/stories/narration-audio-service";
 
 import { getAuthenticatedUser } from "@/lib/auth/session";
 import type { Json } from "@/lib/supabase/database.types";
@@ -17,7 +19,7 @@ async function loadPrimaryStory(
   const result = await supabase
     .from("stories")
     .select(
-      "id,title,revision,story_scenes(id,title,position,camera,target,narration,deleted_at,created_at,updated_at)",
+      "id,title,revision,story_scenes(id,title,position,camera,target,narration,caption_layout,deleted_at,created_at,updated_at)",
     )
     .eq("canvas_id", canvasId)
     .eq("kind", "general")
@@ -38,6 +40,7 @@ async function loadPrimaryStory(
         camera: scene.camera,
         target: scene.target,
         narration: scene.narration,
+        captionLayout: scene.caption_layout,
         createdAt: scene.created_at,
         updatedAt: scene.updated_at,
       })),
@@ -68,6 +71,7 @@ async function refreshedStoryResponse(
   supabase: Awaited<ReturnType<typeof createClient>>,
   canvasId: string,
 ) {
+  after(() => prepareCanvasNarration(canvasId));
   return Response.json(
     { story: await loadPrimaryStory(supabase, canvasId) },
     { headers: { "cache-control": "no-store" } },
@@ -162,39 +166,46 @@ export async function PATCH(
   const supabase = await createClient();
   const input = parsed.data;
   const result =
-    input.action === "reorder"
-      ? await supabase.rpc("reorder_primary_story_scenes", {
+    input.action === "caption_layout"
+      ? await supabase.rpc("update_scene_caption_layout", {
           target_canvas_id: canvasId,
-          target_scene_ids: input.sceneIds,
+          target_scene_id: input.sceneId,
           target_expected_revision: input.expectedRevision,
+          target_layout: input.layout,
         })
-      : input.action === "restore"
-        ? await supabase.rpc("restore_primary_story_scene", {
+      : input.action === "reorder"
+        ? await supabase.rpc("reorder_primary_story_scenes", {
             target_canvas_id: canvasId,
-            target_scene_id: input.sceneId,
+            target_scene_ids: input.sceneIds,
             target_expected_revision: input.expectedRevision,
           })
-        : input.action === "narration"
-          ? await supabase.rpc("update_primary_story_scene_narration", {
+        : input.action === "restore"
+          ? await supabase.rpc("restore_primary_story_scene", {
               target_canvas_id: canvasId,
               target_scene_id: input.sceneId,
               target_expected_revision: input.expectedRevision,
-              target_narration: input.narration,
             })
-          : await supabase.rpc("update_primary_story_scene", {
-              target_canvas_id: canvasId,
-              target_scene_id: input.sceneId,
-              target_expected_revision: input.expectedRevision,
-              target_title: input.action === "rename" ? input.title : null,
-              target_camera:
-                input.action === "replace"
-                  ? (input.camera as unknown as Json)
-                  : null,
-              target_region:
-                input.action === "replace"
-                  ? (input.target as unknown as Json)
-                  : null,
-            });
+          : input.action === "narration"
+            ? await supabase.rpc("update_primary_story_scene_narration", {
+                target_canvas_id: canvasId,
+                target_scene_id: input.sceneId,
+                target_expected_revision: input.expectedRevision,
+                target_narration: input.narration,
+              })
+            : await supabase.rpc("update_primary_story_scene", {
+                target_canvas_id: canvasId,
+                target_scene_id: input.sceneId,
+                target_expected_revision: input.expectedRevision,
+                target_title: input.action === "rename" ? input.title : null,
+                target_camera:
+                  input.action === "replace"
+                    ? (input.camera as unknown as Json)
+                    : null,
+                target_region:
+                  input.action === "replace"
+                    ? (input.target as unknown as Json)
+                    : null,
+              });
   if (result.error) return mutationError(result.error);
   try {
     return refreshedStoryResponse(supabase, canvasId);

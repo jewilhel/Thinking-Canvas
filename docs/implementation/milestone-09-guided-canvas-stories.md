@@ -24,7 +24,7 @@ This plan covers one milestone only. It does not change Milestone 8's still-open
 - `FR-057 — Explore while paused.` A viewer can pan and inspect freely while playback is paused at a scene.
 - `FR-058 — Return to scene target.` Next or previous navigation smoothly returns from an explored viewport to the selected scene target.
 - `FR-059 — Relevant scene comments.` Scene-specific comments appear at the correct point in playback and do not leak into unrelated scenes.
-- `FR-060 — AI narration.` The primary AI can narrate a story through the approved live-voice path, with captions or equivalent text available.
+- `FR-060 — AI narration.` The primary AI narrates saved scenes using reusable synthesized audio with equivalent captions, per the 2026-09-08 cached-audio revision in the master ledger. One story-wide audio toggle enables playback on scene navigation; changed/deleted narration invalidates its cached audio.
 - `FR-061 — Live-linked story.` Story order, framing, and narration persist while rendered canvas content reflects current board state.
 - `FR-062 — Linear-only first version.` Creation and playback expose one ordered path and do not imply unsupported branching.
 - `FR-092 — Viewport-captured scene management.` A participant can position and zoom the canvas, add the current view as a scene, see the scene in a simplified ordered list, drag scenes into a new order, rename a scene, replace its captured view from the current viewport, delete it, and move to the previous or next scene through dedicated controls. The scene-editor control sits between previous and next. Scene rows expose no repeated visible reorder controls; focused rows retain keyboard reordering through `Alt+ArrowUp` / `Alt+ArrowDown`. A persistent per-user, per-canvas **Loop** toggle enables or disables wrapping from either sequence end. The scene panel can be moved by a thin top handle and resized from its left edge between a nominal 320 px minimum and 640 px maximum while remaining clamped to the viewport. Scene management does not expose print or PDF export actions.
@@ -254,6 +254,18 @@ This plan covers one milestone only. It does not change Milestone 8's still-open
 - Production deployment, production configuration, merge, or closure without their separate approvals.
 
 ## Implementation record
+
+### Approved narration cache revision — 2026-09-08
+
+The product owner requested outside-click/scene-selection dismissal for scene menus, one audio toggle immediately left of Loop, automatic narration on scene navigation, and reusable cached audio regenerated only for new/changed scripts and deleted with narration. This supersedes D4's original per-scene output-only Realtime/no-stored-audio implementation. The master `FR-060` and `PD-008` record this explicit approval; no additional approval gate is required.
+
+Implementation: private Supabase Storage files with server-owned per-scene version/lease metadata, transactional invalidation from human or AI narration mutations, retryable deletion cleanup, and an authenticated preparation/download boundary. Use OpenAI speech generation for saved scripts, not a new Realtime generation on every visit. Prepare missing versions ahead of playback and preload bytes locally. A changed or unprepared script shows a preparation state; already prepared navigation uses only local audio. Stale generation must never publish over a newer script. Scene deletion removes cached audio; Undo may regenerate it from retained narration. No microphone is used.
+
+Verification includes outside click/Escape/other-scene menu dismissal; global toggle and arrow navigation; same-version cache hits across repeat visits/reload; changed-text invalidation; deleted-text/file cleanup; concurrent preparation deduplication; stale generation rejection; access control; browser playback and cancellation; and existing scene lifecycle regressions.
+
+The product owner also requested movable/resizable narration bubbles. Each scene now persists an optional world-space caption rectangle through a revision-checked owner/editor RPC. Captions follow the canvas framing, wrap text within the saved width, scroll inside a bounded height, and expose pointer plus keyboard move/resize controls to authors. Caption layout does not invalidate narration audio.
+
+Local validation for this revision: `pnpm check` passed 81 test files / 406 tests and production build; `pnpm db:test` passed 10 files / 391 checks; authenticated guided-story Chromium passed 1/1 including caption move/resize persistence, global-toggle placement, scene lifecycle, tablet/reduced-motion, and Axe. Local tests use the fake AI environment and do not count as live speech/storage acceptance; hosted cache-generation/reuse/deletion checks remain before handoff.
 
 The product owner approved the complete plan and its recommended D1–D5 options on 2026-09-07 and authorized dependency-ordered implementation with one local commit per completed slice. Push, pull-request creation, hosted deployment, closure, merge, and production configuration remain separate gates.
 

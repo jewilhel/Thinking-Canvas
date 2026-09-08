@@ -1232,6 +1232,69 @@ export type Database = {
           },
         ]
       }
+      scene_narration_audio: {
+        Row: {
+          canvas_id: string
+          lease_token: string | null
+          lease_until: string | null
+          scene_id: string
+          state: string
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          canvas_id: string
+          lease_token?: string | null
+          lease_until?: string | null
+          scene_id: string
+          state?: string
+          updated_at?: string
+          version?: string
+        }
+        Update: {
+          canvas_id?: string
+          lease_token?: string | null
+          lease_until?: string | null
+          scene_id?: string
+          state?: string
+          updated_at?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scene_narration_audio_canvas_id_fkey"
+            columns: ["canvas_id"]
+            isOneToOne: false
+            referencedRelation: "canvases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scene_narration_audio_scene_id_fkey"
+            columns: ["scene_id"]
+            isOneToOne: true
+            referencedRelation: "story_scenes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scene_narration_audio_cleanup: {
+        Row: {
+          canvas_id: string
+          created_at: string
+          path: string
+        }
+        Insert: {
+          canvas_id: string
+          created_at?: string
+          path: string
+        }
+        Update: {
+          canvas_id?: string
+          created_at?: string
+          path?: string
+        }
+        Relationships: []
+      }
       starter_templates: {
         Row: {
           created_at: string
@@ -1328,6 +1391,7 @@ export type Database = {
       story_scenes: {
         Row: {
           camera: Json
+          caption_layout: Json | null
           created_at: string
           deleted_at: string | null
           id: string
@@ -1341,6 +1405,7 @@ export type Database = {
         }
         Insert: {
           camera: Json
+          caption_layout?: Json | null
           created_at?: string
           deleted_at?: string | null
           id?: string
@@ -1354,6 +1419,7 @@ export type Database = {
         }
         Update: {
           camera?: Json
+          caption_layout?: Json | null
           created_at?: string
           deleted_at?: string | null
           id?: string
@@ -1887,6 +1953,15 @@ export type Database = {
           target_canvas_id: string
           target_expected_revision: number
           target_narration: string | null
+          target_scene_id: string
+        }
+        Returns: number
+      }
+      update_scene_caption_layout: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_layout: Json
           target_scene_id: string
         }
         Returns: number

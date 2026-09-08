@@ -1,4 +1,5 @@
 import "server-only";
+import { prepareCanvasNarration } from "@/stories/narration-audio-service";
 
 import { z } from "zod";
 
@@ -706,6 +707,7 @@ export async function completeAiRun(
         sceneId: toolResult.data[0].scene_id,
         created: toolResult.data[0].created,
       });
+      await prepareCanvasNarration(run.canvas_id);
       replySections.push(
         toolArguments.action === "create"
           ? "The new scene is in the story."
