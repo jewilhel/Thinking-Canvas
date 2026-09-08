@@ -395,9 +395,10 @@ The product owner approved the complete plan and its recommended D1–D5 options
 
 - User screenshot from preview `6aa0765cacc144146703675e` shows the last scene's Delete action clipped by the rounded scene list. Source confirms the absolute menu was inside both the list's `overflow-hidden` boundary and the panel scroll container.
 - Render actions through a body portal with fixed, window-clamped placement above the panel. Preserve outside-click, scene selection, and Escape dismissal; dismiss on scrolling/resizing so a detached menu cannot remain behind as its anchor moves. Scene deletion semantics are unchanged.
-- Added component coverage for portal placement, bottom-edge clamping, last-scene deletion callback, and scroll dismissal. Added real pointer deletion of the final scene to the isolated browser regression test. Verification pending; no original user scene is to be deleted for QA.
+- Added component coverage for portal placement, bottom-edge clamping, last-scene deletion callback, and scroll dismissal. Added real pointer deletion of the final scene to the isolated browser regression test.
 
 - Additional user request: omit both previous/next buttons entirely while the story has fewer than two scenes; retain the Scenes button and existing navigation/loop behavior once two scenes exist. Browser coverage checks zero, one, multiple, and deletion back to one scene.
+- Verification: `pnpm check` passes (411 unit tests, formatting/lint/types/build); both guided-story Chromium tests pass (15.7s). Runtime commit `9100117` pushed; preview `6aa078c6582d0eed9233ea47` visually verified in Codex internal browser. Original Scene 4 menu exposes all three actions without clipping; selecting another scene dismisses it. Separate hosted `Scene UI regression QA 2026-09-08` fixture verified zero → one → two → one → zero scenes, actual Delete clicks, and arrows present only at two. Both fixture scenes were soft-deleted; the empty QA canvas remains reusable and all four original user scenes are intact. No production deploy, closure, or merge.
 
 ## Change record
 
