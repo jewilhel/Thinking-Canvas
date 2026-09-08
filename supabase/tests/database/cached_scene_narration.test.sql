@@ -1,0 +1,37 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+select no_plan();
+set local role service_role;
+select lives_ok($$select s.id, s.narration, s.deleted_at, t.canvas_id from public.story_scenes s join public.stories t on t.id = s.story_id limit 1$$, 'audio worker can read saved narration and canvas association');
+select throws_ok($$select camera from public.story_scenes$$, '42501', null, 'audio worker has no unrelated scene column access');
+reset role;
+delete from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general';
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+select * from public.capture_primary_story_scene('20000000-0000-4000-8000-000000000001', 'Cache test',
+  '{"version":1,"center":{"x":100,"y":80},"zoom":1.25}',
+  '{"version":1,"kind":"viewport","bounds":{"x":0,"y":0,"width":800,"height":600}}', null);
+reset role;
+create temporary table tested_scene as select id from public.story_scenes where title = 'Cache test';
+update public.story_scenes set narration = 'Saved script' where id = (select id from tested_scene);
+select is((select state from public.scene_narration_audio where scene_id = (select id from tested_scene)), 'pending', 'new text queues one audio version');
+create temporary table first_version as select version from public.scene_narration_audio where scene_id = (select id from tested_scene);
+update public.scene_narration_audio set state = 'ready' where scene_id = (select id from tested_scene);
+update public.story_scenes set narration = 'Saved script', title = 'Cache test renamed' where id = (select id from tested_scene);
+select is((select version from public.scene_narration_audio where scene_id = (select id from tested_scene)), (select version from first_version), 'unchanged narration and scene renames reuse the audio');
+update public.story_scenes set narration = 'Changed script' where id = (select id from tested_scene);
+select isnt((select version from public.scene_narration_audio where scene_id = (select id from tested_scene)), (select version from first_version), 'changed narration invalidates the prior version');
+select is((select count(*) from public.scene_narration_audio_cleanup where path like '%' || (select version::text from first_version) || '.mp3'), 1::bigint, 'old file is queued for removal');
+select is((select public from storage.buckets where id = 'scene-narration'), false, 'audio bucket is private');
+set local role authenticated;
+select throws_ok($$select * from public.scene_narration_audio$$, '42501', null, 'clients cannot bypass authenticated audio routes');
+reset role;
+select lives_ok($$select public.update_scene_caption_layout('20000000-0000-4000-8000-000000000001', (select id from tested_scene), 1, '{"x":20,"y":40,"width":300,"height":120}')$$, 'owner saves caption world layout');
+select is((select caption_layout->>'width' from public.story_scenes where id = (select id from tested_scene)), '300', 'caption width persists');
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000004', true);
+select throws_ok($$select public.update_scene_caption_layout('20000000-0000-4000-8000-000000000001', (select id from tested_scene), 2, '{"x":0,"y":0,"width":300,"height":120}')$$, '42501', null, 'viewer cannot move an authored caption');
+update public.story_scenes set narration = null where id = (select id from tested_scene);
+select is((select count(*) from public.scene_narration_audio where scene_id = (select id from tested_scene)), 0::bigint, 'deleting narration removes its cached version immediately');
+select * from finish();
+rollback;

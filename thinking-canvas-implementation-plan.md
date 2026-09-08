@@ -4,7 +4,7 @@ Status: Milestones 0–7 closed; Milestone 8 product accepted and closure approv
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-09-02
+Last updated: 2026-09-07
 
 ## Purpose
 
@@ -373,19 +373,26 @@ The [2026-09-07 AI reliability audit](docs/implementation/milestone-08-ai-reliab
 
 ### Product requirements
 
-- [ ] **FR-054 — Create linear story.** A participant or permitted AI can create a guided story from an ordered sequence of canvas scenes.
-- [ ] **FR-055 — Scene data.** Each scene persists target region, camera framing, zoom, and optional contextual comments or narration.
-- [ ] **FR-056 — Smooth navigation.** Playback animates from the current viewport to the selected next or previous scene without a visual jump.
-- [ ] **FR-057 — Explore while paused.** A viewer can pan and inspect freely while playback is paused at a scene.
-- [ ] **FR-058 — Return to scene target.** Next or previous navigation smoothly returns from an explored viewport to the selected scene target.
-- [ ] **FR-059 — Relevant scene comments.** Scene-specific comments appear at the correct point in playback and do not leak into unrelated scenes.
-- [ ] **FR-060 — AI narration.** The primary AI can narrate a story through the approved live-voice path, with captions or equivalent text available.
-- [ ] **FR-061 — Live-linked story.** Story order, framing, and narration persist while rendered canvas content reflects current board state.
-- [ ] **FR-062 — Linear-only first version.** Creation and playback expose one ordered path and do not imply unsupported branching.
+- [x] **FR-054 — Create linear story.** A participant or permitted AI can create a guided story from an ordered sequence of canvas scenes.
+- [x] **FR-055 — Scene data.** Each scene persists target region, camera framing, zoom, and optional contextual comments or narration.
+- [x] **FR-056 — Smooth navigation.** Playback animates from the current viewport to the selected next or previous scene without a visual jump.
+- [x] **FR-057 — Explore while paused.** A viewer can pan and inspect freely while playback is paused at a scene.
+- [x] **FR-058 — Return to scene target.** Next or previous navigation smoothly returns from an explored viewport to the selected scene target.
+- [x] **FR-059 — Relevant scene comments.** Scene-specific comments appear at the correct point in playback and do not leak into unrelated scenes.
+- [x] **FR-060 — AI narration.** The primary AI can narrate a story with captions or equivalent text available. Per the 2026-09-08 product-owner revision, scene scripts generate reusable audio in private storage when created or changed. One story-wide audio toggle beside Loop enables automatic playback during scene navigation; preload cached audio before presentation, do not regenerate unchanged scripts, and delete invalidated audio when narration is removed. Live conversational voice remains Milestone 10's Realtime path.
+- [x] **FR-061 — Live-linked story.** Story order, framing, and narration persist while rendered canvas content reflects current board state.
+- [x] **FR-062 — Linear-only first version.** Creation and playback expose one ordered path and do not imply unsupported branching.
+- [x] **FR-092 — Viewport-captured scene management.** A participant can position and zoom the canvas, add the current view as a scene, see the scene in a simplified ordered list, drag scenes into a new order, rename a scene, replace its captured view from the current viewport, delete it, and move to the previous or next scene through dedicated controls. The scene-editor control sits between previous and next. Scene rows expose no repeated visible reorder controls; focused rows retain keyboard reordering through `Alt+ArrowUp` / `Alt+ArrowDown`. A persistent per-user, per-canvas **Loop** toggle enables or disables wrapping from either sequence end. The scene panel can be moved by a thin top handle and resized from its left edge between a nominal 320 px minimum and 640 px maximum while remaining clamped to the viewport. Scene management does not expose print or PDF export actions.
 
 ### Exit gate
 
-- [ ] A saved story plays from beginning to end after underlying objects are edited, moved, and reloaded; reduced-motion mode substitutes an accessible non-sweeping transition.
+- [x] A saved story plays from beginning to end after underlying objects are edited, moved, and reloaded; reduced-motion mode substitutes an accessible non-sweeping transition.
+
+Evidence: the [Milestone 9 guided canvas stories plan](docs/implementation/milestone-09-guided-canvas-stories.md) records the slice-by-slice implementation, hosted product review, narration-cache verification, live-linked scene and collaboration checks, accessibility and reduced-motion coverage, and product-owner closure approval. [PR #15](https://github.com/jewilhel/Thinking-Canvas/pull/15) implementation candidate `12b75f9` passed protected [CI run 34284737830](https://github.com/jewilhel/Thinking-Canvas/actions/runs/34284737830), including formatting, lint, types, 411 unit tests, clean database/RLS tests, production build, and the complete authenticated browser/accessibility suite. Git-backed Netlify deploy `6aa0886b4f424f00087afd1c` reported `ready`, no deploy error, and an exact matching `commit_ref`; authenticated Codex in-app-browser verification confirmed the synchronized five-scene story, bidirectional camera/caption navigation, scene context, and cached narration readiness. The product owner approved closure on 2026-09-08. Merge and production verification remain separate.
+
+`FR-092` UI refinement approved 2026-09-08: previous/next scene buttons occupy no toolbar space for zero or one scene; both appear when at least two scenes exist. The scene-editor button remains available at every scene count.
+
+Panel dismissal refinement approved 2026-09-08: clicking the canvas outside Scenes or a comment panel closes the panel, in addition to the close icon. Dismissal preserves unsent comment drafts and does not cancel active workspace AI work.
 
 ## Milestone 10 — Live conversation
 
@@ -507,6 +514,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [x] **PD-006 — Permission ownership:** only the canvas owner may enable or disable the primary AI and change its authority; editors may invoke tools allowed by the selected authority, commenters may invoke comment-only interaction when enabled, and viewers remain read-only. Approved by the product owner with the Milestone 4 plan on 2026-08-24.
 - [ ] **PD-007 — Performance budgets:** approve target hardware, representative canvas size, latency thresholds, and maximum acceptable degradation.
 - [ ] **PD-008 — Voice data:** approve consent, transcript visibility, retention, deletion, and whether audio is ever recorded.
+  - 2026-09-08: Product owner approved storing synthesized scene narration as a cache of the saved script, replacing it on text changes and deleting it when narration is removed. This does not authorize microphone recording or conversation-audio retention.
 - [x] **PD-009 — Offline behavior:** decide whether the first version supports deliberate offline editing or only temporary disconnect recovery. **Decision:** the first version supports temporary disconnect recovery only; a fully loaded canvas may retain and retry pending edits through a transient connection loss, while deliberate offline entry and opening an uncached canvas offline remain unsupported.
 - [ ] **PD-010 — Export and portability:** decide whether a user-facing export is a launch requirement; it is prudent for recovery but not stated in the source brief.
 - [x] **PD-011 — AI visual grounding and layout assistance:** keep the complete semantic canvas projection and stable object IDs authoritative; add validated deterministic layout tools for manipulation; use bounded targeted before-and-after render captures only as supplementary vision context and never as mutation authority. The bounded core is Milestone 5 scope, with broader starter-structure composition deferred to Milestone 11. Approved by the product owner on 2026-08-26.
@@ -522,6 +530,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [x] **PD-021 — Markdown-aligned document formatting:** supersede the first-version underline portion of sourced `FR-047` and limit selected-range document text controls to the Markdown-aligned semantic formatting in `FR-091`. Range-level typeface, font size, color, alignment, and underline remain outside Milestone 8; document-wide display font and reading size are permitted only as the non-semantic settings defined by `FR-090`. Approved by the product owner on 2026-09-02.
 - [x] **PD-022 — Documents do not contain canvas objects:** remove document nesting for shapes, icons, text objects, connectors, tables, annotations, and groups. Overlap and modifier-drag leave those objects on the parent canvas; do not expose place/remove actions or an embedded-object layer. Retain compatibility reads for previously saved ownership fields without silently deleting saved objects. Approved by the product owner after hosted-preview review on 2026-09-04.
 - [x] **PD-023 — Immediate Markdown file actions:** export downloads immediately without a loss-confirmation dialog. Import validates and replaces the document immediately, converts filename dashes and underscores to spaces, capitalizes each word, and keeps the resulting title freely editable. Native Command/Control-C and Command/Control-V remain the clipboard interactions. Approved by the product owner after hosted-preview review on 2026-09-04.
+- [x] **PD-024 — Viewport-captured scene workflow:** create a scene by capturing the canvas's current position and zoom through an **Add Scene** action; present scenes as an ordered, draggable list; allow rename, replacement from the current view, and deletion; and provide previous/next scene controls whose canvas transitions feel exceptionally smooth. Place the scene-editor control between previous and next; expose no repeated visible reorder controls while retaining focused-row keyboard shortcuts; make bidirectional end wrapping an enabled-by-default, persistent per-user/per-canvas **Loop** preference; and let users move the scene panel from a thin top handle or resize its left edge within viewport-clamped 320–640 px nominal bounds. Do not add scene printing or PDF export. Initial workflow approved by the product owner on 2026-09-07 using three supplied interaction-reference screenshots; motion accepted and control/list/loop refinement approved through hosted-preview review on 2026-09-07; reorder-control removal and movable/resizable panel behavior approved through replacement-preview review on 2026-09-07.
 
 ## Explicitly deferred
 

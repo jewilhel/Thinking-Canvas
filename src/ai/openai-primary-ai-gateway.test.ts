@@ -22,7 +22,10 @@ import {
   parsePrimaryAiProviderEnvironment,
 } from "@/ai/primary-ai-gateway-factory";
 import { AiProviderTimeoutError } from "@/ai/primary-ai-gateway";
-import { allowedAiToolNames } from "@/ai/tool-registry";
+import {
+  allowedAiToolNames,
+  allowedSceneAiToolNames,
+} from "@/ai/tool-registry";
 
 const ids = {
   run: "00000000-0000-4000-8000-000000000001",
@@ -222,6 +225,44 @@ describe("OpenAiPrimaryAiGateway", () => {
     expect(serialized).toContain('\\"shapes\\"');
     expect(serialized).toContain('\\"key\\"');
     expect(serialized).not.toContain("new-shape:${shape.key}");
+  });
+
+  it("accepts the strict trusted scene action only in a scene allowlist", async () => {
+    const client = clientReturning(
+      providerResponse({
+        body: "I added the closing scene.",
+        evidence: [{ objectId: ids.object, label: "Customer assumption" }],
+        contextualTargetObjectIds: [],
+        toolCalls: [
+          {
+            callKey: "story-scene-1",
+            toolName: "execute_story_scene",
+            argumentsJson: JSON.stringify({
+              action: "create",
+              title: "Closing scene",
+              narration: "End on the outcome.",
+              targetObjectIds: [ids.object],
+            }),
+          },
+        ],
+      }),
+    );
+    const gateway = new OpenAiPrimaryAiGateway({ apiKey: "test-key", client });
+
+    await expect(
+      gateway.request({
+        invocation: { ...invocation, authority: "trusted_editor" },
+        projection,
+        allowedToolNames: [...allowedSceneAiToolNames("trusted_editor")],
+      }),
+    ).resolves.toMatchObject({
+      toolCalls: [
+        {
+          toolName: "execute_story_scene",
+          arguments: { action: "create", title: "Closing scene" },
+        },
+      ],
+    });
   });
 
   it("keeps provider-facing document edits compact and validates them before returning", async () => {

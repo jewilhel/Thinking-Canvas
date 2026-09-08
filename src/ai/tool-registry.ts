@@ -317,6 +317,33 @@ export const contextualCommentArgumentsSchema = z
     }
   });
 
+export const storySceneArgumentsSchema = z.discriminatedUnion("action", [
+  z.strictObject({
+    action: z.literal("create"),
+    title: z.string().trim().min(1).max(120),
+    narration: z.string().trim().min(1).max(100_000).optional(),
+    targetObjectIds: z
+      .array(uuid)
+      .min(1)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "Scene framing objects must be unique.",
+      }),
+  }),
+  z
+    .strictObject({
+      action: z.literal("update_current"),
+      title: z.string().trim().min(1).max(120).optional(),
+      narration: z.string().trim().min(1).max(100_000).optional(),
+    })
+    .refine(
+      (value) => value.title !== undefined || value.narration !== undefined,
+      {
+        message: "A current-scene update requires a title or narration.",
+      },
+    ),
+]);
+
 export const AI_TOOL_REGISTRY = {
   inspect_canvas_objects: {
     effect: "read" as const,
@@ -344,6 +371,13 @@ export const AI_TOOL_REGISTRY = {
     description:
       "Create one AI-authored contextual comment through the existing comment permission and persistence boundary.",
     argumentsSchema: contextualCommentArgumentsSchema,
+  },
+  execute_story_scene: {
+    effect: "mutation" as const,
+    minimumAuthority: "trusted_editor" as const,
+    description:
+      "Create one grounded scene from live canvas objects or update the invoking scene's title or narration. The server determines scene identity, framing, and order.",
+    argumentsSchema: storySceneArgumentsSchema,
   },
   propose_canvas_commands: {
     effect: "proposal" as const,
@@ -426,11 +460,21 @@ const authorityRank: Record<AiAuthorityLevel, number> = {
   trusted_editor: 3,
 };
 
+export function isAiToolAllowedByAuthority(
+  authority: AiAuthorityLevel,
+  name: AiToolName,
+) {
+  return (
+    authorityRank[authority] >=
+    authorityRank[AI_TOOL_REGISTRY[name].minimumAuthority]
+  );
+}
+
 export function allowedAiToolNames(authority: AiAuthorityLevel) {
   return (Object.keys(AI_TOOL_REGISTRY) as AiToolName[]).filter(
     (name) =>
-      authorityRank[authority] >=
-      authorityRank[AI_TOOL_REGISTRY[name].minimumAuthority],
+      name !== "execute_story_scene" &&
+      isAiToolAllowedByAuthority(authority, name),
   );
 }
 
@@ -453,6 +497,15 @@ export function allowedDocumentRangeAiToolNames(authority: AiAuthorityLevel) {
   return allowed.length > 0
     ? allowed
     : (["create_contextual_comment"] as const);
+}
+
+export function allowedSceneAiToolNames(authority: AiAuthorityLevel) {
+  const names: AiToolName[] = [
+    "inspect_canvas_objects",
+    "inspect_comment_threads",
+  ];
+  if (authority === "trusted_editor") names.push("execute_story_scene");
+  return names;
 }
 
 export class AiToolPermissionError extends Error {
@@ -478,7 +531,7 @@ export function validateAiToolRequest(input: {
     throw new AiToolNotFoundError(input.toolName);
   }
   const toolName = input.toolName as AiToolName;
-  if (!allowedAiToolNames(input.authority).includes(toolName)) {
+  if (!isAiToolAllowedByAuthority(input.authority, toolName)) {
     throw new AiToolPermissionError(toolName);
   }
   const definition = AI_TOOL_REGISTRY[toolName];

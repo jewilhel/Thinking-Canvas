@@ -157,6 +157,22 @@ describe("comment model", () => {
         ...base,
         targetObjectIds: [],
         canvasAnchor: null,
+        sceneId: "61000000-0000-4000-8000-000000000002",
+      }).success,
+    ).toBe(true);
+    expect(
+      commentCreateCommandSchema.safeParse({
+        ...base,
+        targetObjectIds: ["61000000-0000-4000-8000-000000000001"],
+        canvasAnchor: null,
+        sceneId: "61000000-0000-4000-8000-000000000002",
+      }).success,
+    ).toBe(false);
+    expect(
+      commentCreateCommandSchema.safeParse({
+        ...base,
+        targetObjectIds: [],
+        canvasAnchor: null,
       }).success,
     ).toBe(false);
     expect(

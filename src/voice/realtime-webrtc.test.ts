@@ -1,11 +1,39 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  connectRealtimeNarration,
   connectRealtimeVoice,
+  narrationEventOutcome,
   type RealtimeDependencies,
 } from "@/voice/realtime-webrtc";
 
 const canvasId = "11111111-1111-4111-8111-111111111111";
+
+describe("narration playback completion", () => {
+  it("keeps buffered audio playing after generation ends", () => {
+    expect(
+      narrationEventOutcome({
+        type: "response.done",
+        response: { status: "completed" },
+      }),
+    ).toBe("playing");
+    expect(narrationEventOutcome({ type: "response.output_audio.done" })).toBe(
+      "playing",
+    );
+    expect(narrationEventOutcome({ type: "output_audio_buffer.stopped" })).toBe(
+      "ended",
+    );
+  });
+  it("reports failed generation and playback errors", () => {
+    expect(
+      narrationEventOutcome({
+        type: "response.done",
+        response: { status: "failed" },
+      }),
+    ).toBe("failed");
+    expect(narrationEventOutcome({ type: "error" })).toBe("failed");
+  });
+});
 
 function createHarness() {
   const stop = vi.fn();
@@ -16,11 +44,14 @@ function createHarness() {
   } as unknown as MediaStream;
   const dataChannel = {
     addEventListener: vi.fn(),
+    send: vi.fn(),
+    readyState: "open",
     close: vi.fn(),
   } as unknown as RTCDataChannel;
   const peer = {
     ontrack: null,
     addTrack: vi.fn(),
+    addTransceiver: vi.fn(),
     createDataChannel: vi.fn(() => dataChannel),
     createOffer: vi.fn(async () => ({ type: "offer", sdp: "local-sdp" })),
     setLocalDescription: vi.fn(async () => undefined),
@@ -112,5 +143,37 @@ describe("connectRealtimeVoice", () => {
       connectRealtimeVoice(canvasId, vi.fn(), harness.dependencies),
     ).rejects.toThrow("Canvas access denied.");
     expect(harness.dependencies.getUserMedia).not.toHaveBeenCalled();
+  });
+});
+
+describe("connectRealtimeNarration", () => {
+  it("plays the persisted script through output-only audio without microphone access", async () => {
+    const harness = createHarness();
+    const script = "Pause here and explain the customer journey.";
+    const connection = await connectRealtimeNarration(
+      canvasId,
+      script,
+      vi.fn(),
+      harness.dependencies,
+    );
+
+    expect(harness.fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `/api/canvases/${canvasId}/stories/narration/token`,
+      { method: "POST" },
+    );
+    expect(harness.dependencies.getUserMedia).not.toHaveBeenCalled();
+    expect(harness.peer.addTransceiver).toHaveBeenCalledWith("audio", {
+      direction: "recvonly",
+    });
+    expect(harness.dataChannel.send).toHaveBeenCalledWith(
+      expect.stringContaining(script),
+    );
+
+    connection.disconnect();
+    expect(harness.dataChannel.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: "response.cancel" }),
+    );
+    expect(harness.peer.close).toHaveBeenCalled();
   });
 });

@@ -8,6 +8,7 @@ import {
 } from "@/ai/openai-responses-gateway";
 import {
   buildRealtimeClientSecretRequest,
+  buildStoryNarrationClientSecretRequest,
   isShortLivedRealtimeSecret,
 } from "@/voice/realtime-session";
 
@@ -34,6 +35,36 @@ export async function createRealtimeClientSecret(
     );
   }
 
+  return {
+    value: secret.value,
+    expiresAt: secret.expires_at,
+    sessionId: secret.session.id,
+    model:
+      "model" in secret.session
+        ? (secret.session.model ?? REALTIME_MODEL)
+        : REALTIME_MODEL,
+  };
+}
+
+export async function createStoryNarrationClientSecret(
+  userId: string,
+  apiKey = process.env.OPENAI_API_KEY,
+) {
+  if (!apiKey) throw new OpenAiConfigurationError();
+  const client = new OpenAI({ apiKey });
+  const secret = await client.realtime.clientSecrets.create(
+    buildStoryNarrationClientSecretRequest(REALTIME_MODEL),
+    {
+      headers: {
+        "OpenAI-Safety-Identifier": privacySafeIdentifier(userId),
+      },
+    },
+  );
+  if (!isShortLivedRealtimeSecret(secret.expires_at)) {
+    throw new Error(
+      "OpenAI returned a client secret outside the expiry bound.",
+    );
+  }
   return {
     value: secret.value,
     expiresAt: secret.expires_at,

@@ -81,6 +81,9 @@ function Harness() {
       <button onClick={() => workspace.openThread("canvas")}>
         Open canvas marker
       </button>
+      <button onClick={() => workspace.show("scene-composer")}>
+        Add scene comment
+      </button>
       <CanvasComments
         canvasId="canvas"
         userId="owner"
@@ -91,6 +94,10 @@ function Harness() {
         selectedIds={[]}
         viewport={{ x: 0, y: 0, scale: 1 }}
         size={{ width: 1024, height: 768 }}
+        activeScene={{
+          id: "20000000-0000-4000-8000-000000000001",
+          title: "Opening view",
+        }}
         panelOpen={workspace.active === "history"}
         panelInvoker={null}
         placementActive={false}
@@ -207,5 +214,28 @@ describe("shared comment workspace", () => {
         { width: 320, height: 500 },
       ),
     ).toEqual({ left: 8, top: 8, width: 304, height: 484 });
+  });
+  it("creates context for the active scene through the shared composer", () => {
+    fixture.noop.mockClear();
+    render(
+      <CommentWorkspaceProvider>
+        <Harness />
+      </CommentWorkspaceProvider>,
+    );
+    fireEvent.click(screen.getByText("Add scene comment"));
+    expect(
+      screen.getByRole("heading", { name: "Comment on Opening view" }),
+    ).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "Pause here" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit comment" }));
+    expect(fixture.noop).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "comment.create",
+        sceneId: "20000000-0000-4000-8000-000000000001",
+        body: "Pause here",
+      }),
+    );
   });
 });

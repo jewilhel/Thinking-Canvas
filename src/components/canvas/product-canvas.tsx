@@ -4,6 +4,8 @@ import type Konva from "konva";
 import {
   ArrowLeft,
   Check,
+  ChevronLeft,
+  ChevronRight,
   CircleHelp,
   Cloud,
   Copy,
@@ -18,6 +20,7 @@ import {
   MessageSquareText,
   Minus,
   Plus,
+  Presentation,
   Share2,
   AlignJustify,
   Trash2,
@@ -179,6 +182,20 @@ import type { CanvasRole } from "@/domain/command";
 import { focusedDocumentViewport } from "@/documents/document-presentation";
 import { documentFullyContainsGeometry } from "@/documents/document-containment";
 import { createProductDocumentObject } from "@/documents/product-document";
+import { ScenePanel } from "@/components/stories/scene-panel";
+import {
+  captureStoryFraming,
+  viewportForStoryCamera,
+  type StoryScene,
+} from "@/stories/story-model";
+import { useCanvasStory } from "@/stories/use-canvas-story";
+import {
+  startViewportTransition,
+  type ViewportTransition,
+} from "@/stories/story-transition";
+import { useStoryNarration } from "@/stories/use-story-narration";
+import { SceneCaption } from "@/components/stories/scene-caption";
+import { AnimatePresence } from "motion/react";
 
 type Props = {
   canvasId: string;
@@ -418,9 +435,15 @@ function ProductCanvasWorkspace({
   const touchNavigationGestureRef = useRef<TouchNavigationGesture | null>(null);
   const touchNavigationBlockedRef = useRef(false);
   const previousDocumentViewportRef = useRef<Viewport | null>(null);
+  const sceneTransitionRef = useRef<ViewportTransition | null>(null);
+  const cancelSceneTransition = useCallback(() => {
+    sceneTransitionRef.current?.cancel();
+    sceneTransitionRef.current = null;
+  }, []);
   const frameStartedAt = useRef(0);
   const documentStorageKey = `thinking-canvas:document:${canvasId}`;
   const viewportStorageKey = `thinking-canvas:viewport:${userId}:${canvasId}`;
+  const sceneLoopStorageKey = `thinking-canvas:scene-loop:${userId}:${canvasId}`;
   const overlayVisibilityKey = `thinking-canvas:comments-visible:${userId}:${canvasId}`;
   const document = useMemo(() => {
     const next = createProductCanvasDocument(canvasId);
@@ -511,6 +534,55 @@ function ProductCanvasWorkspace({
       return defaultViewport;
     }
   });
+  const viewportRef = useRef(viewport);
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
+  useEffect(() => () => cancelSceneTransition(), [cancelSceneTransition]);
+  const [scenePanelOpen, setScenePanelOpen] = useState(false);
+  const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
+  const [sceneLoopEnabled, setSceneLoopEnabled] = useState(
+    () => window.localStorage.getItem(sceneLoopStorageKey) !== "false",
+  );
+  useEffect(() => {
+    window.localStorage.setItem(sceneLoopStorageKey, String(sceneLoopEnabled));
+  }, [sceneLoopEnabled, sceneLoopStorageKey]);
+  const [deletedScene, setDeletedScene] = useState<Pick<
+    StoryScene,
+    "id" | "title"
+  > | null>(null);
+  const storyState = useCanvasStory(
+    canvasId,
+    supabaseUrl,
+    supabasePublishableKey,
+  );
+  const reloadStory = storyState.reload;
+  const reloadStoryAfterAi = useCallback(
+    () => void reloadStory(),
+    [reloadStory],
+  );
+  const storyScenes = storyState.story?.scenes ?? [];
+  const narrationAudio = useStoryNarration(
+    canvasId,
+    storyScenes,
+    activeSceneId,
+  );
+  const activeSceneIndex = storyScenes.findIndex(
+    (scene) => scene.id === activeSceneId,
+  );
+  const activeScene =
+    activeSceneIndex >= 0 ? storyScenes[activeSceneIndex]! : null;
+  const activeSceneThreads = commentWorkspace.threads.filter(
+    (thread) =>
+      thread.sceneTarget?.sceneId === activeSceneId &&
+      thread.status === "open" &&
+      !thread.sceneTarget.deleted,
+  );
+  useEffect(() => {
+    if (!deletedScene) return;
+    const timeout = window.setTimeout(() => setDeletedScene(null), 8000);
+    return () => window.clearTimeout(timeout);
+  }, [deletedScene]);
   const selectionAffordanceFactor = selectionAffordanceScale(viewport.scale);
   const selectionAffordancesVisible = selectionAffordanceFactor > 0;
   const selectionTransformAffordancesVisible =
@@ -2362,6 +2434,7 @@ function ProductCanvasWorkspace({
   }
 
   function zoomAtCenter(direction: 1 | -1) {
+    cancelSceneTransition();
     setViewport((current) =>
       zoomViewportAtPointer(
         current,
@@ -2372,6 +2445,7 @@ function ProductCanvasWorkspace({
   }
 
   function zoomToFit() {
+    cancelSceneTransition();
     if (!objects.length) {
       setViewport(defaultViewport);
       return;
@@ -2417,6 +2491,146 @@ function ProductCanvasWorkspace({
     });
   }
 
+  async function addCurrentScene() {
+    if (!canMutateCanvas || saveStatus !== "Saved") return;
+    cancelSceneTransition();
+    const framing = captureStoryFraming(viewportRef.current, size);
+    const saved = await storyState.capture({
+      title: `Scene ${(storyState.story?.scenes.length ?? 0) + 1}`,
+      expectedRevision: storyState.story?.revision ?? null,
+      ...framing,
+    });
+    const scene = saved?.scenes.at(-1);
+    if (scene) setActiveSceneId(scene.id);
+  }
+
+  function chooseScene(scene: StoryScene) {
+    stopSceneNarration();
+    narrationAudio.revisit();
+    cancelSceneTransition();
+    if (scene.id !== activeSceneId) {
+      const openThread = commentWorkspace.threads.find(
+        (thread) => thread.id === commentWorkspace.threadId,
+      );
+      if (
+        commentWorkspace.active === "scene-composer" ||
+        (commentWorkspace.active === "thread" && openThread?.sceneTarget)
+      ) {
+        commentWorkspace.show(null);
+      }
+    }
+    const target = viewportForStoryCamera(scene.camera, size);
+    setActiveSceneId(scene.id);
+    sceneTransitionRef.current = startViewportTransition({
+      from: viewportRef.current,
+      to: target,
+      reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)")
+        .matches,
+      onUpdate: (nextViewport) => {
+        viewportRef.current = nextViewport;
+        setViewport(nextViewport);
+      },
+      onComplete: () => {
+        sceneTransitionRef.current = null;
+      },
+    });
+  }
+
+  function navigateScene(direction: -1 | 1) {
+    const scenes = storyState.story?.scenes ?? [];
+    if (!scenes.length) return;
+    const currentIndex = scenes.findIndex(
+      (scene) => scene.id === activeSceneId,
+    );
+    let targetIndex =
+      currentIndex < 0
+        ? direction === 1
+          ? 0
+          : scenes.length - 1
+        : currentIndex + direction;
+    if (sceneLoopEnabled && scenes.length > 1) {
+      targetIndex = (targetIndex + scenes.length) % scenes.length;
+    }
+    const scene = scenes[targetIndex];
+    if (scene) chooseScene(scene);
+  }
+
+  async function renameScene(scene: StoryScene, title: string) {
+    await storyState.mutate({
+      action: "rename",
+      sceneId: scene.id,
+      expectedRevision: storyState.story?.revision ?? 0,
+      title,
+    });
+  }
+
+  async function saveSceneNarration(
+    scene: StoryScene,
+    narration: string | null,
+  ) {
+    stopSceneNarration();
+    await storyState.mutate({
+      action: "narration",
+      sceneId: scene.id,
+      expectedRevision: storyState.story?.revision ?? 0,
+      narration,
+    });
+  }
+
+  function stopSceneNarration() {
+    narrationAudio.stop();
+  }
+
+  async function replaceScene(scene: StoryScene) {
+    cancelSceneTransition();
+    const framing = captureStoryFraming(viewportRef.current, size);
+    await storyState.mutate({
+      action: "replace",
+      sceneId: scene.id,
+      expectedRevision: storyState.story?.revision ?? 0,
+      ...framing,
+    });
+  }
+
+  async function reorderScenes(sceneIds: string[]) {
+    await storyState.mutate({
+      action: "reorder",
+      expectedRevision: storyState.story?.revision ?? 0,
+      sceneIds,
+    });
+  }
+
+  async function deleteScene(scene: StoryScene) {
+    const sceneIndex = storyState.story?.scenes.findIndex(
+      (candidate) => candidate.id === scene.id,
+    );
+    const saved = await storyState.deleteScene({
+      sceneId: scene.id,
+      expectedRevision: storyState.story?.revision ?? 0,
+    });
+    if (!saved) return;
+    setDeletedScene({ id: scene.id, title: scene.title });
+    if (activeSceneId === scene.id) {
+      const fallback =
+        saved.scenes[Math.min(sceneIndex ?? 0, saved.scenes.length - 1)];
+      setActiveSceneId(fallback?.id ?? null);
+    }
+  }
+
+  async function undoDeleteScene() {
+    if (!deletedScene) return;
+    const restoredId = deletedScene.id;
+    const saved = await storyState.mutate({
+      action: "restore",
+      sceneId: restoredId,
+      expectedRevision: storyState.story?.revision ?? 0,
+    });
+    if (saved) {
+      setDeletedScene(null);
+      setActiveSceneId(restoredId);
+    }
+  }
+
   function toggleSharedPanel(panel: SharedPanel, invoker: HTMLButtonElement) {
     if (panel === "comments") {
       setCommentPlacementActive(false);
@@ -2448,6 +2662,7 @@ function ProductCanvasWorkspace({
 
   function onWheel(event: Konva.KonvaEventObject<WheelEvent>) {
     event.evt.preventDefault();
+    cancelSceneTransition();
     const now = performance.now();
     const previousGesture = wheelGestureRef.current;
     const inferredIntent = canvasWheelIntent(event.evt);
@@ -2724,6 +2939,12 @@ function ProductCanvasWorkspace({
   }
 
   function onSurfacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.isPrimary && event.button === 0) {
+      setScenePanelOpen(false);
+      // Hide the shared surface without cancelling drafts or workspace AI runs.
+      commentWorkspace.show(null);
+    }
+    cancelSceneTransition();
     if (focusedDocumentId !== null) {
       event.preventDefault();
       exitDocument();
@@ -3251,6 +3472,11 @@ function ProductCanvasWorkspace({
     )
       return;
     const accelerator = event.metaKey || event.ctrlKey;
+    if (event.key === "Escape" && sceneTransitionRef.current) {
+      event.preventDefault();
+      cancelSceneTransition();
+      return;
+    }
     if (
       event.key === "Escape" &&
       (activeAnnotationStrokeRef.current || activeEraserGestureRef.current)
@@ -4785,7 +5011,119 @@ function ProductCanvasWorkspace({
         />
       ) : null}
 
+      <ScenePanel
+        open={scenePanelOpen}
+        story={storyState.story}
+        objects={objects}
+        loading={storyState.loading}
+        saving={storyState.saving}
+        error={storyState.error}
+        canCapture={canMutateCanvas && saveStatus === "Saved"}
+        activeSceneId={activeSceneId}
+        loopEnabled={sceneLoopEnabled}
+        sceneThreads={activeSceneThreads}
+        onAdd={() => void addCurrentScene()}
+        onChoose={chooseScene}
+        onRename={(scene, title) => void renameScene(scene, title)}
+        onReplace={(scene) => void replaceScene(scene)}
+        onReorder={(sceneIds) => void reorderScenes(sceneIds)}
+        onDelete={(scene) => void deleteScene(scene)}
+        deletedScene={deletedScene}
+        onUndoDelete={() => void undoDeleteScene()}
+        onLoopChange={setSceneLoopEnabled}
+        onAddSceneComment={() => {
+          setScenePanelOpen(false);
+          commentWorkspace.show("scene-composer");
+        }}
+        onOpenSceneThread={(threadId) => {
+          setScenePanelOpen(false);
+          commentWorkspace.openThread(threadId);
+        }}
+        onNarrationChange={(scene, narration) =>
+          void saveSceneNarration(scene, narration)
+        }
+        narrationEnabled={narrationAudio.enabled}
+        narrationError={narrationAudio.error}
+        narrationStatus={narrationAudio.status}
+        narrationPreparing={narrationAudio.preparing}
+        onToggleNarration={() => void narrationAudio.toggle()}
+        onRetryNarration={narrationAudio.retry}
+        onDismiss={() => setScenePanelOpen(false)}
+      />
+
+      <AnimatePresence mode="wait">
+        {activeScene?.narration ? (
+          <SceneCaption
+            key={activeScene.id}
+            scene={activeScene}
+            viewport={viewport}
+            size={size}
+            editable={canMutateCanvas && !storyState.saving}
+            onSave={async (layout) =>
+              Boolean(
+                await storyState.mutate({
+                  action: "caption_layout",
+                  sceneId: activeScene.id,
+                  expectedRevision: storyState.story?.revision ?? 0,
+                  layout,
+                }),
+              )
+            }
+          />
+        ) : null}
+      </AnimatePresence>
+
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
+        {storyScenes.length >= 2 ? (
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Previous scene"
+            disabled={
+              !storyScenes.length ||
+              storyScenes.length === 1 ||
+              (!sceneLoopEnabled && activeSceneIndex === 0)
+            }
+            onClick={() => navigateScene(-1)}
+          >
+            <ChevronLeft aria-hidden="true" />
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label="Open scenes"
+          aria-expanded={scenePanelOpen}
+          aria-controls="scene-panel"
+          onClick={() => setScenePanelOpen((current) => !current)}
+        >
+          <Presentation aria-hidden="true" />
+        </Button>
+        <output className="sr-only" aria-live="polite">
+          {activeSceneIndex >= 0
+            ? `Scene ${activeSceneIndex + 1} of ${storyScenes.length}: ${storyScenes[activeSceneIndex]?.title}`
+            : storyScenes.length
+              ? `${storyScenes.length} scenes available`
+              : "No scenes available"}
+        </output>
+        {storyScenes.length >= 2 ? (
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Next scene"
+            disabled={
+              !storyScenes.length ||
+              storyScenes.length === 1 ||
+              (!sceneLoopEnabled && activeSceneIndex === storyScenes.length - 1)
+            }
+            onClick={() => navigateScene(1)}
+          >
+            <ChevronRight aria-hidden="true" />
+          </Button>
+        ) : null}
         <Button
           type="button"
           size="icon-sm"
@@ -4871,12 +5209,14 @@ function ProductCanvasWorkspace({
         selectedIds={selectedIds}
         viewport={viewport}
         size={size}
+        activeScene={activeScene}
         panelOpen={commentWorkspace.active === "history"}
         panelInvoker={sharedPanelInvoker}
         placementActive={commentPlacementActive}
         onDismissPanel={() => setSharedPanel(null)}
         onPlacementModeChange={setCommentPlacementActive}
         onAiTransactionApplied={registerAiTransaction}
+        onStoryChanged={reloadStoryAfterAi}
         onUndoAiTransaction={undoAiTransaction}
         overlayVisible={temporaryOverlayVisible}
         onOverlayVisibilityChange={changeTemporaryOverlayVisibility}

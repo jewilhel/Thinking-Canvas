@@ -56,6 +56,7 @@ type CommentTarget = {
   targetObjectIds: string[];
   orderedContextIds: string[];
   canvasAnchor: CanvasPoint | null;
+  sceneId?: string;
 };
 
 type Props = {
@@ -68,6 +69,7 @@ type Props = {
   selectedIds: string[];
   viewport: Viewport;
   size: { width: number; height: number };
+  activeScene: { id: string; title: string } | null;
   panelOpen: boolean;
   panelInvoker: HTMLButtonElement | null;
   placementActive: boolean;
@@ -75,6 +77,7 @@ type Props = {
   onPlacementModeChange: (active: boolean) => void;
   onSelectTargets: (targetIds: string[]) => void;
   onAiTransactionApplied: (changeSetId: string) => void;
+  onStoryChanged?: () => void;
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
   overlayVisible: boolean;
   onOverlayVisibilityChange: (visible: boolean) => void;
@@ -764,6 +767,12 @@ export function ThreadBody({
   const replyReady = !latestRun || latestRun.status === "completed";
   return (
     <>
+      {thread.sceneTarget ? (
+        <p className="mb-3 rounded-lg bg-violet-50 px-3 py-2 text-xs font-medium text-violet-800">
+          {thread.sceneTarget.deleted ? "Deleted scene: " : "Scene: "}
+          {thread.sceneTarget.title}
+        </p>
+      ) : null}
       <div className="flex items-start gap-3">
         <Avatar
           name={thread.authorName}
@@ -1156,6 +1165,7 @@ export function CanvasComments({
   selectedIds,
   viewport,
   size,
+  activeScene,
   panelOpen,
   panelInvoker,
   placementActive,
@@ -1163,6 +1173,7 @@ export function CanvasComments({
   onPlacementModeChange,
   onSelectTargets,
   onAiTransactionApplied,
+  onStoryChanged,
   onUndoAiTransaction,
   overlayVisible,
   onOverlayVisibilityChange,
@@ -1184,6 +1195,7 @@ export function CanvasComments({
     supabaseUrl,
     supabasePublishableKey,
     onAiTransactionApplied,
+    onStoryChanged,
   );
   const selectedThreadId =
     workspace.active === "thread" ? workspace.threadId : null;
@@ -1220,6 +1232,15 @@ export function CanvasComments({
   const [composerTarget, setComposerTarget] = useState<CommentTarget | null>(
     null,
   );
+  const activeComposerTarget =
+    workspace.active === "scene-composer" && activeScene
+      ? {
+          targetObjectIds: [],
+          orderedContextIds: [],
+          canvasAnchor: null,
+          sceneId: activeScene.id,
+        }
+      : composerTarget;
   const [draft, setDraft] = useState("");
   const [draftRecipients, setDraftRecipients] = useState<CommentRecipient[]>(
     [],
@@ -1318,16 +1339,17 @@ export function CanvasComments({
   }
 
   async function createThread() {
-    if (!composerTarget || !draft.trim()) return;
+    if (!activeComposerTarget || !draft.trim()) return;
     const result = await execute({
       type: "comment.create",
       commandId: crypto.randomUUID(),
       canvasId,
       body: draft.trim(),
-      targetObjectIds: composerTarget.targetObjectIds,
-      orderedContextIds: composerTarget.orderedContextIds,
-      canvasAnchor: composerTarget.canvasAnchor,
+      targetObjectIds: activeComposerTarget.targetObjectIds,
+      orderedContextIds: activeComposerTarget.orderedContextIds,
+      canvasAnchor: activeComposerTarget.canvasAnchor,
       documentRange: null,
+      sceneId: activeComposerTarget.sceneId ?? null,
       promptKind,
       authorKind: "human",
       authorKey: null,
@@ -1351,7 +1373,10 @@ export function CanvasComments({
     setPromptKind(null);
     closeComposer();
     onOverlayVisibilityChange(true);
-    workspace.finishCreation("canvas-composer", id);
+    workspace.finishCreation(
+      activeComposerTarget.sceneId ? "scene-composer" : "canvas-composer",
+      id,
+    );
   }
 
   async function reply(
@@ -1423,12 +1448,21 @@ export function CanvasComments({
     setSelectedThreadId(null);
   }
 
-  const composerPosition = composerTarget
-    ? threadAnchor(composerTarget, objectsById, viewport)
-    : null;
-  const composerTargetBounds = composerTarget
-    ? threadTargetBounds(composerTarget, objectsById, viewport)
-    : null;
+  const composerPosition = activeComposerTarget?.sceneId
+    ? { left: Math.max(32, size.width - 448), top: 112 }
+    : activeComposerTarget
+      ? threadAnchor(activeComposerTarget, objectsById, viewport)
+      : null;
+  const composerTargetBounds = activeComposerTarget?.sceneId
+    ? {
+        left: composerPosition!.left,
+        top: composerPosition!.top,
+        right: composerPosition!.left,
+        bottom: composerPosition!.top,
+      }
+    : activeComposerTarget
+      ? threadTargetBounds(activeComposerTarget, objectsById, viewport)
+      : null;
   const threadPosition = selectedThread
     ? (threadAnchor(selectedThread, objectsById, viewport) ?? {
         left: Math.max(520, size.width - 32),
@@ -1554,13 +1588,18 @@ export function CanvasComments({
         : null}
 
       {!placementActive &&
-      composerOpen &&
-      workspace.active === "canvas-composer" &&
-      composerTarget &&
+      (composerOpen || workspace.active === "scene-composer") &&
+      (workspace.active === "canvas-composer" ||
+        workspace.active === "scene-composer") &&
+      activeComposerTarget &&
       composerPosition &&
       composerCardPosition ? (
         <CommentPanel
-          title="New comment"
+          title={
+            activeComposerTarget.sceneId && activeScene
+              ? `Comment on ${activeScene.title}`
+              : "New comment"
+          }
           closeLabel="Close comment composer"
           anchor={composerCardPosition}
           onClose={cancelComposer}
@@ -1600,9 +1639,14 @@ export function CanvasComments({
             </Button>
           </form>
           <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 px-2 pt-2 pb-1">
-            {composerTarget.orderedContextIds.length > 1 ? (
+            {activeComposerTarget.sceneId ? (
               <p className="w-full text-xs text-violet-700">
-                AI path context: {composerTarget.orderedContextIds.length}
+                Visible while {activeScene?.title ?? "this scene"} is active ·
+                retained in Comments history
+              </p>
+            ) : activeComposerTarget.orderedContextIds.length > 1 ? (
+              <p className="w-full text-xs text-violet-700">
+                AI path context: {activeComposerTarget.orderedContextIds.length}
                 {" objects in selection order"}
               </p>
             ) : null}
@@ -1787,10 +1831,12 @@ export function CanvasComments({
             ) : null}
             {threads.map((thread) => {
               const targetAvailable =
-                thread.canvasAnchor !== null ||
-                (thread.documentRange !== null &&
-                  objectsById.has(thread.documentRange.documentObjectId)) ||
-                thread.targetObjectIds.some((id) => objectsById.has(id));
+                thread.sceneTarget !== null && thread.sceneTarget !== undefined
+                  ? true
+                  : thread.canvasAnchor !== null ||
+                    (thread.documentRange !== null &&
+                      objectsById.has(thread.documentRange.documentObjectId)) ||
+                    thread.targetObjectIds.some((id) => objectsById.has(id));
               return (
                 <button
                   key={thread.id}
@@ -1819,6 +1865,14 @@ export function CanvasComments({
                     <span className="mt-1 line-clamp-2 block text-sm leading-5 text-zinc-600">
                       {thread.body}
                     </span>
+                    {thread.sceneTarget ? (
+                      <span className="mt-1 block text-xs font-medium text-violet-700">
+                        {thread.sceneTarget.deleted
+                          ? "Deleted scene: "
+                          : "Scene: "}
+                        {thread.sceneTarget.title}
+                      </span>
+                    ) : null}
                     {!targetAvailable ? (
                       <span className="mt-1 block text-xs text-amber-700">
                         Target unavailable

@@ -400,6 +400,8 @@ export type Database = {
           id: string
           outcome: Database["public"]["Enums"]["ai_tool_outcome"]
           run_id: string
+          story_input: Json | null
+          story_scene_id: string | null
           tool_name: string
           updated_at: string
         }
@@ -414,6 +416,8 @@ export type Database = {
           id?: string
           outcome?: Database["public"]["Enums"]["ai_tool_outcome"]
           run_id: string
+          story_input?: Json | null
+          story_scene_id?: string | null
           tool_name: string
           updated_at?: string
         }
@@ -428,6 +432,8 @@ export type Database = {
           id?: string
           outcome?: Database["public"]["Enums"]["ai_tool_outcome"]
           run_id?: string
+          story_input?: Json | null
+          story_scene_id?: string | null
           tool_name?: string
           updated_at?: string
         }
@@ -451,6 +457,13 @@ export type Database = {
             columns: ["run_id"]
             isOneToOne: false
             referencedRelation: "ai_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_tool_executions_story_scene_id_fkey"
+            columns: ["story_scene_id"]
+            isOneToOne: false
+            referencedRelation: "story_scenes"
             referencedColumns: ["id"]
           },
         ]
@@ -951,6 +964,39 @@ export type Database = {
           },
         ]
       }
+      comment_scene_targets: {
+        Row: {
+          comment_id: string
+          created_at: string
+          scene_id: string
+        }
+        Insert: {
+          comment_id: string
+          created_at?: string
+          scene_id: string
+        }
+        Update: {
+          comment_id?: string
+          created_at?: string
+          scene_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comment_scene_targets_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: true
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_scene_targets_scene_id_fkey"
+            columns: ["scene_id"]
+            isOneToOne: false
+            referencedRelation: "story_scenes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       comment_targets: {
         Row: {
           comment_id: string
@@ -1186,6 +1232,69 @@ export type Database = {
           },
         ]
       }
+      scene_narration_audio: {
+        Row: {
+          canvas_id: string
+          lease_token: string | null
+          lease_until: string | null
+          scene_id: string
+          state: string
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          canvas_id: string
+          lease_token?: string | null
+          lease_until?: string | null
+          scene_id: string
+          state?: string
+          updated_at?: string
+          version?: string
+        }
+        Update: {
+          canvas_id?: string
+          lease_token?: string | null
+          lease_until?: string | null
+          scene_id?: string
+          state?: string
+          updated_at?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scene_narration_audio_canvas_id_fkey"
+            columns: ["canvas_id"]
+            isOneToOne: false
+            referencedRelation: "canvases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scene_narration_audio_scene_id_fkey"
+            columns: ["scene_id"]
+            isOneToOne: true
+            referencedRelation: "story_scenes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scene_narration_audio_cleanup: {
+        Row: {
+          canvas_id: string
+          created_at: string
+          path: string
+        }
+        Insert: {
+          canvas_id: string
+          created_at?: string
+          path: string
+        }
+        Update: {
+          canvas_id?: string
+          created_at?: string
+          path?: string
+        }
+        Relationships: []
+      }
       starter_templates: {
         Row: {
           created_at: string
@@ -1229,6 +1338,7 @@ export type Database = {
           id: string
           kind: string
           review_change_set_id: string | null
+          revision: number
           title: string
           updated_at: string
         }
@@ -1239,6 +1349,7 @@ export type Database = {
           id?: string
           kind?: string
           review_change_set_id?: string | null
+          revision?: number
           title: string
           updated_at?: string
         }
@@ -1249,6 +1360,7 @@ export type Database = {
           id?: string
           kind?: string
           review_change_set_id?: string | null
+          revision?: number
           title?: string
           updated_at?: string
         }
@@ -1279,35 +1391,44 @@ export type Database = {
       story_scenes: {
         Row: {
           camera: Json
+          caption_layout: Json | null
           created_at: string
+          deleted_at: string | null
           id: string
           narration: string | null
           object_change_id: string | null
           position: number
           story_id: string
           target: Json
+          title: string
           updated_at: string
         }
         Insert: {
           camera: Json
+          caption_layout?: Json | null
           created_at?: string
+          deleted_at?: string | null
           id?: string
           narration?: string | null
           object_change_id?: string | null
           position: number
           story_id: string
           target: Json
+          title?: string
           updated_at?: string
         }
         Update: {
           camera?: Json
+          caption_layout?: Json | null
           created_at?: string
+          deleted_at?: string | null
           id?: string
           narration?: string | null
           object_change_id?: string | null
           position?: number
           story_id?: string
           target?: Json
+          title?: string
           updated_at?: string
         }
         Relationships: [
@@ -1382,6 +1503,27 @@ export type Database = {
           status: Database["public"]["Enums"]["ai_run_status"]
         }[]
       }
+      capture_primary_story_scene: {
+        Args: {
+          target_camera: Json
+          target_canvas_id: string
+          target_expected_revision?: number
+          target_region: Json
+          target_title: string
+        }
+        Returns: {
+          scene_camera: Json
+          scene_created_at: string
+          scene_id: string
+          scene_narration: string
+          scene_position: number
+          scene_target: Json
+          scene_title: string
+          scene_updated_at: string
+          story_id: string
+          story_revision: number
+        }[]
+      }
       complete_ai_run: {
         Args: {
           target_body: string
@@ -1428,6 +1570,31 @@ export type Database = {
           reply_id: string
         }[]
       }
+      create_comment_thread: {
+        Args: {
+          target_anchor_x?: number
+          target_anchor_y?: number
+          target_author_key?: string
+          target_author_kind?: Database["public"]["Enums"]["comment_author_kind"]
+          target_body: string
+          target_canvas_id: string
+          target_client_command_id: string
+          target_document_object_id?: string
+          target_document_quoted_text?: string
+          target_document_relative_anchor?: string
+          target_document_relative_head?: string
+          target_include_primary_ai?: boolean
+          target_object_ids?: string[]
+          target_ordered_context_ids?: string[]
+          target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
+          target_recipient_user_ids?: string[]
+        }
+        Returns: {
+          ai_run_id: string
+          comment_id: string
+          created: boolean
+        }[]
+      }
       create_document_comment_thread: {
         Args: {
           target_author_key: string | null
@@ -1452,24 +1619,17 @@ export type Database = {
           created: boolean
         }[]
       }
-      create_comment_thread: {
+      create_scene_comment_thread: {
         Args: {
-          target_anchor_x?: number
-          target_anchor_y?: number
-          target_author_key?: string
+          target_author_key?: string | null
           target_author_kind?: Database["public"]["Enums"]["comment_author_kind"]
           target_body: string
           target_canvas_id: string
           target_client_command_id: string
-          target_document_object_id?: string
-          target_document_quoted_text?: string
-          target_document_relative_anchor?: string
-          target_document_relative_head?: string
           target_include_primary_ai?: boolean
-          target_object_ids?: string[]
-          target_ordered_context_ids?: string[]
-          target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"]
-          target_recipient_user_ids?: string[]
+          target_prompt_kind?: Database["public"]["Enums"]["comment_prompt_kind"] | null
+          target_recipient_user_ids?: string[] | null
+          target_scene_id: string
         }
         Returns: {
           ai_run_id: string
@@ -1499,6 +1659,14 @@ export type Database = {
         Args: { target_comment_id: string }
         Returns: string
       }
+      delete_primary_story_scene: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_scene_id: string
+        }
+        Returns: number
+      }
       execute_ai_canvas_commands: {
         Args: {
           target_affected_object_ids: string[]
@@ -1527,6 +1695,25 @@ export type Database = {
         Returns: {
           comment_id: string
           created: boolean
+          tool_execution_id: string
+        }[]
+      }
+      execute_ai_story_scene: {
+        Args: {
+          target_action: string
+          target_call_key: string
+          target_camera: Json | null
+          target_narration: string | null
+          target_object_ids?: string[]
+          target_region: Json | null
+          target_requester_id: string
+          target_run_id: string
+          target_scene_id: string | null
+          target_title: string | null
+        }
+        Returns: {
+          created: boolean
+          scene_id: string
           tool_execution_id: string
         }[]
       }
@@ -1628,6 +1815,14 @@ export type Database = {
           tool_execution_id: string
         }[]
       }
+      reorder_primary_story_scenes: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_scene_ids: string[]
+        }
+        Returns: number
+      }
       reserve_ai_run_budget: {
         Args: {
           target_input_tokens: number
@@ -1652,6 +1847,14 @@ export type Database = {
           created: boolean
           response_id: string
         }[]
+      }
+      restore_primary_story_scene: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_scene_id: string
+        }
+        Returns: number
       }
       retry_ai_run: {
         Args: { target_idempotency_key: string; target_run_id: string }
@@ -1733,6 +1936,35 @@ export type Database = {
       update_comment_body: {
         Args: { target_body: string; target_comment_id: string }
         Returns: string
+      }
+      update_primary_story_scene: {
+        Args: {
+          target_camera?: Json
+          target_canvas_id: string
+          target_expected_revision: number
+          target_region?: Json
+          target_scene_id: string
+          target_title?: string
+        }
+        Returns: number
+      }
+      update_primary_story_scene_narration: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_narration: string | null
+          target_scene_id: string
+        }
+        Returns: number
+      }
+      update_scene_caption_layout: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_layout: Json
+          target_scene_id: string
+        }
+        Returns: number
       }
     }
     Enums: {

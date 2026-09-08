@@ -11,7 +11,10 @@ import type {
   PrimaryAiGateway,
   PrimaryAiGatewayResult,
 } from "@/ai/primary-ai-gateway";
-import { allowedAiToolNames, type AiToolName } from "@/ai/tool-registry";
+import {
+  isAiToolAllowedByAuthority,
+  type AiToolName,
+} from "@/ai/tool-registry";
 
 export type { FakeAiScenario } from "@/ai/primary-ai-gateway";
 
@@ -82,10 +85,11 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
     if (invocation.canvasId !== projection.canvasId) {
       throw new Error("The invocation and projection canvas must match.");
     }
-    const expectedTools = new Set(allowedAiToolNames(invocation.authority));
     if (
       new Set(input.allowedToolNames).size !== input.allowedToolNames.length ||
-      input.allowedToolNames.some((name) => !expectedTools.has(name))
+      input.allowedToolNames.some(
+        (name) => !isAiToolAllowedByAuthority(invocation.authority, name),
+      )
     ) {
       throw new Error("The AI tool allowlist exceeds current authority.");
     }
@@ -122,6 +126,15 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       instruction.includes("contextual comment") &&
       firstObject !== undefined &&
       sourceThread?.targetObjectIds.length === 0;
+    const shouldCreateStoryScene =
+      input.allowedToolNames.includes("execute_story_scene") &&
+      instruction.includes("scene") &&
+      (instruction.includes("create") || instruction.includes("add")) &&
+      firstObject !== undefined;
+    const shouldUpdateStoryNarration =
+      input.allowedToolNames.includes("execute_story_scene") &&
+      instruction.includes("narration") &&
+      !shouldCreateStoryScene;
     const shouldCreateNewShapes =
       instruction.includes("five sticky notes") &&
       invocation.reviewContext?.kind === "world_space" &&
@@ -257,27 +270,31 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
       firstObject !== undefined &&
       input.allowedToolNames.includes("execute_canvas_commands");
     const reply = aiReplySchema.parse({
-      body: shouldCreateNewAnnotation
-        ? "I added the requested freeform annotation to the canvas."
-        : shouldCreateNewShapes
-          ? "I created five labeled sticky notes in the requested colors."
-          : shouldCreateBackgroundCircle
-            ? "I added a large grey circle behind the sticky notes without moving them."
-            : shouldCreateClockwiseConnectors
-              ? "I connected the sticky notes in a clockwise closed loop."
-              : shouldExecuteChanges
-                ? "I applied validated canvas changes as the primary AI collaborator."
-                : shouldStageLayout
-                  ? "I straightened the selected objects and gave them even spacing."
-                  : shouldStageDocument
-                    ? "I revised the selected document text as one undoable AI change."
-                    : shouldStageReview
-                      ? "I made the requested change on the canvas."
-                      : shouldProposeChanges
-                        ? "I prepared a validated proposal without changing the canvas."
-                        : selectedPath.length > 1
-                          ? `I inspected ${selectedPath.length} selected path objects in order: ${selectedPath.map((object) => object.summary || object.type).join(" → ")}.`
-                          : `I inspected ${projection.objects.length} canvas objects and ${projection.commentThreads.length} comment conversations.`,
+      body: shouldCreateStoryScene
+        ? "I added a new scene grounded in the current canvas."
+        : shouldUpdateStoryNarration
+          ? "I revised the narration for this scene."
+          : shouldCreateNewAnnotation
+            ? "I added the requested freeform annotation to the canvas."
+            : shouldCreateNewShapes
+              ? "I created five labeled sticky notes in the requested colors."
+              : shouldCreateBackgroundCircle
+                ? "I added a large grey circle behind the sticky notes without moving them."
+                : shouldCreateClockwiseConnectors
+                  ? "I connected the sticky notes in a clockwise closed loop."
+                  : shouldExecuteChanges
+                    ? "I applied validated canvas changes as the primary AI collaborator."
+                    : shouldStageLayout
+                      ? "I straightened the selected objects and gave them even spacing."
+                      : shouldStageDocument
+                        ? "I revised the selected document text as one undoable AI change."
+                        : shouldStageReview
+                          ? "I made the requested change on the canvas."
+                          : shouldProposeChanges
+                            ? "I prepared a validated proposal without changing the canvas."
+                            : selectedPath.length > 1
+                              ? `I inspected ${selectedPath.length} selected path objects in order: ${selectedPath.map((object) => object.summary || object.type).join(" → ")}.`
+                              : `I inspected ${projection.objects.length} canvas objects and ${projection.commentThreads.length} comment conversations.`,
       evidence: firstObject
         ? [
             {
@@ -288,6 +305,31 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
         : [],
       contextualTargetObjectIds: firstObject ? [firstObject.id] : [],
     });
+    const storyToolCalls: AiToolCall[] | null = shouldCreateStoryScene
+      ? [
+          {
+            callKey: "story-scene-create-1",
+            toolName: "execute_story_scene",
+            arguments: {
+              action: "create",
+              title: "AI scene",
+              narration: "Focus on the grounded canvas content in this view.",
+              targetObjectIds: [firstObject.id],
+            },
+          },
+        ]
+      : shouldUpdateStoryNarration
+        ? [
+            {
+              callKey: "story-scene-update-1",
+              toolName: "execute_story_scene",
+              arguments: {
+                action: "update_current",
+                narration: "AI revised narration for this scene.",
+              },
+            },
+          ]
+        : null;
     const fallbackToolCalls = shouldCreateBackgroundCircle
       ? [
           {
@@ -548,52 +590,56 @@ export class FakePrimaryAiGateway implements PrimaryAiGateway {
                           },
                         ]
                       : [];
-    const toolCalls: AiToolCall[] = shouldCreateNewAnnotation
-      ? [
-          {
-            callKey: "new-annotation-1",
-            toolName: "stage_new_annotations",
-            arguments: {
-              summary: "Add one curved purple freeform annotation.",
-              annotations: [
-                {
-                  key: "purple-annotation",
-                  points: [
-                    {
-                      x: invocation.reviewContext?.canvasAnchor?.x ?? 400,
-                      y: invocation.reviewContext?.canvasAnchor?.y ?? 300,
-                      pressure: 0.3,
-                    },
-                    {
-                      x:
-                        (invocation.reviewContext?.canvasAnchor?.x ?? 400) + 60,
-                      y:
-                        (invocation.reviewContext?.canvasAnchor?.y ?? 300) + 36,
-                      pressure: 0.8,
-                    },
-                    {
-                      x:
-                        (invocation.reviewContext?.canvasAnchor?.x ?? 400) +
-                        120,
-                      y: invocation.reviewContext?.canvasAnchor?.y ?? 300,
-                      pressure: 0.4,
-                    },
-                  ],
-                  outline: "#7c3aed",
-                  outlineWidth: 5,
-                },
-              ],
-              explanations: [
-                {
-                  key: "purple-annotation",
-                  whatChanged: "Added one curved purple freeform annotation.",
-                  why: "The comment requested a visual annotation.",
-                },
-              ],
+    const toolCalls: AiToolCall[] =
+      storyToolCalls ??
+      (shouldCreateNewAnnotation
+        ? [
+            {
+              callKey: "new-annotation-1",
+              toolName: "stage_new_annotations",
+              arguments: {
+                summary: "Add one curved purple freeform annotation.",
+                annotations: [
+                  {
+                    key: "purple-annotation",
+                    points: [
+                      {
+                        x: invocation.reviewContext?.canvasAnchor?.x ?? 400,
+                        y: invocation.reviewContext?.canvasAnchor?.y ?? 300,
+                        pressure: 0.3,
+                      },
+                      {
+                        x:
+                          (invocation.reviewContext?.canvasAnchor?.x ?? 400) +
+                          60,
+                        y:
+                          (invocation.reviewContext?.canvasAnchor?.y ?? 300) +
+                          36,
+                        pressure: 0.8,
+                      },
+                      {
+                        x:
+                          (invocation.reviewContext?.canvasAnchor?.x ?? 400) +
+                          120,
+                        y: invocation.reviewContext?.canvasAnchor?.y ?? 300,
+                        pressure: 0.4,
+                      },
+                    ],
+                    outline: "#7c3aed",
+                    outlineWidth: 5,
+                  },
+                ],
+                explanations: [
+                  {
+                    key: "purple-annotation",
+                    whatChanged: "Added one curved purple freeform annotation.",
+                    why: "The comment requested a visual annotation.",
+                  },
+                ],
+              },
             },
-          },
-        ]
-      : fallbackToolCalls;
+          ]
+        : fallbackToolCalls);
     return { status: "completed", requestId, reply, toolCalls };
   }
 }
