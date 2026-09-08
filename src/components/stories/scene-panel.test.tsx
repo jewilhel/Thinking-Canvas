@@ -2,7 +2,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ScenePanel } from "@/components/stories/scene-panel";
+import {
+  clampScenePanelPlacement,
+  resizeScenePanelLeft,
+  ScenePanel,
+} from "@/components/stories/scene-panel";
 import type { PrimaryStory } from "@/stories/story-model";
 
 afterEach(cleanup);
@@ -133,19 +137,21 @@ describe("ScenePanel", () => {
     expect(props.onReplace).toHaveBeenCalledWith(story.scenes[0]);
   });
 
-  it("reorders with accessible move controls and deletes with undo", () => {
+  it("removes repeated reorder controls and deletes with undo", () => {
     const props = renderPanel({
       story: twoSceneStory,
       activeSceneId: twoSceneStory.scenes[0]!.id,
       deletedScene: { id: story.scenes[0]!.id, title: "Opening view" },
     });
 
+    expect(screen.queryByText("Move Opening view")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Move selected scene earlier" }),
-    ).toBeDisabled();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Move selected scene later" }),
-    );
+      screen.queryByRole("button", { name: "Move selected scene earlier" }),
+    ).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Opening view" }), {
+      key: "ArrowDown",
+      altKey: true,
+    });
     expect(props.onReorder).toHaveBeenCalledWith([
       twoSceneStory.scenes[1]!.id,
       twoSceneStory.scenes[0]!.id,
@@ -179,5 +185,54 @@ describe("ScenePanel", () => {
       twoSceneStory.scenes[1]!.id,
       twoSceneStory.scenes[0]!.id,
     ]);
+  });
+
+  it("bounds movement and left-edge resizing", () => {
+    const viewport = { width: 1024, height: 768 };
+    const placement = { left: 500, top: 100, width: 400 };
+
+    expect(resizeScenePanelLeft(placement, 1000, viewport, 440)).toEqual({
+      left: 580,
+      top: 100,
+      width: 320,
+    });
+    expect(resizeScenePanelLeft(placement, -1000, viewport, 440)).toEqual({
+      left: 260,
+      top: 100,
+      width: 640,
+    });
+    expect(
+      clampScenePanelPlacement(
+        { left: 1000, top: -100, width: 900 },
+        viewport,
+        440,
+      ),
+    ).toEqual({ left: 368, top: 16, width: 640 });
+  });
+
+  it("exposes keyboard-equivalent panel movement and resizing", () => {
+    renderPanel({ story });
+    const panel = screen.getByRole("dialog");
+    vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
+      x: 500,
+      y: 100,
+      left: 500,
+      top: 100,
+      right: 900,
+      bottom: 540,
+      width: 400,
+      height: 440,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.keyDown(screen.getByLabelText("Move scene panel"), {
+      key: "ArrowRight",
+    });
+    expect(panel).toHaveStyle({ left: "510px", top: "100px" });
+    fireEvent.keyDown(
+      screen.getByLabelText("Resize scene panel from left edge"),
+      { key: "ArrowLeft" },
+    );
+    expect(panel).toHaveStyle({ left: "490px", width: "410px" });
   });
 });

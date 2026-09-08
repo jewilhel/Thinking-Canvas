@@ -53,12 +53,44 @@ test("manages and reloads live canvas viewport scenes", async ({
     page.getByRole("button", { name: "Detail", exact: true }),
   ).toBeVisible();
 
-  await page
-    .getByRole("button", { name: "Move selected scene earlier" })
-    .click();
-  await expect(page.getByRole("list", { name: "Story scenes" })).toContainText(
-    /Scene 1[\s\S]*Scene 3[\s\S]*Detail/,
+  const sceneList = page.getByRole("list", { name: "Story scenes" });
+  const sceneRows = sceneList.locator(":scope > li");
+  await sceneRows.nth(2).dragTo(sceneRows.nth(1));
+  await expect(sceneList).toContainText(/Scene 1[\s\S]*Scene 3[\s\S]*Detail/);
+  await expect(
+    page.getByRole("button", { name: "Move selected scene earlier" }),
+  ).toHaveCount(0);
+
+  const scenePanel = page.getByTestId("scene-panel");
+  const panelBeforeMove = await scenePanel.boundingBox();
+  const moveHandle = await page
+    .getByRole("button", { name: "Move scene panel" })
+    .boundingBox();
+  expect(panelBeforeMove).not.toBeNull();
+  expect(moveHandle).not.toBeNull();
+  await page.mouse.move(
+    moveHandle!.x + moveHandle!.width / 2,
+    moveHandle!.y + moveHandle!.height / 2,
   );
+  await page.mouse.down();
+  await page.mouse.move(moveHandle!.x - 60, moveHandle!.y - 30);
+  await page.mouse.up();
+  const panelAfterMove = await scenePanel.boundingBox();
+  expect(panelAfterMove!.x).toBeLessThan(panelBeforeMove!.x);
+
+  const resizeHandle = await page
+    .getByRole("button", { name: "Resize scene panel from left edge" })
+    .boundingBox();
+  await page.mouse.move(
+    resizeHandle!.x + resizeHandle!.width / 2,
+    resizeHandle!.y + resizeHandle!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(resizeHandle!.x - 80, resizeHandle!.y);
+  await page.mouse.up();
+  const panelAfterResize = await scenePanel.boundingBox();
+  expect(panelAfterResize!.width).toBeGreaterThan(panelAfterMove!.width);
+  expect(panelAfterResize!.width).toBeLessThanOrEqual(640);
   await page.getByRole("button", { name: "Previous scene" }).click();
   await expect(
     page.getByRole("button", { name: "Scene 1", exact: true }),

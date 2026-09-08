@@ -1,8 +1,6 @@
 "use client";
 
 import {
-  ChevronDown,
-  ChevronUp,
   LoaderCircle,
   MoreHorizontal,
   Plus,
@@ -10,7 +8,14 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
+import { createPortal } from "react-dom";
 
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 import { Button } from "@/components/ui/button";
@@ -37,6 +42,44 @@ type Props = {
   onLoopChange: (enabled: boolean) => void;
   onDismiss: () => void;
 };
+
+type ScenePanelPlacement = { left: number; top: number; width: number };
+type ScreenSize = { width: number; height: number };
+
+export function clampScenePanelPlacement(
+  placement: ScenePanelPlacement,
+  viewport: ScreenSize,
+  panelHeight: number,
+): ScenePanelPlacement {
+  const width = Math.min(
+    Math.min(640, Math.max(320, placement.width)),
+    Math.max(0, viewport.width - 32),
+  );
+  return {
+    width,
+    left: Math.max(16, Math.min(placement.left, viewport.width - width - 16)),
+    top: Math.max(
+      16,
+      Math.min(placement.top, viewport.height - panelHeight - 16),
+    ),
+  };
+}
+
+export function resizeScenePanelLeft(
+  placement: ScenePanelPlacement,
+  delta: number,
+  viewport: ScreenSize,
+  panelHeight: number,
+): ScenePanelPlacement {
+  const right = placement.left + placement.width;
+  const next = clampScenePanelPlacement(
+    { ...placement, width: placement.width - delta },
+    viewport,
+    panelHeight,
+  );
+  const width = Math.min(next.width, right - 16);
+  return { ...next, left: right - width, width };
+}
 
 function ScenePreview({
   scene,
@@ -112,16 +155,133 @@ export function ScenePanel({
   onLoopChange,
   onDismiss,
 }: Props) {
+  const panelRef = useRef<HTMLElement>(null);
+  const [viewport, setViewport] = useState<ScreenSize>(() => ({
+    width: typeof window === "undefined" ? 1024 : window.innerWidth,
+    height: typeof window === "undefined" ? 768 : window.innerHeight,
+  }));
+  const [placement, setPlacement] = useState<ScenePanelPlacement | null>(null);
+  const gesture = useRef<{
+    x: number;
+    y: number;
+    placement: ScenePanelPlacement;
+    panelHeight: number;
+    mode: "move" | "resize";
+  } | null>(null);
   const [menuSceneId, setMenuSceneId] = useState<string | null>(null);
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [draggedSceneId, setDraggedSceneId] = useState<string | null>(null);
-  if (!open) return null;
   const scenes = story?.scenes ?? [];
-  const activeSceneIndex = scenes.findIndex(
-    (scene) => scene.id === activeSceneId,
-  );
-  const activeScene = scenes[activeSceneIndex];
+
+  useEffect(() => {
+    const measure = () => {
+      const nextViewport = {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
+      setViewport(nextViewport);
+      setPlacement((current) =>
+        current
+          ? clampScenePanelPlacement(
+              current,
+              nextViewport,
+              panelRef.current?.getBoundingClientRect().height ?? 320,
+            )
+          : current,
+      );
+    };
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  if (!open || typeof document === "undefined") return null;
+
+  function startPanelGesture(
+    event: PointerEvent<HTMLButtonElement>,
+    mode: "move" | "resize",
+  ) {
+    if (event.button !== 0) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    gesture.current = {
+      x: event.clientX,
+      y: event.clientY,
+      placement: { left: rect.left, top: rect.top, width: rect.width },
+      panelHeight: rect.height,
+      mode,
+    };
+  }
+
+  function movePanelGesture(event: PointerEvent<HTMLButtonElement>) {
+    const current = gesture.current;
+    if (!current) return;
+    const dx = event.clientX - current.x;
+    const dy = event.clientY - current.y;
+    setPlacement(
+      current.mode === "resize"
+        ? resizeScenePanelLeft(
+            current.placement,
+            dx,
+            viewport,
+            current.panelHeight,
+          )
+        : clampScenePanelPlacement(
+            {
+              ...current.placement,
+              left: current.placement.left + dx,
+              top: current.placement.top + dy,
+            },
+            viewport,
+            current.panelHeight,
+          ),
+    );
+  }
+
+  function keyboardPanelGesture(
+    event: KeyboardEvent<HTMLButtonElement>,
+    mode: "move" | "resize",
+  ) {
+    const direction = {
+      ArrowLeft: -1,
+      ArrowRight: 1,
+      ArrowUp: -1,
+      ArrowDown: 1,
+    }[event.key];
+    if (!direction) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    event.preventDefault();
+    const step = (event.shiftKey ? 40 : 10) * direction;
+    const current = { left: rect.left, top: rect.top, width: rect.width };
+    setPlacement(
+      mode === "resize"
+        ? resizeScenePanelLeft(current, step, viewport, rect.height)
+        : clampScenePanelPlacement(
+            {
+              ...current,
+              left:
+                current.left +
+                (event.key === "ArrowLeft" || event.key === "ArrowRight"
+                  ? step
+                  : 0),
+              top:
+                current.top +
+                (event.key === "ArrowUp" || event.key === "ArrowDown"
+                  ? step
+                  : 0),
+            },
+            viewport,
+            rect.height,
+          ),
+    );
+  }
+
+  function finishPanelGesture() {
+    gesture.current = null;
+  }
 
   function moveScene(sceneId: string, targetIndex: number) {
     const currentIndex = scenes.findIndex((scene) => scene.id === sceneId);
@@ -138,15 +298,39 @@ export function ScenePanel({
     reordered.splice(targetIndex, 0, moved);
     onReorder(reordered.map((scene) => scene.id));
   }
-  return (
+  return createPortal(
     <section
+      ref={panelRef}
       id="scene-panel"
       role="dialog"
       aria-modal="false"
       aria-labelledby="scene-panel-title"
       data-testid="scene-panel"
-      className="absolute right-4 bottom-20 z-40 flex max-h-[min(34rem,calc(100dvh-8rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-3xl border border-zinc-700 bg-zinc-900 text-zinc-50 shadow-2xl"
+      className="fixed z-[110] flex max-h-[min(34rem,calc(100dvh-2rem))] flex-col overflow-hidden rounded-3xl border border-zinc-700 bg-zinc-900 text-zinc-50 shadow-2xl"
+      style={
+        placement ?? {
+          right: 16,
+          bottom: 80,
+          width: "min(24rem, calc(100vw - 2rem))",
+        }
+      }
+      onPointerDown={(event) => event.stopPropagation()}
+      onWheel={(event) => event.stopPropagation()}
     >
+      <button
+        type="button"
+        aria-label="Move scene panel"
+        title="Drag to move; arrow keys also move the panel"
+        className="flex h-5 shrink-0 cursor-grab touch-none items-center justify-center focus-visible:bg-zinc-800 focus-visible:outline-none active:cursor-grabbing"
+        onPointerDown={(event) => startPanelGesture(event, "move")}
+        onPointerMove={movePanelGesture}
+        onPointerUp={finishPanelGesture}
+        onPointerCancel={finishPanelGesture}
+        onLostPointerCapture={finishPanelGesture}
+        onKeyDown={(event) => keyboardPanelGesture(event, "move")}
+      >
+        <span className="h-1 w-12 rounded-full bg-zinc-600" />
+      </button>
       <header className="flex items-center justify-between gap-3 border-b border-zinc-700 px-5 py-4">
         <h2 id="scene-panel-title" className="text-lg font-semibold">
           Scenes
@@ -187,6 +371,10 @@ export function ScenePanel({
           </p>
         ) : scenes.length ? (
           <div>
+            <p id="scene-reorder-instructions" className="sr-only">
+              Drag scenes to reorder, or press Alt with the up or down arrow
+              while a scene is focused.
+            </p>
             <ol
               className="overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900"
               aria-label="Story scenes"
@@ -249,8 +437,20 @@ export function ScenePanel({
                           activeSceneId === scene.id ? "step" : undefined
                         }
                         aria-label={scene.title}
+                        aria-describedby="scene-reorder-instructions"
+                        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                         className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none"
                         onClick={() => onChoose(scene)}
+                        onKeyDown={(event) => {
+                          if (!event.altKey) return;
+                          if (event.key === "ArrowUp") {
+                            event.preventDefault();
+                            moveScene(scene.id, index - 1);
+                          } else if (event.key === "ArrowDown") {
+                            event.preventDefault();
+                            moveScene(scene.id, index + 1);
+                          }
+                        }}
                       >
                         <ScenePreview scene={scene} objects={objects} />
                         <span className="min-w-0 flex-1 truncate font-medium">
@@ -310,42 +510,6 @@ export function ScenePanel({
                 </li>
               ))}
             </ol>
-            <div
-              className="mt-3 flex items-center justify-end gap-1"
-              aria-label="Reorder selected scene"
-            >
-              <span className="mr-2 text-xs text-zinc-400">
-                {activeScene
-                  ? `Move ${activeScene.title}`
-                  : "Select a scene to move"}
-              </span>
-              <button
-                type="button"
-                aria-label="Move selected scene earlier"
-                disabled={saving || !activeScene || activeSceneIndex === 0}
-                className="grid size-9 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30"
-                onClick={() =>
-                  activeScene && moveScene(activeScene.id, activeSceneIndex - 1)
-                }
-              >
-                <ChevronUp aria-hidden="true" className="size-4" />
-              </button>
-              <button
-                type="button"
-                aria-label="Move selected scene later"
-                disabled={
-                  saving ||
-                  !activeScene ||
-                  activeSceneIndex === scenes.length - 1
-                }
-                className="grid size-9 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30"
-                onClick={() =>
-                  activeScene && moveScene(activeScene.id, activeSceneIndex + 1)
-                }
-              >
-                <ChevronDown aria-hidden="true" className="size-4" />
-              </button>
-            </div>
           </div>
         ) : (
           <div className="flex min-h-52 flex-col items-center justify-center px-5 text-center">
@@ -403,6 +567,19 @@ export function ScenePanel({
           {error}
         </p>
       </footer>
-    </section>
+      <button
+        type="button"
+        aria-label="Resize scene panel from left edge"
+        title="Drag to resize; left and right arrow keys also resize"
+        className="absolute top-6 bottom-6 left-0 w-2 cursor-ew-resize touch-none rounded-full hover:bg-violet-400/30 focus-visible:bg-violet-400/30 focus-visible:outline-none"
+        onPointerDown={(event) => startPanelGesture(event, "resize")}
+        onPointerMove={movePanelGesture}
+        onPointerUp={finishPanelGesture}
+        onPointerCancel={finishPanelGesture}
+        onLostPointerCapture={finishPanelGesture}
+        onKeyDown={(event) => keyboardPanelGesture(event, "resize")}
+      />
+    </section>,
+    document.body,
   );
 }
