@@ -388,7 +388,8 @@ The product owner approved the complete plan and its recommended D1–D5 options
 - Reproduced in Codex's internal browser on deploy `6aa07281acc144ff4e03670f`: two unchanged captures at 280% succeeded, but selecting Scene 3 at 300% left `data-viewport-scale="3.0000000000000004"`. Add Scene threw a camera zoom validation error before sending a save request. This was numerical spill from geometric interpolation, not a duplicate-framing restriction.
 - Preserve exact transition endpoints and bound intermediate zoom to the endpoint range. Capture additionally normalizes tiny floating-point spill at the zoom limits while still rejecting genuinely invalid camera values.
 - Regression coverage checks all interpolation frames and exact endpoints, repeated identical framing, and browser creation of two scenes with different captions after navigating to maximum zoom. The existing caption-drag test now waits for camera arrival before measuring world-anchored geometry.
-- `pnpm check` passes: formatting, lint, types, 410 unit tests, and production build. Hosted replacement verification is pending. No schema change, milestone closure, merge, or production deployment.
+- `pnpm check` passes: formatting, lint, types, 410 unit tests, and production build. Both guided-story Chromium E2E tests pass (15.1s); local speech/storage is not configured, so this run is not fresh audio-generation evidence.
+- Runtime commit `7ce3397` was pushed and deployed to preview `6aa0765cacc144146703675e`. Codex internal-browser retest selected the original Scene 3, observed exact camera `(x=-1751, y=-444, scale=3)`, created Scene 5 and Scene 6 without pan/zoom, and verified the camera stayed identical and both scenes survived reload. Temporary test captures were soft-deleted; the user's four original scenes were retained. No schema change, milestone closure, merge, or production deployment. Hands-on acceptance remains separate.
 
 ## Change record
 
