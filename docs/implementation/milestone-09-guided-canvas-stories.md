@@ -403,7 +403,10 @@ The product owner approved the complete plan and its recommended D1–D5 options
 ### Canvas-click panel dismissal — 2026-09-08
 
 - User authorizes dismissing Scenes and comment panels by clicking the canvas outside them. Primary canvas pointer-down hides these surfaces, without stopping the intended canvas interaction. Panel and toolbar interactions do not dismiss them.
-- Comments use the shared workspace's visibility-only `show(null)` action: drafts, thread identity, and the workspace-level AI service remain alive; no cancellation or deletion is issued. Scene editor state remains mounted as before. Verification pending.
+- Comments use the shared workspace's visibility-only `show(null)` action: drafts, thread identity, and the workspace-level AI service remain alive; no cancellation or deletion is issued. Scene editor state remains mounted as before.
+- Local verification: `pnpm check` passed (411 unit tests, formatting/lint/types/build). Three focused Chromium tests passed (8.8s): panel dismissal and scene draft retention, repeated capture, and the canvas comment create/reply/reopen/reload lifecycle with draft retention. The broader run reached 26/27 passing before the remaining outdated test expectation was repaired; repeated full runs subsequently exhausted the local test account's five-minute AI token budget, so no clean final full-suite/AI acceptance claim is made. Existing shape fixtures now deselect before opening the catalog to avoid selection-toolbar interception; no related product UI was changed. Hosted verification pending.
+
+- Hosted verification: runtime `6849d0a`, preview `6aa07cbc22a5ea0d92620cfb`, Codex internal browser. Primary clicks in uncovered canvas closed Scenes, Comments history, and both floating/docked scene comment composers. A temporary unsent draft survived dismissal/reopen in both comment placements, then was cleared without submitting; original floating placement restored. The user's canvas now has five scenes, all preserved. Preview left open; no production deploy or milestone closure.
 
 ## Change record
 
