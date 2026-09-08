@@ -388,6 +388,8 @@ The [2026-09-07 AI reliability audit](docs/implementation/milestone-08-ai-reliab
 
 - [ ] A saved story plays from beginning to end after underlying objects are edited, moved, and reloaded; reduced-motion mode substitutes an accessible non-sweeping transition.
 
+`FR-092` UI refinement approved 2026-09-08: previous/next scene buttons occupy no toolbar space for zero or one scene; both appear when at least two scenes exist. The scene-editor button remains available at every scene count.
+
 ## Milestone 10 — Live conversation
 
 ### Product requirements

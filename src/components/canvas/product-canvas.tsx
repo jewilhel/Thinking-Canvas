@@ -5069,20 +5069,22 @@ function ProductCanvasWorkspace({
       </AnimatePresence>
 
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="outline"
-          aria-label="Previous scene"
-          disabled={
-            !storyScenes.length ||
-            storyScenes.length === 1 ||
-            (!sceneLoopEnabled && activeSceneIndex === 0)
-          }
-          onClick={() => navigateScene(-1)}
-        >
-          <ChevronLeft aria-hidden="true" />
-        </Button>
+        {storyScenes.length >= 2 ? (
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Previous scene"
+            disabled={
+              !storyScenes.length ||
+              storyScenes.length === 1 ||
+              (!sceneLoopEnabled && activeSceneIndex === 0)
+            }
+            onClick={() => navigateScene(-1)}
+          >
+            <ChevronLeft aria-hidden="true" />
+          </Button>
+        ) : null}
         <Button
           type="button"
           size="icon-sm"
@@ -5101,20 +5103,22 @@ function ProductCanvasWorkspace({
               ? `${storyScenes.length} scenes available`
               : "No scenes available"}
         </output>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="outline"
-          aria-label="Next scene"
-          disabled={
-            !storyScenes.length ||
-            storyScenes.length === 1 ||
-            (!sceneLoopEnabled && activeSceneIndex === storyScenes.length - 1)
-          }
-          onClick={() => navigateScene(1)}
-        >
-          <ChevronRight aria-hidden="true" />
-        </Button>
+        {storyScenes.length >= 2 ? (
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Next scene"
+            disabled={
+              !storyScenes.length ||
+              storyScenes.length === 1 ||
+              (!sceneLoopEnabled && activeSceneIndex === storyScenes.length - 1)
+            }
+            onClick={() => navigateScene(1)}
+          >
+            <ChevronRight aria-hidden="true" />
+          </Button>
+        ) : null}
         <Button
           type="button"
           size="icon-sm"

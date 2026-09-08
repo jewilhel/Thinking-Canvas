@@ -391,6 +391,14 @@ The product owner approved the complete plan and its recommended D1–D5 options
 - `pnpm check` passes: formatting, lint, types, 410 unit tests, and production build. Both guided-story Chromium E2E tests pass (15.1s); local speech/storage is not configured, so this run is not fresh audio-generation evidence.
 - Runtime commit `7ce3397` was pushed and deployed to preview `6aa0765cacc144146703675e`. Codex internal-browser retest selected the original Scene 3, observed exact camera `(x=-1751, y=-444, scale=3)`, created Scene 5 and Scene 6 without pan/zoom, and verified the camera stayed identical and both scenes survived reload. Temporary test captures were soft-deleted; the user's four original scenes were retained. No schema change, milestone closure, merge, or production deployment. Hands-on acceptance remains separate.
 
+### Scene action menu clipping repair — 2026-09-08
+
+- User screenshot from preview `6aa0765cacc144146703675e` shows the last scene's Delete action clipped by the rounded scene list. Source confirms the absolute menu was inside both the list's `overflow-hidden` boundary and the panel scroll container.
+- Render actions through a body portal with fixed, window-clamped placement above the panel. Preserve outside-click, scene selection, and Escape dismissal; dismiss on scrolling/resizing so a detached menu cannot remain behind as its anchor moves. Scene deletion semantics are unchanged.
+- Added component coverage for portal placement, bottom-edge clamping, last-scene deletion callback, and scroll dismissal. Added real pointer deletion of the final scene to the isolated browser regression test. Verification pending; no original user scene is to be deleted for QA.
+
+- Additional user request: omit both previous/next buttons entirely while the story has fewer than two scenes; retain the Scenes button and existing navigation/loop behavior once two scenes exist. Browser coverage checks zero, one, multiple, and deletion back to one scene.
+
 ## Change record
 
 | Date       | Change or decision                                                                                                                             | Rationale                                                                                                                                                           | Impact                                                                                                                                                                                                         | Approved by                                       |

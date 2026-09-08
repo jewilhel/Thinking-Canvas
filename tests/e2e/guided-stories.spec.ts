@@ -11,6 +11,10 @@ test("captures repeated scenes after navigation to maximum zoom without moving t
   await page.getByRole("button", { name: "Create canvas" }).click();
   await expect(page).toHaveURL(/\/app\/canvases\/[0-9a-f-]+$/);
   await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");
+  await expect(
+    page.getByRole("button", { name: "Previous scene" }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Next scene" })).toHaveCount(0);
   for (let click = 0; click < 16; click++)
     await page.getByRole("button", { name: "Zoom in", exact: true }).click();
   await page.getByRole("button", { name: "Open scenes", exact: true }).click();
@@ -19,6 +23,10 @@ test("captures repeated scenes after navigation to maximum zoom without moving t
     page.getByRole("button", { name: "Scene 1", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Zoom out", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Previous scene" }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Next scene" })).toHaveCount(0);
   await page.getByRole("button", { name: "Scene 1", exact: true }).click();
   await expect(page.getByTestId("product-canvas-surface")).toHaveAttribute(
     "data-viewport-scale",
@@ -49,12 +57,43 @@ test("captures repeated scenes after navigation to maximum zoom without moving t
     );
   }
   const canvasId = new URL(page.url()).pathname.split("/").at(-1);
+  await expect(
+    page.getByRole("button", { name: "Previous scene" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next scene" })).toBeVisible();
   const response = await page.request.get(`/api/canvases/${canvasId}/stories`);
   const { story } = await response.json();
   expect(story.scenes).toHaveLength(3);
   expect(story.scenes[2].camera).toEqual(story.scenes[1].camera);
   expect(story.scenes[2].target).toEqual(story.scenes[1].target);
   expect(story.scenes[2].narration).not.toEqual(story.scenes[1].narration);
+  await page
+    .getByRole("button", { name: "Scene actions for Scene 3", exact: true })
+    .click();
+  const menu = page.getByTestId("scene-actions-menu");
+  expect(
+    await menu.evaluate((element) => element.parentElement === document.body),
+  ).toBe(true);
+  const deleteButton = page.getByRole("button", {
+    name: "Delete",
+    exact: true,
+  });
+  // A real pointer click verifies hit testing, not merely DOM visibility.
+  await deleteButton.click();
+  await expect(
+    page.getByRole("button", { name: "Scene 3", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Scene actions for Scene 2", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Scene 2", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Previous scene" }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Next scene" })).toHaveCount(0);
 });
 
 async function signIn(page: Page) {

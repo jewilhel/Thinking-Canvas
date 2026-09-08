@@ -88,6 +88,34 @@ function renderPanel(
 }
 
 describe("ScenePanel", () => {
+  it("renders last-scene actions outside clipping containers and dismisses on scroll", () => {
+    const props = renderPanel({ story: twoSceneStory });
+    const trigger = screen.getByRole("button", {
+      name: "Scene actions for Detail",
+    });
+    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({
+      left: 970,
+      right: 1006,
+      top: 710,
+      bottom: 746,
+      width: 36,
+      height: 36,
+      x: 970,
+      y: 710,
+      toJSON: () => ({}),
+    });
+    fireEvent.click(trigger);
+    const menu = screen.getByTestId("scene-actions-menu");
+    expect(menu.parentElement).toBe(document.body);
+    expect(parseFloat(menu.style.top)).toBeLessThanOrEqual(
+      window.innerHeight - 140,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(props.onDelete).toHaveBeenCalledWith(twoSceneStory.scenes[1]);
+    fireEvent.click(trigger);
+    fireEvent.scroll(screen.getByRole("list", { name: "Story scenes" }));
+    expect(screen.queryByTestId("scene-actions-menu")).toBeNull();
+  });
   it("dismisses scene actions outside the menu, on another scene, and with Escape", () => {
     renderPanel({ story: twoSceneStory, activeSceneId: story.scenes[0]!.id });
     const menu = screen.getByRole("button", {

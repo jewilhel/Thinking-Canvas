@@ -194,6 +194,7 @@ export function ScenePanel({
     mode: "move" | "resize";
   } | null>(null);
   const [menuSceneId, setMenuSceneId] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0 });
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [draggedSceneId, setDraggedSceneId] = useState<string | null>(null);
@@ -227,10 +228,15 @@ export function ScenePanel({
     document.addEventListener("pointerdown", outside, true);
     document.addEventListener("focusin", outside, true);
     document.addEventListener("keydown", escape, true);
+    const close = () => setMenuSceneId(null);
+    window.addEventListener("resize", close);
+    document.addEventListener("scroll", close, true);
     return () => {
       document.removeEventListener("pointerdown", outside, true);
       document.removeEventListener("focusin", outside, true);
       document.removeEventListener("keydown", escape, true);
+      window.removeEventListener("resize", close);
+      document.removeEventListener("scroll", close, true);
     };
   }, [open, menuSceneId]);
 
@@ -566,52 +572,69 @@ export function ScenePanel({
                       data-scene-menu={scene.id}
                       aria-expanded={menuSceneId === scene.id}
                       className="grid size-9 shrink-0 place-items-center rounded-lg hover:bg-black/20 focus-visible:outline-none"
-                      onClick={() =>
+                      onClick={(event) => {
+                        const rect =
+                          event.currentTarget.getBoundingClientRect();
+                        setMenuPosition({
+                          left: Math.max(
+                            8,
+                            Math.min(rect.right - 176, window.innerWidth - 184),
+                          ),
+                          top: Math.max(
+                            8,
+                            Math.min(rect.bottom + 4, window.innerHeight - 140),
+                          ),
+                        });
                         setMenuSceneId((current) =>
                           current === scene.id ? null : scene.id,
-                        )
-                      }
+                        );
+                      }}
                     >
                       <MoreHorizontal aria-hidden="true" className="size-4" />
                     </button>
-                    {menuSceneId === scene.id ? (
-                      <div
-                        data-scene-menu={scene.id}
-                        className="absolute top-full right-2 z-10 mt-1 w-44 rounded-xl border border-zinc-600 bg-zinc-950 p-1 shadow-xl"
-                      >
-                        <button
-                          type="button"
-                          className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-800"
-                          onClick={() => {
-                            setDraftTitle(scene.title);
-                            setEditingSceneId(scene.id);
-                            setMenuSceneId(null);
-                          }}
-                        >
-                          Rename
-                        </button>
-                        <button
-                          type="button"
-                          className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-800"
-                          onClick={() => {
-                            onReplace(scene);
-                            setMenuSceneId(null);
-                          }}
-                        >
-                          Replace
-                        </button>
-                        <button
-                          type="button"
-                          className="w-full rounded-lg px-3 py-2 text-left text-sm text-rose-300 hover:bg-zinc-800"
-                          onClick={() => {
-                            onDelete(scene);
-                            setMenuSceneId(null);
-                          }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    ) : null}
+                    {menuSceneId === scene.id
+                      ? createPortal(
+                          <div
+                            data-scene-menu={scene.id}
+                            data-testid="scene-actions-menu"
+                            style={menuPosition}
+                            className="fixed z-[120] max-h-[calc(100dvh-1rem)] w-44 overflow-y-auto rounded-xl border border-zinc-600 bg-zinc-950 p-1 text-zinc-50 shadow-xl"
+                          >
+                            <button
+                              type="button"
+                              className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-800"
+                              onClick={() => {
+                                setDraftTitle(scene.title);
+                                setEditingSceneId(scene.id);
+                                setMenuSceneId(null);
+                              }}
+                            >
+                              Rename
+                            </button>
+                            <button
+                              type="button"
+                              className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-800"
+                              onClick={() => {
+                                onReplace(scene);
+                                setMenuSceneId(null);
+                              }}
+                            >
+                              Replace
+                            </button>
+                            <button
+                              type="button"
+                              className="w-full rounded-lg px-3 py-2 text-left text-sm text-rose-300 hover:bg-zinc-800"
+                              onClick={() => {
+                                onDelete(scene);
+                                setMenuSceneId(null);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>,
+                          document.body,
+                        )
+                      : null}
                   </div>
                 </li>
               ))}
