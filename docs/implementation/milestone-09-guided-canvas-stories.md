@@ -377,6 +377,7 @@ The product owner approved the complete plan and its recommended D1–D5 options
 - Product-owner screenshots requested a compact initial caption that hugs its text and hover-only move/resize affordances. Unsized captions now use intrinsic width capped at 320 px, content-driven height capped at 240 px (both constrained by the viewport), and internal scrolling for longer scripts. Existing authored rectangles remain unchanged.
 - Handles are absolutely positioned, hidden at rest, and revealed on bubble hover or their own keyboard-visible focus; they no longer reserve a separate top row. First pointer/keyboard movement measures the actual content-sized rectangle before persisting world coordinates, avoiding a size or position jump.
 - Verification pending: full source gate and hosted compact/wrapped text, hover/focus, first movement, and preserved authored sizing checks.
+- Additional product-owner request: captions fade in/out during scene presentation. Use the existing Motion dependency's keyed presence lifecycle: 180 ms fade-out followed by 240 ms fade-in, opacity only, with immediate transitions under reduced motion. Outgoing captions are inert and hidden from assistive technology during their exit. Reference: https://motion.dev/docs/react-animate-presence.
 
 ## Change record
 

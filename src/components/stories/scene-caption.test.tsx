@@ -4,7 +4,9 @@ import {
   render,
   screen,
   cleanup,
+  waitFor,
 } from "@testing-library/react";
+import { AnimatePresence } from "motion/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SceneCaption,
@@ -14,6 +16,27 @@ import {
 import type { StoryScene } from "@/stories/story-model";
 afterEach(cleanup);
 describe("scene caption placement", () => {
+  it("retains an inert outgoing caption until its fade completes", async () => {
+    const caption = (
+      <SceneCaption
+        scene={
+          { id: "a", title: "Opening", narration: "Fade me" } as StoryScene
+        }
+        viewport={{ x: 0, y: 0, scale: 1 }}
+        size={{ width: 1000, height: 800 }}
+        editable
+        onSave={async () => true}
+      />
+    );
+    const { rerender } = render(<AnimatePresence>{caption}</AnimatePresence>);
+    const bubble = screen.getByTestId("story-caption-overlay");
+    await waitFor(() => expect(bubble).toHaveStyle({ opacity: "1" }));
+    rerender(<AnimatePresence>{null}</AnimatePresence>);
+    expect(bubble).toBeInTheDocument();
+    expect(bubble).toHaveAttribute("inert");
+    expect(bubble).toHaveAttribute("aria-hidden", "true");
+    await waitFor(() => expect(bubble).not.toBeInTheDocument());
+  });
   it("hugs unsized text and measures its real bounds before the first author move", async () => {
     const onSave = vi.fn(async () => true);
     render(

@@ -195,6 +195,7 @@ import {
 } from "@/stories/story-transition";
 import { useStoryNarration } from "@/stories/use-story-narration";
 import { SceneCaption } from "@/components/stories/scene-caption";
+import { AnimatePresence } from "motion/react";
 
 type Props = {
   canvasId: string;
@@ -5045,25 +5046,27 @@ function ProductCanvasWorkspace({
         onDismiss={() => setScenePanelOpen(false)}
       />
 
-      {activeScene?.narration ? (
-        <SceneCaption
-          key={activeScene.id}
-          scene={activeScene}
-          viewport={viewport}
-          size={size}
-          editable={canMutateCanvas && !storyState.saving}
-          onSave={async (layout) =>
-            Boolean(
-              await storyState.mutate({
-                action: "caption_layout",
-                sceneId: activeScene.id,
-                expectedRevision: storyState.story?.revision ?? 0,
-                layout,
-              }),
-            )
-          }
-        />
-      ) : null}
+      <AnimatePresence mode="wait">
+        {activeScene?.narration ? (
+          <SceneCaption
+            key={activeScene.id}
+            scene={activeScene}
+            viewport={viewport}
+            size={size}
+            editable={canMutateCanvas && !storyState.saving}
+            onSave={async (layout) =>
+              Boolean(
+                await storyState.mutate({
+                  action: "caption_layout",
+                  sceneId: activeScene.id,
+                  expectedRevision: storyState.story?.revision ?? 0,
+                  layout,
+                }),
+              )
+            }
+          />
+        ) : null}
+      </AnimatePresence>
 
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
         <Button

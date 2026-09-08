@@ -2,6 +2,7 @@
 
 import { useRef, useState, type PointerEvent, type KeyboardEvent } from "react";
 import { GripHorizontal, Grip } from "lucide-react";
+import { motion, useIsPresent, useReducedMotion } from "motion/react";
 import type { Viewport } from "@/canvas/geometry";
 import type { SceneCaptionLayout, StoryScene } from "@/stories/story-model";
 
@@ -53,6 +54,8 @@ export function SceneCaption({
   const [draft, setDraft] = useState<SceneCaptionLayout | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const isPresent = useIsPresent();
+  const reducedMotion = useReducedMotion();
   const bubble = useRef<HTMLElement>(null);
   const layout = draft ?? scene.captionLayout;
   const bounds = captionScreenBounds(layout, viewport, size);
@@ -177,12 +180,24 @@ export function SceneCaption({
     void save(layout);
   }
   return (
-    <aside
+    <motion.aside
       ref={bubble}
+      initial={reducedMotion ? false : { opacity: 0 }}
+      animate={{
+        opacity: 1,
+        transition: { duration: reducedMotion ? 0 : 0.24, ease: "easeOut" },
+      }}
+      exit={{
+        opacity: 0,
+        transition: { duration: reducedMotion ? 0 : 0.18, ease: "easeIn" },
+      }}
+      aria-hidden={!isPresent || undefined}
+      inert={!isPresent}
       aria-label={`Caption for ${scene.title}`}
       data-testid="story-caption-overlay"
       className="group/caption absolute z-20 flex flex-col overflow-hidden rounded-xl border border-zinc-600 bg-zinc-950/90 text-sm text-white shadow-lg"
       style={{
+        pointerEvents: isPresent ? undefined : "none",
         left: layout ? bounds.x : "50%",
         top: layout ? bounds.y : undefined,
         bottom: layout ? undefined : 90,
@@ -250,6 +265,6 @@ export function SceneCaption({
           <Grip aria-hidden="true" className="size-3" />
         </button>
       ) : null}
-    </aside>
+    </motion.aside>
   );
 }
