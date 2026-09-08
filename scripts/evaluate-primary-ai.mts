@@ -157,6 +157,7 @@ function buildProjection(fixtureId: string): AiProjectionEnvelope {
     canvasId: ids.canvas,
     objects,
     commentThreads: [],
+    documents: [],
     designTokens: AI_CANVAS_DESIGN_TOKENS,
     truncated: false,
   };

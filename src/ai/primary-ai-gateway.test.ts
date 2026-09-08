@@ -79,4 +79,23 @@ describe("requestPrimaryAiWithRetry", () => {
     ).rejects.toThrow("provider unavailable");
     expect(request).toHaveBeenCalledTimes(2);
   });
+
+  it("supports a bounded third attempt for document turns", async () => {
+    const completed = {
+      status: "completed" as const,
+      requestId: "request-3",
+      reply: { body: "Done", evidence: [], contextualTargetObjectIds: [] },
+      toolCalls: [],
+    };
+    const request = vi
+      .fn<PrimaryAiGateway["request"]>()
+      .mockRejectedValueOnce(new Error("temporary provider failure"))
+      .mockRejectedValueOnce(new Error("temporary provider failure"))
+      .mockResolvedValueOnce(completed);
+
+    await expect(
+      requestPrimaryAiWithRetry({ request }, requestInput, 3),
+    ).resolves.toEqual({ result: completed, attemptCount: 3 });
+    expect(request).toHaveBeenCalledTimes(3);
+  });
 });

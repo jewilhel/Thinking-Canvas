@@ -21,6 +21,7 @@ import {
   createPrimaryAiGateway,
   parsePrimaryAiProviderEnvironment,
 } from "@/ai/primary-ai-gateway-factory";
+import { AiProviderTimeoutError } from "@/ai/primary-ai-gateway";
 import { allowedAiToolNames } from "@/ai/tool-registry";
 
 const ids = {
@@ -91,6 +92,7 @@ const projection: AiProjectionEnvelope = {
     },
   ],
   commentThreads: [],
+  documents: [],
   designTokens: AI_CANVAS_DESIGN_TOKENS,
   serializedBytes: 512,
   truncated: false,
@@ -118,6 +120,16 @@ function providerResponse(
 }
 
 function clientReturning(response: Response) {
+  const create = vi.fn(
+    async (
+      body: Parameters<NonNullable<StreamingResponsesClient["create"]>>[0],
+      options: Parameters<NonNullable<StreamingResponsesClient["create"]>>[1],
+    ) => {
+      void body;
+      void options;
+      return response;
+    },
+  );
   const stream = vi.fn(
     (body: ResponseCreateParamsStreaming, options: { signal?: AbortSignal }) =>
       ({
@@ -132,7 +144,7 @@ function clientReturning(response: Response) {
         options,
       }) as ReturnType<StreamingResponsesClient["stream"]>,
   );
-  return { stream };
+  return { create, stream };
 }
 
 describe("OpenAiPrimaryAiGateway", () => {
@@ -173,16 +185,16 @@ describe("OpenAiPrimaryAiGateway", () => {
         outputTokens: 45,
       },
     });
-    const [body, options] = client.stream.mock.calls[0];
+    const [body, options] = client.create.mock.calls[0];
     expect(body).toMatchObject({
       model: "gpt-5.6-terra",
       max_output_tokens: 4_000,
       parallel_tool_calls: false,
       reasoning: { effort: "medium" },
       store: false,
-      stream: true,
       tool_choice: { type: "function", name: "submit_primary_ai_turn" },
     });
+    expect(body).not.toHaveProperty("stream");
     expect(body.safety_identifier).toHaveLength(64);
     expect(body.safety_identifier).not.toContain(ids.user);
     expect(options.signal).toBe(signal);
@@ -210,6 +222,116 @@ describe("OpenAiPrimaryAiGateway", () => {
     expect(serialized).toContain('\\"shapes\\"');
     expect(serialized).toContain('\\"key\\"');
     expect(serialized).not.toContain("new-shape:${shape.key}");
+  });
+
+  it("keeps provider-facing document edits compact and validates them before returning", async () => {
+    const tool = buildSubmitTurnTool([
+      "propose_document_changes",
+      "stage_document_changes",
+    ]);
+    expect(
+      tool.parameters.properties.toolCalls.items.properties,
+    ).not.toHaveProperty("argumentsJson");
+    expect(
+      tool.parameters.properties.toolCalls.items.properties.toolName.enum,
+    ).toEqual(["propose_document_changes", "stage_document_changes"]);
+    const documentArguments = (
+      tool.parameters.properties.toolCalls.items.properties as unknown as {
+        arguments: {
+          properties: Record<string, unknown>;
+          required: string[];
+        };
+      }
+    ).arguments as {
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+    expect(documentArguments.required).toEqual([
+      "summary",
+      "documentObjectId",
+      "operations",
+      "whatChanged",
+      "why",
+    ]);
+    expect(documentArguments.properties).not.toHaveProperty("objectCommands");
+
+    const client = clientReturning(
+      providerResponse({
+        body: "I applied the clearer wording.",
+        evidence: [],
+        contextualTargetObjectIds: [],
+        toolCalls: [
+          {
+            callKey: "document-edit",
+            toolName: "stage_document_changes",
+            arguments: {
+              summary: "Clarify the selection.",
+              documentObjectId: ids.object,
+              operations: [
+                {
+                  kind: "replace_selection",
+                  text: "Clearer selected wording.",
+                  format: "plain",
+                },
+              ],
+              whatChanged: "Replaced the selected wording.",
+              why: "The user approved the suggested clarification.",
+            },
+          },
+        ],
+      }),
+    );
+    const gateway = new OpenAiPrimaryAiGateway({ apiKey: "test-key", client });
+
+    await expect(
+      gateway.request({
+        invocation: { ...invocation, authority: "edit_with_review" },
+        projection,
+        allowedToolNames: [
+          "propose_document_changes",
+          "stage_document_changes",
+        ],
+      }),
+    ).resolves.toMatchObject({
+      toolCalls: [
+        {
+          arguments: {
+            operations: [{ format: "plain" }],
+            objectCommands: [],
+            objectExplanations: [],
+          },
+        },
+      ],
+    });
+  });
+
+  it("rejects malformed document actions inside the provider retry boundary", async () => {
+    const client = clientReturning(
+      providerResponse({
+        body: "I applied the wording.",
+        evidence: [],
+        contextualTargetObjectIds: [],
+        toolCalls: [
+          {
+            callKey: "document-edit",
+            toolName: "stage_document_changes",
+            arguments: {
+              documentObjectId: ids.object,
+              operations: [],
+            },
+          },
+        ],
+      }),
+    );
+    const gateway = new OpenAiPrimaryAiGateway({ apiKey: "test-key", client });
+
+    await expect(
+      gateway.request({
+        invocation: { ...invocation, authority: "edit_with_review" },
+        projection,
+        allowedToolNames: ["stage_document_changes"],
+      }),
+    ).rejects.toThrow("invalid structured response");
   });
 
   it("rejects a provider action outside current authority", async () => {
@@ -256,7 +378,25 @@ describe("OpenAiPrimaryAiGateway", () => {
         signal: controller.signal,
       }),
     ).rejects.toMatchObject({ name: "AbortError" });
+    expect(client.create).not.toHaveBeenCalled();
     expect(client.stream).not.toHaveBeenCalled();
+  });
+
+  it("classifies an upstream gateway timeout", async () => {
+    const client = clientReturning(providerResponse({}));
+    client.create.mockRejectedValueOnce(new Error("Request timed out."));
+    const gateway = new OpenAiPrimaryAiGateway({
+      apiKey: "test-key",
+      client,
+    });
+
+    await expect(
+      gateway.request({
+        invocation,
+        projection,
+        allowedToolNames: allowedAiToolNames("comment_only"),
+      }),
+    ).rejects.toBeInstanceOf(AiProviderTimeoutError);
   });
 
   it("submits targeted before and after captures to a separate visual gate", async () => {

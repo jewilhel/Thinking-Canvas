@@ -156,3 +156,25 @@
     @apply font-sans;
   }
 }
+
+/* Shared by floating/docked comment threads, composers, and history. */
+.comment-panel-content
+  :where(div, form, p, span, label, button, input, textarea, select) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.comment-panel-content :where(button, label) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.comment-panel-content button[data-slot="button"] {
+  height: auto;
+  min-height: 2rem;
+}
+
+.comment-panel-content :where(pre, code) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

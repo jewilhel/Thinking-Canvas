@@ -40,7 +40,11 @@ import {
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
 import { resolveConnectorPointsV2 } from "@/canvas/geometry";
-import { WorkspacePanel } from "@/components/canvas/workspace-panel";
+import { CommentPanel } from "@/components/comments/comment-panel";
+import {
+  useCommentWorkspace,
+  useCommentDraft,
+} from "@/components/comments/comment-workspace";
 import { Button } from "@/components/ui/button";
 import type { CanvasRole } from "@/domain/command";
 
@@ -489,7 +493,7 @@ function PromptControls({
   );
 }
 
-function RecipientComposer({
+export function RecipientComposer({
   label,
   value,
   recipients,
@@ -665,7 +669,7 @@ function RecipientComposer({
   );
 }
 
-function ThreadBody({
+export function ThreadBody({
   thread,
   userId,
   role,
@@ -681,6 +685,7 @@ function ThreadBody({
   onUndoAiTransaction,
   onCancelAiRun,
   onRetryAiRun,
+  operationError = "",
 }: {
   thread: CommentThread;
   userId: string;
@@ -703,19 +708,30 @@ function ThreadBody({
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
   onCancelAiRun: (runId: string) => Promise<void>;
   onRetryAiRun: (runId: string) => Promise<void>;
+  operationError?: string;
 }) {
-  const [reply, setReply] = useState("");
+  const [reply, setReply] = useCommentDraft(`${thread.id}:reply`, "");
   const inheritedRecipients = thread.activeParticipants.filter(
     (participant) => participant.kind === "ai" || participant.key !== userId,
   );
-  const [replyRecipients, setReplyRecipients] =
-    useState<CommentRecipient[]>(inheritedRecipients);
-  const [routingExplicit, setRoutingExplicit] = useState(false);
+  const [replyRecipients, setReplyRecipients] = useCommentDraft<
+    CommentRecipient[]
+  >(`${thread.id}:recipients`, inheritedRecipients);
+  const [routingExplicit, setRoutingExplicit] = useCommentDraft(
+    `${thread.id}:routing`,
+    false,
+  );
   const effectiveReplyRecipients = routingExplicit
     ? replyRecipients
     : inheritedRecipients;
-  const [editingBody, setEditingBody] = useState(false);
-  const [bodyDraft, setBodyDraft] = useState(thread.body);
+  const [editingBody, setEditingBody] = useCommentDraft(
+    `${thread.id}:editing`,
+    false,
+  );
+  const [bodyDraft, setBodyDraft] = useCommentDraft(
+    `${thread.id}:body`,
+    thread.body,
+  );
   const [undoingChangeSetId, setUndoingChangeSetId] = useState<string | null>(
     null,
   );
@@ -938,6 +954,11 @@ function ThreadBody({
           {undoNotice}
         </p>
       ) : null}
+      {operationError ? (
+        <p role="alert" className="mt-3 text-sm text-red-700">
+          {operationError}
+        </p>
+      ) : null}
       {latestRuns
         .filter((run) => run.status !== "completed")
         .map((run) => {
@@ -994,6 +1015,7 @@ function ThreadBody({
                       type="button"
                       size="sm"
                       variant="outline"
+                      disabled={pending}
                       onClick={() => void onCancelAiRun(run.id)}
                     >
                       <X aria-hidden="true" /> Cancel
@@ -1003,7 +1025,7 @@ function ThreadBody({
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={thread.status !== "open"}
+                      disabled={pending || thread.status !== "open"}
                       onClick={() => void onRetryAiRun(run.id)}
                     >
                       <RotateCcw aria-hidden="true" /> Retry
@@ -1145,6 +1167,7 @@ export function CanvasComments({
   overlayVisible,
   onOverlayVisibilityChange,
 }: Props) {
+  const workspace = useCommentWorkspace();
   const {
     threads,
     collaboration,
@@ -1162,7 +1185,37 @@ export function CanvasComments({
     supabasePublishableKey,
     onAiTransactionApplied,
   );
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const selectedThreadId =
+    workspace.active === "thread" ? workspace.threadId : null;
+  const setSelectedThreadId = (id: string | null) =>
+    id ? workspace.openThread(id) : workspace.show(null);
+  const { setService } = workspace;
+  useEffect(() => {
+    setService({
+      threads,
+      collaboration,
+      loading,
+      pending,
+      error,
+      refresh,
+      execute,
+      setAiSettings,
+      cancelAiRun,
+      retryAiRun,
+    });
+  }, [
+    threads,
+    collaboration,
+    loading,
+    pending,
+    error,
+    refresh,
+    execute,
+    setAiSettings,
+    cancelAiRun,
+    retryAiRun,
+    setService,
+  ]);
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerTarget, setComposerTarget] = useState<CommentTarget | null>(
     null,
@@ -1194,47 +1247,6 @@ export function CanvasComments({
     if (placementActive)
       requestAnimationFrame(() => placementRef.current?.focus());
   }, [placementActive]);
-  useEffect(() => {
-    if (!selectedThreadId) return;
-
-    function dismissThreadOutside(event: PointerEvent) {
-      const target = event.target;
-      if (
-        !(target instanceof Node) ||
-        threadCardRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setSelectedThreadId(null);
-    }
-
-    window.addEventListener("pointerdown", dismissThreadOutside, true);
-    return () =>
-      window.removeEventListener("pointerdown", dismissThreadOutside, true);
-  }, [selectedThreadId]);
-  useEffect(() => {
-    if (!composerOpen) return;
-
-    function cancelComposerOutside(event: PointerEvent) {
-      const target = event.target;
-      if (
-        !(target instanceof Node) ||
-        composerCardRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setDraft("");
-      setPromptKind(null);
-      setComposerOpen(false);
-      setComposerTarget(null);
-      setDraftRecipients([]);
-      onSelectTargets([]);
-    }
-
-    window.addEventListener("pointerdown", cancelComposerOutside, true);
-    return () =>
-      window.removeEventListener("pointerdown", cancelComposerOutside, true);
-  }, [composerOpen, onSelectTargets]);
 
   function closeComposer() {
     setComposerOpen(false);
@@ -1246,10 +1258,17 @@ export function CanvasComments({
     setDraft("");
     setPromptKind(null);
     closeComposer();
+    workspace.show(null);
     onSelectTargets([]);
   }
 
   function beginComment() {
+    if (composerTarget && draft.trim()) {
+      setComposerOpen(true);
+      workspace.show("canvas-composer");
+      onDismissPanel();
+      return;
+    }
     setSelectedThreadId(null);
     closeComposer();
     onDismissPanel();
@@ -1295,6 +1314,7 @@ export function CanvasComments({
     if (panelOpen) onDismissPanel();
     onPlacementModeChange(false);
     setComposerOpen(true);
+    workspace.show("canvas-composer");
   }
 
   async function createThread() {
@@ -1307,6 +1327,7 @@ export function CanvasComments({
       targetObjectIds: composerTarget.targetObjectIds,
       orderedContextIds: composerTarget.orderedContextIds,
       canvasAnchor: composerTarget.canvasAnchor,
+      documentRange: null,
       promptKind,
       authorKind: "human",
       authorKey: null,
@@ -1325,11 +1346,12 @@ export function CanvasComments({
       result && typeof result === "object" && "comment_id" in result
         ? String(result.comment_id)
         : null;
+    if (!id) return;
     setDraft("");
     setPromptKind(null);
     closeComposer();
     onOverlayVisibilityChange(true);
-    if (id) focusThread(id);
+    workspace.finishCreation("canvas-composer", id);
   }
 
   async function reply(
@@ -1477,14 +1499,6 @@ export function CanvasComments({
         </button>
       ) : null}
 
-      {!placementActive && selectedThread ? (
-        <div
-          aria-hidden="true"
-          data-testid="comment-focus-shield"
-          className="absolute inset-0 z-20 cursor-default touch-none"
-        />
-      ) : null}
-
       {overlayVisible
         ? threads
             .filter((thread) => thread.status === "open")
@@ -1503,7 +1517,6 @@ export function CanvasComments({
                   style={markerStyle}
                   onClick={() => {
                     onPlacementModeChange(false);
-                    closeComposer();
                     focusThread(thread.id);
                   }}
                 >
@@ -1542,15 +1555,17 @@ export function CanvasComments({
 
       {!placementActive &&
       composerOpen &&
+      workspace.active === "canvas-composer" &&
       composerTarget &&
       composerPosition &&
       composerCardPosition ? (
-        <div
-          ref={composerCardRef}
-          role="dialog"
-          aria-label="New comment"
-          className="group absolute z-50 w-[min(30rem,calc(100%-2rem))] rounded-3xl border border-zinc-200 bg-white p-2 text-zinc-900 shadow-2xl"
-          style={composerCardPosition}
+        <CommentPanel
+          title="New comment"
+          closeLabel="Close comment composer"
+          anchor={composerCardPosition}
+          onClose={cancelComposer}
+          busy={pending}
+          initialHeight={280}
         >
           <form
             className="flex items-center gap-2"
@@ -1612,44 +1627,28 @@ export function CanvasComments({
               <option value="review">Review</option>
               <option value="rating">Rating 1–5</option>
             </select>
-            <Button
-              className="ml-auto"
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Close comment composer"
-              onClick={cancelComposer}
-            >
-              <X aria-hidden="true" />
-            </Button>
           </div>
-        </div>
+        </CommentPanel>
       ) : null}
 
       {!placementActive &&
       selectedThread &&
       threadPosition &&
       threadCardPosition ? (
-        <div
-          ref={threadCardRef}
-          role="dialog"
-          aria-label="Comment thread"
-          className="absolute z-50 max-h-[min(28rem,calc(100%-2rem))] w-[min(24rem,calc(100%-2rem))] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 text-zinc-900 shadow-2xl"
-          style={threadCardPosition}
+        <CommentPanel
+          key={selectedThread.id}
+          title="Comment"
+          label="comment thread"
+          anchor={
+            workspace.getAnchor(selectedThread) ??
+            workspace.anchor ??
+            threadCardPosition
+          }
+          onClose={() => setSelectedThreadId(null)}
+          busy={pending}
         >
-          <div className="mb-3 flex items-center justify-between border-b border-zinc-100 pb-2">
-            <p className="font-semibold">Comment</p>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Close comment thread"
-              onClick={() => setSelectedThreadId(null)}
-            >
-              <X aria-hidden="true" />
-            </Button>
-          </div>
           <ThreadBody
+            key={selectedThread.id}
             thread={selectedThread}
             userId={userId}
             role={canvasRole}
@@ -1671,16 +1670,21 @@ export function CanvasComments({
             }}
             onCancelAiRun={cancelAiRun}
             onRetryAiRun={retryAiRun}
+            operationError={error}
           />
-        </div>
+        </CommentPanel>
       ) : null}
 
       {panelOpen ? (
-        <WorkspacePanel
+        <CommentPanel
           title="Comments"
-          description="Attach feedback to a selection, an object, or anywhere on the canvas."
-          invoker={panelInvoker}
-          onDismiss={onDismissPanel}
+          anchor={{ left: size.width - 416, top: 100 }}
+          onClose={() => {
+            workspace.show(null);
+            onDismissPanel();
+            panelInvoker?.focus();
+          }}
+          initialHeight={600}
         >
           <div className="flex flex-wrap gap-2">
             <Button type="button" disabled={!canComment} onClick={beginComment}>
@@ -1784,6 +1788,8 @@ export function CanvasComments({
             {threads.map((thread) => {
               const targetAvailable =
                 thread.canvasAnchor !== null ||
+                (thread.documentRange !== null &&
+                  objectsById.has(thread.documentRange.documentObjectId)) ||
                 thread.targetObjectIds.some((id) => objectsById.has(id));
               return (
                 <button
@@ -1793,7 +1799,6 @@ export function CanvasComments({
                   onClick={() => {
                     onOverlayVisibilityChange(true);
                     onPlacementModeChange(false);
-                    closeComposer();
                     focusThread(thread.id);
                   }}
                 >
@@ -1824,7 +1829,7 @@ export function CanvasComments({
               );
             })}
           </div>
-        </WorkspacePanel>
+        </CommentPanel>
       ) : null}
     </>
   );

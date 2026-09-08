@@ -12,13 +12,14 @@ select is(
       and pg_class.relname = any(array[
         'profiles', 'canvases', 'canvas_members', 'canvas_invitations',
         'canvas_updates', 'canvas_snapshots', 'comments', 'comment_targets',
+        'comment_document_targets',
         'comment_replies', 'comment_prompts', 'comment_responses',
         'ai_change_sets', 'ai_object_changes', 'review_decisions', 'stories',
         'story_scenes', 'starter_templates'
       ])
       and pg_class.relrowsecurity
   ),
-  17,
+  18,
   'RLS is enabled on every user-owned table'
 );
 
@@ -61,6 +62,17 @@ values (
   '30000000-0000-4000-8000-000000000001',
   '60000000-0000-4000-8000-000000000001',
   0
+);
+
+insert into public.comment_document_targets (
+  comment_id, document_object_id, relative_anchor, relative_head, quoted_text
+)
+values (
+  '30000000-0000-4000-8000-000000000001',
+  '60000000-0000-4000-8000-000000000002',
+  'AAECAw==',
+  'BAUGBw==',
+  'Synthetic document range.'
 );
 
 insert into public.comment_replies (id, comment_id, author_id, body)
@@ -144,6 +156,7 @@ insert into policy_matrix values
   ('canvas_snapshots', true, true, true, true, false),
   ('comments', true, true, true, true, false),
   ('comment_targets', true, true, true, true, false),
+  ('comment_document_targets', true, true, true, true, false),
   ('comment_replies', true, true, true, true, false),
   ('comment_prompts', true, true, true, true, false),
   ('comment_responses', true, true, true, true, false),

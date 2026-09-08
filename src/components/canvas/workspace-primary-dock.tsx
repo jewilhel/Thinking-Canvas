@@ -3,6 +3,7 @@
 import {
   Check,
   Eraser,
+  FileText,
   Hand,
   Highlighter,
   Link2,
@@ -44,7 +45,8 @@ export type CanvasTool =
   | "cylinder"
   | "text"
   | "connector"
-  | "table";
+  | "table"
+  | "document";
 
 export type CanvasShapeTool = Extract<
   CanvasTool,
@@ -134,6 +136,7 @@ const creationTools = [
   },
   { value: "text", label: "Text", shortcut: "T", icon: Type },
   { value: "table", label: "Table", shortcut: "B", icon: Table2 },
+  { value: "document", label: "Document", shortcut: "D", icon: FileText },
 ] as const;
 
 function shapeLabel(shape: CanvasShapeTool) {
@@ -443,6 +446,7 @@ export function WorkspacePrimaryDock({
           aria-keyshortcuts="S"
           title="Sticky note (S)"
           className={iconButtonClass}
+          disabled={!canDraw}
           onClick={() => chooseTool("sticky")}
         >
           <StickyNote aria-hidden="true" />
@@ -464,6 +468,7 @@ export function WorkspacePrimaryDock({
           aria-keyshortcuts="R"
           title={`Shapes — recent: ${shapeLabel(recentShape)} (R)`}
           className={iconButtonClass}
+          disabled={!canDraw}
           onClick={(event) => togglePalette("shape", event.currentTarget)}
         >
           <Shapes aria-hidden="true" />
@@ -482,6 +487,7 @@ export function WorkspacePrimaryDock({
               aria-keyshortcuts={shortcut}
               title={`${label} (${shortcut})`}
               className={iconButtonClass}
+              disabled={!canDraw}
               onClick={() => chooseTool(value)}
             >
               <Icon aria-hidden="true" />

@@ -11,9 +11,27 @@ importers:
       '@base-ui/react':
         specifier: 1.7.0
         version: 1.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@lexical/link':
+        specifier: 0.49.0
+        version: 0.49.0(typescript@5.9.3)
+      '@lexical/list':
+        specifier: 0.49.0
+        version: 0.49.0(typescript@5.9.3)
+      '@lexical/markdown':
+        specifier: 0.49.0
+        version: 0.49.0(typescript@5.9.3)
       '@lexical/react':
         specifier: 0.49.0
         version: 0.49.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3)(yjs@13.6.32)
+      '@lexical/rich-text':
+        specifier: 0.49.0
+        version: 0.49.0(typescript@5.9.3)
+      '@lexical/selection':
+        specifier: 0.49.0
+        version: 0.49.0(typescript@5.9.3)
+      '@lexical/table':
+        specifier: 0.49.0
+        version: 0.49.0(typescript@5.9.3)
       '@lexical/yjs':
         specifier: 0.49.0
         version: 0.49.0(typescript@5.9.3)(yjs@13.6.32)

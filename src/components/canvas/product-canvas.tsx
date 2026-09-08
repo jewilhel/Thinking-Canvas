@@ -168,8 +168,17 @@ import {
 } from "@/components/canvas/workspace-primary-dock";
 import { WorkspacePanel } from "@/components/canvas/workspace-panel";
 import { CanvasComments } from "@/components/comments/canvas-comments";
+import {
+  CommentWorkspaceProvider,
+  useCommentWorkspace,
+} from "@/components/comments/comment-workspace";
+import { ProductDocumentEditor } from "@/components/documents/product-document-editor";
+import { ProductDocumentPreview } from "@/components/documents/product-document-preview";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { CanvasRole } from "@/domain/command";
+import { focusedDocumentViewport } from "@/documents/document-presentation";
+import { documentFullyContainsGeometry } from "@/documents/document-containment";
+import { createProductDocumentObject } from "@/documents/product-document";
 
 type Props = {
   canvasId: string;
@@ -220,6 +229,8 @@ type TouchNavigationGesture = {
 };
 
 const defaultViewport: Viewport = { x: 80, y: 80, scale: 1 };
+// Retain legacy document-ownership reads, but do not create new nested objects.
+const documentObjectNestingEnabled: boolean = false;
 const anchors: CanvasAnchor[] = ["top", "right", "bottom", "left"];
 const connectionAnchorOffsetPx = 28;
 const connectionAnchorRadiusPx = 7;
@@ -348,11 +359,13 @@ function objectLabel(object: CanvasObjectV2, canvasObjects?: CanvasObjectV2[]) {
   }
   if (object.type === "text") return `text — ${object.text || "Untitled"}`;
   if (object.type === "table") return `table — ${object.cells.length} rows`;
+  if (object.type === "document")
+    return `document — ${object.title || "Untitled document"}`;
   if (object.type === "connector") return "connector";
   if (object.type === "icon") return `icon — ${object.iconName}`;
   if (object.type === "annotation")
     return object.ink === "highlighter" ? "highlighter" : "pen stroke";
-  return object.type;
+  throw new Error("Unsupported canvas object type.");
 }
 
 function referenceSafeSelectionOrder(objects: CanvasObjectV2[]) {
@@ -368,7 +381,15 @@ function tableText(object: Extract<CanvasObjectV2, { type: "table" }>) {
 
 const simulatedAiActorId = "90000000-0000-4000-8000-000000000001";
 
-export function ProductCanvas({
+export function ProductCanvas(props: Props) {
+  return (
+    <CommentWorkspaceProvider key={`${props.canvasId}:${props.userId}`}>
+      <ProductCanvasWorkspace {...props} />
+    </CommentWorkspaceProvider>
+  );
+}
+
+function ProductCanvasWorkspace({
   canvasId,
   title,
   userId,
@@ -378,6 +399,7 @@ export function ProductCanvas({
   supabasePublishableKey,
   simulatedAiEnabled,
 }: Props) {
+  const commentWorkspace = useCommentWorkspace();
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -395,6 +417,7 @@ export function ProductCanvas({
   const touchPointersRef = useRef(new Map<number, Point>());
   const touchNavigationGestureRef = useRef<TouchNavigationGesture | null>(null);
   const touchNavigationBlockedRef = useRef(false);
+  const previousDocumentViewportRef = useRef<Viewport | null>(null);
   const frameStartedAt = useRef(0);
   const documentStorageKey = `thinking-canvas:document:${canvasId}`;
   const viewportStorageKey = `thinking-canvas:viewport:${userId}:${canvasId}`;
@@ -440,6 +463,9 @@ export function ProductCanvas({
   );
   const [recentShape, setRecentShape] = useState<CanvasShapeTool>("rectangle");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [focusedDocumentId, setFocusedDocumentId] = useState<string | null>(
+    null,
+  );
   const [connectorStart, setConnectorStart] =
     useState<ConnectorEndpoint | null>(null);
   const [pointerPreview, setPointerPreview] = useState<Point | null>(null);
@@ -630,6 +656,9 @@ export function ProductCanvas({
         }
       : undefined);
   const selectedObject = selectedId ? objectsById.get(selectedId) : undefined;
+  const focusedDocument = focusedDocumentId
+    ? objectsById.get(focusedDocumentId)
+    : undefined;
   const selectedBounds = selectedObjects.length
     ? selectedObjects.reduce(
         (bounds, object) => {
@@ -897,56 +926,70 @@ export function ProductCanvas({
         x: Math.round(point.x),
         y: Math.round(point.y),
         width:
-          activeTool === "text"
-            ? 220
-            : activeTool === "table"
-              ? 300
-              : activeTool === "sticky"
-                ? 200
-                : 180,
+          activeTool === "document"
+            ? 440
+            : activeTool === "text"
+              ? 220
+              : activeTool === "table"
+                ? 300
+                : activeTool === "sticky"
+                  ? 200
+                  : 180,
         height:
-          activeTool === "text"
-            ? 72
-            : activeTool === "table"
-              ? 140
-              : activeTool === "sticky"
-                ? 160
-                : 110,
+          activeTool === "document"
+            ? 560
+            : activeTool === "text"
+              ? 72
+              : activeTool === "table"
+                ? 140
+                : activeTool === "sticky"
+                  ? 160
+                  : 110,
         rotation: 0,
       },
       style:
-        activeTool === "sticky"
-          ? {
-              ...baseStyle("shape"),
-              fill: "#fef3c7",
-              outline: "#f59e0b",
-            }
-          : baseStyle(
-              activeTool === "text"
-                ? "text"
-                : activeTool === "table"
-                  ? "table"
-                  : "shape",
-            ),
+        activeTool === "document"
+          ? baseStyle("shape")
+          : activeTool === "sticky"
+            ? {
+                ...baseStyle("shape"),
+                fill: "#fef3c7",
+                outline: "#f59e0b",
+              }
+            : baseStyle(
+                activeTool === "text"
+                  ? "text"
+                  : activeTool === "table"
+                    ? "table"
+                    : "shape",
+              ),
     };
     const object: CanvasObjectV2 =
-      activeTool === "text"
-        ? { ...shared, type: "text", text: "New text" }
-        : activeTool === "table"
-          ? {
-              ...shared,
-              type: "table",
-              cells: [
-                ["Heading", "Value"],
-                ["Item", "Detail"],
-              ],
-            }
-          : {
-              ...shared,
-              type: "shape",
-              shape: activeTool === "sticky" ? "rectangle" : activeTool,
-              text: "",
-            };
+      activeTool === "document"
+        ? createProductDocumentObject({
+            canvasId,
+            objectId: id,
+            actorId: userId,
+            issuedAt: now,
+            geometry: shared.geometry,
+          })
+        : activeTool === "text"
+          ? { ...shared, type: "text", text: "New text" }
+          : activeTool === "table"
+            ? {
+                ...shared,
+                type: "table",
+                cells: [
+                  ["Heading", "Value"],
+                  ["Item", "Detail"],
+                ],
+              }
+            : {
+                ...shared,
+                type: "shape",
+                shape: activeTool === "sticky" ? "rectangle" : activeTool,
+                text: "",
+              };
     if (object.type === "shape") {
       const labelId = crypto.randomUUID();
       const labelGeometry = {
@@ -989,7 +1032,7 @@ export function ProductCanvas({
   function chooseTool(nextTool: CanvasTool) {
     const drawingTool =
       nextTool === "pen" || nextTool === "highlighter" || nextTool === "eraser";
-    if (drawingTool && !canMutateCanvas) return;
+    if (nextTool !== "select" && nextTool !== "pan" && !canMutateCanvas) return;
     if (drawingTool) setLastDrawingTool(nextTool);
     if (
       nextTool !== "pen" &&
@@ -1013,6 +1056,43 @@ export function ProductCanvas({
   function chooseShape(shape: CanvasShapeTool) {
     setRecentShape(shape);
     chooseTool(shape);
+  }
+
+  function openDocument(object: Extract<CanvasObjectV2, { type: "document" }>) {
+    previousDocumentViewportRef.current = viewport;
+    const focus = focusedDocumentViewport({
+      canvasWidth: size.width,
+      canvasHeight: size.height,
+      geometry: object.geometry,
+      minimumScale: minCanvasScale,
+      maximumScale: maxCanvasScale,
+    });
+    setViewport({ scale: focus.scale, x: focus.x, y: focus.y });
+    setSelectedIds([object.id]);
+    setTool("select");
+    setContextPanel(null);
+    setObjectContextMenu(null);
+    setSharedPanel(null);
+    setFocusedDocumentId(object.id);
+  }
+
+  function exitDocument() {
+    const previousViewport = previousDocumentViewportRef.current;
+    if (previousViewport) setViewport(previousViewport);
+    previousDocumentViewportRef.current = null;
+    setFocusedDocumentId(null);
+    requestAnimationFrame(() => containerRef.current?.focus());
+  }
+
+  function updateFocusedDocument(update: {
+    title?: string;
+    settings?: Extract<CanvasObjectV2, { type: "document" }>["settings"];
+  }) {
+    if (!focusedDocument || focusedDocument.type !== "document") return;
+    runCommand("document.update", {
+      objectId: focusedDocument.id,
+      ...update,
+    });
   }
 
   function addIcon(iconName: string, point?: Point) {
@@ -1626,6 +1706,113 @@ export function ProductCanvas({
     );
   }
 
+  function completeDocumentPlacementFamily(targets: CanvasObjectV2[]) {
+    const objectIds = new Set(targets.map((target) => target.id));
+    const groupIds = new Set<string>();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const object of objects) {
+        if (!objectIds.has(object.id)) continue;
+        if (object.type === "document") return null;
+        if (object.groupId) {
+          groupIds.add(object.groupId);
+          for (const member of objects) {
+            if (
+              member.groupId === object.groupId &&
+              !objectIds.has(member.id)
+            ) {
+              objectIds.add(member.id);
+              changed = true;
+            }
+          }
+        }
+        if (
+          isContainableObject(object) &&
+          object.parentId &&
+          !objectIds.has(object.parentId)
+        ) {
+          return null;
+        }
+        for (const child of objects) {
+          if (
+            isContainableObject(child) &&
+            child.parentId === object.id &&
+            !objectIds.has(child.id)
+          ) {
+            objectIds.add(child.id);
+            changed = true;
+          }
+        }
+      }
+    }
+    for (const annotation of objects) {
+      if (
+        annotation.type === "annotation" &&
+        annotation.attachedObjectId &&
+        objectIds.has(annotation.attachedObjectId)
+      ) {
+        objectIds.add(annotation.id);
+      }
+    }
+    for (const object of objects) {
+      if (object.type !== "connector") continue;
+      const attachedIds = [object.start, object.end].flatMap((endpoint) =>
+        endpoint.kind === "attached" ? [endpoint.objectId] : [],
+      );
+      if (objectIds.has(object.id)) {
+        if (attachedIds.some((id) => !objectIds.has(id))) return null;
+      } else if (attachedIds.some((id) => objectIds.has(id))) {
+        if (attachedIds.some((id) => !objectIds.has(id))) return null;
+        objectIds.add(object.id);
+      }
+    }
+    for (const id of objectIds) {
+      const object = objectsById.get(id);
+      if (
+        object?.type === "annotation" &&
+        object.attachedObjectId &&
+        !objectIds.has(object.attachedObjectId)
+      ) {
+        return null;
+      }
+    }
+    return { objectIds: [...objectIds], groupIds: [...groupIds] };
+  }
+
+  function documentContainmentTarget(
+    targets: CanvasObjectV2[],
+    dx: number,
+    dy: number,
+  ) {
+    const family = completeDocumentPlacementFamily(targets);
+    if (!family) return null;
+    const familyObjects = family.objectIds.map((id) => objectsById.get(id)!);
+    const familyGroups = family.groupIds.map((id) => groupsById.get(id)!);
+    const target = [...objects].reverse().find(
+      (candidate) =>
+        candidate.type === "document" &&
+        !family.objectIds.includes(candidate.id) &&
+        familyObjects.every((object) =>
+          documentFullyContainsGeometry(candidate, {
+            ...object.geometry,
+            x: object.geometry.x + dx,
+            y: object.geometry.y + dy,
+          }),
+        ) &&
+        familyGroups.every(
+          (group) =>
+            group &&
+            documentFullyContainsGeometry(candidate, {
+              ...group.geometry,
+              x: group.geometry.x + dx,
+              y: group.geometry.y + dy,
+            }),
+        ),
+    );
+    return target ? { target, family } : null;
+  }
+
   function moveSelectionFromDrag(
     object: CanvasObjectV2,
     x: number,
@@ -1634,6 +1821,21 @@ export function ProductCanvas({
   ) {
     const dx = x - object.geometry.x;
     const dy = y - object.geometry.y;
+    const documentTarget =
+      documentObjectNestingEnabled && containmentIntent
+        ? documentContainmentTarget(selectedObjects, dx, dy)
+        : null;
+    if (documentTarget) {
+      runCommand("document.place", {
+        documentObjectId: documentTarget.target.id,
+        ...documentTarget.family,
+        delta: { x: dx, y: dy },
+      });
+      setSelectedIds([]);
+      setDragPreviewPositions({});
+      setContainmentPreviewParentId(null);
+      return;
+    }
     if (selectedGroup) {
       const nextGeometry = {
         ...selectedGroup.geometry,
@@ -1752,7 +1954,13 @@ export function ProductCanvas({
       : object.groupId
         ? objects.filter((candidate) => candidate.groupId === object.groupId)
         : [durableObject];
-    if (containmentIntent && selectedGroup) {
+    const documentTarget =
+      documentObjectNestingEnabled && containmentIntent
+        ? documentContainmentTarget(selectedTargets, dx, dy)
+        : null;
+    if (documentTarget) {
+      setContainmentPreviewParentId(documentTarget.target.id);
+    } else if (containmentIntent && selectedGroup) {
       const nextFrame = {
         ...selectedGroup.geometry,
         x: selectedGroup.geometry.x + dx,
@@ -2210,6 +2418,16 @@ export function ProductCanvas({
   }
 
   function toggleSharedPanel(panel: SharedPanel, invoker: HTMLButtonElement) {
+    if (panel === "comments") {
+      setCommentPlacementActive(false);
+      setContextPanel(null);
+      commentWorkspace.show(
+        commentWorkspace.active === "history" ? null : "history",
+      );
+      setSharedPanel(null);
+      setSharedPanelInvoker(invoker);
+      return;
+    }
     if (sharedPanel === panel) {
       setSharedPanel(null);
       return;
@@ -2506,6 +2724,11 @@ export function ProductCanvas({
   }
 
   function onSurfacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (focusedDocumentId !== null) {
+      event.preventDefault();
+      exitDocument();
+      return;
+    }
     if (
       event.isPrimary &&
       (event.pointerType !== "mouse" || event.button === 0)
@@ -2752,7 +2975,17 @@ export function ProductCanvas({
       selectedFrame,
       target,
     );
-    if (containmentIntent && selectedGroup) {
+    const documentTarget =
+      documentObjectNestingEnabled && containmentIntent
+        ? documentContainmentTarget(
+            selectedObjects,
+            target.x - selectedFrame.x,
+            target.y - selectedFrame.y,
+          )
+        : null;
+    if (documentTarget) {
+      setContainmentPreviewParentId(documentTarget.target.id);
+    } else if (containmentIntent && selectedGroup) {
       const parent = [...objects].reverse().find(
         (candidate) =>
           isObjectParent(candidate) &&
@@ -2778,6 +3011,35 @@ export function ProductCanvas({
     if (!selectedFrame) return;
     const target = selectionProxyTarget(node);
     if (!target) return;
+    const transformed = transformSelectionObjects(
+      selectedObjects,
+      selectedFrame,
+      target,
+    );
+    const documentTarget =
+      documentObjectNestingEnabled && containmentIntent
+        ? documentContainmentTarget(
+            selectedObjects,
+            target.x - selectedFrame.x,
+            target.y - selectedFrame.y,
+          )
+        : null;
+    if (documentTarget) {
+      node.position({ x: target.x, y: target.y });
+      node.scale({ x: 1, y: 1 });
+      setSelectionTransformPreviewObjects({});
+      runCommand("document.place", {
+        documentObjectId: documentTarget.target.id,
+        ...documentTarget.family,
+        delta: {
+          x: target.x - selectedFrame.x,
+          y: target.y - selectedFrame.y,
+        },
+      });
+      setSelectedIds([]);
+      setContainmentPreviewParentId(null);
+      return;
+    }
     if (selectedGroup) {
       node.position({ x: target.x, y: target.y });
       node.scale({ x: 1, y: 1 });
@@ -2820,11 +3082,6 @@ export function ProductCanvas({
       setContainmentPreviewParentId(null);
       return;
     }
-    const transformed = transformSelectionObjects(
-      selectedObjects,
-      selectedFrame,
-      target,
-    );
     const transformedIds = new Set(transformed.map((object) => object.id));
     const commands: CommandDefinition[] = [];
     const nextParent = containmentIntent
@@ -3016,6 +3273,15 @@ export function ProductCanvas({
       showObjectContextMenu(keyboardX, keyboardY);
       return;
     }
+    if (
+      event.key === "Enter" &&
+      selectedObjects.length === 1 &&
+      selectedObjects[0]?.type === "document"
+    ) {
+      event.preventDefault();
+      openDocument(selectedObjects[0]);
+      return;
+    }
     if (accelerator && event.key.toLowerCase() === "z") {
       event.preventDefault();
       if (event.shiftKey) redo();
@@ -3143,6 +3409,7 @@ export function ProductCanvas({
         p: "pen",
         t: "text",
         b: "table",
+        d: "document",
       }[event.key.toLowerCase()] as CanvasTool | undefined;
       if (shortcutTool) {
         event.preventDefault();
@@ -3685,7 +3952,61 @@ export function ProductCanvas({
     );
   }
 
+  function renderDocument(
+    object: Extract<CanvasObjectV2, { type: "document" }>,
+  ) {
+    return (
+      <Group
+        key={object.id}
+        id={object.id}
+        x={object.geometry.x}
+        y={object.geometry.y}
+        rotation={object.geometry.rotation}
+        ref={(node) => {
+          if (node) objectNodeRefs.current.set(object.id, node);
+          else objectNodeRefs.current.delete(object.id);
+        }}
+        draggable={tool === "select"}
+        onClick={(event) => selectObject(event, object)}
+        onTap={(event) => selectObject(event, object)}
+        onDblClick={() => openDocument(object)}
+        onDblTap={() => openDocument(object)}
+        onContextMenu={(event) => openObjectContextMenu(event, object)}
+        onDragStart={() => {
+          if (!selectedIds.includes(object.id)) setSelectedIds([object.id]);
+        }}
+        onDragMove={(event) =>
+          previewSelectionFromDrag(
+            objectsById.get(object.id) ?? object,
+            event.target.x(),
+            event.target.y(),
+            false,
+          )
+        }
+        onDragEnd={(event) => {
+          const durableObject = objectsById.get(object.id) ?? object;
+          setDragPreviewPositions({});
+          moveSelectionFromDrag(
+            durableObject,
+            event.target.x(),
+            event.target.y(),
+            false,
+          );
+        }}
+        onTransform={(event) => previewSingleObjectTransform(event, object)}
+        onTransformEnd={(event) => finishSingleObjectTransform(event, object)}
+      >
+        <Rect
+          width={object.geometry.width}
+          height={object.geometry.height}
+          fill="rgba(0,0,0,0.001)"
+        />
+      </Group>
+    );
+  }
+
   function renderObject(object: CanvasObjectV2) {
+    if (object.type === "document") return renderDocument(object);
     if (object.type === "annotation") {
       return (
         <Group
@@ -3807,7 +4128,6 @@ export function ProductCanvas({
         </Group>
       );
     }
-    if (object.type === "document") return null;
     const groupParentId = object.groupId
       ? groupsById.get(object.groupId)?.parentId
       : null;
@@ -4336,8 +4656,8 @@ export function ProductCanvas({
             size="icon"
             variant="outline"
             aria-label="Open comment history and AI settings"
-            aria-expanded={sharedPanel === "comments"}
-            aria-controls="workspace-shared-panel"
+            aria-expanded={commentWorkspace.active === "history"}
+            aria-controls="comment-workspace-panel"
             title="Comment history and AI settings"
             className="size-11 border-[var(--workspace-border)] bg-white text-zinc-700 hover:bg-violet-50 dark:border-[var(--workspace-border)] dark:bg-white dark:text-zinc-700"
             onClick={(event) =>
@@ -4436,32 +4756,34 @@ export function ProductCanvas({
         {shareNotice}
       </p>
 
-      <WorkspacePrimaryDock
-        key={dismissDockPaletteSignal}
-        activeTool={tool}
-        recentShape={recentShape}
-        simulatedAiEnabled={simulatedAiEnabled}
-        onChooseTool={chooseTool}
-        onChooseShape={chooseShape}
-        onChooseIcon={addIcon}
-        onAddSimulatedAiIdea={addSimulatedAiIdea}
-        commentPlacementActive={commentPlacementActive}
-        onChooseComments={chooseComments}
-        canDraw={canMutateCanvas}
-        lastDrawingTool={lastDrawingTool}
-        penColor={drawingColor}
-        penThickness={drawingThickness}
-        onPenColorChange={(color) =>
-          lastDrawingTool === "highlighter"
-            ? setHighlighterColor(color)
-            : setPenColor(color)
-        }
-        onPenThicknessChange={(thickness) =>
-          lastDrawingTool === "highlighter"
-            ? setHighlighterThickness(thickness)
-            : setPenThickness(thickness)
-        }
-      />
+      {focusedDocumentId === null ? (
+        <WorkspacePrimaryDock
+          key={dismissDockPaletteSignal}
+          activeTool={tool}
+          recentShape={recentShape}
+          simulatedAiEnabled={simulatedAiEnabled}
+          onChooseTool={chooseTool}
+          onChooseShape={chooseShape}
+          onChooseIcon={addIcon}
+          onAddSimulatedAiIdea={addSimulatedAiIdea}
+          commentPlacementActive={commentPlacementActive}
+          onChooseComments={chooseComments}
+          canDraw={canMutateCanvas}
+          lastDrawingTool={lastDrawingTool}
+          penColor={drawingColor}
+          penThickness={drawingThickness}
+          onPenColorChange={(color) =>
+            lastDrawingTool === "highlighter"
+              ? setHighlighterColor(color)
+              : setPenColor(color)
+          }
+          onPenThicknessChange={(thickness) =>
+            lastDrawingTool === "highlighter"
+              ? setHighlighterThickness(thickness)
+              : setPenThickness(thickness)
+          }
+        />
+      ) : null}
 
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
         <Button
@@ -4549,7 +4871,7 @@ export function ProductCanvas({
         selectedIds={selectedIds}
         viewport={viewport}
         size={size}
-        panelOpen={sharedPanel === "comments"}
+        panelOpen={commentWorkspace.active === "history"}
         panelInvoker={sharedPanelInvoker}
         placementActive={commentPlacementActive}
         onDismissPanel={() => setSharedPanel(null)}
@@ -4588,7 +4910,10 @@ export function ProductCanvas({
         />
       ) : null}
 
-      {tool === "select" && selectedObject && contextualToolbarPosition ? (
+      {tool === "select" &&
+      selectedObject &&
+      contextualToolbarPosition &&
+      focusedDocumentId === null ? (
         <div
           className="absolute z-40 -translate-x-1/2"
           style={contextualToolbarPosition}
@@ -4700,6 +5025,16 @@ export function ProductCanvas({
                 }
               >
                 Edit table
+              </Button>
+            ) : null}
+            {selectedObject.type === "document" && selectedIds.length === 1 ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => openDocument(selectedObject)}
+              >
+                Open document
               </Button>
             ) : null}
             {selectedObjects.some(
@@ -5434,6 +5769,33 @@ export function ProductCanvas({
           data-viewport-y={Math.round(viewport.y)}
           data-viewport-scale={viewport.scale}
         >
+          {focusedDocumentId === null
+            ? displayObjects.flatMap((object) => {
+                if (object.type !== "document") return [];
+                const screenBounds = {
+                  left: viewport.x + object.geometry.x * viewport.scale,
+                  top: viewport.y + object.geometry.y * viewport.scale,
+                  width: object.geometry.width * viewport.scale,
+                  height: object.geometry.height * viewport.scale,
+                };
+                if (
+                  screenBounds.left >= size.width ||
+                  screenBounds.top >= size.height ||
+                  screenBounds.left + screenBounds.width <= 0 ||
+                  screenBounds.top + screenBounds.height <= 0
+                ) {
+                  return [];
+                }
+                return [
+                  <ProductDocumentPreview
+                    key={object.id}
+                    canvasDocument={document}
+                    documentObject={object}
+                    screenBounds={screenBounds}
+                  />,
+                ];
+              })
+            : null}
           <Stage
             ref={stageRef}
             width={size.width}
@@ -5442,6 +5804,7 @@ export function ProductCanvas({
             y={viewport.y}
             scaleX={viewport.scale}
             scaleY={viewport.scale}
+            style={{ position: "relative", zIndex: 1 }}
             draggable={tool === "pan"}
             onWheel={onWheel}
             onMouseDown={onStagePointerDown}
@@ -5470,14 +5833,22 @@ export function ProductCanvas({
               {containmentPreviewParentId
                 ? (() => {
                     const parent = objectsById.get(containmentPreviewParentId);
-                    return parent?.type === "shape" ? (
+                    return parent?.type === "shape" ||
+                      parent?.type === "document" ? (
                       <Rect
+                        data-testid={
+                          parent.type === "document"
+                            ? "document-containment-preview"
+                            : undefined
+                        }
                         x={parent.geometry.x - 4}
                         y={parent.geometry.y - 4}
                         width={parent.geometry.width + 8}
                         height={parent.geometry.height + 8}
                         rotation={parent.geometry.rotation}
-                        stroke="#8b5cf6"
+                        stroke={
+                          parent.type === "document" ? "#0d9488" : "#8b5cf6"
+                        }
                         strokeWidth={3 / viewport.scale}
                         dash={[8 / viewport.scale, 5 / viewport.scale]}
                         listening={false}
@@ -5779,6 +6150,14 @@ export function ProductCanvas({
                 </dd>
               </div>
               <div>
+                <dt className="text-zinc-400">Containment target</dt>
+                <dd data-testid="containment-preview-target-type">
+                  {containmentPreviewParentId
+                    ? (objectsById.get(containmentPreviewParentId)?.type ?? "—")
+                    : "—"}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-zinc-400">Pending</dt>
                 <dd data-testid="product-pending-count">{pendingCount}</dd>
               </div>
@@ -5805,6 +6184,33 @@ export function ProductCanvas({
           ) : null}
         </div>
       </div>
+      {focusedDocument?.type === "document" ? (
+        <ProductDocumentEditor
+          canvasDocument={document}
+          canvasId={canvasId}
+          canvasRole={canvasRole}
+          supabaseUrl={supabaseUrl}
+          supabasePublishableKey={supabasePublishableKey}
+          documentObject={focusedDocument}
+          screenBounds={{
+            left: viewport.x + focusedDocument.geometry.x * viewport.scale,
+            top: viewport.y + focusedDocument.geometry.y * viewport.scale,
+            width: focusedDocument.geometry.width * viewport.scale,
+            height: focusedDocument.geometry.height * viewport.scale,
+          }}
+          userId={userId}
+          username={userIdentity}
+          canEdit={canMutateCanvas}
+          onAiTransactionApplied={registerAiTransaction}
+          onUndoAiTransaction={undoAiTransaction}
+          onSelectCommentEvidence={(objectId) => {
+            setSelectedIds([objectId]);
+            setTool("select");
+          }}
+          onUpdate={updateFocusedDocument}
+          onExit={exitDocument}
+        />
+      ) : null}
     </section>
   );
 }

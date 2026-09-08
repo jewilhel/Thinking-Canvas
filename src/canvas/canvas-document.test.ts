@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import {
+  adaptCanvasObjectV1,
   createProductCanvasDocument,
   listCanvasObjectsV2,
   migrateLegacyShapeLabels,
@@ -14,6 +15,7 @@ import {
   upgradeCanvasDocumentV1,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
+import { defaultDocumentSettings } from "@/documents/document-schema";
 import { putCanvasObject } from "@/collaboration/canvas-document";
 
 const canvasId = "20000000-0000-4000-8000-000000000001";
@@ -78,6 +80,28 @@ describe("production canvas document", () => {
       canvasId,
     });
     expect(listCanvasObjectsV2(document)).toEqual([]);
+  });
+
+  it("upgrades a legacy document object with stable first-version settings", () => {
+    const upgraded = adaptCanvasObjectV1({
+      schemaVersion: 1,
+      id: objectId,
+      canvasId,
+      createdBy: userId,
+      createdAt: "2026-08-11T00:00:00.000Z",
+      updatedAt: "2026-08-11T00:00:00.000Z",
+      type: "document",
+      documentId: "70000000-0000-4000-8000-000000000001",
+      title: "Legacy research note",
+      geometry: { x: 40, y: 60, width: 480, height: 640, rotation: 0 },
+    });
+
+    expect(upgraded).toMatchObject({
+      type: "document",
+      documentVersion: 1,
+      title: "Legacy research note",
+      settings: defaultDocumentSettings,
+    });
   });
 
   it("migrates embedded shape text into one stable first-class label child", () => {

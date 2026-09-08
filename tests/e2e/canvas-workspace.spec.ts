@@ -957,9 +957,9 @@ test("uses dismissible responsive panels with focus containment, help, and true 
     .innerText();
   await commentsInvoker.click();
   const commentsPanel = page.getByRole("dialog", { name: "Comments" });
-  await expect(commentsPanel).toContainText(
-    "Attach feedback to a selection, an object, or anywhere on the canvas.",
-  );
+  await expect(
+    commentsPanel.getByRole("button", { name: "New comment" }),
+  ).toBeVisible();
   await expect(commentsPanel).not.toContainText(
     "Click an object or anywhere on the canvas to add a comment.",
   );

@@ -14,6 +14,7 @@ import {
   type CommentThread,
 } from "@/comments/comment-model";
 import type { Database, Json } from "@/lib/supabase/database.types";
+import { subscribeToComments } from "@/comments/comment-realtime";
 
 type CommentRow = Database["public"]["Tables"]["comments"]["Row"];
 type ReplyRow = Database["public"]["Tables"]["comment_replies"]["Row"];
@@ -53,6 +54,7 @@ export class SupabaseCommentRepository {
     const commentIds = comments.map((comment) => comment.id);
     const [
       targetsResult,
+      documentTargetsResult,
       repliesResult,
       promptsResult,
       participantsResult,
@@ -65,6 +67,12 @@ export class SupabaseCommentRepository {
         .in("comment_id", commentIds)
         .order("target_order", { ascending: true })
         .order("id", { ascending: true }),
+      this.supabase
+        .from("comment_document_targets")
+        .select(
+          "comment_id,document_object_id,relative_anchor,relative_head,quoted_text,created_at,updated_at",
+        )
+        .in("comment_id", commentIds),
       this.supabase
         .from("comment_replies")
         .select(
@@ -103,6 +111,10 @@ export class SupabaseCommentRepository {
         .order("id", { ascending: true }),
     ]);
     const targets = requireData(targetsResult.data, targetsResult.error);
+    const documentTargets = requireData(
+      documentTargetsResult.data,
+      documentTargetsResult.error,
+    );
     const replies = requireData(
       repliesResult.data,
       repliesResult.error,
@@ -291,6 +303,19 @@ export class SupabaseCommentRepository {
           comment.anchor_x === null || comment.anchor_y === null
             ? null
             : { x: comment.anchor_x, y: comment.anchor_y },
+        documentRange: (() => {
+          const target = documentTargets.find(
+            (candidate) => candidate.comment_id === comment.id,
+          );
+          return target
+            ? {
+                documentObjectId: target.document_object_id,
+                anchor: target.relative_anchor,
+                head: target.relative_head,
+                quote: target.quoted_text,
+              }
+            : null;
+        })(),
         replies: replies
           .filter((reply) => reply.comment_id === comment.id)
           .map((reply) => ({
@@ -348,6 +373,31 @@ export class SupabaseCommentRepository {
   async execute(input: CommentCommand) {
     const command = commentCommandSchema.parse(input);
     if (command.type === "comment.create") {
+      if (command.documentRange) {
+        const response = await fetch(
+          `/api/canvases/${command.canvasId}/comments/document`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(command),
+          },
+        );
+        const result = (await response.json().catch(() => null)) as {
+          error?: string;
+          comment_id?: string;
+          created?: boolean;
+          ai_run_id?: string;
+        } | null;
+        if (!response.ok || !result) {
+          throw new Error(
+            result?.error ??
+              (response.status === 401
+                ? "Preview or sign-in access has expired. Renew access in another preview tab, then submit this draft again. This comment has not been saved."
+                : `The document comment could not be saved (HTTP ${response.status}).`),
+          );
+        }
+        return result;
+      }
       const args: Database["public"]["Functions"]["create_comment_thread"]["Args"] =
         {
           target_canvas_id: command.canvasId,
@@ -483,35 +533,14 @@ export class SupabaseCommentRepository {
   }
 
   async subscribe(canvasId: string, onInvalidated: () => void) {
-    const { data } = await this.supabase.auth.getSession();
-    if (!data.session) throw new Error("An authenticated session is required.");
-    await this.supabase.realtime.setAuth(data.session.access_token);
-    const channel = this.supabase.channel(`comments:${canvasId}`, {
-      config: { private: true, broadcast: { ack: false, self: false } },
-    });
+    const { channel, unsubscribe } = await subscribeToComments(
+      this.supabase,
+      canvasId,
+      onInvalidated,
+    );
     this.channel = channel;
-    channel.on("broadcast", { event: "comments-invalidated" }, onInvalidated);
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(
-        () => reject(new Error("Comment updates could not connect.")),
-        10_000,
-      );
-      channel.subscribe((status, error) => {
-        if (status === "SUBSCRIBED") {
-          window.clearTimeout(timeout);
-          resolve();
-        } else if (
-          status === "CHANNEL_ERROR" ||
-          status === "TIMED_OUT" ||
-          error
-        ) {
-          window.clearTimeout(timeout);
-          reject(error ?? new Error(`Comment updates failed: ${status}`));
-        }
-      });
-    });
     return async () => {
-      await this.supabase.removeChannel(channel);
+      await unsubscribe();
       if (this.channel === channel) this.channel = null;
     };
   }

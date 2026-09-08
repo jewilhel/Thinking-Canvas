@@ -15,6 +15,10 @@ import {
   executeProductCanvasCommandWithHistory,
 } from "@/canvas/canvas-history";
 import { executeProductCanvasCommand } from "@/domain/canvas-command";
+import {
+  createProductDocumentObject,
+  getProductDocumentContentRoot,
+} from "@/documents/product-document";
 
 const canvasId = "11111111-1111-4111-8111-111111111111";
 const actorId = "22222222-2222-4222-8222-222222222222";
@@ -115,6 +119,133 @@ function command(type: string, payload: unknown, issuedAt = now) {
 }
 
 describe("actor-local canvas history", () => {
+  it("undoes and redoes document ownership as one history entry", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const productDocument = createProductDocumentObject({
+      canvasId,
+      objectId: "88888888-8888-4888-8888-888888888888",
+      actorId,
+      issuedAt: now,
+      geometry: { x: 0, y: 0, width: 480, height: 640, rotation: 0 },
+    });
+    const child = {
+      ...shape(),
+      geometry: { x: 80, y: 100, width: 120, height: 80, rotation: 0 },
+    } satisfies CanvasObjectV2;
+    putCanvasObjectV2(document, productDocument);
+    putCanvasObjectV2(document, child);
+    const { history } = executeProductCanvasCommandWithHistory(
+      document,
+      command("document.place", {
+        documentObjectId: productDocument.id,
+        objectIds: [child.id],
+      }),
+    );
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      documentOwnerId: productDocument.id,
+    });
+    expect(applyCanvasHistoryEntry(document, history, "undo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      documentOwnerId: null,
+      documentLocal: null,
+    });
+    expect(applyCanvasHistoryEntry(document, history, "redo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, child.id)).toMatchObject({
+      documentOwnerId: productDocument.id,
+    });
+  });
+
+  it("undoes and redoes document title and presentation settings", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const productDocument = createProductDocumentObject({
+      canvasId,
+      objectId,
+      actorId,
+      issuedAt: now,
+      title: "Original document",
+      geometry: { x: 20, y: 40, width: 480, height: 640, rotation: 0 },
+    });
+    putCanvasObjectV2(document, productDocument);
+    const { history } = executeProductCanvasCommandWithHistory(
+      document,
+      command("document.update", {
+        objectId,
+        title: "Updated document",
+        settings: {
+          ...productDocument.settings,
+          displayFont: "serif",
+          readingSize: "large",
+        },
+      }),
+    );
+
+    expect(readCanvasObjectV2(document, objectId)).toMatchObject({
+      title: "Updated document",
+      settings: { displayFont: "serif", readingSize: "large" },
+    });
+    expect(applyCanvasHistoryEntry(document, history, "undo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, objectId)).toMatchObject({
+      title: "Original document",
+      settings: { displayFont: "sans", readingSize: "comfortable" },
+    });
+    expect(applyCanvasHistoryEntry(document, history, "redo")).toEqual({
+      status: "applied",
+      conflicts: [],
+    });
+    expect(readCanvasObjectV2(document, objectId)).toMatchObject({
+      title: "Updated document",
+      settings: { displayFont: "serif", readingSize: "large" },
+    });
+  });
+
+  it("restores a deleted document with its durable content namespace", () => {
+    const document = createProductCanvasDocument(canvasId);
+    const productDocument = createProductDocumentObject({
+      canvasId,
+      objectId,
+      actorId,
+      issuedAt: now,
+      title: "Durable document",
+      geometry: { x: 20, y: 40, width: 480, height: 640, rotation: 0 },
+    });
+    putCanvasObjectV2(document, productDocument);
+    getProductDocumentContentRoot(document, productDocument.documentId).insert(
+      0,
+      "Keep this body",
+    );
+    const { history } = executeProductCanvasCommandWithHistory(
+      document,
+      command("object.delete", { objectId }),
+    );
+    expect(readCanvasObjectV2(document, objectId)).toBeUndefined();
+
+    expect(applyCanvasHistoryEntry(document, history, "undo").status).toBe(
+      "applied",
+    );
+    expect(readCanvasObjectV2(document, objectId)?.type).toBe("document");
+    expect(
+      getProductDocumentContentRoot(
+        document,
+        productDocument.documentId,
+      ).toString(),
+    ).toBe("Keep this body");
+    expect(readCanvasObjectV2(document, objectId)).toEqual(
+      history.beforeObjects[objectId],
+    );
+
+    expect(applyCanvasHistoryEntry(document, history, "redo")).toEqual({
+      status: "applied",
+      conflicts: [],
+    });
+    expect(readCanvasObjectV2(document, objectId)).toBeUndefined();
+  });
+
   it("undoes and redoes a complete icon parent relationship", () => {
     const document = createProductCanvasDocument(canvasId);
     putCanvasObjectV2(document, shape());

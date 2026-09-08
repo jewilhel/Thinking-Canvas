@@ -26,6 +26,12 @@ type BroadcastPayload = {
   update: string;
 };
 
+type AwarenessBroadcastPayload = {
+  kind: "document-awareness";
+  scopeId: string;
+  update: string;
+};
+
 export type CursorPayload = {
   userId: string;
   sequence: number;
@@ -42,6 +48,10 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
     private readonly onPresence?: (participants: PresenceParticipant[]) => void,
     private readonly onStatus?: (status: string) => void,
     private readonly onCursor?: (cursor: CursorPayload) => void,
+    private readonly onDocumentAwareness?: (
+      scopeId: string,
+      update: Uint8Array,
+    ) => void,
   ) {}
 
   async getLatestSnapshot(canvasId: string) {
@@ -157,12 +167,28 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
     channel
       .on("broadcast", { event: "yjs-update" }, ({ payload }) => {
         const message = payload as
-          BroadcastPayload | { kind: "cursor"; cursor: CursorPayload };
+          | BroadcastPayload
+          | { kind: "cursor"; cursor: CursorPayload }
+          | AwarenessBroadcastPayload;
         if (message.kind === "update") {
           onUpdate({
             sequence: message.sequence,
             update: base64ToBytes(message.update),
           });
+          return;
+        }
+        if (message.kind === "document-awareness") {
+          try {
+            const update = base64ToBytes(message.update);
+            if (
+              message.scopeId.length <= 100 &&
+              update.byteLength <= 64 * 1024
+            ) {
+              this.onDocumentAwareness?.(message.scopeId, update);
+            }
+          } catch {
+            // Ignore malformed ephemeral awareness from other clients.
+          }
           return;
         }
         const cursor = message.cursor;
@@ -251,5 +277,14 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
   async broadcastCursor(cursor: CursorPayload) {
     if (!this.channel) return "error" as const;
     return this.channel.httpSend("yjs-update", { kind: "cursor", cursor });
+  }
+
+  async broadcastDocumentAwareness(scopeId: string, update: Uint8Array) {
+    if (!this.channel || update.byteLength > 64 * 1024) return "error" as const;
+    return this.channel.httpSend("yjs-update", {
+      kind: "document-awareness",
+      scopeId,
+      update: bytesToBase64(update),
+    } satisfies AwarenessBroadcastPayload);
   }
 }

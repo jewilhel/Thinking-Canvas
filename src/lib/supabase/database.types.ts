@@ -42,6 +42,8 @@ export type Database = {
           canvas_id: string
           completed_at: string | null
           created_at: string
+          document_object_id: string | null
+          document_undo_update: string | null
           finalization_fingerprint: string | null
           id: string
           request_id: string | null
@@ -68,6 +70,8 @@ export type Database = {
           canvas_id: string
           completed_at?: string | null
           created_at?: string
+          document_object_id?: string | null
+          document_undo_update?: string | null
           finalization_fingerprint?: string | null
           id?: string
           request_id?: string | null
@@ -94,6 +98,8 @@ export type Database = {
           canvas_id?: string
           completed_at?: string | null
           created_at?: string
+          document_object_id?: string | null
+          document_undo_update?: string | null
           finalization_fingerprint?: string | null
           id?: string
           request_id?: string | null
@@ -709,6 +715,50 @@ export type Database = {
           },
         ]
       }
+      comment_document_targets: {
+        Row: {
+          comment_id: string
+          created_at: string
+          document_object_id: string
+          include_document_context: boolean
+          include_selected_text_context: boolean
+          quoted_text: string
+          relative_anchor: string
+          relative_head: string
+          updated_at: string
+        }
+        Insert: {
+          comment_id: string
+          created_at?: string
+          document_object_id: string
+          include_document_context?: boolean
+          include_selected_text_context?: boolean
+          quoted_text: string
+          relative_anchor: string
+          relative_head: string
+          updated_at?: string
+        }
+        Update: {
+          comment_id?: string
+          created_at?: string
+          document_object_id?: string
+          include_document_context?: boolean
+          include_selected_text_context?: boolean
+          quoted_text?: string
+          relative_anchor?: string
+          relative_head?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comment_document_targets_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: true
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       comment_message_recipients: {
         Row: {
           comment_id: string
@@ -1314,6 +1364,16 @@ export type Database = {
               sequence: number
             }[]
           }
+      attach_ai_document_undo: {
+        Args: {
+          target_change_set_id: string
+          target_document_object_id: string
+          target_document_undo_update: string
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: boolean
+      }
       cancel_ai_run: {
         Args: { target_run_id: string }
         Returns: {
@@ -1368,6 +1428,30 @@ export type Database = {
           reply_id: string
         }[]
       }
+      create_document_comment_thread: {
+        Args: {
+          target_author_key: string | null
+          target_author_kind: Database["public"]["Enums"]["comment_author_kind"]
+          target_body: string
+          target_canvas_id: string
+          target_client_command_id: string
+          target_document_object_id: string
+          target_document_quoted_text: string
+          target_document_relative_anchor: string
+          target_document_relative_head: string
+          target_include_document_context: boolean
+          target_include_primary_ai: boolean
+          target_include_selected_text_context: boolean
+          target_ordered_context_ids: string[]
+          target_prompt_kind: Database["public"]["Enums"]["comment_prompt_kind"] | null
+          target_recipient_user_ids: string[] | null
+        }
+        Returns: {
+          ai_run_id: string
+          comment_id: string
+          created: boolean
+        }[]
+      }
       create_comment_thread: {
         Args: {
           target_anchor_x?: number
@@ -1377,6 +1461,10 @@ export type Database = {
           target_body: string
           target_canvas_id: string
           target_client_command_id: string
+          target_document_object_id?: string
+          target_document_quoted_text?: string
+          target_document_relative_anchor?: string
+          target_document_relative_head?: string
           target_include_primary_ai?: boolean
           target_object_ids?: string[]
           target_ordered_context_ids?: string[]

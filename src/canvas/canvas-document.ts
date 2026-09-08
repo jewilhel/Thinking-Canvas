@@ -2,6 +2,10 @@ import * as Y from "yjs";
 import { z } from "zod";
 
 import { phosphorIconNames } from "@/canvas/phosphor-icon-names";
+import {
+  defaultDocumentSettings,
+  documentSettingsSchema,
+} from "@/documents/document-schema";
 import { canvasObjectSchema, type CanvasObject } from "@/domain/canvas-object";
 
 const metadataMapName = "canvas-metadata-v2";
@@ -80,6 +84,15 @@ const parentRelativeSchema = z.strictObject({
   rotation: finiteNumber.optional(),
 });
 
+const documentLocalGeometrySchema = z.strictObject({
+  x: finiteNumber,
+  y: finiteNumber,
+  width: finiteNumber.nonnegative(),
+  height: finiteNumber.nonnegative(),
+  rotation: finiteNumber,
+  pageIndex: z.number().int().nonnegative(),
+});
+
 const normalizedContainmentEpsilon = 1e-9;
 
 function isLocallyPlausibleParentRelativeGeometry(
@@ -142,18 +155,30 @@ const childLayoutSchema = z
     }
   });
 
-export const canvasGroupV2Schema = z.strictObject({
-  schemaVersion: z.literal(2),
-  id: uuid,
-  canvasId: uuid,
-  createdBy: uuid,
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
-  geometry: geometrySchema,
-  parentId: uuid.nullable(),
-  parentRelative: parentRelativeSchema.nullable(),
-  childLayout: childLayoutSchema.nullable(),
-});
+export const canvasGroupV2Schema = z
+  .strictObject({
+    schemaVersion: z.literal(2),
+    id: uuid,
+    canvasId: uuid,
+    createdBy: uuid,
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+    geometry: geometrySchema,
+    parentId: uuid.nullable(),
+    parentRelative: parentRelativeSchema.nullable(),
+    childLayout: childLayoutSchema.nullable(),
+    documentOwnerId: uuid.nullable().optional(),
+    documentLocal: documentLocalGeometrySchema.nullable().optional(),
+  })
+  .superRefine((group, context) => {
+    if ((group.documentOwnerId == null) !== (group.documentLocal == null)) {
+      context.addIssue({
+        code: "custom",
+        path: ["documentLocal"],
+        message: "Document-owned groups require document-local geometry.",
+      });
+    }
+  });
 
 export type CanvasGroupV2 = z.infer<typeof canvasGroupV2Schema>;
 
@@ -161,6 +186,11 @@ const containmentFields = {
   parentId: uuid.nullable().optional(),
   parentRelative: parentRelativeSchema.nullable().optional(),
   childLayout: childLayoutSchema.nullable().optional(),
+};
+
+const documentOwnershipFields = {
+  documentOwnerId: uuid.nullable().optional(),
+  documentLocal: documentLocalGeometrySchema.nullable().optional(),
 };
 
 const shapeObjectSchema = canvasObjectBaseSchema.extend({
@@ -181,6 +211,7 @@ const shapeObjectSchema = canvasObjectBaseSchema.extend({
   ]),
   text: z.string().max(10_000),
   ...containmentFields,
+  ...documentOwnershipFields,
 });
 
 const iconObjectSchema = canvasObjectBaseSchema.extend({
@@ -194,6 +225,7 @@ const iconObjectSchema = canvasObjectBaseSchema.extend({
     .refine((name) => phosphorIconNames.has(name), "Unknown icon name."),
   iconVariant: z.literal("fill"),
   ...containmentFields,
+  ...documentOwnershipFields,
 });
 
 const textObjectSchema = canvasObjectBaseSchema.extend({
@@ -201,12 +233,14 @@ const textObjectSchema = canvasObjectBaseSchema.extend({
   text: z.string().max(100_000),
   childRole: z.literal("shape-label").nullable().optional(),
   ...containmentFields,
+  ...documentOwnershipFields,
 });
 
 const connectorObjectSchema = canvasObjectBaseSchema.extend({
   type: z.literal("connector"),
   start: connectorEndpointSchema,
   end: connectorEndpointSchema,
+  ...documentOwnershipFields,
 });
 
 const tableObjectSchema = canvasObjectBaseSchema.extend({
@@ -215,12 +249,16 @@ const tableObjectSchema = canvasObjectBaseSchema.extend({
     .array(z.array(z.string().max(10_000)))
     .min(1)
     .max(100),
+  ...documentOwnershipFields,
 });
 
 const legacyDocumentObjectSchema = canvasObjectBaseSchema.extend({
   type: z.literal("document"),
   documentId: uuid,
   title: z.string().max(500),
+  documentVersion: z.literal(1).default(1),
+  contentRevision: z.number().int().nonnegative().optional(),
+  settings: documentSettingsSchema.default(defaultDocumentSettings),
 });
 
 const legacyAnnotationObjectSchema = canvasObjectBaseSchema.extend({
@@ -238,6 +276,7 @@ const legacyAnnotationObjectSchema = canvasObjectBaseSchema.extend({
     .strictObject({ x: finiteNumber, y: finiteNumber })
     .nullable()
     .optional(),
+  ...documentOwnershipFields,
 });
 
 const storedCanvasObjectV2Schema = z
@@ -251,6 +290,15 @@ const storedCanvasObjectV2Schema = z
     legacyAnnotationObjectSchema,
   ])
   .superRefine((object, context) => {
+    if (object.type !== "document") {
+      if ((object.documentOwnerId == null) !== (object.documentLocal == null)) {
+        context.addIssue({
+          code: "custom",
+          path: ["documentLocal"],
+          message: "Document-owned objects require document-local geometry.",
+        });
+      }
+    }
     if (
       object.type === "shape" ||
       object.type === "icon" ||

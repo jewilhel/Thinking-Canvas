@@ -16,6 +16,7 @@ import {
   setCanvasObjectField,
   setCanvasGroupField,
   setCanvasOrderV2,
+  type CanvasGroupV2,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
 import { resolveConnectorEndpointV2 } from "@/canvas/geometry";
@@ -39,6 +40,16 @@ import {
   type VerticalConstraint,
 } from "@/canvas/icon-containment";
 import { isEligibleAnnotationTarget } from "@/canvas/annotation-attachment";
+import { documentSettingsSchema } from "@/documents/document-schema";
+import { copyProductDocumentContent } from "@/documents/product-document";
+import {
+  documentFullyContainsGeometry,
+  documentFullyContainsLocalGeometry,
+  documentLocalGeometry,
+  documentWorldGeometry,
+  isDocumentOwnableObject,
+  type ProductDocumentCanvasObject,
+} from "@/documents/document-containment";
 import {
   rotateSelectionObjects,
   selectionBoundsForObjects,
@@ -91,6 +102,33 @@ const patchCommand = commandBase.extend({
         .max(100),
     }),
   ]),
+});
+const documentUpdateCommand = commandBase.extend({
+  type: z.literal("document.update"),
+  payload: z
+    .strictObject({
+      objectId: uuid,
+      title: z.string().trim().min(1).max(500).optional(),
+      settings: documentSettingsSchema.optional(),
+      contentRevision: z.number().int().nonnegative().optional(),
+    })
+    .refine(
+      (payload) =>
+        payload.title !== undefined ||
+        payload.settings !== undefined ||
+        payload.contentRevision !== undefined,
+      "A document title, settings, or content revision update is required.",
+    ),
+});
+const documentDuplicateCommand = commandBase.extend({
+  type: z.literal("document.duplicate"),
+  payload: z.strictObject({
+    sourceObjectId: uuid,
+    object: canvasObjectV2Schema.refine(
+      (object) => object.type === "document",
+      "A duplicated document requires a document object.",
+    ),
+  }),
 });
 const moveCommand = commandBase.extend({
   type: z.literal("object.move"),
@@ -317,6 +355,24 @@ const duplicateCommand = commandBase.extend({
     objects: z.array(canvasObjectV2Schema).min(1).max(1_000),
   }),
 });
+const documentPlacementSelection = {
+  documentObjectId: uuid,
+  objectIds: z.array(uuid).min(1).max(1_000),
+  groupIds: z.array(uuid).max(1_000).default([]),
+} as const;
+const documentPlaceCommand = commandBase.extend({
+  type: z.literal("document.place"),
+  payload: z.strictObject({
+    ...documentPlacementSelection,
+    delta: z
+      .strictObject({ x: finiteNumber, y: finiteNumber })
+      .default({ x: 0, y: 0 }),
+  }),
+});
+const documentRemoveCommand = commandBase.extend({
+  type: z.literal("document.remove"),
+  payload: z.strictObject(documentPlacementSelection),
+});
 
 const trustedCommandFields = {
   schemaVersion: true,
@@ -330,6 +386,8 @@ const trustedCommandFields = {
 export const productCanvasMutationSchema = z.discriminatedUnion("type", [
   createCommand.omit(trustedCommandFields),
   patchCommand.omit(trustedCommandFields),
+  documentUpdateCommand.omit(trustedCommandFields),
+  documentDuplicateCommand.omit(trustedCommandFields),
   moveCommand.omit(trustedCommandFields),
   resizeCommand.omit(trustedCommandFields),
   deleteCommand.omit(trustedCommandFields),
@@ -355,6 +413,8 @@ export const productCanvasMutationSchema = z.discriminatedUnion("type", [
   nestGroupCommand.omit(trustedCommandFields),
   detachGroupCommand.omit(trustedCommandFields),
   duplicateCommand.omit(trustedCommandFields),
+  documentPlaceCommand.omit(trustedCommandFields),
+  documentRemoveCommand.omit(trustedCommandFields),
 ]);
 
 export type ProductCanvasMutation = z.infer<typeof productCanvasMutationSchema>;
@@ -363,6 +423,8 @@ export const productCanvasCommandSchema = z
   .discriminatedUnion("type", [
     createCommand,
     patchCommand,
+    documentUpdateCommand,
+    documentDuplicateCommand,
     moveCommand,
     resizeCommand,
     deleteCommand,
@@ -388,6 +450,8 @@ export const productCanvasCommandSchema = z
     nestGroupCommand,
     detachGroupCommand,
     duplicateCommand,
+    documentPlaceCommand,
+    documentRemoveCommand,
   ])
   .superRefine((command, context) => {
     if (command.actor.type !== command.origin) {
@@ -399,6 +463,8 @@ export const productCanvasCommandSchema = z
     }
     if (
       (command.type === "object.create" &&
+        command.payload.object.canvasId !== command.canvasId) ||
+      (command.type === "document.duplicate" &&
         command.payload.object.canvasId !== command.canvasId) ||
       (command.type === "selection.duplicate" &&
         command.payload.objects.some(
@@ -448,6 +514,144 @@ function requireObject(document: Y.Doc, objectId: string) {
   return object;
 }
 
+function requireDocumentObject(
+  document: Y.Doc,
+  objectId: string,
+): ProductDocumentCanvasObject {
+  const object = requireObject(document, objectId);
+  if (object.type !== "document") {
+    throw new ProductCanvasCommandConflictError(
+      "Document containment requires a document target.",
+    );
+  }
+  return object;
+}
+
+function requireCompleteDocumentFamily(
+  document: Y.Doc,
+  objectIds: string[],
+  groupIds: string[],
+) {
+  const selectedIds = new Set(objectIds);
+  const selectedGroupIds = new Set(groupIds);
+  if (
+    selectedIds.size !== objectIds.length ||
+    selectedGroupIds.size !== groupIds.length
+  ) {
+    throw new ProductCanvasCommandConflictError(
+      "Document placement cannot contain duplicate identities.",
+    );
+  }
+  const allObjects = listCanvasObjectsV2(document);
+  const allGroups = listCanvasGroupsV2(document);
+  const selected = objectIds.map((id) => requireObject(document, id));
+  if (selected.some((object) => !isDocumentOwnableObject(object))) {
+    throw new ProductCanvasCommandConflictError(
+      "Documents cannot be placed inside documents.",
+    );
+  }
+
+  for (const object of selected) {
+    if (object.groupId) {
+      const members = allObjects.filter(
+        (candidate) => candidate.groupId === object.groupId,
+      );
+      if (
+        !selectedGroupIds.has(object.groupId) ||
+        members.some((member) => !selectedIds.has(member.id))
+      ) {
+        throw new ProductCanvasCommandConflictError(
+          "Move every member of a group into or out of a document together.",
+        );
+      }
+    }
+    if (
+      isContainableObject(object) &&
+      object.parentId &&
+      !selectedIds.has(object.parentId)
+    ) {
+      throw new ProductCanvasCommandConflictError(
+        "Move a nested object together with its complete parent family.",
+      );
+    }
+    const children = allObjects.filter(
+      (candidate) =>
+        isContainableObject(candidate) && candidate.parentId === object.id,
+    );
+    if (children.some((child) => !selectedIds.has(child.id))) {
+      throw new ProductCanvasCommandConflictError(
+        "Move a container together with every nested child.",
+      );
+    }
+    if (object.type === "connector") {
+      for (const endpoint of [object.start, object.end]) {
+        if (
+          endpoint.kind === "attached" &&
+          !selectedIds.has(endpoint.objectId)
+        ) {
+          throw new ProductCanvasCommandConflictError(
+            "A connector cannot cross a document boundary.",
+          );
+        }
+      }
+    }
+    if (
+      object.type === "annotation" &&
+      object.attachedObjectId &&
+      !selectedIds.has(object.attachedObjectId)
+    ) {
+      throw new ProductCanvasCommandConflictError(
+        "An attached annotation must move with its target.",
+      );
+    }
+  }
+
+  for (const object of allObjects) {
+    if (!selectedIds.has(object.id)) {
+      if (
+        object.type === "connector" &&
+        [object.start, object.end].some(
+          (endpoint) =>
+            endpoint.kind === "attached" && selectedIds.has(endpoint.objectId),
+        )
+      ) {
+        throw new ProductCanvasCommandConflictError(
+          "A connector cannot cross a document boundary.",
+        );
+      }
+      if (
+        object.type === "annotation" &&
+        object.attachedObjectId &&
+        selectedIds.has(object.attachedObjectId)
+      ) {
+        throw new ProductCanvasCommandConflictError(
+          "Move attached annotations with their target.",
+        );
+      }
+    }
+  }
+
+  for (const groupId of selectedGroupIds) {
+    const group = allGroups.find((candidate) => candidate.id === groupId);
+    const members = allObjects.filter(
+      (candidate) => candidate.groupId === groupId,
+    );
+    if (
+      !group ||
+      members.length < 2 ||
+      members.some((member) => !selectedIds.has(member.id))
+    ) {
+      throw new ProductCanvasCommandConflictError(
+        "Document placement requires a complete durable group.",
+      );
+    }
+  }
+  return {
+    selected: selected.filter(isDocumentOwnableObject),
+    groups: groupIds.map((id) => allGroups.find((group) => group.id === id)!),
+  };
+}
+
 function touch(document: Y.Doc, objectId: string, issuedAt: string) {
   setCanvasObjectField(document, objectId, ["updatedAt"], issuedAt);
 }
@@ -492,6 +696,21 @@ function requireEligibleAnnotationTarget(
   return target;
 }
 
+function documentOwnerId(object: CanvasObjectV2) {
+  return object.type === "document" ? null : (object.documentOwnerId ?? null);
+}
+
+function assertSameDocumentBoundary(
+  source: CanvasObjectV2,
+  target: CanvasObjectV2,
+) {
+  if (documentOwnerId(source) !== documentOwnerId(target)) {
+    throw new ProductCanvasCommandConflictError(
+      "Connectors and annotations cannot cross a document boundary.",
+    );
+  }
+}
+
 function requireObjectParent(
   document: Y.Doc,
   parentId: string,
@@ -515,6 +734,19 @@ function writeGeometry(
   objectId: string,
   geometry: CanvasObjectV2["geometry"],
 ) {
+  const current = readCanvasObjectV2(document, objectId);
+  let nextDocumentLocal = null;
+  if (current && isDocumentOwnableObject(current) && current.documentOwnerId) {
+    const owner = readCanvasObjectV2(document, current.documentOwnerId);
+    if (owner?.type === "document") {
+      nextDocumentLocal = documentLocalGeometry(owner, geometry);
+      if (!documentFullyContainsLocalGeometry(owner, nextDocumentLocal)) {
+        throw new ProductCanvasCommandConflictError(
+          "Document-owned objects must remain fully inside one document page.",
+        );
+      }
+    }
+  }
   for (const field of [
     "x",
     "y",
@@ -537,6 +769,30 @@ function writeGeometry(
       geometry[field],
     );
   }
+  if (nextDocumentLocal) {
+    setCanvasObjectField(
+      document,
+      objectId,
+      ["documentLocal"],
+      nextDocumentLocal,
+    );
+  }
+}
+
+function documentLocalForGroup(
+  document: Y.Doc,
+  group: CanvasGroupV2,
+  geometry: CanvasGroupV2["geometry"],
+) {
+  if (!group.documentOwnerId) return null;
+  const owner = requireDocumentObject(document, group.documentOwnerId);
+  const local = documentLocalGeometry(owner, geometry);
+  if (!documentFullyContainsLocalGeometry(owner, local)) {
+    throw new ProductCanvasCommandConflictError(
+      "Document-owned groups must remain fully inside one document page.",
+    );
+  }
+  return local;
 }
 
 function updateAttachedAnnotationPosition(
@@ -556,18 +812,11 @@ function updateAttachedAnnotationPosition(
     ) {
       continue;
     }
-    setCanvasObjectField(
-      document,
-      annotation.id,
-      ["geometry", "x"],
-      annotation.geometry.x + dx,
-    );
-    setCanvasObjectField(
-      document,
-      annotation.id,
-      ["geometry", "y"],
-      annotation.geometry.y + dy,
-    );
+    writeGeometry(document, annotation.id, {
+      ...annotation.geometry,
+      x: annotation.geometry.x + dx,
+      y: annotation.geometry.y + dy,
+    });
     touch(document, annotation.id, issuedAt);
     affectedObjectIds.add(annotation.id);
   }
@@ -749,6 +998,17 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           command.payload.object.id,
           command.payload.object.start,
         );
+        for (const endpoint of [
+          command.payload.object.start,
+          command.payload.object.end,
+        ]) {
+          if (endpoint.kind === "attached") {
+            assertSameDocumentBoundary(
+              command.payload.object,
+              requireObject(document, endpoint.objectId),
+            );
+          }
+        }
         assertEligibleEndpoint(
           document,
           command.payload.object.id,
@@ -759,11 +1019,12 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         command.payload.object.type === "annotation" &&
         command.payload.object.attachedObjectId
       ) {
-        requireEligibleAnnotationTarget(
+        const target = requireEligibleAnnotationTarget(
           document,
           command.payload.object.id,
           command.payload.object.attachedObjectId,
         );
+        assertSameDocumentBoundary(command.payload.object, target);
       }
       if (
         isContainableObject(command.payload.object) &&
@@ -781,6 +1042,166 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
       }
       putCanvasObjectV2(document, command.payload.object);
       affectedObjectIds.add(command.payload.object.id);
+      return;
+    }
+
+    if (command.type === "document.duplicate") {
+      const source = requireObject(document, command.payload.sourceObjectId);
+      const duplicate = command.payload.object;
+      if (source.type !== "document" || duplicate.type !== "document") {
+        throw new ProductCanvasCommandConflictError(
+          "Only a document can be duplicated as a document.",
+        );
+      }
+      if (readCanvasObjectV2(document, duplicate.id)) {
+        throw new ProductCanvasCommandConflictError(
+          "The duplicated document identity already exists.",
+        );
+      }
+      if (source.documentId === duplicate.documentId) {
+        throw new ProductCanvasCommandConflictError(
+          "A duplicate requires a new document identity.",
+        );
+      }
+      putCanvasObjectV2(document, duplicate);
+      copyProductDocumentContent(
+        document,
+        source.documentId,
+        duplicate.documentId,
+      );
+      affectedObjectIds.add(duplicate.id);
+      return;
+    }
+
+    if (
+      command.type === "document.place" ||
+      command.type === "document.remove"
+    ) {
+      const target = requireDocumentObject(
+        document,
+        command.payload.documentObjectId,
+      );
+      const family = requireCompleteDocumentFamily(
+        document,
+        command.payload.objectIds,
+        command.payload.groupIds,
+      );
+      const placing = command.type === "document.place";
+      const delta = placing ? command.payload.delta : { x: 0, y: 0 };
+
+      for (const object of family.selected) {
+        const placementGeometry = {
+          ...object.geometry,
+          x: object.geometry.x + delta.x,
+          y: object.geometry.y + delta.y,
+        };
+        if (placing) {
+          if (!documentFullyContainsGeometry(target, placementGeometry)) {
+            throw new ProductCanvasCommandConflictError(
+              "Move the complete object family fully inside the document before placing it.",
+            );
+          }
+        } else if (
+          object.documentOwnerId !== target.id ||
+          !object.documentLocal
+        ) {
+          throw new ProductCanvasCommandConflictError(
+            "Only objects owned by this document can be removed from it.",
+          );
+        }
+      }
+      for (const group of family.groups) {
+        const placementGeometry = {
+          ...group.geometry,
+          x: group.geometry.x + delta.x,
+          y: group.geometry.y + delta.y,
+        };
+        if (placing) {
+          if (!documentFullyContainsGeometry(target, placementGeometry)) {
+            throw new ProductCanvasCommandConflictError(
+              "Move the complete group fully inside the document before placing it.",
+            );
+          }
+        } else if (
+          group.documentOwnerId !== target.id ||
+          !group.documentLocal
+        ) {
+          throw new ProductCanvasCommandConflictError(
+            "Only groups owned by this document can be removed from it.",
+          );
+        }
+      }
+
+      for (const object of family.selected) {
+        const geometry = placing
+          ? {
+              ...object.geometry,
+              x: object.geometry.x + delta.x,
+              y: object.geometry.y + delta.y,
+            }
+          : !object.documentLocal
+            ? object.geometry
+            : documentWorldGeometry(
+                target,
+                object.documentLocal,
+                object.geometry,
+              );
+        putCanvasObjectV2(document, {
+          ...object,
+          geometry,
+          ...(placing && object.type === "connector"
+            ? {
+                start:
+                  object.start.kind === "free"
+                    ? {
+                        ...object.start,
+                        x: object.start.x + delta.x,
+                        y: object.start.y + delta.y,
+                      }
+                    : object.start,
+                end:
+                  object.end.kind === "free"
+                    ? {
+                        ...object.end,
+                        x: object.end.x + delta.x,
+                        y: object.end.y + delta.y,
+                      }
+                    : object.end,
+              }
+            : {}),
+          documentOwnerId: placing ? target.id : null,
+          documentLocal: placing
+            ? documentLocalGeometry(target, geometry)
+            : null,
+          updatedAt: command.issuedAt,
+        });
+        affectedObjectIds.add(object.id);
+      }
+      for (const group of family.groups) {
+        const geometry = placing
+          ? {
+              ...group.geometry,
+              x: group.geometry.x + delta.x,
+              y: group.geometry.y + delta.y,
+            }
+          : !group.documentLocal
+            ? group.geometry
+            : documentWorldGeometry(
+                target,
+                group.documentLocal,
+                group.geometry,
+              );
+        putCanvasGroupV2(document, {
+          ...group,
+          geometry,
+          documentOwnerId: placing ? target.id : null,
+          documentLocal: placing
+            ? documentLocalGeometry(target, geometry)
+            : null,
+          updatedAt: command.issuedAt,
+        });
+        affectedGroupIds.add(group.id);
+      }
       return;
     }
 
@@ -813,6 +1234,13 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
             object.end,
             pendingObjects,
           );
+          for (const endpoint of [object.start, object.end]) {
+            if (endpoint.kind !== "attached") continue;
+            const target =
+              pendingObjects.get(endpoint.objectId) ??
+              readCanvasObjectV2(document, endpoint.objectId);
+            if (target) assertSameDocumentBoundary(object, target);
+          }
         }
         if (object.type === "annotation" && object.attachedObjectId) {
           const target =
@@ -823,13 +1251,34 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
               "Duplicated annotation attachments require an eligible target.",
             );
           }
+          assertSameDocumentBoundary(object, target);
         }
         if (isContainableObject(object) && object.parentId) {
           requireObjectParent(document, object.parentId, pendingObjects);
         }
+        if (isDocumentOwnableObject(object) && object.documentOwnerId) {
+          const owner = requireDocumentObject(document, object.documentOwnerId);
+          const local = documentLocalGeometry(owner, object.geometry);
+          if (!documentFullyContainsLocalGeometry(owner, local)) {
+            throw new ProductCanvasCommandConflictError(
+              "A duplicated document object must remain inside its document page.",
+            );
+          }
+        }
       }
       for (const object of command.payload.objects) {
-        putCanvasObjectV2(document, object);
+        let duplicate = object;
+        if (isDocumentOwnableObject(object) && object.documentOwnerId) {
+          const owner = requireDocumentObject(document, object.documentOwnerId);
+          const local = documentLocalGeometry(owner, object.geometry);
+          if (!documentFullyContainsLocalGeometry(owner, local)) {
+            throw new ProductCanvasCommandConflictError(
+              "A duplicated document object must remain inside its document page.",
+            );
+          }
+          duplicate = { ...object, documentLocal: local };
+        }
+        putCanvasObjectV2(document, duplicate);
         affectedObjectIds.add(object.id);
       }
       const duplicatedGroupIds = new Set(
@@ -855,6 +1304,18 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         const parent = sharedParentId
           ? requireObjectParent(document, sharedParentId, pendingObjects)
           : null;
+        const documentOwnerIds = new Set(
+          members.map((member) =>
+            member.type === "document"
+              ? null
+              : (member.documentOwnerId ?? null),
+          ),
+        );
+        const documentOwnerId =
+          documentOwnerIds.size === 1 ? [...documentOwnerIds][0] : null;
+        const documentOwner = documentOwnerId
+          ? requireDocumentObject(document, documentOwnerId)
+          : null;
         if (parent) {
           for (const member of members) {
             if (!isContainableObject(member)) continue;
@@ -879,6 +1340,13 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
             ? parentRelativeGeometry({ ...bounds, rotation: 0 }, parent)
             : null,
           childLayout: parent ? defaultChildLayout : null,
+          documentOwnerId,
+          documentLocal: documentOwner
+            ? documentLocalGeometry(documentOwner, {
+                ...bounds,
+                rotation: 0,
+              })
+            : null,
         });
         affectedGroupIds.add(groupId);
       }
@@ -900,6 +1368,25 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
       if (selected.some((object) => object.groupId != null)) {
         throw new ProductCanvasCommandConflictError(
           "Nested groups are not supported.",
+        );
+      }
+      const documentOwnerIds = new Set(
+        selected.map((object) =>
+          object.type === "document" ? null : (object.documentOwnerId ?? null),
+        ),
+      );
+      if (documentOwnerIds.size !== 1) {
+        throw new ProductCanvasCommandConflictError(
+          "Grouped objects must share the same document ownership level.",
+        );
+      }
+      const documentOwnerId = [...documentOwnerIds][0];
+      if (
+        documentOwnerId &&
+        selected.some((object) => object.type === "document")
+      ) {
+        throw new ProductCanvasCommandConflictError(
+          "Documents cannot be grouped inside documents.",
         );
       }
       const parentIds = new Set(
@@ -966,6 +1453,13 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           ? parentRelativeGeometry({ ...bounds, rotation: 0 }, parent)
           : null,
         childLayout: parent ? defaultChildLayout : null,
+        documentOwnerId,
+        documentLocal: documentOwnerId
+          ? documentLocalGeometry(
+              requireDocumentObject(document, documentOwnerId),
+              { ...bounds, rotation: 0 },
+            )
+          : null,
       });
       affectedGroupIds.add(command.payload.groupId);
       return;
@@ -1034,6 +1528,15 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         putCanvasGroupV2(document, group);
       }
       const sourceFrame = tightUnrotatedGroupFrame(group, members);
+      const nextFrame = rotateGeometryAroundCenter(
+        sourceFrame,
+        command.payload.rotation,
+      );
+      const nextDocumentLocal = documentLocalForGroup(
+        document,
+        group,
+        nextFrame,
+      );
       const rotated = rotateSelectionObjects(
         members,
         sourceFrame,
@@ -1056,10 +1559,6 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           affectedObjectIds,
         );
       }
-      const nextFrame = rotateGeometryAroundCenter(
-        sourceFrame,
-        command.payload.rotation,
-      );
       for (const field of ["x", "y", "width", "height", "rotation"] as const) {
         setCanvasGroupField(
           document,
@@ -1069,6 +1568,14 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         );
       }
       setCanvasGroupField(document, group.id, ["updatedAt"], command.issuedAt);
+      if (nextDocumentLocal) {
+        setCanvasGroupField(
+          document,
+          group.id,
+          ["documentLocal"],
+          nextDocumentLocal,
+        );
+      }
       if (group.parentId) {
         const parent = requireObjectParent(document, group.parentId);
         setCanvasGroupField(
@@ -1126,6 +1633,12 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           requireObjectParent(document, group.parentId),
         );
       }
+      const nextGroupGeometry = { ...sourceFrame, ...target };
+      const nextDocumentLocal = documentLocalForGroup(
+        document,
+        group,
+        nextGroupGeometry,
+      );
       for (const member of transformSelectionObjects(
         members,
         sourceFrame,
@@ -1156,6 +1669,14 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         );
       }
       setCanvasGroupField(document, group.id, ["updatedAt"], command.issuedAt);
+      if (nextDocumentLocal) {
+        setCanvasGroupField(
+          document,
+          group.id,
+          ["documentLocal"],
+          nextDocumentLocal,
+        );
+      }
       if (group.parentId) {
         setCanvasGroupField(
           document,
@@ -1539,6 +2060,40 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
     const object = requireObject(document, command.payload.objectId);
     affectedObjectIds.add(object.id);
 
+    if (command.type === "document.update") {
+      if (object.type !== "document") {
+        throw new ProductCanvasCommandConflictError(
+          "Document settings can only be changed on a document object.",
+        );
+      }
+      if (command.payload.title !== undefined) {
+        setCanvasObjectField(
+          document,
+          object.id,
+          ["title"],
+          command.payload.title,
+        );
+      }
+      if (command.payload.settings !== undefined) {
+        setCanvasObjectField(
+          document,
+          object.id,
+          ["settings"],
+          command.payload.settings,
+        );
+      }
+      if (command.payload.contentRevision !== undefined) {
+        setCanvasObjectField(
+          document,
+          object.id,
+          ["contentRevision"],
+          command.payload.contentRevision,
+        );
+      }
+      touch(document, object.id, command.issuedAt);
+      return;
+    }
+
     if (command.type === "object.flip") {
       if (!isContainableObject(object)) {
         throw new ProductCanvasCommandConflictError(
@@ -1673,18 +2228,7 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
       }
       const dx = movedGeometry.x - object.geometry.x;
       const dy = movedGeometry.y - object.geometry.y;
-      setCanvasObjectField(
-        document,
-        object.id,
-        ["geometry", "x"],
-        movedGeometry.x,
-      );
-      setCanvasObjectField(
-        document,
-        object.id,
-        ["geometry", "y"],
-        movedGeometry.y,
-      );
+      writeGeometry(document, object.id, movedGeometry);
       if (isContainableObject(object) && object.parentId) {
         const parent = requireObjectParent(document, object.parentId);
         setCanvasObjectField(
@@ -1712,18 +2256,11 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           ) {
             continue;
           }
-          setCanvasObjectField(
-            document,
-            candidate.id,
-            ["geometry", "x"],
-            candidate.geometry.x + dx,
-          );
-          setCanvasObjectField(
-            document,
-            candidate.id,
-            ["geometry", "y"],
-            candidate.geometry.y + dy,
-          );
+          writeGeometry(document, candidate.id, {
+            ...candidate.geometry,
+            x: candidate.geometry.x + dx,
+            y: candidate.geometry.y + dy,
+          });
           touch(document, candidate.id, command.issuedAt);
           affectedObjectIds.add(candidate.id);
         }
@@ -1888,6 +2425,7 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         object.id,
         command.payload.targetObjectId,
       );
+      assertSameDocumentBoundary(object, target);
       setCanvasObjectField(
         document,
         object.id,
@@ -1914,6 +2452,12 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
         );
       }
       assertEligibleEndpoint(document, object.id, command.payload.value);
+      if (command.payload.value.kind === "attached") {
+        assertSameDocumentBoundary(
+          object,
+          requireObject(document, command.payload.value.objectId),
+        );
+      }
       setCanvasObjectField(
         document,
         object.id,

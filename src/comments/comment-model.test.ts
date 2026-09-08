@@ -116,6 +116,7 @@ describe("comment model", () => {
       promptKind: null,
       authorKind: "human" as const,
       authorKey: null,
+      documentRange: null,
     };
     expect(
       commentCreateCommandSchema.safeParse({
@@ -138,6 +139,19 @@ describe("comment model", () => {
         canvasAnchor: { x: 120, y: -40 },
       }).success,
     ).toBe(false);
+    expect(
+      commentCreateCommandSchema.safeParse({
+        ...base,
+        targetObjectIds: [],
+        canvasAnchor: null,
+        documentRange: {
+          documentObjectId: "61000000-0000-4000-8000-000000000001",
+          anchor: "anchor",
+          head: "head",
+          quote: "selected words",
+        },
+      }).success,
+    ).toBe(true);
     expect(
       commentCreateCommandSchema.safeParse({
         ...base,
