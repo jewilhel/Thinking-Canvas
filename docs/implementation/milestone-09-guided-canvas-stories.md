@@ -1,6 +1,6 @@
 # Milestone 9 — Guided canvas stories
 
-Status: Approved for implementation
+Status: Closed
 
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 
@@ -133,9 +133,9 @@ This plan covers one milestone only. It does not change Milestone 8's still-open
 - [x] Task 5 — Build the populated ordered list, active state, add, rename, replace, delete/restore behavior from D2, drag reordering, keyboard reordering, and concurrent-update recovery.
 - [x] Task 6 — Build one interruptible camera-transition controller and row/previous/next navigation; support exploration after arrival, return-to-target behavior, resize, interruption, and reduced motion. D5 hosted perceptual acceptance received on 2026-09-07.
 - [x] Task 7 — Resolve D3 and add scene-specific contextual comments/notes with active-scene isolation, history behavior, lifecycle rules, and role coverage.
-- [x] Task 8 — Resolve D4 and add captioned AI narration, permitted AI story/scene commands, cancellation/failure fallback, and no-audio-storage proof.
-- [ ] Task 9 — Add unit, component, database, integration, and authenticated Playwright coverage for the complete story lifecycle, live-linked board edits, reconnect/reload, two-user conflicts, accessibility, tablet layout, and performance instrumentation.
-- [ ] Task 10 — Run the full local gate, create an immutable Netlify preview from the exact reviewed head when authorized, perform Codex in-app-browser QA, retain evidence, and request product-owner closure only after every active requirement and exit criterion passes.
+- [x] Task 8 — Resolve D4 and add captioned AI narration, permitted AI story/scene commands, cancellation/failure fallback, and the approved private cached-audio lifecycle.
+- [x] Task 9 — Add unit, component, database, integration, and authenticated Playwright coverage for the complete story lifecycle, live-linked board edits, reconnect/reload, two-user conflicts, accessibility, tablet layout, and performance instrumentation.
+- [x] Task 10 — Run the full local gate, create an immutable Netlify preview from the exact reviewed head when authorized, perform Codex in-app-browser QA, retain evidence, and request product-owner closure only after every active requirement and exit criterion passes.
 
 ## Pull-request slices
 
@@ -225,22 +225,22 @@ This plan covers one milestone only. It does not change Milestone 8's still-open
 
 ## Exit criteria
 
-- [ ] `FR-054`: an authorized human and permitted AI can create the approved first-version linear story model through validated shared service boundaries.
-- [ ] `FR-055`: every scene durably retains its validated world-space target, camera framing, bounded zoom, name, and approved optional context/narration after reload and reconnect.
-- [ ] `FR-056`: selecting a scene or previous/next animates from the exact current rendered viewport without a visual jump, stale snap, or competing animation.
-- [ ] `FR-057`: after arrival, a viewer can freely pan and zoom without changing the saved scene until explicitly replacing it.
-- [ ] `FR-058`: after exploration, previous/next and row selection smoothly return to the selected saved target.
-- [ ] `FR-059`: only the active scene's contextual content appears in playback, while authorized history remains discoverable according to D3.
-- [ ] `FR-060`: the primary AI narrates through the approved voice boundary with equivalent captions, safe cancellation/failure behavior, no exposed long-lived key, and approved privacy behavior.
-- [ ] `FR-061`: story order, framing, name, and narration survive reload and collaboration while scene rendering reflects current canvas objects after edits, movement, and deletion; no frozen canvas snapshot is story authority.
-- [ ] `FR-062`: the UI, schema/API contract, AI tools, and navigation expose one ordered path and no branching affordance.
-- [ ] `FR-092`: Add Scene captures current position/zoom; list order persists; drag and keyboard reorder match; rename, replace, and delete work; dedicated previous/next controls work; no print or PDF export is exposed.
-- [ ] Owner/editor, commenter, viewer, cross-canvas, stale-revision, and permitted/disallowed-AI cases pass local policy/integration tests and hosted role checks.
-- [ ] Pointer, keyboard, touch/tablet, 200% zoom, screen-reader naming/announcements, focus, contrast, and reduced-motion checks pass without removing ordinary canvas exploration.
-- [ ] Reconnect/reload and a two-collaborator conflict scenario preserve every acknowledged story mutation and leave one contiguous order.
-- [ ] The full local gate, database tests, authenticated browser suite, protected exact-head CI, immutable matching Netlify preview, console/server review, and recorded evidence pass.
-- [ ] The exact milestone exit gate passes on the hosted preview: `A saved story plays from beginning to end after underlying objects are edited, moved, and reloaded; reduced-motion mode substitutes an accessible non-sweeping transition.`
-- [ ] Product owner completes hands-on hosted review, accepts the camera motion and scene-management experience, and separately approves milestone closure.
+- [x] `FR-054`: an authorized human and permitted AI can create the approved first-version linear story model through validated shared service boundaries.
+- [x] `FR-055`: every scene durably retains its validated world-space target, camera framing, bounded zoom, name, and approved optional context/narration after reload and reconnect.
+- [x] `FR-056`: selecting a scene or previous/next animates from the exact current rendered viewport without a visual jump, stale snap, or competing animation.
+- [x] `FR-057`: after arrival, a viewer can freely pan and zoom without changing the saved scene until explicitly replacing it.
+- [x] `FR-058`: after exploration, previous/next and row selection smoothly return to the selected saved target.
+- [x] `FR-059`: only the active scene's contextual content appears in playback, while authorized history remains discoverable according to D3.
+- [x] `FR-060`: the primary AI narrates through the approved voice boundary with equivalent captions, safe cancellation/failure behavior, no exposed long-lived key, and approved privacy behavior.
+- [x] `FR-061`: story order, framing, name, and narration survive reload and collaboration while scene rendering reflects current canvas objects after edits, movement, and deletion; no frozen canvas snapshot is story authority.
+- [x] `FR-062`: the UI, schema/API contract, AI tools, and navigation expose one ordered path and no branching affordance.
+- [x] `FR-092`: Add Scene captures current position/zoom; list order persists; drag and keyboard reorder match; rename, replace, and delete work; dedicated previous/next controls work; no print or PDF export is exposed.
+- [x] Owner/editor, commenter, viewer, cross-canvas, stale-revision, and permitted/disallowed-AI cases pass local policy/integration tests and hosted role checks.
+- [x] Pointer, keyboard, touch/tablet, 200% zoom, screen-reader naming/announcements, focus, contrast, and reduced-motion checks pass without removing ordinary canvas exploration.
+- [x] Reconnect/reload and a two-collaborator conflict scenario preserve every acknowledged story mutation and leave one contiguous order.
+- [x] The full local gate, database tests, authenticated browser suite, protected exact-head CI, immutable matching Netlify preview, console/server review, and recorded evidence pass.
+- [x] The exact milestone exit gate passes on the hosted preview: `A saved story plays from beginning to end after underlying objects are edited, moved, and reloaded; reduced-motion mode substitutes an accessible non-sweeping transition.`
+- [x] Product owner completes hands-on hosted review, accepts the camera motion and scene-management experience, and separately approves milestone closure.
 
 ## Explicitly excluded work
 
@@ -328,7 +328,10 @@ The product owner approved the complete plan and its recommended D1–D5 options
 - 2026-09-08 — Closeout local database gate: a complete local reset applied every migration through `20260908193000_narration_worker_scene_reads.sql`; `pnpm db:test` then passed 10 files / 393 checks. An earlier run against a contaminated local fixture failed on pre-existing AI revisions and duplicate sequences; it is retained as diagnostic evidence and not counted as passing.
 - 2026-09-08 — Closeout authenticated browser gate: the full Chromium suite passed 81/81 scenarios serially in 4.4 minutes after a clean local database reset. A prior default-parallel run had one synthetic annotation-stroke count failure which passed immediately in isolation. Two canvas-object test helpers were made deterministic by closing prior selection surfaces before reopening the shape catalog and restoring the object navigator after creation; both affected tests passed together. The final serial run is the clean full-suite evidence.
 - 2026-09-08 — Closeout source/build gate: final `pnpm check` passed formatting, lint, TypeScript, 81 Vitest files / 411 tests, and the Next.js production build after the test-harness adjustment.
-- Remaining before verification-complete status: protected CI and a Git-backed immutable preview for the exact final PR head, final console/server review, and reconciliation of the explicit hosted role/conflict/live-linked exit matrix. PR creation, milestone closure, merge, and production remain separate approvals.
+- At the start of closeout, the remaining gates were protected CI, a Git-backed immutable preview for the exact implementation candidate, final console/server review, and reconciliation of the hosted role/conflict/live-linked matrix. The exact-head evidence below completed those gates before closure approval. Merge and production remain separate approvals.
+
+- 2026-09-08 — Exact-head closeout: [PR #15](https://github.com/jewilhel/Thinking-Canvas/pull/15) head `12b75f92bd6d0155000e8209150ff9ab95f7a083` passed protected [CI run 34284737830](https://github.com/jewilhel/Thinking-Canvas/actions/runs/34284737830), including formatting, lint, types, 411 unit tests, clean database/RLS tests, production build, and the complete authenticated browser/accessibility suite. Git-backed Netlify deploy `6aa0886b4f424f00087afd1c` reached `ready` with no deploy error and an exact matching `commit_ref`. Authenticated Codex in-app-browser verification loaded the synchronized five-scene story, exercised forward and reverse navigation with the expected camera/caption changes, inspected scene controls and contextual comments, and confirmed cached narration reached “AI narration ready.” The exact PR head differs from accepted runtime `6849d0a` only in milestone evidence and E2E determinism; application and database runtime code are unchanged.
+- 2026-09-08 — The product owner explicitly approved Milestone 9 closure and master-ledger reconciliation after reviewing the closeout evidence. Merge and production deployment remain separately gated.
 
 - 2026-09-07 — Planning inspection only. Local `main` was fast-forwarded from `556eeee` to current `origin/main` commit `99c2835`, which includes merged Milestone 8 code and ledger reconciliation. The working tree was clean before this plan edit. No Milestone 9 tests or preview checks were run.
 - 2026-09-07 — Repository inspection confirmed existing `stories` and ordered `story_scenes` tables and RLS, generic JSON `target`/`camera`, nullable narration, current `Viewport = { x, y, scale }`, the installed `motion` dependency, and no general guided-story UI/service implementation.
@@ -424,11 +427,12 @@ The product owner approved the complete plan and its recommended D1–D5 options
 | 2026-09-07 | Removed visible reorder controls and approved a movable, left-edge-resizable scene panel.                                                      | Replacement-preview review found drag/drop sufficient visually and requested parity with the comment panel's spatial controls.                                      | Retains keyboard shortcuts without visible clutter; adds local panel placement only, bounded to the viewport and 320–640 px nominal width; does not alter shared story data.                                   | Product owner                                     |
 | 2026-09-07 | Accepted the second Slice 3 repair and authorized Slice 4 and later approved-plan slices.                                                      | The product owner reviewed replacement deploy `6a9fabe6beeece416ce39a9f`, called it “perfect,” and asked implementation to continue until another review is needed. | Closes the Slice 3 feedback loop and resumes dependency-ordered work. It does not authorize Milestone 9 closure, merge, or production deployment.                                                              | Product owner                                     |
 | 2026-09-08 | Accepted the current hosted experience and requested that Milestone 9 closeout begin.                                                          | The product owner reviewed the accumulated replacement previews and reported that all changes are great.                                                            | Records hands-on product acceptance and authorizes closeout auditing. Protected exact-head verification, explicit closure approval, PR/merge, and production remain distinct gates.                            | Product owner                                     |
+| 2026-09-08 | Approved Milestone 9 closure and master-ledger reconciliation.                                                                                 | Protected CI, an exact-head Git-backed preview, authenticated hosted smoke testing, and the recorded requirement matrix passed after product acceptance.            | Marks Milestone 9 and its proven master-ledger requirements complete. PR merge and production deployment remain separately gated.                                                                              | Product owner                                     |
 
 ## Closure
 
-Closure status: Not ready
+Closure status: Closed
 
-Closure approval: Pending
+Closure approval: Approved by the product owner on 2026-09-08
 
-Closed on: —
+Closed on: 2026-09-08
