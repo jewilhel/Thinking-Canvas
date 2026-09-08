@@ -521,7 +521,20 @@ function ProductCanvasWorkspace({
   });
   const [scenePanelOpen, setScenePanelOpen] = useState(false);
   const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
-  const storyState = useCanvasStory(canvasId);
+  const [deletedScene, setDeletedScene] = useState<Pick<
+    StoryScene,
+    "id" | "title"
+  > | null>(null);
+  const storyState = useCanvasStory(
+    canvasId,
+    supabaseUrl,
+    supabasePublishableKey,
+  );
+  useEffect(() => {
+    if (!deletedScene) return;
+    const timeout = window.setTimeout(() => setDeletedScene(null), 8000);
+    return () => window.clearTimeout(timeout);
+  }, [deletedScene]);
   const selectionAffordanceFactor = selectionAffordanceScale(viewport.scale);
   const selectionAffordancesVisible = selectionAffordanceFactor > 0;
   const selectionTransformAffordancesVisible =
@@ -2443,6 +2456,64 @@ function ProductCanvasWorkspace({
   function chooseScene(scene: StoryScene) {
     setViewport(viewportForStoryCamera(scene.camera, size));
     setActiveSceneId(scene.id);
+  }
+
+  async function renameScene(scene: StoryScene, title: string) {
+    await storyState.mutate({
+      action: "rename",
+      sceneId: scene.id,
+      expectedRevision: storyState.story?.revision ?? 0,
+      title,
+    });
+  }
+
+  async function replaceScene(scene: StoryScene) {
+    const framing = captureStoryFraming(viewport, size);
+    await storyState.mutate({
+      action: "replace",
+      sceneId: scene.id,
+      expectedRevision: storyState.story?.revision ?? 0,
+      ...framing,
+    });
+  }
+
+  async function reorderScenes(sceneIds: string[]) {
+    await storyState.mutate({
+      action: "reorder",
+      expectedRevision: storyState.story?.revision ?? 0,
+      sceneIds,
+    });
+  }
+
+  async function deleteScene(scene: StoryScene) {
+    const sceneIndex = storyState.story?.scenes.findIndex(
+      (candidate) => candidate.id === scene.id,
+    );
+    const saved = await storyState.deleteScene({
+      sceneId: scene.id,
+      expectedRevision: storyState.story?.revision ?? 0,
+    });
+    if (!saved) return;
+    setDeletedScene({ id: scene.id, title: scene.title });
+    if (activeSceneId === scene.id) {
+      const fallback =
+        saved.scenes[Math.min(sceneIndex ?? 0, saved.scenes.length - 1)];
+      setActiveSceneId(fallback?.id ?? null);
+    }
+  }
+
+  async function undoDeleteScene() {
+    if (!deletedScene) return;
+    const restoredId = deletedScene.id;
+    const saved = await storyState.mutate({
+      action: "restore",
+      sceneId: restoredId,
+      expectedRevision: storyState.story?.revision ?? 0,
+    });
+    if (saved) {
+      setDeletedScene(null);
+      setActiveSceneId(restoredId);
+    }
   }
 
   function toggleSharedPanel(panel: SharedPanel, invoker: HTMLButtonElement) {
@@ -4824,6 +4895,12 @@ function ProductCanvasWorkspace({
         activeSceneId={activeSceneId}
         onAdd={() => void addCurrentScene()}
         onChoose={chooseScene}
+        onRename={(scene, title) => void renameScene(scene, title)}
+        onReplace={(scene) => void replaceScene(scene)}
+        onReorder={(sceneIds) => void reorderScenes(sceneIds)}
+        onDelete={(scene) => void deleteScene(scene)}
+        deletedScene={deletedScene}
+        onUndoDelete={() => void undoDeleteScene()}
         onDismiss={() => setScenePanelOpen(false)}
       />
 

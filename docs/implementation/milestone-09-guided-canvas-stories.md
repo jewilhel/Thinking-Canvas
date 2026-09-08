@@ -128,9 +128,9 @@ This plan covers one milestone only. It does not change Milestone 8's still-open
 
 - [x] Task 1 — Resolve D1 and define `Story`, `StoryScene`, versioned camera/target, repository, mutation, permission, and concurrency contracts against the current schema.
 - [x] Task 2 — Add local migrations, generated database types, atomic story revision/reorder behavior, RLS/policy coverage, and safe compatibility/backfill tests.
-- [ ] Task 3 — Implement authenticated story routes/services and typed human/AI command boundaries with validation, idempotency, and conflict-safe errors. Human capture/list route complete in Slice 1; lifecycle routes continue in Slice 2 and AI tools remain Slice 5.
+- [ ] Task 3 — Implement authenticated story routes/services and typed human/AI command boundaries with validation, idempotency, and conflict-safe errors. Human capture/list and lifecycle routes are complete through Slice 2; permitted AI tools remain Slice 5.
 - [x] Task 4 — Build the empty Scenes surface and capture the current durable viewport as the first named scene; render a current-board preview and reload it.
-- [ ] Task 5 — Build the populated ordered list, active state, add, rename, replace, delete/restore behavior from D2, drag reordering, keyboard reordering, and concurrent-update recovery.
+- [x] Task 5 — Build the populated ordered list, active state, add, rename, replace, delete/restore behavior from D2, drag reordering, keyboard reordering, and concurrent-update recovery.
 - [ ] Task 6 — Build one interruptible camera-transition controller and row/previous/next navigation; support exploration after arrival, return-to-target behavior, resize, interruption, and reduced motion.
 - [ ] Task 7 — Resolve D3 and add scene-specific contextual comments/notes with active-scene isolation, history behavior, lifecycle rules, and role coverage.
 - [ ] Task 8 — Resolve D4 and add captioned AI narration, permitted AI story/scene commands, cancellation/failure fallback, and no-audio-storage proof.
@@ -259,12 +259,20 @@ The product owner approved the complete plan and its recommended D1–D5 options
 
 ### Slice 1 — Durable viewport scenes
 
-- Status: Complete locally on 2026-09-07; local commit pending at the time of this record.
+- Status: Complete locally on 2026-09-07 in commit `784214f`.
 - Added an additive migration for one primary `general` story per canvas, story revisions, required scene titles with compatibility defaults/backfill, and an atomic owner/editor capture RPC. Existing review-story inserts and legacy JSON remain readable.
 - Added strict versioned camera/target schemas. Scene framing persists world-space center, visible world bounds, and bounded zoom; screen translation is derived for the current viewport size.
 - Added an authenticated no-store story route, client repository/hook, empty and populated Scenes panel, durable-save capture guard, live current-board miniature previews, and immediate selection/reload restoration.
 - Kept scene images derived from the current shared canvas state; no rendered snapshot or canvas content is stored in a story.
 - Implementation discovery: the planned Task 3 crosses multiple slices. Slice 1 completes the human list/capture boundary; lifecycle mutations are Slice 2 and permitted AI tools remain Slice 5. This changes task accounting only, not approved behavior or architecture.
+
+### Slice 2 — Complete scene management
+
+- Status: Complete locally on 2026-09-07; this record is included in the Slice 2 checkpoint commit.
+- Added revision-checked atomic rename, replace, exact-list reorder, soft-delete, and restore RPCs. Active ordering remains contiguous, deleted rows remain available for future scene-comment history, and restore clamps its insertion point after intervening edits.
+- Added authenticated PATCH/DELETE boundaries, strict discriminated mutation schemas, conflict-specific HTTP responses, realtime story/scene subscriptions, and read-after-conflict reconciliation.
+- Added scoped Rename, Replace, and Delete row actions; inline rename; replace-from-current-framing; pointer drag/drop plus accessible earlier/later controls; nearest-scene active fallback; and an eight-second Undo affordance.
+- Kept Replace limited to framing so scene identity, title, order, and future narration metadata remain unchanged. Print and PDF actions were not added.
 
 ## Verification evidence
 
@@ -274,6 +282,9 @@ The product owner approved the complete plan and its recommended D1–D5 options
 - 2026-09-07 — Slice 1 local database: `pnpm db:reset` applied every migration through `20260908030000_guided_story_viewport_scenes.sql`; `pnpm db:test` passed all 7 SQL files / 346 checks, including owner capture, contiguous append, one-primary-story enforcement, stale revision rejection, and viewer denial.
 - 2026-09-07 — Slice 1 source/build gate: `pnpm check` reached 77 Vitest files / 378 tests and a successful Next.js production build after the hook lint repair; the subsequently added contrast repair was verified by the focused authenticated browser test and will be included in the final pre-commit rerun.
 - 2026-09-07 — Slice 1 local authenticated Chromium: `tests/e2e/guided-stories.spec.ts` passed 1/1 after creating an isolated canvas, changing zoom, capturing Scene 1, navigating away and back, reloading, reopening the scene, and running Axe with no violations. Initial runs correctly exposed missing local environment injection and a 4.4:1 button contrast failure; neither failed run is counted as passing evidence.
+- 2026-09-07 — Slice 2 local database: `pnpm db:reset` applied every migration through `20260908050000_story_scene_management.sql`; `pnpm db:test` passed all 7 SQL files / 359 checks, including metadata-preserving rename/replace, exact atomic reorder, incomplete-list and stale-revision rejection, soft delete, contiguous compaction, and ordered restore.
+- 2026-09-07 — Slice 2 source/build gate: the final `pnpm check` passed formatting, lint, TypeScript, 77 Vitest files / 381 tests, and the Next.js production build, including the pointer drag test.
+- 2026-09-07 — Slice 2 local authenticated Chromium: `tests/e2e/guided-stories.spec.ts` passed 1/1 for three-scene capture, rename, keyboard-equivalent reorder, second authenticated-session order, replace/return framing, delete/Undo, reload durability, and Axe. The test uses an isolated canvas and does not count the earlier invalid Playwright project-name invocation or strict-locator repair run as passing evidence.
 
 ## Change record
 

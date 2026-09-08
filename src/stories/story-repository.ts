@@ -1,5 +1,7 @@
 import {
   captureSceneRequestSchema,
+  storyDeleteRequestSchema,
+  storyMutationRequestSchema,
   storyResponseSchema,
   type PrimaryStory,
 } from "@/stories/story-model";
@@ -35,6 +37,32 @@ export class StoryRepository {
     });
     const story = (await parseResponse(response)).story;
     if (!story) throw new Error("The saved story was not returned.");
+    return story;
+  }
+
+  async mutate(
+    input: Parameters<typeof storyMutationRequestSchema.parse>[0],
+  ): Promise<PrimaryStory> {
+    const response = await fetch(`/api/canvases/${this.canvasId}/stories`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(storyMutationRequestSchema.parse(input)),
+    });
+    const story = (await parseResponse(response)).story;
+    if (!story) throw new Error("The updated story was not returned.");
+    return story;
+  }
+
+  async delete(
+    input: Parameters<typeof storyDeleteRequestSchema.parse>[0],
+  ): Promise<PrimaryStory> {
+    const response = await fetch(`/api/canvases/${this.canvasId}/stories`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(storyDeleteRequestSchema.parse(input)),
+    });
+    const story = (await parseResponse(response)).story;
+    if (!story) throw new Error("The updated story was not returned.");
     return story;
   }
 }

@@ -54,6 +54,33 @@ export const captureSceneRequestSchema = z.strictObject({
   target: storyTargetSchema,
 });
 
+const sceneMutationBase = {
+  sceneId: z.uuid(),
+  expectedRevision: z.number().int().nonnegative(),
+};
+
+export const storyMutationRequestSchema = z.discriminatedUnion("action", [
+  z.strictObject({
+    action: z.literal("rename"),
+    ...sceneMutationBase,
+    title: z.string().trim().min(1).max(120),
+  }),
+  z.strictObject({
+    action: z.literal("replace"),
+    ...sceneMutationBase,
+    camera: storyCameraSchema,
+    target: storyTargetSchema,
+  }),
+  z.strictObject({
+    action: z.literal("reorder"),
+    expectedRevision: z.number().int().nonnegative(),
+    sceneIds: z.array(z.uuid()).min(1).max(500),
+  }),
+  z.strictObject({ action: z.literal("restore"), ...sceneMutationBase }),
+]);
+
+export const storyDeleteRequestSchema = z.strictObject(sceneMutationBase);
+
 export type StoryCamera = z.infer<typeof storyCameraSchema>;
 export type StoryTarget = z.infer<typeof storyTargetSchema>;
 export type StoryScene = z.infer<typeof storySceneSchema>;

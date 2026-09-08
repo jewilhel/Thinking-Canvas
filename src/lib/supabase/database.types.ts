@@ -1283,6 +1283,7 @@ export type Database = {
         Row: {
           camera: Json
           created_at: string
+          deleted_at: string | null
           id: string
           narration: string | null
           object_change_id: string | null
@@ -1295,6 +1296,7 @@ export type Database = {
         Insert: {
           camera: Json
           created_at?: string
+          deleted_at?: string | null
           id?: string
           narration?: string | null
           object_change_id?: string | null
@@ -1307,6 +1309,7 @@ export type Database = {
         Update: {
           camera?: Json
           created_at?: string
+          deleted_at?: string | null
           id?: string
           narration?: string | null
           object_change_id?: string | null
@@ -1358,6 +1361,41 @@ export type Database = {
           story_id: string
           story_revision: number
         }[]
+      }
+      delete_primary_story_scene: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_scene_id: string
+        }
+        Returns: number
+      }
+      reorder_primary_story_scenes: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_scene_ids: string[]
+        }
+        Returns: number
+      }
+      restore_primary_story_scene: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_scene_id: string
+        }
+        Returns: number
+      }
+      update_primary_story_scene: {
+        Args: {
+          target_camera?: Json | null
+          target_canvas_id: string
+          target_expected_revision: number
+          target_region?: Json | null
+          target_scene_id: string
+          target_title?: string | null
+        }
+        Returns: number
       }
       activate_ai_review_stage: {
         Args: {

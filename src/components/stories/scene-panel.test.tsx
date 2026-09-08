@@ -29,6 +29,20 @@ const story: PrimaryStory = {
   ],
 };
 
+const twoSceneStory: PrimaryStory = {
+  ...story,
+  revision: 2,
+  scenes: [
+    story.scenes[0]!,
+    {
+      ...story.scenes[0]!,
+      id: "20000000-0000-4000-8000-000000000002",
+      title: "Detail",
+      position: 1,
+    },
+  ],
+};
+
 function renderPanel(
   overrides: Partial<ComponentProps<typeof ScenePanel>> = {},
 ) {
@@ -43,6 +57,12 @@ function renderPanel(
     activeSceneId: null,
     onAdd: vi.fn(),
     onChoose: vi.fn(),
+    onRename: vi.fn(),
+    onReplace: vi.fn(),
+    onReorder: vi.fn(),
+    onDelete: vi.fn(),
+    deletedScene: null,
+    onUndoDelete: vi.fn(),
     onDismiss: vi.fn(),
     ...overrides,
   };
@@ -78,5 +98,74 @@ describe("ScenePanel", () => {
     renderPanel({ canCapture: false });
 
     expect(screen.getByRole("button", { name: "Add Scene" })).toBeDisabled();
+  });
+
+  it("renames and replaces a scene from its scoped actions menu", () => {
+    const props = renderPanel({ story });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Scene actions for Opening view" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    const input = screen.getByRole("textbox", { name: "Rename Opening view" });
+    fireEvent.change(input, { target: { value: "Introduction" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(props.onRename).toHaveBeenCalledWith(
+      story.scenes[0],
+      "Introduction",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Scene actions for Opening view" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+    expect(props.onReplace).toHaveBeenCalledWith(story.scenes[0]);
+  });
+
+  it("reorders with accessible move controls and deletes with undo", () => {
+    const props = renderPanel({
+      story: twoSceneStory,
+      deletedScene: { id: story.scenes[0]!.id, title: "Opening view" },
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Move Opening view earlier" }),
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move Opening view later" }),
+    );
+    expect(props.onReorder).toHaveBeenCalledWith([
+      twoSceneStory.scenes[1]!.id,
+      twoSceneStory.scenes[0]!.id,
+    ]);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Scene actions for Detail" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(props.onDelete).toHaveBeenCalledWith(twoSceneStory.scenes[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(props.onUndoDelete).toHaveBeenCalledOnce();
+  });
+
+  it("reorders rows by drag and drop", () => {
+    const props = renderPanel({ story: twoSceneStory });
+    const openingRow = screen
+      .getByRole("button", { name: "Opening view" })
+      .closest("li");
+    const detailRow = screen
+      .getByRole("button", { name: "Detail" })
+      .closest("li");
+
+    expect(openingRow).not.toBeNull();
+    expect(detailRow).not.toBeNull();
+    fireEvent.dragStart(openingRow!);
+    fireEvent.dragOver(detailRow!);
+    fireEvent.drop(detailRow!);
+
+    expect(props.onReorder).toHaveBeenCalledWith([
+      twoSceneStory.scenes[1]!.id,
+      twoSceneStory.scenes[0]!.id,
+    ]);
   });
 });
