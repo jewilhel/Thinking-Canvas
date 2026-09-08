@@ -21,6 +21,27 @@ export type RealtimeDependencies = {
   createAudioElement: () => HTMLAudioElement;
 };
 
+export function narrationEventOutcome(
+  event: unknown,
+): "playing" | "ended" | "failed" {
+  const parsed = z
+    .object({
+      type: z.string(),
+      response: z.object({ status: z.string() }).optional(),
+    })
+    .safeParse(event);
+  if (!parsed.success) return "playing";
+  if (parsed.data.type === "output_audio_buffer.stopped") return "ended";
+  if (
+    parsed.data.type === "error" ||
+    (parsed.data.type === "response.done" &&
+      parsed.data.response?.status !== "completed")
+  ) {
+    return "failed";
+  }
+  return "playing";
+}
+
 function browserDependencies(): RealtimeDependencies {
   return {
     fetch: window.fetch.bind(window),

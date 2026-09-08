@@ -3,10 +3,37 @@ import { describe, expect, it, vi } from "vitest";
 import {
   connectRealtimeNarration,
   connectRealtimeVoice,
+  narrationEventOutcome,
   type RealtimeDependencies,
 } from "@/voice/realtime-webrtc";
 
 const canvasId = "11111111-1111-4111-8111-111111111111";
+
+describe("narration playback completion", () => {
+  it("keeps buffered audio playing after generation ends", () => {
+    expect(
+      narrationEventOutcome({
+        type: "response.done",
+        response: { status: "completed" },
+      }),
+    ).toBe("playing");
+    expect(narrationEventOutcome({ type: "response.output_audio.done" })).toBe(
+      "playing",
+    );
+    expect(narrationEventOutcome({ type: "output_audio_buffer.stopped" })).toBe(
+      "ended",
+    );
+  });
+  it("reports failed generation and playback errors", () => {
+    expect(
+      narrationEventOutcome({
+        type: "response.done",
+        response: { status: "failed" },
+      }),
+    ).toBe("failed");
+    expect(narrationEventOutcome({ type: "error" })).toBe("failed");
+  });
+});
 
 function createHarness() {
   const stop = vi.fn();

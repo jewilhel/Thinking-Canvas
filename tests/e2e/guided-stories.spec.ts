@@ -145,7 +145,11 @@ test("manages and reloads live canvas viewport scenes", async ({
     .fill("Opening context only");
   await page.getByRole("button", { name: "Submit comment" }).click();
   await expect(page.getByText("Opening context only")).toBeVisible();
-  await page.getByRole("button", { name: "Close comment thread" }).click();
+  await page.getByRole("button", { name: "Next scene" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Comment thread" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Previous scene" }).click();
   await page.getByRole("button", { name: "Open scenes" }).click();
   await expect(page.getByText("Opening context only")).toBeVisible();
   await page.getByRole("button", { name: "Scene 3", exact: true }).click();

@@ -195,6 +195,7 @@ import {
 } from "@/stories/story-transition";
 import {
   connectRealtimeNarration,
+  narrationEventOutcome,
   type RealtimeConnection,
 } from "@/voice/realtime-webrtc";
 
@@ -2516,6 +2517,17 @@ function ProductCanvasWorkspace({
   function chooseScene(scene: StoryScene) {
     stopSceneNarration();
     cancelSceneTransition();
+    if (scene.id !== activeSceneId) {
+      const openThread = commentWorkspace.threads.find(
+        (thread) => thread.id === commentWorkspace.threadId,
+      );
+      if (
+        commentWorkspace.active === "scene-composer" ||
+        (commentWorkspace.active === "thread" && openThread?.sceneTarget)
+      ) {
+        commentWorkspace.show(null);
+      }
+    }
     const target = viewportForStoryCamera(scene.camera, size);
     setActiveSceneId(scene.id);
     sceneTransitionRef.current = startViewportTransition({
@@ -2597,10 +2609,11 @@ function ProductCanvasWorkspace({
         scene.narration,
         (event) => {
           if (requestId !== narrationRequestRef.current) return;
-          if (!event || typeof event !== "object" || !("type" in event)) return;
-          if (event.type === "response.done") stopSceneNarration();
-          if (event.type === "error") {
-            setNarrationError("Narration audio stopped.");
+          // Generation can finish while seconds of audio remain buffered.
+          const outcome = narrationEventOutcome(event);
+          if (outcome === "ended") stopSceneNarration();
+          if (outcome === "failed") {
+            setNarrationError("Narration audio could not be completed.");
             stopSceneNarration();
           }
         },
