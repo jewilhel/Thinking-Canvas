@@ -57,6 +57,14 @@ test("manages and reloads live canvas viewport scenes", async ({
   await expect(page.getByRole("list", { name: "Story scenes" })).toContainText(
     /Scene 1[\s\S]*Scene 3[\s\S]*Detail/,
   );
+  await page.getByRole("button", { name: "Previous scene" }).click();
+  await expect(
+    page.getByRole("button", { name: "Scene 1", exact: true }),
+  ).toHaveAttribute("aria-current", "step");
+  await page.getByRole("button", { name: "Next scene" }).click();
+  await expect(
+    page.getByRole("button", { name: "Scene 3", exact: true }),
+  ).toHaveAttribute("aria-current", "step");
 
   const secondContext = await browser.newContext();
   const secondPage = await secondContext.newPage();
@@ -107,6 +115,13 @@ test("manages and reloads live canvas viewport scenes", async ({
   await expect(
     page.getByRole("button", { name: "Detail", exact: true }),
   ).toBeVisible();
+
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.getByRole("button", { name: "Next scene" }).click();
+  await expect(
+    page.getByRole("button", { name: "Scene 1", exact: true }),
+  ).toHaveAttribute("aria-current", "step");
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);

@@ -131,7 +131,7 @@ This plan covers one milestone only. It does not change Milestone 8's still-open
 - [ ] Task 3 — Implement authenticated story routes/services and typed human/AI command boundaries with validation, idempotency, and conflict-safe errors. Human capture/list and lifecycle routes are complete through Slice 2; permitted AI tools remain Slice 5.
 - [x] Task 4 — Build the empty Scenes surface and capture the current durable viewport as the first named scene; render a current-board preview and reload it.
 - [x] Task 5 — Build the populated ordered list, active state, add, rename, replace, delete/restore behavior from D2, drag reordering, keyboard reordering, and concurrent-update recovery.
-- [ ] Task 6 — Build one interruptible camera-transition controller and row/previous/next navigation; support exploration after arrival, return-to-target behavior, resize, interruption, and reduced motion.
+- [ ] Task 6 — Build one interruptible camera-transition controller and row/previous/next navigation; support exploration after arrival, return-to-target behavior, resize, interruption, and reduced motion. Local implementation and automated coverage are complete in Slice 3; D5 hosted perceptual acceptance remains pending.
 - [ ] Task 7 — Resolve D3 and add scene-specific contextual comments/notes with active-scene isolation, history behavior, lifecycle rules, and role coverage.
 - [ ] Task 8 — Resolve D4 and add captioned AI narration, permitted AI story/scene commands, cancellation/failure fallback, and no-audio-storage proof.
 - [ ] Task 9 — Add unit, component, database, integration, and authenticated Playwright coverage for the complete story lifecycle, live-linked board edits, reconnect/reload, two-user conflicts, accessibility, tablet layout, and performance instrumentation.
@@ -274,6 +274,14 @@ The product owner approved the complete plan and its recommended D1–D5 options
 - Added scoped Rename, Replace, and Delete row actions; inline rename; replace-from-current-framing; pointer drag/drop plus accessible earlier/later controls; nearest-scene active fallback; and an eight-second Undo affordance.
 - Kept Replace limited to framing so scene identity, title, order, and future narration metadata remain unchanged. Print and PDF actions were not added.
 
+### Slice 3 — Smooth linear playback
+
+- Status: Local implementation complete on 2026-09-07; D5 product-owner perceptual review on an immutable hosted preview is the next gate.
+- Added one distance-aware viewport-transition controller with bounded duration, cubic ease-in/out position interpolation, geometric zoom interpolation, exact endpoints, reduced-motion immediate arrival, and explicit cancellation.
+- Routed scene rows and persistent previous/next controls through the same controller. The active scene is announced as its position and title, sequence ends disable the relevant control, and navigation from an unselected state begins at the first or last scene according to direction.
+- Wheel, pointer/pan/pinch entry, zoom controls, Zoom to fit, Escape, Add Scene, Replace Scene, a new scene destination, and component unmount cancel any active transition. Ordinary canvas exploration remains unrestricted after arrival; choosing the scene again returns to its saved target.
+- Adjusted the primary dock's responsive reservation so the wider scene-navigation cluster remains clickable at desktop and representative tablet widths.
+
 ## Verification evidence
 
 - 2026-09-07 — Planning inspection only. Local `main` was fast-forwarded from `556eeee` to current `origin/main` commit `99c2835`, which includes merged Milestone 8 code and ledger reconciliation. The working tree was clean before this plan edit. No Milestone 9 tests or preview checks were run.
@@ -285,6 +293,8 @@ The product owner approved the complete plan and its recommended D1–D5 options
 - 2026-09-07 — Slice 2 local database: `pnpm db:reset` applied every migration through `20260908050000_story_scene_management.sql`; `pnpm db:test` passed all 7 SQL files / 359 checks, including metadata-preserving rename/replace, exact atomic reorder, incomplete-list and stale-revision rejection, soft delete, contiguous compaction, and ordered restore.
 - 2026-09-07 — Slice 2 source/build gate: the final `pnpm check` passed formatting, lint, TypeScript, 77 Vitest files / 381 tests, and the Next.js production build, including the pointer drag test.
 - 2026-09-07 — Slice 2 local authenticated Chromium: `tests/e2e/guided-stories.spec.ts` passed 1/1 for three-scene capture, rename, keyboard-equivalent reorder, second authenticated-session order, replace/return framing, delete/Undo, reload durability, and Axe. The test uses an isolated canvas and does not count the earlier invalid Playwright project-name invocation or strict-locator repair run as passing evidence.
+- 2026-09-07 — Slice 3 local source/build gate: `pnpm check` passed formatting, lint, TypeScript, 78 Vitest files / 385 tests, and the Next.js production build. Focused transition tests cover bounded distance-aware duration, exact interpolation endpoints, geometric zoom, reduced-motion arrival, and cancellation without completion.
+- 2026-09-07 — Slice 3 local authenticated Chromium: the expanded lifecycle test passed 1/1 with row, previous, and next navigation, rapid destination replacement, saved-target arrival, representative 800×900 tablet control access, reduced-motion navigation, reload, and Axe. The first expanded run exposed an actual primary-dock pointer collision; the responsive reservation was repaired, and only the passing rerun counts as evidence.
 
 ## Change record
 
