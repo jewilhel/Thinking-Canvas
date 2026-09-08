@@ -288,12 +288,23 @@ test("manages and reloads live canvas viewport scenes", async ({
   ).toBeVisible();
 
   await page.setViewportSize({ width: 800, height: 900 });
+  const dockBounds = await page
+    .getByTestId("workspace-primary-dock")
+    .boundingBox();
+  const previousBounds = await page
+    .getByRole("button", { name: "Previous scene" })
+    .boundingBox();
+  expect(dockBounds!.x + dockBounds!.width).toBeLessThan(previousBounds!.x);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.getByRole("button", { name: "Next scene" }).click();
   await expect(
     page.getByRole("button", { name: "Scene 1", exact: true }),
   ).toHaveAttribute("aria-current", "step");
 
+  await page.getByRole("button", { name: "Previous scene" }).click();
+  await expect(
+    page.getByRole("button", { name: "Scene 1", exact: true }),
+  ).not.toHaveAttribute("aria-current", "step");
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });
