@@ -5,6 +5,8 @@ import {
   AiToolPermissionError,
   allowedAiToolNames,
   allowedDocumentRangeAiToolNames,
+  allowedSceneAiToolNames,
+  storySceneArgumentsSchema,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
 
@@ -70,6 +72,47 @@ describe("AI authority tool registry", () => {
       "propose_document_changes",
       "execute_document_changes",
     ]);
+  });
+
+  it("exposes story mutation only to a trusted editor in scene context", () => {
+    expect(allowedSceneAiToolNames("comment_only")).toEqual([
+      "inspect_canvas_objects",
+      "inspect_comment_threads",
+    ]);
+    expect(allowedSceneAiToolNames("propose_changes")).not.toContain(
+      "execute_story_scene",
+    );
+    expect(allowedSceneAiToolNames("edit_with_review")).not.toContain(
+      "execute_story_scene",
+    );
+    expect(allowedSceneAiToolNames("trusted_editor")).toContain(
+      "execute_story_scene",
+    );
+    expect(allowedAiToolNames("trusted_editor")).not.toContain(
+      "execute_story_scene",
+    );
+  });
+
+  it("validates strict grounded scene creation and current-scene updates", () => {
+    expect(
+      storySceneArgumentsSchema.parse({
+        action: "create",
+        title: "Overview",
+        narration: "Start with the full map.",
+        targetObjectIds: [objectId],
+      }),
+    ).toMatchObject({ action: "create", title: "Overview" });
+    expect(() =>
+      storySceneArgumentsSchema.parse({
+        action: "create",
+        title: "Overview",
+        targetObjectIds: [objectId],
+        sceneId: objectId,
+      }),
+    ).toThrow();
+    expect(() =>
+      storySceneArgumentsSchema.parse({ action: "update_current" }),
+    ).toThrow();
   });
 
   it("validates semantic document actions without accepting raw Yjs state", () => {

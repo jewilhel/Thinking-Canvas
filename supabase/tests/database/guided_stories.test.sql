@@ -68,7 +68,9 @@ select throws_ok(
 select is(
   public.update_primary_story_scene(
     '20000000-0000-4000-8000-000000000001',
-    (select scene.id from public.story_scenes scene where scene.title = 'Opening view'),
+    (select scene.id from public.story_scenes scene
+     where scene.title = 'Opening view'
+       and scene.story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
     2,
     'Introduction',
     null,
@@ -81,7 +83,8 @@ select is(
 select results_eq(
   $$select title, position, camera
     from public.story_scenes
-    where title = 'Introduction'$$,
+    where title = 'Introduction'
+      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')$$,
   $$values (
     'Introduction'::text,
     0::integer,
@@ -93,7 +96,9 @@ select results_eq(
 select is(
   public.update_primary_story_scene(
     '20000000-0000-4000-8000-000000000001',
-    (select scene.id from public.story_scenes scene where scene.title = 'Introduction'),
+    (select scene.id from public.story_scenes scene
+     where scene.title = 'Introduction'
+       and scene.story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
     3,
     null,
     '{"version":1,"center":{"x":700,"y":500},"zoom":3}'::jsonb,
@@ -106,7 +111,8 @@ select is(
 select results_eq(
   $$select title, position, camera->>'zoom'
     from public.story_scenes
-    where title = 'Introduction'$$,
+    where title = 'Introduction'
+      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')$$,
   $$values ('Introduction'::text, 0::integer, '3'::text)$$,
   'replace preserves title and order while changing framing'
 );
@@ -115,8 +121,10 @@ select is(
   public.reorder_primary_story_scenes(
     '20000000-0000-4000-8000-000000000001',
     array[
-      (select scene.id from public.story_scenes scene where scene.title = 'Detail'),
-      (select scene.id from public.story_scenes scene where scene.title = 'Introduction')
+      (select scene.id from public.story_scenes scene where scene.title = 'Detail'
+        and scene.story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
+      (select scene.id from public.story_scenes scene where scene.title = 'Introduction'
+        and scene.story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general'))
     ],
     4
   ),
@@ -126,7 +134,9 @@ select is(
 
 select results_eq(
   $$select title, position from public.story_scenes
-    where deleted_at is null order by position$$,
+    where deleted_at is null
+      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')
+    order by position$$,
   $$values ('Detail'::text, 0::integer), ('Introduction'::text, 1::integer)$$,
   'reorder persists an exact contiguous order'
 );
@@ -134,7 +144,8 @@ select results_eq(
 select throws_ok(
   $$select public.reorder_primary_story_scenes(
     '20000000-0000-4000-8000-000000000001',
-    array[(select scene.id from public.story_scenes scene where scene.title = 'Detail')],
+    array[(select scene.id from public.story_scenes scene where scene.title = 'Detail'
+      and scene.story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general'))],
     5
   )$$,
   '22023',
@@ -145,7 +156,8 @@ select throws_ok(
 select is(
   public.delete_primary_story_scene(
     '20000000-0000-4000-8000-000000000001',
-    (select scene.id from public.story_scenes scene where scene.title = 'Detail'),
+    (select scene.id from public.story_scenes scene where scene.title = 'Detail'
+      and scene.story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
     5
   ),
   6::bigint,
@@ -154,13 +166,16 @@ select is(
 
 select results_eq(
   $$select title, position from public.story_scenes
-    where deleted_at is null order by position$$,
+    where deleted_at is null
+      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')
+    order by position$$,
   $$values ('Introduction'::text, 0::integer)$$,
   'delete keeps active positions contiguous'
 );
 
 select is(
-  (select deleted_at is not null from public.story_scenes where title = 'Detail'),
+  (select deleted_at is not null from public.story_scenes where title = 'Detail'
+    and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
   true,
   'delete preserves a soft-deleted row for future scene history'
 );
@@ -168,7 +183,8 @@ select is(
 select is(
   public.restore_primary_story_scene(
     '20000000-0000-4000-8000-000000000001',
-    (select scene.id from public.story_scenes scene where scene.title = 'Detail'),
+    (select scene.id from public.story_scenes scene where scene.title = 'Detail'
+      and scene.story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
     6
   ),
   7::bigint,
@@ -177,7 +193,9 @@ select is(
 
 select results_eq(
   $$select title, position from public.story_scenes
-    where deleted_at is null order by position$$,
+    where deleted_at is null
+      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')
+    order by position$$,
   $$values ('Detail'::text, 0::integer), ('Introduction'::text, 1::integer)$$,
   'undo restores the original order with contiguous positions'
 );
@@ -185,7 +203,8 @@ select results_eq(
 select throws_ok(
   $$select public.delete_primary_story_scene(
     '20000000-0000-4000-8000-000000000001',
-    (select scene.id from public.story_scenes scene where scene.title = 'Detail'),
+    (select scene.id from public.story_scenes scene where scene.title = 'Detail'
+      and scene.story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
     6
   )$$,
   '40001',

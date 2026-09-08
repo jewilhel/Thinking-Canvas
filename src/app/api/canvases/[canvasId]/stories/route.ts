@@ -174,20 +174,27 @@ export async function PATCH(
             target_scene_id: input.sceneId,
             target_expected_revision: input.expectedRevision,
           })
-        : await supabase.rpc("update_primary_story_scene", {
-            target_canvas_id: canvasId,
-            target_scene_id: input.sceneId,
-            target_expected_revision: input.expectedRevision,
-            target_title: input.action === "rename" ? input.title : null,
-            target_camera:
-              input.action === "replace"
-                ? (input.camera as unknown as Json)
-                : null,
-            target_region:
-              input.action === "replace"
-                ? (input.target as unknown as Json)
-                : null,
-          });
+        : input.action === "narration"
+          ? await supabase.rpc("update_primary_story_scene_narration", {
+              target_canvas_id: canvasId,
+              target_scene_id: input.sceneId,
+              target_expected_revision: input.expectedRevision,
+              target_narration: input.narration,
+            })
+          : await supabase.rpc("update_primary_story_scene", {
+              target_canvas_id: canvasId,
+              target_scene_id: input.sceneId,
+              target_expected_revision: input.expectedRevision,
+              target_title: input.action === "rename" ? input.title : null,
+              target_camera:
+                input.action === "replace"
+                  ? (input.camera as unknown as Json)
+                  : null,
+              target_region:
+                input.action === "replace"
+                  ? (input.target as unknown as Json)
+                  : null,
+            });
   if (result.error) return mutationError(result.error);
   try {
     return refreshedStoryResponse(supabase, canvasId);

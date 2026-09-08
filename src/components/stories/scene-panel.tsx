@@ -4,9 +4,12 @@ import {
   LoaderCircle,
   MessageCircle,
   MoreHorizontal,
+  Pencil,
   Plus,
   Repeat2,
+  Square,
   Sparkles,
+  Volume2,
   X,
 } from "lucide-react";
 import {
@@ -45,6 +48,10 @@ type Props = {
   onLoopChange: (enabled: boolean) => void;
   onAddSceneComment: () => void;
   onOpenSceneThread: (threadId: string) => void;
+  onNarrationChange: (scene: StoryScene, narration: string | null) => void;
+  narrationPlayingSceneId: string | null;
+  narrationError: string;
+  onToggleNarration: (scene: StoryScene) => void;
   onDismiss: () => void;
 };
 
@@ -161,6 +168,10 @@ export function ScenePanel({
   onLoopChange,
   onAddSceneComment,
   onOpenSceneThread,
+  onNarrationChange,
+  narrationPlayingSceneId,
+  narrationError,
+  onToggleNarration,
   onDismiss,
 }: Props) {
   const panelRef = useRef<HTMLElement>(null);
@@ -180,7 +191,13 @@ export function ScenePanel({
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [draggedSceneId, setDraggedSceneId] = useState<string | null>(null);
+  const [editingNarrationSceneId, setEditingNarrationSceneId] = useState<
+    string | null
+  >(null);
+  const [narrationDraft, setNarrationDraft] = useState("");
   const scenes = story?.scenes ?? [];
+  const activeScene =
+    scenes.find((scene) => scene.id === activeSceneId) ?? null;
 
   useEffect(() => {
     const measure = () => {
@@ -519,51 +536,147 @@ export function ScenePanel({
               ))}
             </ol>
             {activeSceneId ? (
-              <section
-                aria-labelledby="active-scene-context-title"
-                className="mt-4 rounded-xl border border-zinc-700 bg-zinc-950/40 p-3"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <h3
-                    id="active-scene-context-title"
-                    className="text-sm font-semibold text-zinc-200"
-                  >
-                    Scene comments
-                  </h3>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-violet-200 hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:outline-none"
-                    onClick={onAddSceneComment}
-                  >
-                    <MessageCircle aria-hidden="true" className="size-4" />
-                    Add comment
-                  </button>
-                </div>
-                {sceneThreads.length ? (
-                  <div className="mt-2 space-y-1">
-                    {sceneThreads.map((thread) => (
-                      <button
-                        key={thread.id}
-                        type="button"
-                        className="block w-full rounded-lg px-2 py-2 text-left hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:outline-none"
-                        onClick={() => onOpenSceneThread(thread.id)}
+              <div className="mt-4 space-y-3">
+                {activeScene ? (
+                  <section className="rounded-xl border border-zinc-700 bg-zinc-950/40 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold text-zinc-200">
+                        Narration
+                      </h3>
+                      <div className="flex items-center gap-1">
+                        {activeScene.narration ? (
+                          <button
+                            type="button"
+                            className="grid size-8 place-items-center rounded-lg text-violet-200 hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:outline-none"
+                            aria-label={
+                              narrationPlayingSceneId === activeScene.id
+                                ? "Stop narration"
+                                : "Play narration"
+                            }
+                            onClick={() => onToggleNarration(activeScene)}
+                          >
+                            {narrationPlayingSceneId === activeScene.id ? (
+                              <Square aria-hidden="true" className="size-3.5" />
+                            ) : (
+                              <Volume2 aria-hidden="true" className="size-4" />
+                            )}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="grid size-8 place-items-center rounded-lg text-zinc-300 hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:outline-none"
+                          aria-label={`Edit narration for ${activeScene.title}`}
+                          disabled={saving || !canCapture}
+                          onClick={() => {
+                            setNarrationDraft(activeScene.narration ?? "");
+                            setEditingNarrationSceneId(activeScene.id);
+                          }}
+                        >
+                          <Pencil aria-hidden="true" className="size-4" />
+                        </button>
+                      </div>
+                    </div>
+                    {editingNarrationSceneId === activeScene.id ? (
+                      <form
+                        className="mt-2"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          onNarrationChange(
+                            activeScene,
+                            narrationDraft.trim() || null,
+                          );
+                          setEditingNarrationSceneId(null);
+                        }}
                       >
-                        <span className="flex items-center justify-between gap-2 text-xs text-zinc-400">
-                          <span>{thread.authorName}</span>
-                          <span>{thread.status}</span>
-                        </span>
-                        <span className="mt-1 line-clamp-2 block text-sm text-zinc-200">
-                          {thread.body}
-                        </span>
-                      </button>
-                    ))}
+                        <textarea
+                          autoFocus
+                          aria-label={`Narration for ${activeScene.title}`}
+                          value={narrationDraft}
+                          maxLength={100_000}
+                          rows={4}
+                          className="w-full resize-y rounded-lg border border-zinc-600 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+                          onChange={(event) =>
+                            setNarrationDraft(event.target.value)
+                          }
+                        />
+                        <div className="mt-2 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            className="rounded-lg px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
+                            onClick={() => setEditingNarrationSceneId(null)}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="rounded-lg bg-violet-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-600"
+                          >
+                            Save narration
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <p
+                        data-testid="active-scene-caption"
+                        className="mt-2 text-sm leading-6 whitespace-pre-wrap text-zinc-300"
+                      >
+                        {activeScene.narration ??
+                          "Add a captioned script for this scene."}
+                      </p>
+                    )}
+                    {narrationError ? (
+                      <p role="alert" className="mt-2 text-xs text-rose-300">
+                        {narrationError} Captions remain available.
+                      </p>
+                    ) : null}
+                  </section>
+                ) : null}
+                <section
+                  aria-labelledby="active-scene-context-title"
+                  className="rounded-xl border border-zinc-700 bg-zinc-950/40 p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <h3
+                      id="active-scene-context-title"
+                      className="text-sm font-semibold text-zinc-200"
+                    >
+                      Scene comments
+                    </h3>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-violet-200 hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:outline-none"
+                      onClick={onAddSceneComment}
+                    >
+                      <MessageCircle aria-hidden="true" className="size-4" />
+                      Add comment
+                    </button>
                   </div>
-                ) : (
-                  <p className="mt-2 text-sm text-zinc-500">
-                    No comments for this scene.
-                  </p>
-                )}
-              </section>
+                  {sceneThreads.length ? (
+                    <div className="mt-2 space-y-1">
+                      {sceneThreads.map((thread) => (
+                        <button
+                          key={thread.id}
+                          type="button"
+                          className="block w-full rounded-lg px-2 py-2 text-left hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:outline-none"
+                          onClick={() => onOpenSceneThread(thread.id)}
+                        >
+                          <span className="flex items-center justify-between gap-2 text-xs text-zinc-400">
+                            <span>{thread.authorName}</span>
+                            <span>{thread.status}</span>
+                          </span>
+                          <span className="mt-1 line-clamp-2 block text-sm text-zinc-200">
+                            {thread.body}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-zinc-500">
+                      No comments for this scene.
+                    </p>
+                  )}
+                </section>
+              </div>
             ) : null}
           </div>
         ) : (

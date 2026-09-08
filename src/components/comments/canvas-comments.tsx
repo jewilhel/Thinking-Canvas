@@ -77,6 +77,7 @@ type Props = {
   onPlacementModeChange: (active: boolean) => void;
   onSelectTargets: (targetIds: string[]) => void;
   onAiTransactionApplied: (changeSetId: string) => void;
+  onStoryChanged?: () => void;
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
   overlayVisible: boolean;
   onOverlayVisibilityChange: (visible: boolean) => void;
@@ -1172,6 +1173,7 @@ export function CanvasComments({
   onPlacementModeChange,
   onSelectTargets,
   onAiTransactionApplied,
+  onStoryChanged,
   onUndoAiTransaction,
   overlayVisible,
   onOverlayVisibilityChange,
@@ -1193,6 +1195,7 @@ export function CanvasComments({
     supabaseUrl,
     supabasePublishableKey,
     onAiTransactionApplied,
+    onStoryChanged,
   );
   const selectedThreadId =
     workspace.active === "thread" ? workspace.threadId : null;

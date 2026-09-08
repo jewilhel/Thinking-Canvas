@@ -73,6 +73,10 @@ function renderPanel(
     onLoopChange: vi.fn(),
     onAddSceneComment: vi.fn(),
     onOpenSceneThread: vi.fn(),
+    onNarrationChange: vi.fn(),
+    narrationPlayingSceneId: null,
+    narrationError: "",
+    onToggleNarration: vi.fn(),
     onDismiss: vi.fn(),
     ...overrides,
   };
@@ -122,6 +126,44 @@ describe("ScenePanel", () => {
     expect(props.onAddSceneComment).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByText("Pause here for discussion"));
     expect(props.onOpenSceneThread).toHaveBeenCalledWith(sceneThread.id);
+  });
+
+  it("edits narration and keeps captions available when audio fails", () => {
+    const narratedStory: PrimaryStory = {
+      ...story,
+      scenes: [
+        {
+          ...story.scenes[0]!,
+          narration: "Introduce the opening view.",
+        },
+      ],
+    };
+    const props = renderPanel({
+      story: narratedStory,
+      activeSceneId: narratedStory.scenes[0]!.id,
+      narrationError: "Audio playback failed.",
+    });
+
+    expect(screen.getByText("Introduce the opening view.")).toBeVisible();
+    expect(screen.getByText(/Captions remain available/)).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Edit narration for Opening view",
+      }),
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Narration for Opening view" }),
+      { target: { value: "Revised opening." } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save narration" }));
+    expect(props.onNarrationChange).toHaveBeenCalledWith(
+      narratedStory.scenes[0],
+      "Revised opening.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Play narration" }));
+    expect(props.onToggleNarration).toHaveBeenCalledWith(
+      narratedStory.scenes[0],
+    );
   });
 
   it("blocks capture while the canvas is not durably saved", () => {

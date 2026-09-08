@@ -11,6 +11,17 @@ async function signIn(page: Page) {
   await expect(page).toHaveURL(/\/app$/);
 }
 
+async function enableTrustedPrimaryAi(page: Page) {
+  await page
+    .getByRole("button", { name: "Open comment history and AI settings" })
+    .click();
+  const panel = page.getByRole("dialog", { name: "Comments" });
+  await panel.getByLabel("AI authority").selectOption("trusted_editor");
+  const enabled = panel.getByRole("checkbox", { name: "Enabled" });
+  if (!(await enabled.isChecked())) await enabled.click();
+  await panel.getByRole("button", { name: "Close Comments" }).click();
+}
+
 test("manages and reloads live canvas viewport scenes", async ({
   browser,
   page,
@@ -142,6 +153,51 @@ test("manages and reloads live canvas viewport scenes", async ({
   await page.getByRole("button", { name: "Scene 1", exact: true }).click();
   await expect(page.getByText("Opening context only")).toBeVisible();
 
+  await page
+    .getByRole("button", { name: "Edit narration for Scene 1" })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Narration for Scene 1" })
+    .fill("Introduce the full canvas before focusing on details.");
+  await page.getByRole("button", { name: "Save narration" }).click();
+  await expect(page.getByTestId("active-scene-caption")).toHaveText(
+    "Introduce the full canvas before focusing on details.",
+  );
+  await expect(page.getByTestId("story-caption-overlay")).toHaveText(
+    "Introduce the full canvas before focusing on details.",
+  );
+
+  await page.getByRole("button", { name: "Close scenes" }).click();
+  await enableTrustedPrimaryAi(page);
+  await page.getByRole("button", { name: "Open scenes" }).click();
+  await page.getByRole("button", { name: "Scene 1", exact: true }).click();
+  await page.getByRole("button", { name: "Add comment" }).click();
+  const sceneComposer = page.getByRole("dialog", {
+    name: "Comment on Scene 1",
+  });
+  const sceneComment = sceneComposer.getByRole("textbox", {
+    name: "Comment",
+    exact: true,
+  });
+  await sceneComment.fill("@");
+  await sceneComposer
+    .getByRole("option", { name: /Thinking Canvas AI Primary AI/ })
+    .click();
+  await sceneComment.fill("Please revise this scene narration.");
+  await sceneComposer.getByRole("button", { name: "Submit comment" }).click();
+  const sceneThread = page.getByRole("dialog", { name: "Comment thread" });
+  await expect(
+    sceneThread.getByText("I revised the narration for this scene."),
+  ).toBeVisible();
+  await sceneThread
+    .getByRole("button", { name: "Close comment thread" })
+    .click();
+  await page.getByRole("button", { name: "Open scenes" }).click();
+  await page.getByRole("button", { name: "Scene 1", exact: true }).click();
+  await expect(page.getByTestId("active-scene-caption")).toHaveText(
+    "AI revised narration for this scene.",
+  );
+
   const secondContext = await browser.newContext();
   const secondPage = await secondContext.newPage();
   await signIn(secondPage);
@@ -157,6 +213,9 @@ test("manages and reloads live canvas viewport scenes", async ({
     .getByRole("button", { name: "Scene 1", exact: true })
     .click();
   await expect(secondPage.getByText("Opening context only")).toBeVisible();
+  await expect(secondPage.getByTestId("active-scene-caption")).toHaveText(
+    "AI revised narration for this scene.",
+  );
   await secondContext.close();
 
   await page.getByRole("button", { name: "Zoom out" }).click();
@@ -182,6 +241,10 @@ test("manages and reloads live canvas viewport scenes", async ({
   await expect(
     page.getByRole("button", { name: "Detail", exact: true }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Scene 1", exact: true }).click();
+  await expect(page.getByTestId("active-scene-caption")).toHaveText(
+    "AI revised narration for this scene.",
+  );
 
   await page.reload();
   await expect(page.getByTestId("canvas-save-status")).toHaveText("Saved");

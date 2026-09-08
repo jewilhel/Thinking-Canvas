@@ -193,6 +193,10 @@ import {
   startViewportTransition,
   type ViewportTransition,
 } from "@/stories/story-transition";
+import {
+  connectRealtimeNarration,
+  type RealtimeConnection,
+} from "@/voice/realtime-webrtc";
 
 type Props = {
   canvasId: string;
@@ -552,6 +556,24 @@ function ProductCanvasWorkspace({
     canvasId,
     supabaseUrl,
     supabasePublishableKey,
+  );
+  const reloadStory = storyState.reload;
+  const reloadStoryAfterAi = useCallback(
+    () => void reloadStory(),
+    [reloadStory],
+  );
+  const narrationConnectionRef = useRef<RealtimeConnection | null>(null);
+  const narrationRequestRef = useRef(0);
+  const [narrationPlayingSceneId, setNarrationPlayingSceneId] = useState<
+    string | null
+  >(null);
+  const [narrationError, setNarrationError] = useState("");
+  useEffect(
+    () => () => {
+      narrationRequestRef.current += 1;
+      narrationConnectionRef.current?.disconnect();
+    },
+    [],
   );
   const storyScenes = storyState.story?.scenes ?? [];
   const activeSceneIndex = storyScenes.findIndex(
@@ -2492,6 +2514,7 @@ function ProductCanvasWorkspace({
   }
 
   function chooseScene(scene: StoryScene) {
+    stopSceneNarration();
     cancelSceneTransition();
     const target = viewportForStoryCamera(scene.camera, size);
     setActiveSceneId(scene.id);
@@ -2536,6 +2559,66 @@ function ProductCanvasWorkspace({
       expectedRevision: storyState.story?.revision ?? 0,
       title,
     });
+  }
+
+  async function saveSceneNarration(
+    scene: StoryScene,
+    narration: string | null,
+  ) {
+    stopSceneNarration();
+    await storyState.mutate({
+      action: "narration",
+      sceneId: scene.id,
+      expectedRevision: storyState.story?.revision ?? 0,
+      narration,
+    });
+  }
+
+  function stopSceneNarration() {
+    narrationRequestRef.current += 1;
+    narrationConnectionRef.current?.disconnect();
+    narrationConnectionRef.current = null;
+    setNarrationPlayingSceneId(null);
+  }
+
+  async function toggleSceneNarration(scene: StoryScene) {
+    if (narrationPlayingSceneId === scene.id) {
+      stopSceneNarration();
+      return;
+    }
+    stopSceneNarration();
+    if (!scene.narration) return;
+    const requestId = narrationRequestRef.current;
+    setNarrationError("");
+    setNarrationPlayingSceneId(scene.id);
+    try {
+      const connection = await connectRealtimeNarration(
+        canvasId,
+        scene.narration,
+        (event) => {
+          if (requestId !== narrationRequestRef.current) return;
+          if (!event || typeof event !== "object" || !("type" in event)) return;
+          if (event.type === "response.done") stopSceneNarration();
+          if (event.type === "error") {
+            setNarrationError("Narration audio stopped.");
+            stopSceneNarration();
+          }
+        },
+      );
+      if (requestId !== narrationRequestRef.current) {
+        connection.disconnect();
+        return;
+      }
+      narrationConnectionRef.current = connection;
+    } catch (error) {
+      if (requestId !== narrationRequestRef.current) return;
+      setNarrationError(
+        error instanceof Error
+          ? error.message
+          : "Narration audio could not be started.",
+      );
+      stopSceneNarration();
+    }
   }
 
   async function replaceScene(scene: StoryScene) {
@@ -4991,8 +5074,24 @@ function ProductCanvasWorkspace({
           setScenePanelOpen(false);
           commentWorkspace.openThread(threadId);
         }}
+        onNarrationChange={(scene, narration) =>
+          void saveSceneNarration(scene, narration)
+        }
+        narrationPlayingSceneId={narrationPlayingSceneId}
+        narrationError={narrationError}
+        onToggleNarration={(scene) => void toggleSceneNarration(scene)}
         onDismiss={() => setScenePanelOpen(false)}
       />
+
+      {activeScene?.narration ? (
+        <aside
+          aria-label={`Caption for ${activeScene.title}`}
+          data-testid="story-caption-overlay"
+          className="pointer-events-none absolute bottom-20 left-1/2 z-20 max-w-[min(42rem,calc(100%_-_2rem))] -translate-x-1/2 rounded-xl bg-zinc-950/85 px-4 py-2 text-center text-sm leading-6 text-white shadow-lg"
+        >
+          {activeScene.narration}
+        </aside>
+      ) : null}
 
       <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
         <Button
@@ -5133,6 +5232,7 @@ function ProductCanvasWorkspace({
         onDismissPanel={() => setSharedPanel(null)}
         onPlacementModeChange={setCommentPlacementActive}
         onAiTransactionApplied={registerAiTransaction}
+        onStoryChanged={reloadStoryAfterAi}
         onUndoAiTransaction={undoAiTransaction}
         overlayVisible={temporaryOverlayVisible}
         onOverlayVisibilityChange={changeTemporaryOverlayVisibility}

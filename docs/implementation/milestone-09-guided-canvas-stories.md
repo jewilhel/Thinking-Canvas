@@ -6,7 +6,7 @@ Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-im
 
 Plan owner: Product owner
 
-Last updated: 2026-09-07
+Last updated: 2026-09-08
 
 ## Goal and user-visible outcome
 
@@ -128,12 +128,12 @@ This plan covers one milestone only. It does not change Milestone 8's still-open
 
 - [x] Task 1 — Resolve D1 and define `Story`, `StoryScene`, versioned camera/target, repository, mutation, permission, and concurrency contracts against the current schema.
 - [x] Task 2 — Add local migrations, generated database types, atomic story revision/reorder behavior, RLS/policy coverage, and safe compatibility/backfill tests.
-- [ ] Task 3 — Implement authenticated story routes/services and typed human/AI command boundaries with validation, idempotency, and conflict-safe errors. Human capture/list and lifecycle routes are complete through Slice 2; permitted AI tools remain Slice 5.
+- [x] Task 3 — Implement authenticated story routes/services and typed human/AI command boundaries with validation, idempotency, and conflict-safe errors.
 - [x] Task 4 — Build the empty Scenes surface and capture the current durable viewport as the first named scene; render a current-board preview and reload it.
 - [x] Task 5 — Build the populated ordered list, active state, add, rename, replace, delete/restore behavior from D2, drag reordering, keyboard reordering, and concurrent-update recovery.
 - [x] Task 6 — Build one interruptible camera-transition controller and row/previous/next navigation; support exploration after arrival, return-to-target behavior, resize, interruption, and reduced motion. D5 hosted perceptual acceptance received on 2026-09-07.
 - [x] Task 7 — Resolve D3 and add scene-specific contextual comments/notes with active-scene isolation, history behavior, lifecycle rules, and role coverage.
-- [ ] Task 8 — Resolve D4 and add captioned AI narration, permitted AI story/scene commands, cancellation/failure fallback, and no-audio-storage proof.
+- [x] Task 8 — Resolve D4 and add captioned AI narration, permitted AI story/scene commands, cancellation/failure fallback, and no-audio-storage proof.
 - [ ] Task 9 — Add unit, component, database, integration, and authenticated Playwright coverage for the complete story lifecycle, live-linked board edits, reconnect/reload, two-user conflicts, accessibility, tablet layout, and performance instrumentation.
 - [ ] Task 10 — Run the full local gate, create an immutable Netlify preview from the exact reviewed head when authorized, perform Codex in-app-browser QA, retain evidence, and request product-owner closure only after every active requirement and exit criterion passes.
 
@@ -302,6 +302,14 @@ The product owner approved the complete plan and its recommended D1–D5 options
 - Added the shared comment composer and thread panel to scene context. Shared Comments history retains every scene thread with a current or **Deleted scene** label, while soft-deleted scene rows preserve the association.
 - Realtime comment invalidation and story refresh keep authorized sessions aligned. Scene previews continue to render current canvas objects from stored framing, so contextual collaboration does not capture a frozen canvas snapshot or mutate saved camera data.
 
+### Slice 5 — Permitted AI creation and captioned narration
+
+- Status: Complete locally on 2026-09-08; this record is included in the Slice 5 checkpoint commit.
+- Added a strict `execute_story_scene` tool available only to the primary AI in a scene comment under current **Trusted editor** authority. It can update only the invoking scene's title/narration or append one scene framed from currently projected canvas-object IDs; lower authority modes expose no story mutation tool.
+- Added a service-role-only, idempotent story executor with current membership/authority checks, invoking-scene verification, changed-content retry rejection, server-owned scene identity/order, and durable tool audit linkage. Forged scene and object identities fail before canonical story mutation.
+- Added one editable persisted narration script per scene, equivalent visible captions in the scene panel and playback canvas, and deterministic refresh after AI story changes.
+- Added a story-specific output-only Realtime credential and WebRTC path. It requests no microphone, sends only the persisted script for verbatim speech, supports explicit cancellation, closes stale connection attempts, stores no generated audio, and leaves captions visible when authorization, connection, or playback fails.
+
 ## Verification evidence
 
 - 2026-09-07 — Planning inspection only. Local `main` was fast-forwarded from `556eeee` to current `origin/main` commit `99c2835`, which includes merged Milestone 8 code and ledger reconciliation. The working tree was clean before this plan edit. No Milestone 9 tests or preview checks were run.
@@ -325,6 +333,9 @@ The product owner approved the complete plan and its recommended D1–D5 options
 - 2026-09-07 — Slice 3 second replacement preview: branch head `0a53318` was pushed and Netlify draft deploy `6a9fabe6beeece416ce39a9f` reached `ready`. The product owner reviewed it in the Codex in-app browser and responded “perfect,” accepting removal of visible reorder controls plus movable/resizable panel behavior before authorizing Slice 4 and later work.
 - 2026-09-08 — Slice 4 local database: `pnpm db:reset` applied the additive `20260908090000_scene_comment_targets.sql` migration and `pnpm db:test` passed all 8 SQL files / 369 checks. Coverage includes owner, editor, commenter, and viewer roles; idempotent creation; active-scene validation; readable associations; and deleted-scene history preservation.
 - 2026-09-08 — Slice 4 local source/browser gate: lint and TypeScript passed; 78 Vitest files / 390 tests passed; and the focused authenticated Chromium lifecycle passed 1/1 after creating scene context, proving active-scene isolation, observing the durable context in a second authenticated session, and rerunning Axe. The first browser invocation lacked local environment injection and one later run used an ambiguous label; neither diagnostic run counts as passing evidence.
+- 2026-09-08 — Slice 5 local database: `pnpm db:reset` applied every migration through `20260908120000_story_narration_ai_tools.sql`; `pnpm db:test` passed all 9 SQL files / 381 checks. Coverage includes owner/editor narration, viewer denial, stale revision rejection, trusted AI update/create, exact retry acknowledgment, changed-content retry rejection, forged-scene denial, authority downgrade denial, contiguous ordering, and absence of stored audio columns.
+- 2026-09-08 — Slice 5 local source/build gate: `pnpm check` passed formatting, lint, TypeScript, 79 Vitest files / 399 tests, and the Next.js production build with the authenticated narration-token route. Focused tests cover every AI authority allowlist, strict provider scene schema, forged/stale object framing, output-only Realtime configuration, no microphone request, speech cancellation, caption fallback, and narration validation.
+- 2026-09-08 — Slice 5 local authenticated Chromium: `tests/e2e/guided-stories.spec.ts` passed 1/1 after persisting a human narration, showing matching panel/canvas captions, routing a scene comment to trusted fake Primary AI, observing the durable AI narration update, reloading it in a second authenticated session, and rerunning the existing full scene lifecycle/Axe checks. Diagnostic runs exposed and repaired an invalid scene-comment review-scope assumption and missing deterministic story refresh; only the final passing run counts as evidence.
 
 ## Change record
 

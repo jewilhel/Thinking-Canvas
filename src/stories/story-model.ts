@@ -77,6 +77,11 @@ export const storyMutationRequestSchema = z.discriminatedUnion("action", [
     sceneIds: z.array(z.uuid()).min(1).max(500),
   }),
   z.strictObject({ action: z.literal("restore"), ...sceneMutationBase }),
+  z.strictObject({
+    action: z.literal("narration"),
+    ...sceneMutationBase,
+    narration: z.string().max(100_000).nullable(),
+  }),
 ]);
 
 export const storyDeleteRequestSchema = z.strictObject(sceneMutationBase);

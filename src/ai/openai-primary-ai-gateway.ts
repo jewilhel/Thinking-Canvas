@@ -28,7 +28,7 @@ import {
 import { throwIfAiRunAborted } from "@/ai/run-deadline";
 import {
   AI_TOOL_REGISTRY,
-  allowedAiToolNames,
+  isAiToolAllowedByAuthority,
   providerDocumentChangesArgumentsSchema,
   proposalArgumentsSchema,
   type AiToolName,
@@ -319,10 +319,11 @@ export class OpenAiPrimaryAiGateway implements PrimaryAiGateway {
     if (invocation.canvasId !== projection.canvasId) {
       throw new Error("The invocation and projection canvas must match.");
     }
-    const expectedTools = new Set(allowedAiToolNames(invocation.authority));
     if (
       new Set(input.allowedToolNames).size !== input.allowedToolNames.length ||
-      input.allowedToolNames.some((name) => !expectedTools.has(name))
+      input.allowedToolNames.some(
+        (name) => !isAiToolAllowedByAuthority(invocation.authority, name),
+      )
     ) {
       throw new Error("The AI tool allowlist exceeds current authority.");
     }
@@ -343,6 +344,7 @@ export class OpenAiPrimaryAiGateway implements PrimaryAiGateway {
         "For document conversations, distinguish questions and suggestions from requests to edit using the meaning of the current message and conversation, not particular keywords. Questions about quality or requests for feedback must not mutate the document. Explicit no-edit instructions take priority. A polite request such as 'could you please replace this phrase' is an edit request, and an approval of your preceding suggestion refers to that suggestion. If the requested edit is ambiguous, ask a concise clarification instead of editing. For requested proposals use propose_document_changes or explain the suggested text with no action. For requested or approved edits use execute_document_changes in Trusted editor mode or stage_document_changes in Edit with undo mode, when available, with exactly one replace_selection operation and the existing projected documentObjectId. Include summary, whatChanged, and why; omit unrelated canvas-object commands. " +
         "Replacement text supports Markdown. Preserve the document's existing structure: retain list markers, heading markers where appropriate, links, and paragraph breaks. A wording-only edit must not flatten a list into prose. " +
         "Reference only existing object IDs present in the supplied projection. For new objects, use a creation-specific action with local keys; never invent object IDs or trusted metadata. " +
+        "When execute_story_scene is available, the conversation is attached to one saved scene. Use update_current only for requested title or narration changes to that invoking scene. Use create only when the user asks for another scene, and frame it with one or more existing projected targetObjectIds. Narration is persisted caption text, so write concise speakable copy and do not claim audio was stored. " +
         "Put every new shape requested in the turn into one stage_new_shapes call. Local keys for those shapes are not existing object IDs, so do not include them in evidence or contextualTargetObjectIds. " +
         "Put every new connector requested in the turn into one stage_new_connectors call. List each connection from source to destination in the requested direction, including a final connection back to the first object when the user requests a closed loop. When the user says sticky notes, connect the labeled rectangle notes and exclude empty background or container shapes. The server assigns connector IDs and safe edge anchors. " +
         "Put every new freeform annotation requested in the turn into one stage_new_annotations call with 2 to 64 bounded world-space points and local keys. The server canonicalizes the path and assigns annotation IDs and trusted metadata. Do not use a predefined shape as a substitute for requested freeform ink. " +

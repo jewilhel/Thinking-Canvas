@@ -400,6 +400,8 @@ export type Database = {
           id: string
           outcome: Database["public"]["Enums"]["ai_tool_outcome"]
           run_id: string
+          story_input: Json | null
+          story_scene_id: string | null
           tool_name: string
           updated_at: string
         }
@@ -414,6 +416,8 @@ export type Database = {
           id?: string
           outcome?: Database["public"]["Enums"]["ai_tool_outcome"]
           run_id: string
+          story_input?: Json | null
+          story_scene_id?: string | null
           tool_name: string
           updated_at?: string
         }
@@ -428,6 +432,8 @@ export type Database = {
           id?: string
           outcome?: Database["public"]["Enums"]["ai_tool_outcome"]
           run_id?: string
+          story_input?: Json | null
+          story_scene_id?: string | null
           tool_name?: string
           updated_at?: string
         }
@@ -451,6 +457,13 @@ export type Database = {
             columns: ["run_id"]
             isOneToOne: false
             referencedRelation: "ai_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_tool_executions_story_scene_id_fkey"
+            columns: ["story_scene_id"]
+            isOneToOne: false
+            referencedRelation: "story_scenes"
             referencedColumns: ["id"]
           },
         ]
@@ -1619,6 +1632,25 @@ export type Database = {
           tool_execution_id: string
         }[]
       }
+      execute_ai_story_scene: {
+        Args: {
+          target_action: string
+          target_call_key: string
+          target_camera: Json | null
+          target_narration: string | null
+          target_object_ids?: string[]
+          target_region: Json | null
+          target_requester_id: string
+          target_run_id: string
+          target_scene_id: string | null
+          target_title: string | null
+        }
+        Returns: {
+          created: boolean
+          scene_id: string
+          tool_execution_id: string
+        }[]
+      }
       fail_ai_run: {
         Args: { target_error_code: string; target_run_id: string }
         Returns: {
@@ -1847,6 +1879,15 @@ export type Database = {
           target_region?: Json
           target_scene_id: string
           target_title?: string
+        }
+        Returns: number
+      }
+      update_primary_story_scene_narration: {
+        Args: {
+          target_canvas_id: string
+          target_expected_revision: number
+          target_narration: string | null
+          target_scene_id: string
         }
         Returns: number
       }

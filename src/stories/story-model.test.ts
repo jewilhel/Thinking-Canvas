@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   captureStoryFraming,
   storyCameraSchema,
+  storyMutationRequestSchema,
   viewportForStoryCamera,
 } from "@/stories/story-model";
 
@@ -59,6 +60,26 @@ describe("story viewport framing", () => {
         version: 1,
         center: { x: 0, y: 0 },
         zoom: 99,
+      }),
+    ).toThrow();
+  });
+
+  it("accepts bounded nullable narration updates and rejects extra fields", () => {
+    expect(
+      storyMutationRequestSchema.parse({
+        action: "narration",
+        sceneId: "20000000-0000-4000-8000-000000000001",
+        expectedRevision: 4,
+        narration: "Pause on the customer journey.",
+      }),
+    ).toMatchObject({ action: "narration" });
+    expect(() =>
+      storyMutationRequestSchema.parse({
+        action: "narration",
+        sceneId: "20000000-0000-4000-8000-000000000001",
+        expectedRevision: 4,
+        narration: null,
+        audio: "stored.mp3",
       }),
     ).toThrow();
   });

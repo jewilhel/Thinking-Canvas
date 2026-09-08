@@ -21,6 +21,7 @@ export function useCanvasComments(
   supabaseUrl: string,
   supabasePublishableKey: string,
   onAiTransactionApplied?: (changeSetId: string) => void,
+  onStoryChanged?: () => void,
 ) {
   const repository = useMemo(
     () =>
@@ -131,6 +132,7 @@ export function useCanvasComments(
               status?: unknown;
               error?: unknown;
               changeSetId?: unknown;
+              storyChanged?: unknown;
             };
             if (event.status === "failed" && typeof event.error === "string") {
               setError(event.error);
@@ -140,6 +142,9 @@ export function useCanvasComments(
               typeof event.changeSetId === "string"
             ) {
               onAiTransactionApplied?.(event.changeSetId);
+            }
+            if (event.status === "completed" && event.storyChanged === true) {
+              onStoryChanged?.();
             }
             await refresh();
           }
@@ -158,7 +163,7 @@ export function useCanvasComments(
         runControllers.current.delete(runId);
       }
     },
-    [canvasId, onAiTransactionApplied, refresh, repository],
+    [canvasId, onAiTransactionApplied, onStoryChanged, refresh, repository],
   );
 
   const execute = useCallback(

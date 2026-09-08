@@ -49,6 +49,7 @@ import {
 import {
   allowedAiToolNames,
   allowedDocumentRangeAiToolNames,
+  allowedSceneAiToolNames,
   contextualCommentArgumentsSchema,
   documentChangesArgumentsSchema,
   executeArgumentsSchema,
@@ -58,6 +59,7 @@ import {
   reviewNewConnectorsArgumentsSchema,
   reviewNewShapesArgumentsSchema,
   reviewStageArgumentsSchema,
+  storySceneArgumentsSchema,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
 import { buildValidatedDocumentEdit } from "@/ai/document-semantic-edit";
@@ -85,6 +87,7 @@ import {
 } from "@/collaboration/canvas-document";
 import { buildCompactedSnapshot } from "@/collaboration/persistence";
 import { buildAiDocumentProjections } from "@/documents/document-ai-projection";
+import { framingForStoryObjects } from "@/stories/ai-story-framing";
 import {
   currentDocumentRange,
   resolveDocumentRange,
@@ -224,7 +227,7 @@ export async function completeAiRun(
     supabase
       .from("comments")
       .select(
-        "id,body,status,anchor_x,anchor_y,comment_targets(target_object_id,target_order),comment_document_targets(document_object_id,relative_anchor,relative_head,quoted_text,include_document_context,include_selected_text_context)",
+        "id,body,status,anchor_x,anchor_y,comment_targets(target_object_id,target_order),comment_document_targets(document_object_id,relative_anchor,relative_head,quoted_text,include_document_context,include_selected_text_context),comment_scene_targets(scene_id)",
       )
       .eq("id", run.invoking_comment_id)
       .maybeSingle(),
@@ -286,10 +289,15 @@ export async function completeAiRun(
   const sourceDocumentTarget = firstRelatedRow(
     commentResult.data.comment_document_targets,
   );
+  const sourceSceneTarget = firstRelatedRow(
+    commentResult.data.comment_scene_targets,
+  );
   const instruction = replyResult.data?.body ?? commentResult.data.body;
   const allowedToolNames = sourceDocumentTarget
     ? [...allowedDocumentRangeAiToolNames(currentAuthority)]
-    : allowedAiToolNames(currentAuthority);
+    : sourceSceneTarget
+      ? allowedSceneAiToolNames(currentAuthority)
+      : allowedAiToolNames(currentAuthority);
   const sourceDocumentRange = sourceDocumentTarget
     ? currentDocumentRange(compacted.document, {
         documentObjectId: sourceDocumentTarget.document_object_id,
@@ -325,13 +333,15 @@ export async function completeAiRun(
   const sourceTargetObjectIds = [...commentResult.data.comment_targets]
     .sort((left, right) => left.target_order - right.target_order)
     .map((target) => target.target_object_id);
-  const reviewScope = deriveAiReviewScope({
-    targetObjectIds: sourceTargetObjectIds,
-    orderedContextIds: run.ordered_context_ids,
-    hasCanvasAnchor:
-      commentResult.data.anchor_x !== null &&
-      commentResult.data.anchor_y !== null,
-  });
+  const reviewScope = sourceSceneTarget
+    ? { kind: "world_space" as const, objectIds: [] as string[] }
+    : deriveAiReviewScope({
+        targetObjectIds: sourceTargetObjectIds,
+        orderedContextIds: run.ordered_context_ids,
+        hasCanvasAnchor:
+          commentResult.data.anchor_x !== null &&
+          commentResult.data.anchor_y !== null,
+      });
   if (run.ordered_context_ids.length > 1) {
     validateConnectedPath({
       canvasId: run.canvas_id,
@@ -628,6 +638,12 @@ export async function completeAiRun(
     sequence: number;
     created: boolean;
   }> = [];
+  const storyToolResults: Array<{
+    callKey: string;
+    action: "create" | "update_current";
+    sceneId: string;
+    created: boolean;
+  }> = [];
   const replySections = [plainLanguageAiReply(gatewayResult.reply.body)];
   for (const toolCall of toolCalls) {
     let validatedTool: ReturnType<typeof validateAiToolRequest>;
@@ -639,6 +655,63 @@ export async function completeAiRun(
       });
     } catch {
       throw new AiProviderOutputError();
+    }
+    if (validatedTool.toolName === "execute_story_scene") {
+      if (!sourceSceneTarget) {
+        throw new AiRunConflictError(
+          "AI story actions require an invoking scene comment.",
+        );
+      }
+      const toolArguments = storySceneArgumentsSchema.parse(
+        validatedTool.arguments,
+      );
+      const targetObjectIds =
+        toolArguments.action === "create" ? toolArguments.targetObjectIds : [];
+      if (targetObjectIds.some((id) => !objectIds.has(id))) {
+        throw new AiRunConflictError(
+          "The AI story scene referenced an unavailable object.",
+        );
+      }
+      const framing =
+        toolArguments.action === "create"
+          ? framingForStoryObjects(sourceObjects, targetObjectIds)
+          : null;
+      const toolResult = await createServiceClient().rpc(
+        "execute_ai_story_scene",
+        {
+          target_run_id: run.id,
+          target_requester_id: run.requested_by,
+          target_call_key: toolCall.callKey,
+          target_action: toolArguments.action,
+          target_scene_id:
+            toolArguments.action === "update_current"
+              ? sourceSceneTarget.scene_id
+              : null,
+          target_title: toolArguments.title ?? null,
+          target_narration: toolArguments.narration ?? null,
+          target_camera: framing ? (framing.camera as unknown as Json) : null,
+          target_region: framing ? (framing.target as unknown as Json) : null,
+          target_object_ids: targetObjectIds,
+        },
+      );
+      if (toolResult.error || !toolResult.data?.[0]) {
+        throw new AiRunConflictError(
+          toolResult.error?.message ??
+            "The AI story action could not be saved.",
+        );
+      }
+      storyToolResults.push({
+        callKey: toolCall.callKey,
+        action: toolArguments.action,
+        sceneId: toolResult.data[0].scene_id,
+        created: toolResult.data[0].created,
+      });
+      replySections.push(
+        toolArguments.action === "create"
+          ? "The new scene is in the story."
+          : "The scene title or narration is updated.",
+      );
+      continue;
     }
     if (
       validatedTool.toolName === "execute_canvas_commands" ||
@@ -1346,6 +1419,7 @@ export async function completeAiRun(
       proposalTools: proposalToolResults,
       reviewStageTools: reviewStageToolResults,
       trustedExecutionTools: trustedExecutionResults,
+      storyTools: storyToolResults,
       objectDetailPageSize: objectInspection.items.length,
       objectDetailNextCursor: objectInspection.nextCursor,
       threadDetailPageSize: threadInspection.items.length,
@@ -1362,6 +1436,7 @@ export async function completeAiRun(
     replyId: completionResult.data[0].reply_id,
     status: completionResult.data[0].status,
     changeSetId: reviewStageToolResults.at(-1)?.changeSetId ?? null,
+    storyChanged: storyToolResults.length > 0,
   };
 }
 
