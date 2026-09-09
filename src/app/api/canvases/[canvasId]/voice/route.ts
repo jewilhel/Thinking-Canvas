@@ -332,7 +332,6 @@ export async function DELETE(request: Request, context: Context) {
     });
   else if (
     !data.ended_at &&
-    !data.supervisor_ready &&
     data.call_id &&
     data.heartbeat_at &&
     Date.parse(data.heartbeat_at) < Date.now() - 30000
@@ -340,7 +339,9 @@ export async function DELETE(request: Request, context: Context) {
     await db.rpc("finish_voice_test", {
       target_id: id,
       target_cents: data.reserved_cents,
-      target_reason: "bootstrap_hangup_confirmed_usage_unknown",
+      target_reason: data.supervisor_ready
+        ? "hangup_confirmed_usage_unknown"
+        : "bootstrap_hangup_confirmed_usage_unknown",
     });
   return new Response(null, { status: 204 });
 }
