@@ -99,6 +99,8 @@ export async function POST(request: Request, context: Context) {
     );
   let callId: string | undefined;
   let providerAttempted = false;
+  let rejectedHandshake = false;
+  let stage = "configuration";
   try {
     const provider = voiceProvider();
     const secret = await provider.realtime.clientSecrets.create({
@@ -118,6 +120,7 @@ export async function POST(request: Request, context: Context) {
         };
       })(),
     });
+    stage = "provider_handshake";
     providerAttempted = true;
     const response = await fetch("https://api.openai.com/v1/realtime/calls", {
       method: "POST",
@@ -128,6 +131,7 @@ export async function POST(request: Request, context: Context) {
       body: parsed.data.sdp,
       signal: AbortSignal.timeout(15000),
     });
+    rejectedHandshake = !response.ok;
     callId = response.headers.get("location")?.split("/").pop();
     if (!response.ok || !callId || !/^rtc_[a-zA-Z0-9_-]+$/.test(callId))
       throw new Error("handshake");
@@ -137,6 +141,7 @@ export async function POST(request: Request, context: Context) {
       .update({ call_id: callId })
       .eq("id", id);
     if (stored.error) throw new Error("storage");
+    stage = "supervisor_start";
     const supervisor = await fetch(
       new URL(
         "/.netlify/functions/voice-supervisor-background",
@@ -153,6 +158,7 @@ export async function POST(request: Request, context: Context) {
       },
     );
     if (supervisor.status !== 202) throw new Error("supervisor");
+    stage = "supervisor_readiness";
     for (let attempt = 0; attempt < 40; attempt++) {
       const { data } = await db
         .from("voice_test_sessions")
@@ -175,7 +181,8 @@ export async function POST(request: Request, context: Context) {
     }
     throw new Error("supervisor-timeout");
   } catch {
-    let terminated = !providerAttempted;
+    console.error("Supervised voice connection failed.", { stage });
+    let terminated = !providerAttempted || rejectedHandshake;
     if (callId) {
       try {
         await voiceProvider().realtime.calls.hangup(callId);
@@ -187,7 +194,8 @@ export async function POST(request: Request, context: Context) {
     if (terminated)
       await db.rpc("finish_voice_test", {
         target_id: id,
-        target_cents: providerAttempted ? reserved.reserved_cents : 0,
+        // The SDP answer was never returned, so the browser could not send media.
+        target_cents: 0,
         target_reason: "connection_failed",
       });
     return Response.json(

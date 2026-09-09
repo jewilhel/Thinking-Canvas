@@ -46,6 +46,7 @@ export default async function handler(request: Request) {
   const expires = Date.parse(session.expires_at);
   let charged = 50; // Conservative allowance for trailing/unreported input and transcription.
   let unknownUsage = false;
+  let readinessPublished = false;
   let inflight = false;
   let reason = "connection_ended";
   let closed = false;
@@ -111,6 +112,7 @@ export default async function handler(request: Request) {
         .eq("id", input.id)
         .then((result) => {
           if (result.error) stop("accounting_unavailable");
+          else readinessPublished = true;
         });
     }
     if (event.type === "response.created") {
@@ -205,8 +207,9 @@ export default async function handler(request: Request) {
     if (terminated)
       await db.rpc("finish_voice_test", {
         target_id: input.id,
-        target_cents:
-          unknownUsage || inflight
+        target_cents: !readinessPublished
+          ? 0
+          : unknownUsage || inflight
             ? session.reserved_cents
             : Math.min(session.reserved_cents, charged),
         target_reason: reason,
