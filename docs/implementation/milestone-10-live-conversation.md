@@ -325,6 +325,14 @@ A Codex download-event wait timed out for the record export; it is not recorded 
 
 Added explicit microphone-wait status, bounded reconnect failure, correct separation of generation versus buffered playback for queued settings, and request-correlated provider errors. Added **Check API compatibility** to validate draft settings using the deployed key without microphone permission or a media call. Local CLI inspection returns a masked provider key, so it cannot establish provider compatibility; the hosted check remains the authoritative next test. Real voice, API acknowledgments during a call, server hangup, 10-minute expiry, and paid usage enforcement still require hosted verification before the Slice 2 product review. Slices 3–5 have not begun.
 
+### Current handoff evidence — 2026-09-09
+
+Ready Git branch deployment **`6aa11190e89c8e0008ea6f65`** matches implementation commit **`3b6320b097515e938f1f78944b48dde34b5c22d3`** at https://codex-milestone-10-live-conversation--thinking-canvas.netlify.app . In Codex's in-app browser, **Check API compatibility** returned OpenAI acceptance separately for (1) the semantic-VAD baseline, (2) the saved server-VAD preset with 900 ms silence, and (3) manual mode with transcription and noise reduction disabled. These checks used the deployed credential and opened no media calls. Restored the draft to baseline afterward.
+
+The narrow-panel overlap is visibly repaired. The ended attempt's notes and requested settings survived another reload and remain readable. The hosted download-event retest still timed out in the Codex adapter; do not claim hosted file-export verification, despite the passing Chromium file-download/JSON-content test. The browser shows **$0.00 charged and $0.00 reserved**. No paid call was started.
+
+Next required input is microphone permission in the Codex browser (or confirmation that no prompt appears). The Computer Use tool explicitly blocks controlling the Codex app itself. After resolving permission, complete supervised connection, live API acknowledgments, audio, mute/leave, restart/expiry, recovery, and budget verification before requesting the first product review. This is a microphone-access handoff, not Slice 2 acceptance, milestone closure, or authorization for production.
+
 ## Verification evidence
 
 2026-09-08 — Read-only planning inspection: local branch/status/history, master ledger, earlier milestone records, voice modules and existing tests, comments/AI contracts, migrations, CI, and Netlify configuration. GitHub PR #15 merge was verified live. Official voice/network documentation was checked for the proposed boundaries. No new runtime tests, provider calls, microphone capture, hosted migration, or preview acceptance occurred.
