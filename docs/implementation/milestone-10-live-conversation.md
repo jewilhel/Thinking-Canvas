@@ -385,6 +385,10 @@ Owner requested a single AI voice icon immediately left of Scenes that toggles t
 
 Codex in-app-browser visual QA at 390×844, 760×800, and 1280×800 verified the icon immediately left of Scenes, no strip/main-toolbar overlap, repeated expand/collapse, and settings access. Two focused Chromium E2E checks, type checking, targeted lint, and formatting passed. Viewport overrides reset and preview left open with controls collapsed. No paid voice call or synthetic provider error was created for this layout change; active-call collapse continuity follows the unchanged mounted component and was not re-tested with microphone audio. Prior empty-audio operation and incomplete effective-settings logging findings remain separate open repairs.
 
+### Primary toolbar width correction — 2026-09-09
+
+Owner screenshot showed blank toolbar background extending right of the final tool on narrow windows. Added fit-content width to the toolbar itself while preserving its maximum width and horizontal overflow. Code `f15718f412c2837a846244b4b600face2fd20e4a`, ready preview `6aa1c2da85ce350008b0522c`. Codex in-app-browser screenshots at 936×800 confirm the background ends after More tools; 390×844 preserves constrained overflow and End-key navigation reaches More tools. Formatting and targeted lint passed. Viewport reset; preview remains open. This is a layout-only correction.
+
 ## Verification evidence
 
 2026-09-08 — Read-only planning inspection: local branch/status/history, master ledger, earlier milestone records, voice modules and existing tests, comments/AI contracts, migrations, CI, and Netlify configuration. GitHub PR #15 merge was verified live. Official voice/network documentation was checked for the proposed boundaries. No new runtime tests, provider calls, microphone capture, hosted migration, or preview acceptance occurred.
