@@ -106,18 +106,20 @@ export default async function handler(request: Request) {
         return;
       }
       clearTimeout(readyTimeout);
+      readinessPublished = true;
       void db
         .from("voice_test_sessions")
         .update({ supervisor_ready: true })
         .eq("id", input.id)
         .then((result) => {
           if (result.error) stop("accounting_unavailable");
-          else readinessPublished = true;
         });
     }
     if (event.type === "response.created") {
       if (
         inflight ||
+        typeof event.response?.max_output_tokens !== "number" ||
+        event.response.max_output_tokens > 4096 ||
         event.response?.conversation_id === null ||
         !voiceBudgetAllowsResponse(session.reserved_cents, charged)
       ) {
