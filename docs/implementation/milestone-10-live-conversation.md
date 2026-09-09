@@ -333,6 +333,14 @@ The narrow-panel overlap is visibly repaired. The ended attempt's notes and requ
 
 Next required input is microphone permission in the Codex browser (or confirmation that no prompt appears). The Computer Use tool explicitly blocks controlling the Codex app itself. After resolving permission, complete supervised connection, live API acknowledgments, audio, mute/leave, restart/expiry, recovery, and budget verification before requesting the first product review. This is a microphone-access handoff, not Slice 2 acceptance, milestone closure, or authorization for production.
 
+### Failed setup reservation recovery — 2026-09-09
+
+The owner reported an unavailable allowance after refreshing the preview. A service-only metadata read found one expired setup from 15:32 UTC with $10 reserved, $0 charged, a provider call ID, no worker heartbeat, and no published readiness. A direct request to the supervisor URL returned Netlify's team-login 401 page. The server-to-server invocation had omitted the preview access cookies. Netlify documents one-hour protected-preview access expiry, consistent with the disabled Live control recovering after navigation.
+
+The invocation now forwards the incoming cookies only to the fixed deployment origin, refuses redirects, and retains its HMAC authentication. Expired, unclaimed setups with known provider IDs are recovered before admission only after a successful hangup or provider 404; unknown termination continues to hold funds. The UI exposes the availability failure beside Live, offers an explicit refresh for the HTML 401 gate, bounds availability requests, and rechecks on network/visibility return. No cap or preview access protection is disabled.
+
+Focused hangup/lifecycle tests: 8 passed. Lint and type checking passed. Hosted verification of this repair remains pending.
+
 ## Verification evidence
 
 2026-09-08 — Read-only planning inspection: local branch/status/history, master ledger, earlier milestone records, voice modules and existing tests, comments/AI contracts, migrations, CI, and Netlify configuration. GitHub PR #15 merge was verified live. Official voice/network documentation was checked for the proposed boundaries. No new runtime tests, provider calls, microphone capture, hosted migration, or preview acceptance occurred.

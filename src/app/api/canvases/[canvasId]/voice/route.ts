@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { endVoiceCall } from "@/voice/end-voice-call";
 import {
   buildVoiceSession,
   voiceSettingsSchema,
@@ -82,6 +83,26 @@ export async function POST(request: Request, context: Context) {
   if (!user)
     return Response.json({ error: "Voice access changed." }, { status: 403 });
   const db = voiceService();
+  // A setup that never published readiness cannot have returned SDP or accepted
+  // browser media. Recover only expired, unclaimed setups with a known call ID,
+  // and only after OpenAI confirms termination (including an already-gone call).
+  const { data: abandoned } = await db
+    .from("voice_test_sessions")
+    .select("id,call_id")
+    .is("ended_at", null)
+    .is("heartbeat_at", null)
+    .eq("supervisor_ready", false)
+    .lt("expires_at", new Date().toISOString())
+    .not("call_id", "is", null)
+    .limit(10);
+  for (const session of abandoned ?? []) {
+    if (await endVoiceCall(voiceProvider(), session.call_id))
+      await db.rpc("finish_voice_test", {
+        target_id: session.id,
+        target_cents: 0,
+        target_reason: "expired_setup_recovered",
+      });
+  }
   const id = crypto.randomUUID();
   const { data: reserved, error } = await db.rpc("reserve_voice_test", {
     target_id: id,
@@ -152,8 +173,12 @@ export async function POST(request: Request, context: Context) {
         headers: {
           "Content-Type": "application/json",
           "x-voice-signature": supervisorSignature(id),
+          // The configured deploy belongs to this same application. Preserve
+          // visitor access credentials for Netlify's protected preview gate.
+          Cookie: request.headers.get("cookie") ?? "",
         },
         body: JSON.stringify({ id }),
+        redirect: "error",
         signal: AbortSignal.timeout(10000),
       },
     );
@@ -183,14 +208,7 @@ export async function POST(request: Request, context: Context) {
   } catch {
     console.error("Supervised voice connection failed.", { stage });
     let terminated = !providerAttempted || rejectedHandshake;
-    if (callId) {
-      try {
-        await voiceProvider().realtime.calls.hangup(callId);
-        terminated = true;
-      } catch {
-        /* Keep the reservation if termination cannot be confirmed. */
-      }
-    }
+    if (callId) terminated = await endVoiceCall(voiceProvider(), callId);
     if (terminated)
       await db.rpc("finish_voice_test", {
         target_id: id,
@@ -225,14 +243,11 @@ export async function DELETE(request: Request, context: Context) {
     .maybeSingle();
   if (!data) return new Response(null, { status: 404 });
   if (!data.ended_at && data.call_id) {
-    try {
-      await voiceProvider().realtime.calls.hangup(data.call_id);
-    } catch {
+    if (!(await endVoiceCall(voiceProvider(), data.call_id)))
       return Response.json(
         { error: "The server is still ending the call." },
         { status: 502 },
       );
-    }
   }
   return new Response(null, { status: 204 });
 }

@@ -89,6 +89,7 @@ export function LiveVoice({ canvasId, userId }: Props) {
   const [restartRequired, setRestartRequired] = useState(false);
   const [availability, setAvailability] = useState<{
     enabled: boolean;
+    refreshRequired?: boolean;
     reason?: string;
     spentCents?: number;
     reservedCents?: number;
@@ -155,8 +156,23 @@ export function LiveVoice({ canvasId, userId }: Props) {
   useEffect(() => {
     let cancelled = false;
     const refresh = () =>
-      void fetch(`/api/canvases/${canvasId}/voice`)
+      void fetch(`/api/canvases/${canvasId}/voice`, {
+        signal: AbortSignal.timeout(10000),
+      })
         .then(async (response) => {
+          if (
+            response.status === 401 &&
+            !response.headers.get("content-type")?.includes("application/json")
+          ) {
+            if (!cancelled)
+              setAvailability({
+                enabled: false,
+                refreshRequired: true,
+                reason:
+                  "Preview sign-in expired. Refresh the preview to reconnect.",
+              });
+            return;
+          }
           const body = await response.json();
           if (!cancelled)
             setAvailability(
@@ -177,9 +193,16 @@ export function LiveVoice({ canvasId, userId }: Props) {
         });
     refresh();
     const timer = setInterval(refresh, 15000);
+    const resume = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", resume);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", resume);
       finishRef.current();
     };
   }, [canvasId]);
@@ -438,6 +461,19 @@ export function LiveVoice({ canvasId, userId }: Props) {
           <Mic aria-hidden="true" />
           {connecting ? "Cancel connection" : "Live"}
         </Button>
+        {!availability.enabled && !connecting && !connected && (
+          <span role="status" className="max-w-64 text-xs">
+            {availability.reason}
+            {availability.refreshRequired && (
+              <Button
+                variant="outline"
+                onClick={() => window.location.reload()}
+              >
+                Refresh preview
+              </Button>
+            )}
+          </span>
+        )}
         <span role="status" className="text-xs">
           {muted && connected ? "Muted" : status}
           {connected
