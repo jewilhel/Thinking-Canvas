@@ -10,13 +10,20 @@ function harness() {
     getTracks: () => [track],
     getAudioTracks: () => [track],
   } as unknown as MediaStream;
-  const channel = {
+  const channel = Object.assign(new EventTarget(), {
     readyState: "open",
     close: vi.fn(),
-    send: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  } as unknown as RTCDataChannel;
+    send: vi.fn(() => {
+      expect(track.enabled).toBe(false);
+      queueMicrotask(() =>
+        channel.dispatchEvent(
+          new MessageEvent("message", {
+            data: JSON.stringify({ type: "session.updated", session: {} }),
+          }),
+        ),
+      );
+    }),
+  }) as unknown as RTCDataChannel;
   const peer = {
     close: vi.fn(),
     addTrack: vi.fn(),
@@ -32,17 +39,24 @@ function harness() {
     srcObject: null,
     play: vi.fn(async () => {}),
   } as unknown as HTMLAudioElement;
-  const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
-    new Response(
-      JSON.stringify({
-        id: sessionId,
-        sdp: "answer",
-        expiresAt: "2026-09-09T13:10:00+00:00",
-        model: "gpt-realtime-2.1",
-        reservedCents: 1000,
-      }),
-    ),
+  const answer = new Response(
+    JSON.stringify({
+      id: sessionId,
+      sdp: "answer",
+      expiresAt: "2026-09-09T13:10:00+00:00",
+      model: "gpt-realtime-2.1",
+      reservedCents: 1000,
+    }),
   );
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockImplementation(async (_url, init) => {
+      if (!init?.method) {
+        expect(track.enabled).toBe(false);
+        return Response.json({ ready: true, ended: false });
+      }
+      return answer.clone();
+    });
   const dependencies: RealtimeDependencies = {
     fetch,
     getUserMedia: vi.fn(async () => stream),
@@ -97,6 +111,28 @@ describe("supervised voice lifecycle", () => {
     expect(h.track.stop).toHaveBeenCalledOnce();
     expect(h.peer.close).toHaveBeenCalledOnce();
   });
+  it("never enables microphone when supervision ends during bootstrap", async () => {
+    const h = harness();
+    const original = h.fetch.getMockImplementation()!;
+    h.fetch.mockImplementation(async (url, init) => {
+      if (!init?.method) return Response.json({ ready: false, ended: true });
+      return original(url, init);
+    });
+    await expect(
+      connectSupervisedVoice(
+        canvasId,
+        DEFAULT_VOICE_SETTINGS,
+        vi.fn(),
+        vi.fn(),
+        new AbortController().signal,
+        undefined,
+        h.dependencies,
+      ),
+    ).rejects.toThrow("supervision ended");
+    expect(h.track.enabled).toBe(false);
+    expect(h.track.stop).toHaveBeenCalledOnce();
+    expect(h.channel.send).not.toHaveBeenCalled();
+  });
   it("supports mute and idempotent leave, requesting server hangup", async () => {
     const h = harness();
     const active = await connectSupervisedVoice(
@@ -112,6 +148,8 @@ describe("supervised voice lifecycle", () => {
       "restartOf",
       sessionId,
     );
+    expect(h.track.enabled).toBe(true);
+    expect(h.channel.send).toHaveBeenCalledOnce();
     active.mute(true);
     expect(h.track.enabled).toBe(false);
     active.mute(false);

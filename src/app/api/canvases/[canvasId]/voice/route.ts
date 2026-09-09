@@ -14,7 +14,7 @@ import {
 } from "@/voice/voice-server";
 
 type Context = { params: Promise<{ canvasId: string }> };
-export async function GET(_request: Request, context: Context) {
+export async function GET(request: Request, context: Context) {
   const { canvasId } = await context.params;
   if (
     !z.uuid().safeParse(canvasId).success ||
@@ -29,6 +29,28 @@ export async function GET(_request: Request, context: Context) {
       enabled: false,
       reason: "Live testing is not enabled on this deployment.",
     });
+  const sessionId = new URL(request.url).searchParams.get("id");
+  if (sessionId) {
+    const user = await authorizeVoice(canvasId);
+    if (!user || !z.uuid().safeParse(sessionId).success)
+      return new Response(null, { status: 403 });
+    const { data, error } = await voiceService()
+      .from("voice_test_sessions")
+      .select("supervisor_ready,ended_at,expires_at,worker_started_at")
+      .eq("id", sessionId)
+      .eq("canvas_id", canvasId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (error || !data) return new Response(null, { status: 404 });
+    return Response.json(
+      {
+        ready: data.supervisor_ready && !data.ended_at,
+        ended:
+          Boolean(data.ended_at) || Date.parse(data.expires_at) <= Date.now(),
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
   const day = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Los_Angeles",
   }).format(new Date());
@@ -128,7 +150,10 @@ export async function POST(request: Request, context: Context) {
     const secret = await provider.realtime.clientSecrets.create({
       expires_after: { anchor: "created_at", seconds: 60 },
       session: (() => {
-        const session = buildVoiceSession(parsed.data.settings);
+        const session = buildVoiceSession({
+          ...parsed.data.settings,
+          automaticResponse: false,
+        });
         return {
           ...session,
           audio: {
@@ -189,11 +214,11 @@ export async function POST(request: Request, context: Context) {
     for (let attempt = 0; attempt < 40; attempt++) {
       const { data } = await db
         .from("voice_test_sessions")
-        .select("supervisor_ready,ended_at")
+        .select("worker_started_at,ended_at")
         .eq("id", id)
         .single();
       if (data?.ended_at) throw new Error("supervisor-ended");
-      if (data?.supervisor_ready)
+      if (data?.worker_started_at)
         return Response.json(
           {
             id,

@@ -52,14 +52,8 @@ export default async function handler(request: Request) {
   let closed = false;
   let transportOpen = false;
   const seen = new Set<string>();
-  const socket = new WebSocket(
-    `wss://api.openai.com/v1/realtime?call_id=${encodeURIComponent(session.call_id)}`,
-    {
-      headers: { Authorization: `Bearer ${key}` },
-      handshakeTimeout: 8000,
-      maxPayload: 2_000_000,
-    },
-  );
+  let socket: WebSocket | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let finish!: () => void;
   const completed = new Promise<void>((resolve) => {
     finish = resolve;
@@ -79,23 +73,9 @@ export default async function handler(request: Request) {
     () => stop("session_limit"),
     Math.max(0, expires - Date.now()),
   );
-  const readyTimeout = setTimeout(() => stop("supervisor_timeout"), 9000);
-  socket.on("open", () => {
-    transportOpen = true;
-  });
-  socket.on("error", (error) => {
-    const status = /^Unexpected server response: (\d{3})$/.exec(
-      error.message,
-    )?.[1];
-    console.info("Voice supervisor transport failed", {
-      status: status ? Number(status) : undefined,
-      timeout: error.message === "Opening handshake has timed out",
-    });
-    unknownUsage = true;
-    stop("supervisor_error");
-  });
-  socket.on("close", () => stop("connection_ended"));
-  socket.on("message", (raw) => {
+  const readyTimeout = setTimeout(() => stop("supervisor_timeout"), 10000);
+  const receive = (raw: WebSocket.RawData) => {
+    if (closed) return;
     // Inspect events only in volatile memory. Never log or store provider payloads.
     let event;
     try {
@@ -175,7 +155,43 @@ export default async function handler(request: Request) {
       unknownUsage = true;
       stop("transcription_failed");
     }
-  });
+  };
+  const attach = () => {
+    if (closed) return;
+    let retrying = false;
+    socket = new WebSocket(
+      `wss://api.openai.com/v1/realtime?call_id=${encodeURIComponent(session.call_id)}`,
+      {
+        headers: { Authorization: `Bearer ${key}` },
+        handshakeTimeout: 3000,
+        maxPayload: 2_000_000,
+      },
+    );
+    socket.on("open", () => {
+      transportOpen = true;
+    });
+    socket.on("message", receive);
+    socket.on("error", (error) => {
+      if (closed) return;
+      const status = /^Unexpected server response: (\d{3})$/.exec(
+        error.message,
+      )?.[1];
+      if (!readinessPublished && status === "404") {
+        retrying = true;
+        retryTimer = setTimeout(attach, 250);
+        return;
+      }
+      console.info("Voice supervisor transport failed", {
+        status: status ? Number(status) : undefined,
+        timeout: error.message === "Opening handshake has timed out",
+      });
+      unknownUsage = true;
+      stop("supervisor_error");
+    });
+    socket.on("close", () => {
+      if (!retrying) stop("connection_ended");
+    });
+  };
   let checking = false;
   const heartbeat = setInterval(async () => {
     if (checking || closed) return;
@@ -199,10 +215,17 @@ export default async function handler(request: Request) {
     }
   }, 2000);
   try {
+    const started = await db
+      .from("voice_test_sessions")
+      .update({ worker_started_at: new Date().toISOString() })
+      .eq("id", input.id);
+    if (started.error) stop("accounting_unavailable");
+    else attach();
     await completed;
   } finally {
     clearTimeout(deadline);
     clearTimeout(readyTimeout);
+    clearTimeout(retryTimer);
     clearInterval(heartbeat);
     // Hangup works for WebRTC as well as SIP. Retry boundedly; retain funds on uncertainty.
     let terminated = false;
@@ -221,12 +244,12 @@ export default async function handler(request: Request) {
         /* A later bounded attempt may succeed. */
       }
     }
-    socket.terminate();
+    socket?.terminate();
     if (terminated)
       await db.rpc("finish_voice_test", {
         target_id: input.id,
         target_cents: !readinessPublished
-          ? 0
+          ? session.reserved_cents
           : unknownUsage || inflight
             ? session.reserved_cents
             : Math.min(session.reserved_cents, charged),
