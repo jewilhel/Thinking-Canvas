@@ -49,6 +49,8 @@ export function LiveVoice({ canvasId, userId }: Props) {
   const [muted, setMuted] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [validating, setValidating] = useState(false);
+  const [validation, setValidation] = useState("");
   const [remaining, setRemaining] = useState(600);
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [showCaptions, setShowCaptions] = useState(false);
@@ -67,6 +69,7 @@ export function LiveVoice({ canvasId, userId }: Props) {
     }
   });
   const recordsRef = useRef(records);
+  const validationRequest = useRef(0);
   const [invoker, setInvoker] = useState<HTMLButtonElement | null>(null);
   const connection = useRef<SupervisedVoice | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -79,6 +82,8 @@ export function LiveVoice({ canvasId, userId }: Props) {
   const restartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const responding = useRef(false);
+  const playing = useRef(false);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasSpoken = useRef(false);
   const currentVoice = useRef(draft.voice);
   const [restartRequired, setRestartRequired] = useState(false);
@@ -89,7 +94,8 @@ export function LiveVoice({ canvasId, userId }: Props) {
     reservedCents?: number;
     build?: string;
   }>({ enabled: false, reason: "Checking live availability…" });
-  const connected = !["Ended", "Connecting"].includes(status);
+  const connecting = ["Connecting", "Waiting for microphone"].includes(status);
+  const connected = status !== "Ended" && !connecting;
   const persist = (next: VoiceTestRecord[]) => {
     recordsRef.current = next;
     setRecords(next);
@@ -120,6 +126,7 @@ export function LiveVoice({ canvasId, userId }: Props) {
     }
   };
   const finish = () => {
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
     if (restartTimer.current) clearTimeout(restartTimer.current);
     if (updateTimeout.current) clearTimeout(updateTimeout.current);
     pendingUpdate.current = null;
@@ -129,6 +136,7 @@ export function LiveVoice({ canvasId, userId }: Props) {
     connection.current?.close();
     connection.current = null;
     responding.current = false;
+    playing.current = false;
     setStatus("Ended");
     setMuted(false);
     persist(
@@ -201,7 +209,13 @@ export function LiveVoice({ canvasId, userId }: Props) {
   }, []);
   const sendPending = () => {
     const update = pendingUpdate.current;
-    if (!update || update.sent || !connection.current || responding.current)
+    if (
+      !update ||
+      update.sent ||
+      !connection.current ||
+      responding.current ||
+      playing.current
+    )
       return;
     update.sent = true;
     const session = buildVoiceSession(update.settings);
@@ -243,27 +257,25 @@ export function LiveVoice({ canvasId, userId }: Props) {
       setStatus("Thinking");
     }
     if (event.type === "output_audio_buffer.started") {
+      playing.current = true;
       hasSpoken.current = true;
       setStatus("Speaking");
     }
     if (
       event.type === "output_audio_buffer.stopped" ||
-      event.type === "output_audio_buffer.cleared" ||
-      (event.type === "response.done" && draft.output === "text")
+      event.type === "output_audio_buffer.cleared"
     ) {
-      responding.current = false;
-      setStatus("Listening");
+      playing.current = false;
+      setStatus(responding.current ? "Thinking" : "Listening");
       sendPending();
     }
     if (event.type === "input_audio_buffer.speech_started")
       setStatus("Listening");
-    if (
-      event.type === "response.done" &&
-      object(event.response).status === "failed"
-    ) {
+    if (event.type === "response.done") {
       responding.current = false;
-      setStatus("Listening");
-      setError("OpenAI could not complete that response. You can try again.");
+      if (!playing.current) setStatus("Listening");
+      if (object(event.response).status === "failed")
+        setError("OpenAI could not complete that response. You can try again.");
       sendPending();
     }
     const human =
@@ -290,16 +302,20 @@ export function LiveVoice({ canvasId, userId }: Props) {
         /^[a-zA-Z0-9_.-]{1,100}$/.test(upstream.code)
           ? upstream.code
           : "provider_error";
+      const rejected =
+        pendingUpdate.current && upstream.event_id === pendingUpdate.current.id
+          ? pendingUpdate.current
+          : null;
       log({
         status: "rejected",
-        ...(pendingUpdate.current
-          ? { requestId: pendingUpdate.current.id }
-          : {}),
+        ...(rejected ? { requestId: rejected.id } : {}),
         errorCode: code,
       });
-      if (updateTimeout.current) clearTimeout(updateTimeout.current);
-      pendingUpdate.current = null;
-      setPending(false);
+      if (rejected) {
+        if (updateTimeout.current) clearTimeout(updateTimeout.current);
+        pendingUpdate.current = null;
+        setPending(false);
+      }
       setError(
         `OpenAI rejected an operation (${code}). The confirmed settings remain visible below.`,
       );
@@ -342,8 +358,22 @@ export function LiveVoice({ canvasId, userId }: Props) {
         draft,
         receive,
         (state) => {
-          if (state === "disconnected") setStatus("Reconnecting");
-          if (state === "connected") setStatus("Listening");
+          if (state === "microphone") setStatus("Waiting for microphone");
+          if (state === "connecting") setStatus("Connecting");
+          if (state === "disconnected") {
+            setStatus("Reconnecting");
+            if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+            reconnectTimer.current = setTimeout(() => {
+              setError(
+                "The connection did not recover within 10 seconds. Start again when ready.",
+              );
+              finishRef.current();
+            }, 10000);
+          }
+          if (state === "connected") {
+            if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+            setStatus("Listening");
+          }
           if (state === "failed" || state === "closed") {
             setError(
               "The connection ended. Your captions remain here until you leave or reload.",
@@ -402,15 +432,11 @@ export function LiveVoice({ canvasId, userId }: Props) {
         onKeyDown={(e) => e.stopPropagation()}
       >
         <Button
-          onClick={() =>
-            status === "Connecting" ? finish() : setConsent(true)
-          }
-          disabled={
-            connected || (!availability.enabled && status !== "Connecting")
-          }
+          onClick={() => (connecting ? finish() : setConsent(true))}
+          disabled={connected || (!availability.enabled && !connecting)}
         >
           <Mic aria-hidden="true" />
-          {status === "Connecting" ? "Cancel connection" : "Live"}
+          {connecting ? "Cancel connection" : "Live"}
         </Button>
         <span role="status" className="text-xs">
           {muted && connected ? "Muted" : status}
@@ -473,9 +499,38 @@ export function LiveVoice({ canvasId, userId }: Props) {
             </p>
           )}
           <VoiceSettingsPanel
+            validating={validating}
+            validation={validation}
+            onValidate={() => {
+              const version = ++validationRequest.current;
+              setValidating(true);
+              setValidation("");
+              void fetch(`/api/canvases/${canvasId}/voice/validate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(draft),
+              })
+                .then(async (response) => {
+                  const result = await response.json();
+                  if (version !== validationRequest.current) return;
+                  setValidation(
+                    response.ok
+                      ? "OpenAI accepted this configuration. No audio session was opened; active settings will be confirmed again when you connect."
+                      : (result.error ?? "Configuration check failed."),
+                  );
+                })
+                .catch(() =>
+                  setValidation(
+                    "Configuration check could not reach the server.",
+                  ),
+                )
+                .finally(() => setValidating(false));
+            }}
             draft={draft}
             onDraft={(next) => {
               setDraft(next);
+              validationRequest.current++;
+              setValidation("");
               setRestartRequired(
                 Boolean(
                   connection.current &&

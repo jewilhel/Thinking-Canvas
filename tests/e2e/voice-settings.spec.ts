@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 const canvasId = "20000000-0000-4000-8000-000000000001";
 test("tuning panel preserves presets and distinguishes drafts from confirmed settings", async ({
@@ -52,6 +53,20 @@ test("tuning panel preserves presets and distinguishes drafts from confirmed set
   await expect(page.getByLabel("Silence before responding (ms)")).toHaveValue(
     "900",
   );
+  const downloadPromise = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Export presets", exact: true })
+    .click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const exported = JSON.parse(await readFile(path!, "utf8"));
+  expect(exported).toEqual([
+    expect.objectContaining({
+      name: "QA pause",
+      settings: expect.objectContaining({ silenceMs: 900 }),
+    }),
+  ]);
 });
 test("unauthenticated callers cannot open supervised sessions", async ({
   request,

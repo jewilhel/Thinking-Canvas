@@ -21,8 +21,11 @@ export function downloadVoiceJson(name: string, value: unknown) {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = name;
+  anchor.hidden = true;
+  document.body.appendChild(anchor);
   anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 type Props = {
   draft: VoiceSettings;
@@ -30,6 +33,9 @@ type Props = {
   effective: Record<string, unknown> | null;
   pending: boolean;
   connected: boolean;
+  onValidate: () => void;
+  validating: boolean;
+  validation: string;
   onApply: () => void;
   onRestart: () => void;
   restartRequired: boolean;
@@ -106,6 +112,28 @@ export function VoiceSettingsPanel(p: Props) {
   );
   return (
     <div className="space-y-5 text-zinc-900">
+      <div className="space-y-2">
+        <Button
+          variant="outline"
+          disabled={
+            p.connected ||
+            p.validating ||
+            !voiceSettingsSchema.safeParse(p.draft).success
+          }
+          onClick={p.onValidate}
+        >
+          {p.validating ? "Checking configuration…" : "Check API compatibility"}
+        </Button>
+        <p className="text-sm text-zinc-600">
+          Checks these settings using the deployed OpenAI connection, without
+          microphone access or opening a media call.
+        </p>
+        {p.validation && (
+          <p role="status" className="text-sm">
+            {p.validation}
+          </p>
+        )}
+      </div>
       <p className="text-sm text-zinc-600">
         Draft values become active only after OpenAI confirms them. Closing this
         panel keeps the call connected.

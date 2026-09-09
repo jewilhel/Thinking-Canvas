@@ -20,7 +20,7 @@ export async function connectSupervisedVoice(
   canvasId: string,
   settings: VoiceSettings,
   onEvent: (event: unknown) => void,
-  onState: (state: RTCPeerConnectionState) => void,
+  onState: (state: RTCPeerConnectionState | "microphone") => void,
   signal: AbortSignal,
   restartOf?: string,
   dependencies: RealtimeDependencies = {
@@ -58,12 +58,14 @@ export async function connectSupervisedVoice(
   };
   signal.addEventListener("abort", close, { once: true });
   try {
+    onState("microphone");
     stream = await dependencies.getUserMedia({ audio: true });
     if (closed) {
       stream.getTracks().forEach((track) => track.stop());
       signal.throwIfAborted();
       throw new Error("Connection cancelled.");
     }
+    onState("connecting");
     const track = stream.getAudioTracks()[0];
     if (!track) throw new Error("No microphone is available.");
     audio.autoplay = true;
