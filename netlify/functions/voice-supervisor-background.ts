@@ -83,7 +83,14 @@ export default async function handler(request: Request) {
   socket.on("open", () => {
     transportOpen = true;
   });
-  socket.on("error", () => {
+  socket.on("error", (error) => {
+    const status = /^Unexpected server response: (\d{3})$/.exec(
+      error.message,
+    )?.[1];
+    console.info("Voice supervisor transport failed", {
+      status: status ? Number(status) : undefined,
+      timeout: error.message === "Opening handshake has timed out",
+    });
     unknownUsage = true;
     stop("supervisor_error");
   });
