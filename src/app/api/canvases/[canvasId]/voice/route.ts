@@ -161,36 +161,34 @@ export async function POST(request: Request, context: Context) {
   let stage = "configuration";
   let supervisorStatus: number | undefined;
   try {
-    const provider = voiceProvider();
-    const secret = await provider.realtime.clientSecrets.create({
-      expires_after: { anchor: "created_at", seconds: 60 },
-      session: (() => {
-        const session = buildVoiceSession({
-          ...parsed.data.settings,
-          automaticResponse: false,
-        });
-        return {
-          ...session,
-          audio: {
-            ...session.audio,
-            input: {
-              ...session.audio.input,
-              noise_reduction: session.audio.input.noise_reduction ?? undefined,
-              transcription: session.audio.input.transcription ?? undefined,
-            },
-          },
-        };
-      })(),
+    const session = buildVoiceSession({
+      ...parsed.data.settings,
+      automaticResponse: false,
     });
+    const form = new FormData();
+    form.set("sdp", parsed.data.sdp);
+    form.set(
+      "session",
+      JSON.stringify({
+        ...session,
+        audio: {
+          ...session.audio,
+          input: {
+            ...session.audio.input,
+            noise_reduction: session.audio.input.noise_reduction ?? undefined,
+            transcription: session.audio.input.transcription ?? undefined,
+          },
+        },
+      }),
+    );
     stage = "provider_handshake";
     providerAttempted = true;
     const response = await fetch("https://api.openai.com/v1/realtime/calls", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${secret.value}`,
-        "Content-Type": "application/sdp",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
-      body: parsed.data.sdp,
+      body: form,
       signal: AbortSignal.timeout(15000),
     });
     rejectedHandshake = !response.ok;
