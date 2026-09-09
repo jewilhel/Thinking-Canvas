@@ -163,12 +163,20 @@ export default async function handler(request: Request) {
       `wss://api.openai.com/v1/realtime?call_id=${encodeURIComponent(session.call_id)}`,
       {
         headers: { Authorization: `Bearer ${key}` },
-        handshakeTimeout: 3000,
+        handshakeTimeout: 8000,
         maxPayload: 2_000_000,
       },
     );
     socket.on("open", () => {
       transportOpen = true;
+      // Sideband attachment need not replay session.created. Request the current
+      // configuration without changing it, then validate session.updated.
+      socket?.send(
+        JSON.stringify({
+          type: "session.update",
+          session: { type: "realtime" },
+        }),
+      );
     });
     socket.on("message", receive);
     socket.on("error", (error) => {
@@ -176,7 +184,11 @@ export default async function handler(request: Request) {
       const status = /^Unexpected server response: (\d{3})$/.exec(
         error.message,
       )?.[1];
-      if (!readinessPublished && status === "404") {
+      if (
+        !readinessPublished &&
+        (status === "404" ||
+          error.message === "Opening handshake has timed out")
+      ) {
         retrying = true;
         retryTimer = setTimeout(attach, 250);
         return;
