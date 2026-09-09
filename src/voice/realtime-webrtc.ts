@@ -72,68 +72,72 @@ export async function connectRealtimeVoice(
   const token = tokenSchema.parse(tokenBody);
 
   const peer = dependencies.createPeerConnection();
-  const audio = dependencies.createAudioElement();
-  audio.autoplay = true;
-  peer.ontrack = (event) => {
-    audio.srcObject = event.streams[0] ?? null;
-    void audio.play().catch(() => undefined);
-  };
-
-  const microphone = await dependencies.getUserMedia({ audio: true });
-  const track = microphone.getAudioTracks()[0];
-  if (!track) {
-    microphone.getTracks().forEach((candidate) => candidate.stop());
+  let audio: HTMLAudioElement | undefined;
+  let microphone: MediaStream | undefined;
+  let dataChannel: RTCDataChannel | undefined;
+  let closed = false;
+  const disconnect = () => {
+    if (closed) return;
+    closed = true;
+    peer.ontrack = null;
+    dataChannel?.close();
+    microphone?.getTracks().forEach((track) => track.stop());
     peer.close();
-    throw new Error("No microphone audio track is available.");
-  }
-  peer.addTrack(track, microphone);
-
-  const dataChannel = peer.createDataChannel("oai-events");
-  dataChannel.addEventListener("message", (event) => {
-    try {
-      onEvent(JSON.parse(event.data as string));
-    } catch {
-      onEvent(event.data);
-    }
-  });
-
-  const offer = await peer.createOffer();
-  await peer.setLocalDescription(offer);
-  if (!offer.sdp) throw new Error("The browser did not create an SDP offer.");
-
-  const sdpResponse = await dependencies.fetch(
-    "https://api.openai.com/v1/realtime/calls",
-    {
-      method: "POST",
-      body: offer.sdp,
-      headers: {
-        Authorization: `Bearer ${token.value}`,
-        "Content-Type": "application/sdp",
+    if (audio) audio.srcObject = null;
+  };
+  try {
+    audio = dependencies.createAudioElement();
+    audio.autoplay = true;
+    peer.ontrack = (event) => {
+      if (closed || !audio) return;
+      audio.srcObject = event.streams[0] ?? null;
+      void audio.play().catch(() => undefined);
+    };
+    microphone = await dependencies.getUserMedia({ audio: true });
+    const track = microphone.getAudioTracks()[0];
+    if (!track) throw new Error("No microphone audio track is available.");
+    peer.addTrack(track, microphone);
+    dataChannel = peer.createDataChannel("oai-events");
+    dataChannel.addEventListener("message", (event) => {
+      if (closed) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(event.data as string);
+      } catch {
+        return;
+      }
+      onEvent(parsed);
+    });
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    if (!offer.sdp) throw new Error("The browser did not create an SDP offer.");
+    const sdpResponse = await dependencies.fetch(
+      "https://api.openai.com/v1/realtime/calls",
+      {
+        method: "POST",
+        body: offer.sdp,
+        headers: {
+          Authorization: `Bearer ${token.value}`,
+          "Content-Type": "application/sdp",
+        },
       },
-    },
-  );
-  if (!sdpResponse.ok) {
-    microphone.getTracks().forEach((candidate) => candidate.stop());
-    peer.close();
-    throw new Error("OpenAI rejected the Realtime WebRTC connection.");
+    );
+    if (!sdpResponse.ok)
+      throw new Error("OpenAI rejected the Realtime WebRTC connection.");
+    await peer.setRemoteDescription({
+      type: "answer",
+      sdp: await sdpResponse.text(),
+    });
+    return {
+      sessionId: token.sessionId,
+      model: token.model,
+      dataChannel,
+      disconnect,
+    };
+  } catch (error) {
+    disconnect();
+    throw error;
   }
-
-  await peer.setRemoteDescription({
-    type: "answer",
-    sdp: await sdpResponse.text(),
-  });
-
-  return {
-    sessionId: token.sessionId,
-    model: token.model,
-    dataChannel,
-    disconnect() {
-      dataChannel.close();
-      microphone.getTracks().forEach((candidate) => candidate.stop());
-      peer.close();
-      audio.srcObject = null;
-    },
-  };
 }
 
 export async function connectRealtimeNarration(

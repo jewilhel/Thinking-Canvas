@@ -1,0 +1,336 @@
+# Milestone 10 — Live conversation
+
+Status: Approved for implementation
+
+Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
+
+Plan owner: Product owner
+
+Last updated: 2026-09-09
+
+## Goal and user-visible outcome
+
+An authenticated participant can start a live conversation from the canvas, speak with the primary AI while drawing and editing, continue typing through existing comments, and see the AI leave relevant contextual comments or make permitted, undoable changes without ending the call. Listening, speaking, mute, reconnect, captions, and leave are clear and keyboard accessible. Each live voice session connects one participant with the primary AI. Remote-human voice is deferred under approved D1; existing multiplayer canvas editing and typed comments remain available.
+
+Approved 2026-09-08: deliver AI-only voice for this milestone to reduce cost and complexity. `FR-010` and human-transport implementation are deferred and remain unchecked. Closure applies to the remaining active requirements and unchanged AS-001 exit gate, not to delivery of remote-human voice.
+
+## Requirements covered
+
+Requirements retained verbatim for traceability; FR-010 is deferred and excluded from the active exit criteria. From [Milestone 10 in the master ledger](../../thinking-canvas-implementation-plan.md#milestone-10--live-conversation):
+
+- **FR-008 — Prominent live control.** A persistent, keyboard-accessible canvas control starts or joins a live voice conversation and clearly indicates listening, speaking, muted, reconnecting, and ended states.
+- **FR-009 — AI live voice.** A participant can hold a low-latency voice conversation with the primary AI collaborator.
+- **FR-010 — Remote-human model.** The same conversation surface and participant model supports remote human collaborators; transport may use a standards-based peer or room implementation approved during the voice spike.
+- **FR-011 — Type during voice.** A participant can send and receive typed messages while voice remains connected.
+- **FR-012 — AI works while speaking.** The AI can read, comment on, or change the canvas within permission without ending its live session.
+- **FR-013 — Important interruption judgment.** Approved conversation evaluations show that the AI interrupts active speech only for defined timely and important conditions.
+- **FR-014 — Natural-pause deferral.** Lower-urgency observations queue and surface at a detected conversational pause.
+
+Supporting work retained for traceability; defining and testing remote-human transport is deferred under D1:
+
+- Define privacy copy, microphone consent, recording/transcript retention, and deletion behavior before enabling voice in production.
+- Provide mute, leave, device-error recovery, captions/transcript visibility, and text-only fallback.
+- Define and test the remote-human voice transport; OpenAI Realtime must not be assumed to provide a general human-to-human room.
+- Keep high-frequency audio out of PostgreSQL and Supabase Realtime Broadcast.
+- Measure connection time, response latency, interruption timing, reconnect success, and session failure rate.
+
+Exact exit gate: “Complete the sourced **Live co-thinking** acceptance scenario on the Netlify preview deployment with typed messaging, an AI canvas action, pause behavior, and recovery from a dropped connection.”
+
+Exact acceptance scenario: **AS-001 — Live co-thinking.** While a user draws connected ideas in live voice, the AI can leave a relevant contextual comment without ending the conversation and defers non-urgent observations while the user speaks.
+
+Cross-cutting boundaries: `PD-001`, `PD-005`, `PD-006`, `PD-007`, `PD-008`, `PD-009`, `PD-012`; one primary AI, comments-only durable conversation, server authorization, RLS, semantic grounding, atomic undo, and temporary disconnect recovery.
+
+## Current baseline and evidence reconciliation
+
+- Planning starts on clean `main` at `91b6031f81f8ebdcda8ba6135928b7f77b8248a3`. GitHub readback confirms [PR #15](https://github.com/jewilhel/Thinking-Canvas/pull/15) merged on 2026-09-08. The [Milestone 9 record](milestone-09-guided-canvas-stories.md) is Closed with explicit product-owner approval, protected CI `34284737830`, and matching preview `6aa0886b4f424f00087afd1c`. Those tests and hosted scenarios are recorded predecessor evidence, not fresh tests performed during this planning pass.
+- The master opening status and date lag its Milestone 9 section. Its Milestone 9 evidence also still says merge is separate, though merge has now occurred. Propose correcting these narrative metadata statements with the approved plan; no completion checkbox changes are needed to identify the next milestone.
+- Milestones 0–7 are recorded Closed. Milestone 8 remains product accepted and merged with engineering exit verification pending. Its role/reconnect, responsive/accessibility, performance, and deferred pagination obligations are not waived by this plan. Its detailed closure section also contains historical pending statements. Keep that reconciliation separate from Milestone 10 acceptance.
+- The [Milestone 0 record](milestone-00-architecture-spikes-and-project-foundation.md) proves an earlier hosted AI WebRTC conversation and short-lived credentials. It explicitly deferred the human transport decision. The spike does not prove product voice controls, typed-during-voice, interruption judgment, or a human room.
+- `src/voice/realtime-token.ts`, `realtime-session.ts`, and `realtime-webrtc.ts` implement credential creation and a microphone connection. The connector still calls `/api/spikes/realtime/token`; the route checks membership but does not enforce the full product AI policy or voice budget. Cleanup is incomplete on some rejected connection steps, and there is no product mute/recovery controller. Reuse tested parts, not the spike UI or its access contract unchanged.
+- Existing AI invocations are comment-linked in `src/ai/collaborator-contract.ts` and `collaborator-run-service.ts`. `src/components/comments/comment-workspace.tsx` preserves thread drafts and active service state across panel visibility changes. Voice must integrate with these lifecycles.
+- Milestone 9 now uses cached synthesized narration in private storage through `src/stories/narration-audio-service.ts`; its earlier output-only Realtime proposal was superseded. That approval does not cover conversation recording or microphone retention.
+- `package.json`, `netlify.toml`, and `.github/workflows/ci.yml` provide the existing Next.js 16.3, OpenAI SDK, Supabase, unit, database/RLS, build, and Chromium/accessibility gates. No new hosted voice relay is configured by this draft.
+
+## Decisions required
+
+D1 and D2’s experiment-first workflow are approved. D2’s final defaults, interruption policy, and permanent UI remain undecided until hands-on tuning. D3’s no-audio and request-only document retention policy is approved. D4’s participant permission model is approved. D5’s four latency targets are approved provisionally for measurement and tuning; the initial session limit is approved at 10 minutes and the initial voice-testing budget at $10 USD per day; remaining acceptance-budget details, operational retention, and complete implementation is approved through each slice until product-owner feedback is needed.
+
+### D1 — Human voice transport and supported room size (`PD-001`)
+
+Owner: Product owner. Status: Approved 2026-09-08 — option 3, AI voice only for now.
+
+Deliver one participant speaking with the primary AI per voice session. Explicitly phase remote-human voice after AI voice to avoid its additional costs and complexity. No human room, TURN relay provisioning, room service, coordinator/handoff, or multi-speaker audio work belongs to this milestone.
+
+The master ledger records this decision under `PD-001`. `FR-010` and its human-transport supporting item remain unchecked and deferred, not delivered. No date, provider, or room size is selected for later human voice. Existing typed human collaboration and simultaneous canvas editing remain in place. Revisit transport only when the product owner explicitly promotes human voice back into scope.
+
+This decision approves the scope revision only; the complete plan remains subject to the remaining decision reviews.
+
+### D2 — Temporary live conversation tuning panel (`PD-005`)
+
+Owner: Product owner. Status: Experiment-first workflow approved 2026-09-08. Final API defaults, important-interruption examples, custom timing behavior, and permanent UI controls remain pending hands-on experimentation.
+
+Add a temporary **Voice settings** button that opens and closes a live conversation control panel. The product owner can experiment with all applicable Realtime API session settings, compare how natural the conversation feels, and choose good defaults before deciding which settings remain user-facing and which become fixed system configuration. Opening or dismissing the panel must not start, stop, or reset the call. The persistent Live control remains separate.
+
+Begin with native Realtime behavior as the comparison baseline. Do not preselect the earlier proposed extra 800 ms pause guard, urgency categories, or a custom replacement for native turn-taking as final behavior. Distinguish API controls from any experimental application controls. Add custom timing only when an observed integration need warrants it, and keep that distinction visible in the experiment record. FR-013/FR-014 and PD-005 remain uncompleted until their policy and acceptance examples are settled and verified.
+
+#### Control coverage and API compatibility
+
+Inventory the installed SDK and current official session API before implementing the panel. Record every session-setting family as editable, between-turns, restart-required, unsupported by the selected model/transport, or server-controlled, with an explanation; do not silently omit settings or invent knobs that the active API does not support. Browser microphone/device settings are labeled separately from OpenAI settings.
+
+The initial control inventory includes:
+
+- Turn detection: semantic VAD, server VAD, and off/manual; semantic eagerness; server VAD activation threshold, silence duration, prefix padding, and supported idle timeout.
+- Automatic response creation and interruption of AI output when user speech starts. Manual mode provides explicit commit/respond/cancel controls so turning off automatic behavior does not leave an unusable session.
+- Output voice and speech speed; instructions for conversational style, verbosity, and behavior. Instructions are guidance, not enforceable permissions.
+- Input noise reduction; transcription enablement, language, prompt, and supported transcription model; clearly distinguish input transcription from the model’s direct audio understanding.
+- Advanced supported configuration: output modality, output-token limit, reasoning effort where applicable, context truncation, prompt configuration, diagnostic includes, and supported tool-choice/parallelism settings. Show the actual session model and permit comparison only among server-approved, account-available models; do not silently change the configured default.
+- Transport-fixed audio formats and server-owned tool definitions, authority, privacy/tracing, and budget ceilings are visible as constrained settings rather than unrestricted overrides. D3’s approved content-retention policy and pending operational retention decisions still govern provider use; experimentation does not grant new canvas authority or enable provider tracing automatically.
+
+Show plain-language explanations and exact API field names in expandable detail. Offer provider-default/unset values where supported. Render mode-specific controls only where applicable and preserve draft choices when switching modes without sending incompatible fields.
+
+#### Applying settings and comparing results
+
+Keep draft settings distinct from the API-confirmed effective settings. **Apply** validates the full configuration and waits for `session.updated` or the new session’s confirmed state; errors remain visible and the previous effective state remains clear. Serialize updates so delayed acknowledgments cannot overwrite a newer selection. Do not label a rejected or pending update as active.
+
+Label settings that can change immediately, between responses, or only on restart. Queue speech-speed changes until between turns. Once a voice has emitted audio, changing it requires a clearly labeled restart action; never hang up silently to apply it. Restart safely releases the old connection and explains whether live conversation context will reset. Verify model/session mutability against the selected endpoint during Slice 1.
+
+Provide **Reset to baseline**, named local presets, and settings-only copy/export/import for repeatable comparisons. Validate imported presets against the same schema and server constraints. Presets contain configuration only, never session credentials, microphone recordings, transcript history, or canvas content. Keep configuration local to the testing participant/browser; do not overwrite another collaborator’s settings or promote experiments to shared defaults.
+
+Display concise session/speech state, effective settings, update errors, and timing measurements to explain what changed. A trial record captures configuration, model, device/browser, scenario, perceived naturalness, relevant timing, and product-owner notes. Run the same short conversation under multiple presets, including hesitations, interruptions, background noise, and canvas-action completion.
+
+#### Inspectable post-run settings record — approved 2026-09-08
+
+Capture an inspectable settings record for each tuning test run, including runs that fail or are stopped. Keep it available in a **Test runs** view after the call and across panel closure/reload, with human-readable details and settings-only JSON copy/download. Codex must be able to inspect that view or the exported record during review; browser console output alone is insufficient. Store these records locally for the testing participant, provide explicit delete/clear controls, and explain local storage limitations. A settings record is not an audio or transcript recording.
+
+Record the run identifier, start/end times, application commit/deploy when available, model, preset name/version, baseline values, final API-confirmed effective values, and a timestamped sequence of requested/accepted/rejected changes. Preserve unset/provider-default distinctions. Include any setting still pending or requiring restart when the run ended, and group restarts with their source experiment so we can identify which settings actually produced the observed behavior. Retain browser/device class, timing metrics, sanitized error codes, and manually entered test notes to support reproducible comparisons and bug investigation.
+
+Use an allowlisted settings schema rather than dumping provider events or the complete session object. Include explicit tuning instructions, but exclude injected canvas content, dynamic conversation prompts, transcripts, audio, tokens, credentials, raw SDP/ICE, and provider payloads. Represent protected server settings by non-secret values or version identifiers where necessary; label omitted values honestly. If saving the local run record fails, show that failure and offer copy/download instead of claiming it was captured. Successful tuning may be promoted into proposed final features/defaults only after product-owner review.
+
+Deliver the panel with Slice 2 and stop at a hosted hands-on tuning checkpoint. Retain it through later integration tests so defaults can be retuned as canvas actions are added. After experimentation, present the chosen defaults and proposed permanent controls for explicit product-owner approval; then remove or gate the temporary panel as agreed. The complete milestone implementation was subsequently approved on 2026-09-09; final UI choices still follow hands-on tuning.
+
+### D3 — Consent, captions, and requested canvas documents (`PD-008`)
+
+Owner: Product owner. Status: Content-retention policy approved 2026-09-08 — no saved audio; ordinary comments; save a transcript, summary, or requested document only on explicit request. Operational metadata retention and final provider-specific privacy copy remain to be settled before production enablement.
+
+Do not record or store microphone/conversation audio in the application, including tuning logs. Typed comments and deliberate AI canvas requests/results remain ordinary durable comments with existing access, resolve, deletion, and undo behavior. Do not automatically persist every spoken turn, create a transcript document, or save a summary when a call ends.
+
+Keep the available live transcript in bounded volatile memory, separately from the provider’s rolling context. Preserve it through an ordinary call end or settings restart within the still-open canvas so the participant can request a document after testing; discard it when cleared, on canvas departure, sign-out, or reload. Communicate this temporary availability. If the memory limit is approached, warn before discarding earlier turns and offer a requested save; do not silently truncate a later “full transcript” export. An ended call must release audio resources independently of retaining this text in memory.
+
+An explicit request such as “save the full transcript,” “summarize this conversation in a new document,” or “make a design brief from our discussion” authorizes creating a new ordinary first-class canvas document, subject to current actor and AI permissions. A design brief is document content and structure, not a new specialized document type. Do not require a second save confirmation when the request already specifies the save and permissions allow it. No request means no saved document.
+
+For a transcript, preserve available human/AI turn order and speaker labels; do not replace it with a paraphrase or invent missing words. Disclose transcription gaps, interrupted/inaudible output, disabled transcription intervals, or unavailable earlier sessions instead of claiming a complete transcript. If exact full coverage is unavailable, explain the limitation and let the participant choose whether to save the available portion. A summary or design brief uses the available discussion as its source and separates agreed decisions from open questions rather than inventing missing requirements.
+
+Use the existing server-authorized document/canvas command and durable persistence boundaries for creation, with a stable save-request ID so retries or reconnect cannot create duplicate documents. Revalidate the requesting participant, AI authority, source session, and canvas immediately before saving. Lower authority must not gain document-writing privileges; offer an allowed proposal when creation is not permitted. Success means a named new document exists, is readable and editable, is durably saved, and can be reopened after reload. Failure preserves the available source text for retry while the canvas remains open. Conversation saving must not widen an object- or range-scoped thread silently; treat the explicit new-document request as a separately validated creation action.
+
+Saved documents follow ordinary canvas membership, document editing/history, deletion, and AI context rules. Explain that they are visible to authorized canvas collaborators. Deleting a document or source comment excludes the deleted content from subsequent AI context under the existing lifecycle; retain no hidden transcript copy in voice audit records. Requested document content remains durable until the user changes or deletes it through those normal controls.
+
+Explain before starting that speech is transmitted to the configured voice provider. Display the AI’s presence and require microphone consent before forwarding audio. Other canvas collaborators do not join or hear this AI-only voice session. Application retention is separate from provider retention; verify actual project controls before final privacy copy. Cached story narration retains its separate approved lifecycle.
+
+The earlier proposed 30-day operational session-audit retention was not included in the user’s approval and remains a proposal. Keep operational logs metadata-only. The requested tuning-settings records are separate, locally inspectable records with explicit clear/export controls and no conversation content.
+
+### D4 — Participant authority and conversation placement
+
+Owner: Product owner. Status: Participant permission model approved 2026-09-08; enforce during Slice 2 access rules and Slice 3 integration.
+
+Approved AI-only permission model: owners/editors may start their own AI conversation; commenters may start one with comment-only AI capabilities; viewers retain read-only canvas access without starting voice. Only the owner changes AI enablement/authority. Each session uses its initiating participant's current permissions. Disabling AI ends the voice session and stops its media/context access and pending work. Commenters cannot create or edit canvas objects or documents through voice. Every operation remains bounded by current actor permissions and the owner-selected AI authority.
+
+Keep the persistent Live control in collaboration chrome, visible during document focus. Its expandable controls show participants, captions, mute, device recovery, and leave. Existing Comments provide typed messaging and durable AI interaction; opening/closing panels does not hang up. Starting from a selected comment retains that thread's scope; without one, a deliberate canvas request creates an ordinary world-space thread. Automatic context changes must not silently widen an existing thread's mutation scope.
+
+The approval selects the permission model above. The described control placement remains the proposed implementation approach; no second saved call chat or expanded role authority is introduced.
+
+### D5 — Acceptance budgets and session limits (`PD-007`)
+
+Owner: Product owner. Status: Four provisional latency targets approved 2026-09-09 — connection within 5 seconds excluding microphone permission, first ordinary reply audio within 2 seconds after detecting the completed turn, interruption stop within 300 ms, and recovery within 10 seconds after network return. Measure and tune against these targets; they are not rigid final acceptance thresholds, measured results, or approval of all launch budgets. The initial session limit is approved at 10 minutes. The initial voice-testing budget is approved at $10 USD per day. The proposed statistical/fixture criteria below remain pending final acceptance review.
+
+Proposed measurement protocol, not yet approved: on the product owner's current Mac, desktop/tablet layouts, a stable broadband connection, and a 1,000-object fixture: connect p95 at most 5 seconds excluding the permission prompt; uncomplicated spoken response first audio p95 at most 2 seconds after end-of-turn; speech interruption stop p95 at most 300 ms; reconnect p95 at most 10 seconds after network return. Run at least 20 connection/response samples and 10 recovery samples, with at least 19/20 connection successes and 9/10 recovery successes. Measure canvas-action completion separately against the existing AI budget; do not present an acknowledgment as completion. Retain the earlier 30 fps canvas baseline during active voice.
+
+Approved 2026-09-09: start conservatively with a 10-minute live session cap and increase it only if the product owner requests a change after testing. Show remaining time and warn before expiry; end the voice connection at the limit and offer an explicit start-another-session action, with no automatic renewal. Preserve available in-memory text in the still-open canvas under D3 so the participant can request a document after the call ends. Reconnects and tuning-driven restarts within the same logical session retain its original expiry rather than silently resetting the timer. Record limit/expiry events in the tuning run record and verify enforcement when the panel is closed or browser timers are delayed. Propose one active AI voice session per user/canvas. Approved 2026-09-09: $10 USD per day for initial voice testing. Implementation interpretation: one aggregate testing budget across sessions, canvases, and participating test identities, resetting at midnight America/Los_Angeles; it is not $10 per session or per user. Include Realtime audio, any input transcription, and voice-triggered Responses/document generation in the testing allowance. This does not authorize unrelated provider spending or a production budget. Show consumed/reserved/remaining budget and the next reset in the tuning panel and test-run records.
+
+Before provider enablement, verify current account/model pricing and implement atomic server reservations plus bounded calls. Concurrent sessions, reconnects, retries, model switches, or browser restarts must not reset or double-spend the daily allowance. Reserve conservatively for in-flight usage, reconcile confirmed usage without treating missing data as zero, and stop/reject new billable work before the budget is exhausted. Retain text/canvas access and available unsaved transcript on budget termination. If a selected provider path cannot enforce a conservative bound, resolve that limitation before enabling paid testing; a displayed cost estimate alone is not cap enforcement. No automatic increase or paid continuation beyond the allowance. Browser timers alone are not a spend or revocation boundary.
+
+## Technical approach
+
+### Voice controller and media lifecycle
+
+Create a workspace-owned session controller with explicit idle, requesting permission, connecting, listening, speaking, muted, reconnecting, failed, and ended states. Keep microphone and output state separately so a muted participant can still hear the AI. Mount it outside dismissible panels and focused document editors. Cancel pending starts by session generation; every error and leave path releases tracks, peer connections, audio elements, listeners, and timers. Unmount/sign-out/canvas switch ends the call, without deleting comments or committed edits.
+
+Use the approved browser-to-OpenAI WebRTC boundary with short-lived server-issued credentials. Add product-scoped uncached endpoints under `/api/canvases/[canvasId]/voice/`; authenticate, check live membership and policy, reserve budget, and bind a server-owned session record before issuing credentials. Harden or disable the old spike credential path outside its intended test context so it cannot bypass the product gate.
+
+The existing configured Realtime model is a baseline, not a new model selection. Verify deployed availability and required events in Slice 1; seek approval before changing models. Do not install another AI SDK merely to replace working SDK boundaries.
+
+### Conversation and canvas actions
+
+Realtime handles live speech; Responses remains the canvas reasoning/action API. A completed, attributed voice request enters an authenticated orchestration endpoint. General conversation stays in volatile session memory unless explicitly requested as a new canvas document under D3. A canvas request creates or references its ordinary comment/run, with one session/turn idempotency key, then calls the existing grounding, tool validation, current-authority, simulation, durable transaction, and reply path. Do not introduce a parallel executor or accept provider-generated Yjs data.
+
+Only read canvas context after server authorization. Stream bounded semantic context/result summaries to the speech session; images remain supplementary under existing capture rules. Ambiguous references require clarification. Canvas objects, pasted instructions, captions, and claimed speaker identities cannot grant authority. Recheck membership, requester identity, source-thread lifecycle, scope, and AI policy immediately before every action. Bind each request to the authenticated participant who owns the voice session; reject another user's session or turn identity.
+
+Typed requests use existing recipient routing and generate one run. Voice observes that result instead of issuing a duplicate. Concurrent typed/spoken turns serialize conflicting work and preserve independent completed changes. In Edit with undo, one completed AI turn remains one conflict-safe undoable transaction. Feedback and failed actions never claim a mutation occurred. Drafts, cancel/retry, document highlights, story comments, and scene narration remain available.
+
+### Turn arbitration and recovery
+
+Use native Realtime turn-taking as the initial baseline. Add only the tested application coordination needed for background canvas results, scene/thread/context revisions, and cancellation; final urgency and pause behavior follow D2 experimentation. Separate permission to compute/comment from permission to speak: a valid contextual comment may appear while a human continues talking, with its spoken announcement deferred. Suppress overlapping story narration while a live call is active; preserve its saved audio preference.
+
+Automatic provider turn behavior must not race application-triggered output. The tuning panel can compare native automatic responses with manual response control; do not require manual control for every ordinary conversation turn before testing. Validate interrupted-output reconciliation in real provider tests. Never feed AI output back into its own input.
+
+On disconnect, retain the canvas and typed comments, show reconnection state, cancel stale audio, and reauthorize before a new voice connection. Do not replay an unacknowledged mutation blindly: query the persisted run by stable turn identity. Do not retain/replay disconnected microphone recordings. End after bounded retries with explicit Retry and text fallback. Permission revocation closes media access as well as blocking new tools; prove the chosen provider/transport can enforce termination within the supported session design.
+
+### Documentation basis
+
+Official [OpenAI WebRTC guidance](https://developers.openai.com/api/docs/guides/realtime-webrtc) describes server-issued ephemeral credentials and browser media connections. [OpenAI VAD guidance](https://developers.openai.com/api/docs/guides/realtime-vad) documents speech events, semantic/server detection, and response-control settings. These support the proposed split between media and application turn arbitration; they do not prove our behavior or performance.
+
+[MDN's WebRTC protocol guide](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Protocols) explains ICE/STUN/TURN network traversal. [coturn](https://github.com/coturn/coturn) was researched as a possible relay before D1. Human transport research is now deferred reference only; no relay experiment or deployment is required for this milestone. OpenAI API behavior, account controls, and AI voice costs still need Slice 1 verification.
+
+Read the installed Next.js guides for Route Handlers, data security, and Server/Client Components under `node_modules/next/dist/docs/` immediately before writing code, as required by `AGENTS.md`.
+
+## Database and security changes
+
+Proposed additive schema for approved AI-only D1 and request-only D3, aligned with approved D4, with operational retention details still to be finalized:
+
+- `voice_sessions`: canvas, authenticated initiator, lifecycle, bounded expiry, consent-policy version, budget reservation, and server-only provider-call reference. Never expose secret credentials through row reads.
+- Store the single participant, consent version, and connection generation on `voice_sessions`; no room participant table or coordinator lease is needed.
+- `voice_turns`: session/actor/stable turn identity, status, and references to existing comment/AI run for actionable turns. Unique constraints make reconnect/retry idempotent; no general transcript or audio column under approved D3. Requested documents use existing document storage, with an idempotent save-request reference where required.
+- Reuse comments/replies, AI runs/tool audit, transactions, canvas updates, and membership. Do not copy their content into a new chat table. Add indexes for canvas-active-session, expiry cleanup, and turn lookup.
+- RLS restricts session metadata to authorized members and enforces participant-specific operations; trusted provider/budget fields are server-only. Lifecycle RPCs lock and validate current membership and expected generation. Revoke direct writes that could spoof another participant, consent, or completion.
+- No human-room signaling channel is introduced. Audio and live transcript content stay out of Supabase Broadcast; SDP/ICE and provider credentials stay out of operational logs.
+- Extend rate reservations to voice connection/minute use rather than relying solely on existing Responses token counters. Add metadata expiration/deletion cleanup consistent with D3 and record its deployment mechanism.
+- Regenerate Supabase types and add pgTAP role, tenant, session-generation race, revoked-member, replay, and deletion tests. Use synthetic owner/editor/commenter/viewer/non-member fixtures.
+
+Rollback: disable new session creation, terminate active calls, and revert voice UI/routes while keeping existing comments/AI edits intact. Preserve additive records until expiry; use a compensating migration for policy/function corrections. Do not drop tables or rewrite canvas updates as an application rollback. Hosted migrations and production enablement remain separate delivery actions.
+
+## Ordered task checklist
+
+- [ ] **Slice 1:** approve the decision direction; validate Realtime controls, transcription/event reconciliation, provider termination, budget enforcement, and single-participant AI voice isolation; inventory settings and mutability for the temporary panel. Record the final media lifecycle and any required ledger amendment before dependent implementation.
+- [ ] **Slice 2:** deliver the product Live control, consent, AI connection, captions, mute/leave, device errors, session access/budget persistence, and unconditional resource cleanup. Deliver the button-opened temporary tuning panel with validated controls, API-confirmed effective values, reset/presets, and explicit restart handling. Include persistent local post-run settings records with visible/copyable effective settings and change history. Demonstrate a real conversation on an authorized preview, then pause for product-owner experimentation before choosing defaults.
+- [ ] **Slice 3:** integrate attributed voice canvas requests with existing comment-linked Responses runs; prove typing during voice, context limits, current role checks, cancellation/retry, exactly-once persistence, and undo. Add explicitly requested transcript, summary, and design-brief creation as ordinary canvas documents, with coverage disclosure, role checks, idempotent saving, reload, and deletion verification.
+- [ ] **Slice 4:** incorporate product-owner-selected settings and implement the experimentally approved important-interruption policy, natural-pause queue, stale observation cancellation, interrupted audio reconciliation, network recovery, expiry/renewal, and privacy-safe metrics.
+- [ ] **Slice 5:** run the full affected quality/RLS/E2E gates, real provider evaluation, multi-user preview and performance matrix, retain exact-head evidence, and request closure only after all criteria pass.
+
+## Pull-request slices
+
+These are proposed review boundaries. No PR is created by this draft or by plan approval alone.
+
+| Slice                        | Dependency                            | Demo and tests                                                                                                     | Rollback or compensating path                                  |
+| ---------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| 1. Feasibility and decisions | D1 approved; selected D2–D5 direction | Real AI audio/events/termination; per-user session isolation and budget controls                                   | Remove isolated experiment; no product-data migration          |
+| 2. Live AI conversation      | Slice 1, D3/D4/D5                     | Start, speak, caption, mute, leave; denied mic, rejected SDP, lost auth, rate/expiry tests                         | Disable session creation; stop media; retain additive metadata |
+| 3. Work during voice         | Slice 2                               | Draw and type while AI comments/edits; authority matrix, duplicate events, stale context, undo with unrelated edit | Disable voice action adapter; existing typed comments continue |
+| 4. Timing and recovery       | Slices 2–3                            | Pauses, urgent/non-urgent cases, barge-in, network loss, reconnect, budget termination                             | End active sessions and retain text fallback                   |
+| 5. Acceptance                | Slices 1–4                            | Full gates and exact-head hosted AS-001 plus latency/permission/privacy evidence                                   | Keep milestone open; repair within scope and reverify          |
+
+Slice 2 includes the temporary Voice settings panel and a hosted product-owner tuning checkpoint. Slice 4 applies the selected defaults and any approved permanent settings UI; experimentation is not milestone acceptance.
+
+## Automated and manual tests
+
+Existing commands: `pnpm check`, `pnpm db:test`, and `pnpm test:e2e`. Use a disposable local Supabase stack for migration reset/replay; never reset the user's retained local or hosted canvases. Required CI already starts a clean database. Run focused unit/component and browser tests during slices, then the complete affected suite before handoff.
+
+Proposed new files: `src/voice/live-session.test.ts`, `src/voice/voice-settings.test.ts`, `src/components/voice/voice-settings-panel.test.tsx`, `src/voice/turn-arbiter.test.ts`, `src/voice/voice-action-service.test.ts`, `tests/e2e/live-conversation.spec.ts`, and `supabase/tests/database/live_conversation.test.sql`. Exact names may follow extracted modules; record final commands when those files exist. Keep existing `tests/e2e/ai-voice-reversal.spec.ts`, comments, document, story, and canvas collaboration regressions passing. Fake media/provider tests prove deterministic behavior only, not audibility or conversational quality.
+
+Automate resource cleanup at every await failure, stale connection completion, repeated start/leave, mic mute, caption ordering, malformed events, speech queue expiry, speech overlap, replay/idempotency, session-generation races, permission downgrade, AI disablement, client spoofing, cross-canvas access, context injection, budget exhaustion, and live-call termination. Prove no voice content appears in operational DB/Broadcast/telemetry except ordinary comments and explicitly requested documents through their established persistence paths. Test deletion removes retained action context under existing comment rules.
+
+Panel verification: cover every setting’s valid/invalid combinations and model/transport applicability, provider-default resets, pending/accepted/rejected state, delayed acknowledgments, between-turn updates, restart cleanup, local preset round-trip, keyboard access, and panel dismissal without call loss. Hosted tests must prove at least one live update from API acknowledgment and changed behavior, one restart-required voice change, baseline restoration, retention of the selected preset across a new call, and an inspectable post-run settings history that survives closing the panel/reload. Validate failed updates, failed local storage, and secret/content exclusion in copied/downloaded records. Record which controls were actually exercised; untested settings remain unverified.
+
+For ordinary authenticated preview review use only Codex's in-app browser. For required multi-user simulation use Codex's in-app browser as owner and one additional Chrome session as editor; record each identity and browser. Use role fixtures for commenter/viewer/non-member cases. The second browser verifies concurrent canvas edits, comment delivery, and permission changes; it does not join a shared voice call. Product-owner microphone and listening participation is required for perceptual acceptance.
+
+| Scenario                                            | Expected result                                                                                                                                                                                                                                     | Trace                                         |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Start/join, keyboard control, captions, mute, leave | Honest states, audible two-way AI, silence from muted input, tracks released on leave; all controls work at desktop, tablet, 200% zoom                                                                                                              | FR-008, FR-009; accessibility/supporting work |
+| AI during canvas work                               | While drawing connected ideas, ask for grounded feedback and an anchored comment; call stays connected, target and reply survive reload                                                                                                             | FR-012, AS-001                                |
+| Typed during voice                                  | Send human-directed and AI-directed comments; receive replies without losing voice, duplicate AI run, or erased draft                                                                                                                               | FR-011                                        |
+| Permission and undo                                 | Repeat comment-only/proposal/Edit with undo/trusted cases; revoke actor while work is pending; permitted edit undoes without removing unrelated later human work                                                                                    | FR-012, PD-006, PD-012                        |
+| Important interruption                              | Frozen fixtures include explicit immediate requests and verified blocking failures; zero interruptions for ordinary disagreement, praise, layout advice, uncertainty, or untrusted instructions                                                     | FR-013, PD-005                                |
+| Natural pauses                                      | Queue useful feedback during speech and hesitations; speak once at a qualifying pause, cancel stale feedback, stop AI when a human resumes                                                                                                          | FR-014, AS-001                                |
+| Recovery                                            | Drop network during speech and during an AI action; recover within approved budget, no repeated durable action or replayed microphone recording; text/canvas remain usable                                                                          | Exit gate, FR-008, FR-012, PD-009             |
+| Privacy and deletion                                | No audio or automatic transcript storage; requested transcript/summary/design brief becomes one new durable document; cancelled/failed/unrequested saves create none; reload, collaborator access, gaps, retry, and deletion/context exclusion pass | PD-008, supporting work                       |
+| Regression/performance                              | 1,000 mixed objects plus a retained document and five-scene story remain usable while voice runs; scene audio does not overlap call audio; D5 metrics pass                                                                                          | Supporting work, FR-009                       |
+
+After exploratory tuning, obtain product-owner approval of the final interruption/pause policy and then freeze at least 20 scripted interruption/pause cases before acceptance evaluation, including ambiguous statements, hesitations, resumed speech, stale canvas context, explicit urgency, and injected instructions. Run three passes: require zero unauthorized actions, zero non-urgent active-speech interruptions, and correct single deferred delivery in at least 95% of eligible-pause cases. Retain fixture/outcome/timing metadata; do not record audio for evidence under approved D3.
+
+For each hosted result record date, commit, CI URL, immutable Netlify URL/deploy ID, matching `commit_ref`, environment/migration versions, browser/user/device/network, scenario, result, privacy-safe logs or screenshots, and limitations. Exclude `Unsynced`, `Retrying`, and `Saving` from successful durable-edit acceptance. A ready deploy and green local tests do not replace hosted speech and role testing.
+
+## Risks and assumptions
+
+| Risk                                                                       | Likelihood / impact | Mitigation and owner                                                                                                          | Status               |
+| -------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| Provider VAD and application response scheduling race                      | Medium / high       | Native turn-taking baseline, controlled settings comparison, minimum application coordination, real event traces; engineering | Open                 |
+| Chaining speech and Responses misses latency targets                       | Medium / high       | Separate speech/action measurements and early real-provider prototype; product owner/engineering                              | Open                 |
+| Browser-side session controls cannot enforce revocation/spend limits alone | High / high         | Validate provider termination and server reservations before product enablement; engineering                                  | Open                 |
+| Voice retention leaks into logs or automatic documents                     | Medium / high       | Approved request-only D3 boundary, settings-record allowlist, transcript-coverage and deletion tests; engineering             | Verification pending |
+| Panel/document switches leak microphones or cancel useful work             | Medium / high       | Workspace-owned controller, generation cleanup, lifecycle tests; engineering                                                  | Open                 |
+| Earlier Milestone 8 gaps are mistaken for completed release evidence       | Medium / high       | Retain open ledger items and include touched document paths in regression; product owner/engineering                          | Open                 |
+
+## Exit criteria
+
+- [ ] The temporary tuning panel exposes the applicable API-setting inventory with accurate constraints, acknowledged updates, reset/presets, and explicit restart behavior; product-owner trials are recorded and final defaults/permanent UI disposition are approved.
+- [ ] After every tuning run, Codex/product owner can inspect or export the actual accepted settings and their change history, including failures/restarts, without audio, transcript, or secret leakage.
+- [ ] D3: no audio or automatic transcript/summary storage; explicit requests create a new ordinary canvas document with correct content/coverage labels, permission checks, idempotency, durable reload, and normal deletion behavior. Verify transcript, summary, and design-brief examples separately, including no-request and insufficient-source cases.
+- [ ] D1–D5 are resolved for the implemented scope; approved product/architecture changes are recorded in the master plan before implementation.
+- [ ] `FR-008`: persistent accessible Live control and every stated state are verified in authenticated preview, including document focus, device failure, mute, reconnect, and leave.
+- [ ] `FR-009`: real two-way low-latency AI speech meets approved D5 targets and product-owner perceptual acceptance.
+- Deferred, not an active exit criterion: `FR-010` and remote-human transport under approved D1. Keep both master items unchecked; do not claim human voice delivery when closing the AI-only scope.
+- [ ] `FR-011`: human/AI typed comments and replies work during connected voice with no duplicated runs or lost drafts.
+- [ ] `FR-012`: authorized reads, contextual comments, and canvas changes succeed during the call; role/scope/revocation and conflict-safe undo tests pass.
+- [ ] `FR-013`: the approved interruption evaluation has no non-urgent active-speech interruption and no unauthorized action.
+- [ ] `FR-014`: useful queued observations arrive once at qualifying pauses, within the approved rubric, and stale observations disappear.
+- [ ] Consent, transcript visibility, retention/deletion, mute/leave, device recovery, and text fallback satisfy approved supporting work; audio never enters PostgreSQL or Supabase Broadcast.
+- [ ] The 10-minute session cap and aggregate $10 USD daily testing budget are enforced server-side across concurrent sessions/retries, with visible warnings, remaining budget/reset, in-flight reservations, and safe text fallback. Verify unknown usage, midnight rollover, exhausted budget, and explicit restart without budget reset.
+- [ ] Connection/response/interruption/reconnect/failure metrics are retained and satisfy the approved targets; migration, RLS, unit, build, E2E, accessibility, and affected regression gates pass.
+- [ ] Exact master exit gate passes: “Complete the sourced **Live co-thinking** acceptance scenario on the Netlify preview deployment with typed messaging, an AI canvas action, pause behavior, and recovery from a dropped connection.”
+- [ ] Exact-head authenticated hosted evidence and product-owner acceptance are recorded; explicit closure approval follows verification and precedes master completion checkbox updates.
+
+## Explicitly excluded work
+
+- Specialist AI agents, new AI authority levels, unrestricted provider commands, or a second durable chat history.
+- All remote-human voice, human rooms, relay/SFU infrastructure, room coordination, video calls, screen sharing, and telephony. Human voice may return only through an explicitly approved scope revision.
+- Automatic saved transcripts, summaries, or generated documents; microphone/conversation audio recording. Explicitly requested new canvas documents are included under D3. Cached scene narration is unchanged.
+- Milestone 11 template creation, Milestone 8 pagination or retrospective closure, and Milestone 12 launch certification.
+- Automatic production enablement, provider/relay purchases, hosted configuration changes, commits, pushes, PR creation, merge, or production deployment from this planning request.
+
+## Implementation record
+
+### Authorization and branch — 2026-09-09
+
+The product owner approved implementing each slice, committing/pushing completed slices, and continuing until feedback is needed. They require QA in Codex’s in-app browser before a hands-on review. Work is on `codex/milestone-10-live-conversation`, created from `main` at `91b6031`. The first planned feedback checkpoint is the hosted tuning panel in Slice 2. This authorization includes the preview delivery needed for that QA; PR creation, merge, closure, and production enablement remain separate.
+
+Final defaults, perceptual acceptance, and permanent tuning UI disposition follow experimentation. Operational retention and broader release acceptance choices remain documented production/closure gates and do not require another approval to build the agreed preview slices.
+
+### Server supervision — approved 2026-09-09
+
+The product owner explicitly approved a Netlify background function supervising each WebRTC call. The authenticated Next.js route performs SDP exchange, keeps the provider call ID server-side, reserves the shared testing allowance atomically, and waits for supervisor readiness before returning the answer. The worker connects to OpenAI's sideband WebSocket, watches usage and permissions, and hangs up at expiry or failure. Audio remains direct browser–OpenAI traffic. There is no new audio relay or recording service.
+
+Initial conservative admission serializes test sessions across users/canvases, reserves the remaining daily allowance, and stops before the remaining allowance falls below an in-flight safety reserve. Token accounting deliberately charges an upper estimate at the highest supported token rate rather than promising invoice-exact cost. Unknown usage or unconfirmed provider termination keeps the reservation unavailable. A bounded 8192-token conversation context supports this guard; tuning records expose this server constraint. Hosted worker lifetime, call hangup, usage events, and failure cleanup must pass before enabling review sessions. These are implementation controls, not claims of verified budget enforcement yet.
+
+### Slice 1 implementation checkpoint — 2026-09-09
+
+Implemented validated settings contracts, recoverable allowlisted test records, WebRTC failure cleanup, authenticated supervised SDP routes, atomic service-only budget/session reservations, and a Netlify background sideband supervisor. The service-role preview key and enable flag are scoped to `codex/milestone-10-live-conversation`; production is not enabled. Migration `20260909120000_live_voice_sessions.sql` was applied to the linked **thinking-canvas-preview** project `ffkwgtxboqievjnizfjg`.
+
+Initial checks: all 84 Vitest files / 426 tests passed; lint and type checking passed. The 10 new database assertions passed. Broad database checks exposed pre-existing mutable local fixture state; verification is being repeated in an isolated schema copy with clean seeds, preserving the working database. Hosted supervisor readiness, provider compatibility, and actual hangup/budget scenarios remain pending. This checkpoint does not mark Slice 1 feasibility or any FR as accepted.
+
+## Verification evidence
+
+2026-09-08 — Read-only planning inspection: local branch/status/history, master ledger, earlier milestone records, voice modules and existing tests, comments/AI contracts, migrations, CI, and Netlify configuration. GitHub PR #15 merge was verified live. Official voice/network documentation was checked for the proposed boundaries. No new runtime tests, provider calls, microphone capture, hosted migration, or preview acceptance occurred.
+
+2026-09-08 — Planning validation passed: targeted Prettier check, exact matching of all seven FR statements against the master ledger, relative file-link validation, and draft-status check. Git status contains only this new planning document. These checks do not verify the milestone implementation.
+
+Requested-document verification: run a conversation with human and AI turns, request a full transcript while connected and after ending the call in the same canvas, and verify turn order plus actual available coverage. Request a summary and a design brief as separate new documents; verify source-grounded content and independent titles. Exercise disabled transcription, context limits, interrupted AI output, reload before request, duplicate save retries, cancelled saves, role downgrade, and document deletion. Ordinary calls without a save request must create no transcript/summary document. Raw audio is never retained.
+
+## Change record
+
+| Date       | Change or decision                                                                                        | Rationale                                                                                                            | Impact                                                                                                                                                                                         | Approved by           |
+| ---------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| 2026-09-08 | Created Milestone 10 draft against merged Milestone 9 and current voice/comment/AI boundaries             | Product owner requested the next milestone                                                                           | Defines seven requirements, AS-001, decisions, six slices, tests, and approval gates; no implementation authorization claimed                                                                  | Plan approval pending |
+| 2026-09-08 | Approved D1 option 3: AI voice only; defer remote-human voice                                             | Product owner chose lower cost and complexity                                                                        | Excludes FR-010 from active milestone closure, removes human transport/schema/test work, reduces implementation to five slices; D2–D5 and full plan remain pending                             | Product owner         |
+| 2026-09-08 | Approved D2 temporary button-opened live conversation tuning panel                                        | Product owner wants to experiment with API settings and choose natural-feeling defaults from experience              | Adds settings inventory, live/restart behavior, presets and hosted tuning checkpoint; final defaults, interruption policy and permanent UI remain pending                                      | Product owner         |
+| 2026-09-08 | Added inspectable post-run tuning records and approved D3 request-only transcript/summary/document saving | Product owner needs recoverable settings for tuning/debugging and durable conversation artifacts only when requested | Capture effective configuration history without voice content; support requested new canvas documents, no saved audio or automatic transcript archive; D4–D5 remain pending                    | Product owner         |
+| 2026-09-08 | Approved D4 participant permissions                                                                       | Product owner accepted the recommended existing-role model                                                           | Owners/editors use permitted AI actions; commenters use discussion/comments only; viewers cannot start voice; only owner configures AI authority. D5 and complete plan approval remain pending | Product owner         |
+| 2026-09-09 | Approved four provisional D5 latency targets for measurement and tuning                                   | Product owner accepted initial targets while reserving session-length and spending review                            | Measure connection 5 s, first ordinary reply 2 s after detected turn end, interruption stop 300 ms, recovery 10 s; final thresholds and other limits remain undecided                          | Product owner         |
+| 2026-09-09 | Approved a conservative 10-minute initial session cap                                                     | Product owner requested a shorter limit, increasing only if needed                                                   | Replaces proposed 30-minute cap; warning and explicit restart, no automatic renewal; spending limits remain pending                                                                            | Product owner         |
+| 2026-09-09 | Approved $10 USD daily initial voice-testing budget                                                       | Product owner specified the daily spending cap                                                                       | Aggregate server-enforced allowance, visible usage/reservations/reset, no automatic overage; full plan approval remains pending                                                                | Product owner         |
+| 2026-09-09 | Approved sequential implementation and push after each completed slice                                    | Product owner explicitly authorized milestone branch, delivery, and Codex-browser QA before review                   | Begin Slices 1–2 and continue until hands-on tuning or a material decision needs feedback; no PR/merge/production authorization inferred                                                       | Product owner         |
+
+## Closure
+
+Closure status: Not ready
+
+Closure approval: Pending
+
+Closed on: —

@@ -4,7 +4,7 @@ Status: Milestones 0–7 closed; Milestone 8 product accepted and closure approv
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-09-07
+Last updated: 2026-09-09
 
 ## Purpose
 
@@ -396,6 +396,8 @@ Panel dismissal refinement approved 2026-09-08: clicking the canvas outside Scen
 
 ## Milestone 10 — Live conversation
 
+Approved scope revision — 2026-09-08 (`PD-001`): deliver AI-only live conversation now. Remote-human voice (`FR-010`) and its transport implementation/testing are explicitly deferred to reduce cost and complexity. Their original wording remains below for traceability and their boxes remain unchecked. Milestone 10 closure covers the remaining active requirements, supporting work, and unchanged Live co-thinking exit gate; it does not claim human-voice delivery. Detailed plan: [Milestone 10 — Live conversation](docs/implementation/milestone-10-live-conversation.md). Other plan decisions and implementation approval remain pending.
+
 ### Product requirements
 
 - [ ] **FR-008 — Prominent live control.** A persistent, keyboard-accessible canvas control starts or joins a live voice conversation and clearly indicates listening, speaking, muted, reconnecting, and ended states.
@@ -409,10 +411,12 @@ Panel dismissal refinement approved 2026-09-08: clicking the canvas outside Scen
 ### Supporting work
 
 - [ ] Define privacy copy, microphone consent, recording/transcript retention, and deletion behavior before enabling voice in production.
+- [ ] Under the approved 2026-09-08 `PD-008` policy, retain no microphone/conversation audio and no automatic transcript or summary archive. Keep ordinary comments; only on an explicit participant request, save the available full transcript, a summary, or requested content such as a design brief into a new ordinary canvas document through current permission and persistence boundaries. Disclose source gaps, prevent duplicate saves, and verify normal document access, reload, and deletion. A design brief is document content, not a specialized document type.
 - [ ] Provide mute, leave, device-error recovery, captions/transcript visibility, and text-only fallback.
 - [ ] Define and test the remote-human voice transport; OpenAI Realtime must not be assumed to provide a general human-to-human room.
 - [ ] Keep high-frequency audio out of PostgreSQL and Supabase Realtime Broadcast.
 - [ ] Measure connection time, response latency, interruption timing, reconnect success, and session failure rate.
+- [ ] Provide a temporary button-opened live conversation settings panel for hands-on experimentation with applicable API controls; distinguish effective settings and live versus restart-required changes, retain repeatable presets, and obtain product-owner approval of defaults and permanent UI disposition after tuning. Approved workflow on 2026-09-08; implementation and final settings remain pending. Capture an inspectable/exportable post-run record of API-confirmed effective values and timestamped changes, errors, and restarts for final-feature selection and troubleshooting; exclude audio, transcript content, and secrets from settings logs.
 
 ### Exit gate
 
@@ -506,15 +510,21 @@ These are retained as cross-feature release tests rather than substitutes for th
 
 ## Product decisions required before their milestones
 
-- [ ] **PD-001 — Human voice transport:** choose the free/open-source WebRTC approach or explicitly phase remote-human voice after AI voice; `FR-010` cannot be checked until it works.
+- [x] **PD-001 — Human voice transport:** choose the free/open-source WebRTC approach or explicitly phase remote-human voice after AI voice; `FR-010` cannot be checked until it works. **Decision:** phase remote-human voice after AI voice; Milestone 10 delivers AI-only conversation. Approved by the product owner on 2026-09-08 to reduce cost and complexity. No human transport, hosting provider, or delivery date is selected; `FR-010` remains unchecked and deferred.
 - [x] **PD-002 — Document preview:** render the same first visible page or bounded continuous-layout surface in both the canvas object and focused editor, including the title, semantic text formatting, and document-owned visual objects at matching positions. Do not substitute a metadata card, body excerpt, layout label, or separate preview typography. When focused, fit and center the complete document frame vertically in the available canvas, hide the primary canvas tool dock, and place the document palette outside and centered above the frame; pause expensive page rendering outside the viewport. Approved by the product owner with the Milestone 8 plan on 2026-09-02 and refined through hosted-preview review on 2026-09-04. The document-owned-visuals clause is superseded by `PD-022`.
 - [x] **PD-003 — Page sizes:** offer Continuous, US Letter, and A4 layouts; paginated Letter and A4 support portrait and landscape using stable logical document dimensions. Approved by the product owner with the Milestone 8 plan on 2026-09-02.
 - [x] **PD-004 — Rating scale:** use one fixed inclusive `1–5` numeric rating scale in the first version; the comment author does not choose among multiple ranges. Approved by the product owner on 2026-08-19.
 - [ ] **PD-005 — Important interruption:** define testable examples and non-examples for `FR-013` and `FR-014`.
+  - 2026-09-08: Product owner approved a temporary button-opened live conversation control panel to experiment with all applicable Realtime API settings and select natural-feeling defaults. Final interruption policy, testable examples, default settings, and which controls remain in the permanent UI will be decided after hands-on experimentation; `PD-005`, `FR-013`, and `FR-014` remain unchecked.
 - [x] **PD-006 — Permission ownership:** only the canvas owner may enable or disable the primary AI and change its authority; editors may invoke tools allowed by the selected authority, commenters may invoke comment-only interaction when enabled, and viewers remain read-only. Approved by the product owner with the Milestone 4 plan on 2026-08-24.
+  - 2026-09-08: Product owner approved the Milestone 10 AI-only voice permission model: owners/editors may start voice with their permitted AI actions; commenters may use voice for discussion and comments without canvas/document edits; viewers remain read-only without starting voice. Only the owner changes AI enablement or authority. Voice never raises the participant’s existing permissions.
 - [ ] **PD-007 — Performance budgets:** approve target hardware, representative canvas size, latency thresholds, and maximum acceptable degradation.
+  - 2026-09-09: Product owner approved provisional Milestone 10 measurement targets: connect within 5 seconds excluding microphone permission; first ordinary reply audio within 2 seconds after detecting the completed turn; stop AI speech within 300 ms on participant interruption; recover within 10 seconds after network return. Tune against observed naturalness and measure canvas-action completion separately. Final acceptance thresholds and remaining performance-budget details are not yet approved; `PD-007` remains unchecked.
+  - 2026-09-09: Product owner approved a conservative initial 10-minute live session cap, increasing later only if needed. Warn before expiry, end voice at the cap, and require an explicit new-session action rather than automatic renewal. Preserve available temporary transcript text under `PD-008`. The monetary budget was approved separately below.
+  - 2026-09-09: Product owner approved $10 USD per day for initial voice testing, in addition to the 10-minute session cap. The detailed plan treats this as an aggregate testing allowance resetting at midnight America/Los_Angeles, including voice-related provider calls, with server-side reservations/enforcement and no automatic increase. It is not a production budget or a per-session allowance.
 - [ ] **PD-008 — Voice data:** approve consent, transcript visibility, retention, deletion, and whether audio is ever recorded.
   - 2026-09-08: Product owner approved storing synthesized scene narration as a cache of the saved script, replacing it on text changes and deleting it when narration is removed. This does not authorize microphone recording or conversation-audio retention.
+  - 2026-09-08: For live conversation, product owner approved no saved audio and ordinary comments, with a full transcript, summary, or requested artifact such as a design brief saved as a new canvas document only on explicit request. Unrequested conversation text remains temporary; requested documents follow ordinary canvas permissions and document retention/deletion. Settings-only test-run records remain inspectable for tuning and debugging. Operational audit retention and final provider-specific privacy disclosure remain pending, so the complete `PD-008` item remains unchecked.
 - [x] **PD-009 — Offline behavior:** decide whether the first version supports deliberate offline editing or only temporary disconnect recovery. **Decision:** the first version supports temporary disconnect recovery only; a fully loaded canvas may retain and retry pending edits through a transient connection loss, while deliberate offline entry and opening an uncached canvas offline remain unsupported.
 - [ ] **PD-010 — Export and portability:** decide whether a user-facing export is a launch requirement; it is prudent for recovery but not stated in the source brief.
 - [x] **PD-011 — AI visual grounding and layout assistance:** keep the complete semantic canvas projection and stable object IDs authoritative; add validated deterministic layout tools for manipulation; use bounded targeted before-and-after render captures only as supplementary vision context and never as mutation authority. The bounded core is Milestone 5 scope, with broader starter-structure composition deferred to Milestone 11. Approved by the product owner on 2026-08-26.
@@ -533,6 +543,8 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [x] **PD-024 — Viewport-captured scene workflow:** create a scene by capturing the canvas's current position and zoom through an **Add Scene** action; present scenes as an ordered, draggable list; allow rename, replacement from the current view, and deletion; and provide previous/next scene controls whose canvas transitions feel exceptionally smooth. Place the scene-editor control between previous and next; expose no repeated visible reorder controls while retaining focused-row keyboard shortcuts; make bidirectional end wrapping an enabled-by-default, persistent per-user/per-canvas **Loop** preference; and let users move the scene panel from a thin top handle or resize its left edge within viewport-clamped 320–640 px nominal bounds. Do not add scene printing or PDF export. Initial workflow approved by the product owner on 2026-09-07 using three supplied interaction-reference screenshots; motion accepted and control/list/loop refinement approved through hosted-preview review on 2026-09-07; reorder-control removal and movable/resizable panel behavior approved through replacement-preview review on 2026-09-07.
 
 ## Explicitly deferred
+
+- Remote-human live voice (`FR-010`) and its transport implementation/testing are deferred under `PD-001`, approved 2026-09-08. Milestone 10 delivers AI-only voice; future human-voice scope requires explicit approval.
 
 ### Approved Milestone 8 presentation refinement — 2026-09-07
 
