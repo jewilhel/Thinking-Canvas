@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { request as httpsRequest } from "node:https";
 import { createClient } from "@supabase/supabase-js";
 import WebSocket from "ws";
 import {
@@ -164,6 +165,7 @@ export default async function handler(request: Request) {
       {
         headers: { Authorization: `Bearer ${key}` },
         handshakeTimeout: 8000,
+        family: 4,
         maxPayload: 2_000_000,
       },
     );
@@ -243,15 +245,26 @@ export default async function handler(request: Request) {
     let terminated = false;
     for (let attempt = 0; attempt < 3 && !terminated; attempt++) {
       try {
-        const response = await fetch(
-          `https://api.openai.com/v1/realtime/calls/${encodeURIComponent(session.call_id)}/hangup`,
-          {
-            method: "POST",
-            headers: { Authorization: `Bearer ${key}` },
-            signal: AbortSignal.timeout(5000),
-          },
-        );
-        terminated = response.ok || response.status === 404;
+        terminated = await new Promise<boolean>((resolve) => {
+          const request = httpsRequest(
+            `https://api.openai.com/v1/realtime/calls/${encodeURIComponent(session.call_id)}/hangup`,
+            {
+              method: "POST",
+              headers: { Authorization: `Bearer ${key}` },
+              family: 4,
+              signal: AbortSignal.timeout(5000),
+            },
+            (response) => {
+              response.resume();
+              resolve(
+                (response.statusCode ?? 500) < 300 ||
+                  response.statusCode === 404,
+              );
+            },
+          );
+          request.on("error", () => resolve(false));
+          request.end();
+        });
       } catch {
         /* A later bounded attempt may succeed. */
       }

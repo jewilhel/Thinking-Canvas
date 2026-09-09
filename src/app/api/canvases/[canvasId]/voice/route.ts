@@ -65,11 +65,13 @@ export async function GET(request: Request, context: Context) {
       reason: "Voice accounting is unavailable.",
     });
   const user = await authorizeVoice(canvasId);
+  if (!user)
+    return Response.json({ enabled: false, reason: "Voice access changed." });
   const { data: pending } = await voiceService()
     .from("voice_test_sessions")
     .select("id")
     .eq("canvas_id", canvasId)
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .is("ended_at", null)
     .eq("supervisor_ready", false)
     .lt("heartbeat_at", new Date(Date.now() - 30000).toISOString())
