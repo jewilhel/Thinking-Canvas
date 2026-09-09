@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { request as httpsRequest } from "node:https";
+import OpenAI from "openai";
+import { endVoiceCall } from "../../src/voice/end-voice-call";
 import { createClient } from "@supabase/supabase-js";
 import WebSocket from "ws";
 import {
@@ -241,43 +242,27 @@ export default async function handler(request: Request) {
     clearTimeout(readyTimeout);
     clearTimeout(retryTimer);
     clearInterval(heartbeat);
-    // Hangup works for WebRTC as well as SIP. Retry boundedly; retain funds on uncertainty.
+    const estimate =
+      !readinessPublished || unknownUsage || inflight
+        ? session.reserved_cents
+        : Math.min(session.reserved_cents, charged);
+    // Preserve trusted accounting before provider I/O so an authenticated cleanup
+    // retry can settle a dead worker without guessing or losing its usage totals.
+    await db
+      .from("voice_test_sessions")
+      .update({ charged_cents: estimate, end_reason: reason })
+      .eq("id", input.id)
+      .is("ended_at", null);
+    const provider = new OpenAI({ apiKey: key, timeout: 5000, maxRetries: 0 });
     let terminated = false;
-    for (let attempt = 0; attempt < 3 && !terminated; attempt++) {
-      try {
-        terminated = await new Promise<boolean>((resolve) => {
-          const request = httpsRequest(
-            `https://api.openai.com/v1/realtime/calls/${encodeURIComponent(session.call_id)}/hangup`,
-            {
-              method: "POST",
-              headers: { Authorization: `Bearer ${key}` },
-              family: 4,
-              signal: AbortSignal.timeout(5000),
-            },
-            (response) => {
-              response.resume();
-              resolve(
-                (response.statusCode ?? 500) < 300 ||
-                  response.statusCode === 404,
-              );
-            },
-          );
-          request.on("error", () => resolve(false));
-          request.end();
-        });
-      } catch {
-        /* A later bounded attempt may succeed. */
-      }
-    }
+    for (let attempt = 0; attempt < 3 && !terminated; attempt++)
+      terminated = await endVoiceCall(provider, session.call_id);
+
     socket?.terminate();
     if (terminated)
       await db.rpc("finish_voice_test", {
         target_id: input.id,
-        target_cents: !readinessPublished
-          ? session.reserved_cents
-          : unknownUsage || inflight
-            ? session.reserved_cents
-            : Math.min(session.reserved_cents, charged),
+        target_cents: estimate,
         target_reason: reason,
       });
   }

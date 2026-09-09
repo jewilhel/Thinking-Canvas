@@ -73,7 +73,6 @@ export async function GET(request: Request, context: Context) {
     .eq("canvas_id", canvasId)
     .eq("user_id", user.id)
     .is("ended_at", null)
-    .eq("supervisor_ready", false)
     .lt("heartbeat_at", new Date(Date.now() - 30000).toISOString())
     .order("started_at", { ascending: false })
     .limit(1)
@@ -139,6 +138,32 @@ export async function POST(request: Request, context: Context) {
         target_cents: 0,
         target_reason: "expired_setup_recovered",
       });
+  }
+  if (parsed.data.restartOf) {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const { data: previous } = await db
+        .from("voice_test_sessions")
+        .select("ended_at,expires_at")
+        .eq("id", parsed.data.restartOf)
+        .eq("user_id", user.id)
+        .eq("canvas_id", canvasId)
+        .maybeSingle();
+      if (!previous || Date.parse(previous.expires_at) <= Date.now())
+        return Response.json(
+          { error: "The previous test cannot be restarted." },
+          { status: 409 },
+        );
+      if (previous.ended_at) break;
+      if (attempt === 39)
+        return Response.json(
+          {
+            error:
+              "The previous test is still ending. Wait for its reservation to clear before restarting.",
+          },
+          { status: 409 },
+        );
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
   }
   const id = crypto.randomUUID();
   const { data: reserved, error } = await db.rpc("reserve_voice_test", {
@@ -294,7 +319,18 @@ export async function DELETE(request: Request, context: Context) {
         { status: 502 },
       );
   }
-  if (
+  const { data: checkpoint } = await db
+    .from("voice_test_sessions")
+    .select("end_reason,charged_cents")
+    .eq("id", id)
+    .maybeSingle();
+  if (!data.ended_at && data.call_id && checkpoint?.end_reason)
+    await db.rpc("finish_voice_test", {
+      target_id: id,
+      target_cents: checkpoint.charged_cents,
+      target_reason: checkpoint.end_reason,
+    });
+  else if (
     !data.ended_at &&
     !data.supervisor_ready &&
     data.call_id &&
