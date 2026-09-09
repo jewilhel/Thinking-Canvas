@@ -311,6 +311,12 @@ Added persistent canvas Live/Voice settings controls, consent copy, microphone m
 
 `pnpm lint` and `pnpm typecheck` pass. Two focused Chromium E2E tests pass for mode-specific controls, reset/load, persisted presets, unconfirmed-state labeling, and unauthenticated admission rejection. All 403 database assertions pass against an isolated clean fixture database with the existing private storage-bucket configuration; the original mutable local database is preserved. Foundation commit: `07fea6a`, pushed to the milestone branch. Hosted QA follows this checkpoint; this is not product acceptance or milestone closure.
 
+### Hosted QA fixes in progress — 2026-09-09
+
+Codex's in-app browser authenticated as the preview owner and created the blank **Milestone 10 voice tuning QA** canvas (`75d9099b-81ff-4fed-b5df-047ae97df1d3`), with comment-only AI enabled. A manual CLI alias deploy did not apply the client preview flag; replaced it with a Git branch build. Deployment `6aa10d1dcb700a0008bc0c21` matched `b672531d232aba07736db71336e9e5d77d75156f` and exposed the panel. Hosted mode switching, 900 ms silence entry, and named preset creation were observed.
+
+That runtime pass found two issues being fixed before live testing: Netlify build context/origin metadata was being read as runtime function variables, leaving Live disabled; and at the narrow Codex viewport the persistent voice toolbar overlapped the bottom of the settings panel. Public build metadata is now compiled explicitly, while credentials remain function-only runtime values; the narrow panel now leaves room for the toolbar. No paid call or perceptual voice acceptance has occurred yet.
+
 ## Verification evidence
 
 2026-09-08 — Read-only planning inspection: local branch/status/history, master ledger, earlier milestone records, voice modules and existing tests, comments/AI contracts, migrations, CI, and Netlify configuration. GitHub PR #15 merge was verified live. Official voice/network documentation was checked for the proposed boundaries. No new runtime tests, provider calls, microphone capture, hosted migration, or preview acceptance occurred.

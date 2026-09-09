@@ -48,7 +48,7 @@ export async function GET(_request: Request, context: Context) {
     reservedCents: data?.reserved_cents ?? 0,
     dailyCents: 1000,
     resetTimezone: "America/Los_Angeles",
-    build: process.env.COMMIT_REF ?? process.env.DEPLOY_ID ?? "unknown",
+    build: process.env.VOICE_BUILD_REF ?? "unknown",
   });
 }
 export async function POST(request: Request, context: Context) {
@@ -145,7 +145,7 @@ export async function POST(request: Request, context: Context) {
     const supervisor = await fetch(
       new URL(
         "/.netlify/functions/voice-supervisor-background",
-        process.env.DEPLOY_URL!,
+        process.env.VOICE_DEPLOY_ORIGIN!,
       ),
       {
         method: "POST",

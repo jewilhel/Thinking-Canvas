@@ -38,10 +38,10 @@ export async function authorizeVoice(canvasId: string) {
 }
 export function voiceEnabled() {
   return (
-    process.env.APP_ENV === "preview" &&
+    process.env.VOICE_DEPLOY_ENVIRONMENT === "preview" &&
     process.env.VOICE_TESTING_ENABLED === "true" &&
     Boolean(
-      process.env.DEPLOY_URL &&
+      process.env.VOICE_DEPLOY_ORIGIN &&
       process.env.OPENAI_API_KEY &&
       process.env.SUPABASE_SERVICE_ROLE_KEY,
     )
