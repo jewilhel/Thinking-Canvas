@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
 type Props = {
+  panelId?: string;
   title: string;
   description?: string;
   invoker: HTMLButtonElement | null;
@@ -23,6 +24,7 @@ const focusableSelector = [
 ].join(",");
 
 export function WorkspacePanel({
+  panelId = "workspace-shared-panel",
   title,
   description,
   invoker,
@@ -71,13 +73,13 @@ export function WorkspacePanel({
 
   return (
     <div
-      id="workspace-shared-panel"
+      id={panelId}
       ref={panelRef}
       role="dialog"
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
       tabIndex={-1}
-      data-testid="workspace-shared-panel"
+      data-testid={panelId}
       className="absolute right-4 bottom-20 z-30 flex max-h-[calc(100%-7rem)] w-[min(24rem,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome-solid)] text-zinc-900 shadow-[var(--workspace-shadow-strong)] max-[42rem]:right-4 max-[42rem]:left-4 max-[42rem]:max-h-[min(65vh,34rem)] max-[42rem]:w-auto"
       onKeyDown={containFocus}
     >

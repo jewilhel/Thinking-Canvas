@@ -31,6 +31,16 @@ export async function POST(request: Request) {
     return Response.json({ error: "Canvas access denied." }, { status: 403 });
   }
 
+  // The historical spike must not bypass supervised testing limits on hosted builds.
+  if (
+    process.env.APP_ENV === "preview" ||
+    process.env.NODE_ENV === "production"
+  ) {
+    return Response.json(
+      { error: "Use the canvas Live control for supervised voice testing." },
+      { status: 410 },
+    );
+  }
   try {
     return Response.json(await createRealtimeClientSecret(user.id));
   } catch (error) {

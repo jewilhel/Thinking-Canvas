@@ -305,6 +305,12 @@ Implemented validated settings contracts, recoverable allowlisted test records, 
 
 Initial checks: all 84 Vitest files / 426 tests passed; lint and type checking passed. The 10 new database assertions passed. Broad database checks exposed pre-existing mutable local fixture state; verification is being repeated in an isolated schema copy with clean seeds, preserving the working database. Hosted supervisor readiness, provider compatibility, and actual hangup/budget scenarios remain pending. This checkpoint does not mark Slice 1 feasibility or any FR as accepted.
 
+### Slice 2 implementation checkpoint — 2026-09-09
+
+Added persistent canvas Live/Voice settings controls, consent copy, microphone mute/leave, temporary captions, mode-aware settings, acknowledged updates, voice restart, local presets, inspectable JSON test records, and browser reload persistence. The original deadline is preserved by the server on an explicit voice-setting restart. Canvas action routing and requested transcript documents remain Slice 3 work. Hosted legacy spike credentials are disabled to prevent a testing-limit bypass.
+
+`pnpm lint` and `pnpm typecheck` pass. Two focused Chromium E2E tests pass for mode-specific controls, reset/load, persisted presets, unconfirmed-state labeling, and unauthenticated admission rejection. All 403 database assertions pass against an isolated clean fixture database with the existing private storage-bucket configuration; the original mutable local database is preserved. Foundation commit: `07fea6a`, pushed to the milestone branch. Hosted QA follows this checkpoint; this is not product acceptance or milestone closure.
+
 ## Verification evidence
 
 2026-09-08 — Read-only planning inspection: local branch/status/history, master ledger, earlier milestone records, voice modules and existing tests, comments/AI contracts, migrations, CI, and Netlify configuration. GitHub PR #15 merge was verified live. Official voice/network documentation was checked for the proposed boundaries. No new runtime tests, provider calls, microphone capture, hosted migration, or preview acceptance occurred.

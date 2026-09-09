@@ -1,5 +1,6 @@
 "use client";
 
+import { LiveVoice } from "@/components/voice/live-voice";
 import type Konva from "konva";
 import {
   ArrowLeft,
@@ -5197,6 +5198,12 @@ function ProductCanvasWorkspace({
             <ShortcutHelp />
           )}
         </WorkspacePanel>
+      ) : null}
+
+      {canvasRole !== "viewer" &&
+      (process.env.NEXT_PUBLIC_APP_ENV === "preview" ||
+        process.env.NODE_ENV !== "production") ? (
+        <LiveVoice canvasId={canvasId} userId={userId} />
       ) : null}
 
       <CanvasComments
