@@ -90,6 +90,7 @@ export function LiveVoice({ canvasId, userId }: Props) {
   const [availability, setAvailability] = useState<{
     enabled: boolean;
     refreshRequired?: boolean;
+    pendingSessionId?: string;
     reason?: string;
     spentCents?: number;
     reservedCents?: number;
@@ -533,6 +534,29 @@ export function LiveVoice({ canvasId, userId }: Props) {
             <p role="alert" className="mb-4 text-sm text-red-700">
               {error}
             </p>
+          )}
+          {availability.pendingSessionId && (
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const response = await fetch(
+                  `/api/canvases/${canvasId}/voice?id=${availability.pendingSessionId}`,
+                  { method: "DELETE" },
+                );
+                setError(
+                  response.ok
+                    ? "The failed call is ended. Unverified usage remains conservatively accounted for."
+                    : "Termination is not yet confirmed. You can retry ending the failed test.",
+                );
+                if (response.ok)
+                  setAvailability((value) => ({
+                    ...value,
+                    pendingSessionId: undefined,
+                  }));
+              }}
+            >
+              Retry ending failed test
+            </Button>
           )}
           <VoiceSettingsPanel
             validating={validating}

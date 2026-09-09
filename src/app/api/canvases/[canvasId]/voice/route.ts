@@ -64,8 +64,21 @@ export async function GET(request: Request, context: Context) {
       enabled: false,
       reason: "Voice accounting is unavailable.",
     });
+  const user = await authorizeVoice(canvasId);
+  const { data: pending } = await voiceService()
+    .from("voice_test_sessions")
+    .select("id")
+    .eq("canvas_id", canvasId)
+    .eq("user_id", user!.id)
+    .is("ended_at", null)
+    .eq("supervisor_ready", false)
+    .lt("heartbeat_at", new Date(Date.now() - 30000).toISOString())
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   return Response.json({
     enabled: true,
+    pendingSessionId: pending?.id,
     model: VOICE_MODEL,
     spentCents: data?.spent_cents ?? 0,
     reservedCents: data?.reserved_cents ?? 0,
@@ -268,7 +281,7 @@ export async function DELETE(request: Request, context: Context) {
   const db = voiceService();
   const { data } = await db
     .from("voice_test_sessions")
-    .select("call_id,ended_at")
+    .select("call_id,ended_at,supervisor_ready,reserved_cents,heartbeat_at")
     .eq("id", id)
     .eq("canvas_id", canvasId)
     .eq("user_id", user.id)
@@ -281,5 +294,17 @@ export async function DELETE(request: Request, context: Context) {
         { status: 502 },
       );
   }
+  if (
+    !data.ended_at &&
+    !data.supervisor_ready &&
+    data.call_id &&
+    data.heartbeat_at &&
+    Date.parse(data.heartbeat_at) < Date.now() - 30000
+  )
+    await db.rpc("finish_voice_test", {
+      target_id: id,
+      target_cents: data.reserved_cents,
+      target_reason: "bootstrap_hangup_confirmed_usage_unknown",
+    });
   return new Response(null, { status: 204 });
 }
