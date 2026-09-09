@@ -527,7 +527,7 @@ export function LiveVoice({ canvasId, userId }: Props) {
         >
           <p className="mb-4 text-sm text-zinc-600">
             {availability.enabled
-              ? `Shared daily allowance: $${((availability.spentCents ?? 0) / 100).toFixed(2)} conservatively charged; $${((availability.reservedCents ?? 0) / 100).toFixed(2)} reserved. $10 limit, resets at midnight Pacific.`
+              ? `Shared daily allowance: $${((availability.spentCents ?? 0) / 100).toFixed(2)} conservatively charged; $${((availability.reservedCents ?? 0) / 100).toFixed(2)} reserved. $20 limit, resets at midnight Pacific.`
               : availability.reason}
           </p>
           {error && (
@@ -654,7 +654,7 @@ export function LiveVoice({ canvasId, userId }: Props) {
               troubleshooting.
             </p>
             <p>
-              This test lasts up to 10 minutes and shares a $10 daily testing
+              This test lasts up to 10 minutes and shares a $20 daily testing
               allowance. Canvas actions and requested documents will be added in
               the next slice.
             </p>

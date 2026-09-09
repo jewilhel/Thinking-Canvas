@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const VOICE_MODEL = "gpt-realtime-2.1";
 export const VOICE_SESSION_SECONDS = 600;
-export const VOICE_DAILY_CENTS = 1000;
+export const VOICE_DAILY_CENTS = 2000;
 export const voiceSettingsSchema = z.strictObject({
   detection: z.enum(["semantic_vad", "server_vad", "manual"]),
   eagerness: z.enum(["auto", "low", "medium", "high"]),
@@ -215,6 +215,6 @@ export const VOICE_SETTING_CONSTRAINTS = [
   ],
   [
     "Limits",
-    "10-minute sessions, $10 aggregate daily test budget. No automatic renewal.",
+    "10-minute sessions, $20 aggregate daily test budget. No automatic renewal.",
   ],
 ] as const;

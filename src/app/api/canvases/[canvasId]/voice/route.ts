@@ -4,6 +4,7 @@ import {
   buildVoiceSession,
   voiceSettingsSchema,
   VOICE_MODEL,
+  VOICE_DAILY_CENTS,
 } from "@/voice/voice-settings";
 import {
   authorizeVoice,
@@ -83,7 +84,7 @@ export async function GET(request: Request, context: Context) {
     model: VOICE_MODEL,
     spentCents: data?.spent_cents ?? 0,
     reservedCents: data?.reserved_cents ?? 0,
-    dailyCents: 1000,
+    dailyCents: VOICE_DAILY_CENTS,
     resetTimezone: "America/Los_Angeles",
     build: process.env.VOICE_BUILD_REF ?? "unknown",
   });

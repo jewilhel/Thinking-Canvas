@@ -17,6 +17,13 @@ select lives_ok($$select public.finish_voice_test('33333333-3333-4333-8333-33333
 select lives_ok($$select public.finish_voice_test('33333333-3333-4333-8333-333333333333',55,'retry')$$,'settlement is idempotent');
 select is((select spent_cents from public.voice_test_days where day=(now() at time zone 'America/Los_Angeles')::date),55,'does not double charge');
 select is((select reserved_cents from public.voice_test_days where day=(now() at time zone 'America/Los_Angeles')::date),0,'releases confirmed unused allowance');
+select is((select reserved_cents from public.voice_test_sessions where id='33333333-3333-4333-8333-333333333333'),2000,'reserves the approved twenty dollar cap');
+update public.voice_test_days set spent_cents=1000 where day=(now() at time zone 'America/Los_Angeles')::date;
+select lives_ok($$select public.reserve_voice_test('44444444-4444-4444-8444-444444444444','20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001')$$,'prior ten dollar usage still permits admission');
+select is((select reserved_cents from public.voice_test_sessions where id='44444444-4444-4444-8444-444444444444'),1000,'preserves prior usage and reserves only remaining allowance');
+select public.finish_voice_test('44444444-4444-4444-8444-444444444444',751,'test');
+select throws_ok($$select public.reserve_voice_test(gen_random_uuid(),'20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001')$$,'P0001',null,'retains minimum admission headroom under twenty dollar cap');
+select throws_ok($$update public.voice_test_days set spent_cents=2001 where day=(now() at time zone 'America/Los_Angeles')::date$$,'23514',null,'database rejects aggregate over twenty dollars');
 reset role;
 select * from finish();
 rollback;
