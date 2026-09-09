@@ -394,7 +394,7 @@ export function WorkspacePrimaryDock({
         aria-label="Canvas tools"
         aria-orientation="horizontal"
         data-testid="workspace-primary-dock"
-        className="flex max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 shadow-[var(--workspace-shadow)] backdrop-blur-xl"
+        className="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 shadow-[var(--workspace-shadow)] backdrop-blur-xl"
         onKeyDown={moveToolbarFocus}
       >
         {directTools.map(({ value, label, shortcut, icon: Icon }) => (
