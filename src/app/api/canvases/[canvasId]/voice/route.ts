@@ -122,6 +122,7 @@ export async function POST(request: Request, context: Context) {
   let providerAttempted = false;
   let rejectedHandshake = false;
   let stage = "configuration";
+  let supervisorStatus: number | undefined;
   try {
     const provider = voiceProvider();
     const secret = await provider.realtime.clientSecrets.create({
@@ -182,6 +183,7 @@ export async function POST(request: Request, context: Context) {
         signal: AbortSignal.timeout(10000),
       },
     );
+    supervisorStatus = supervisor.status;
     if (supervisor.status !== 202) throw new Error("supervisor");
     stage = "supervisor_readiness";
     for (let attempt = 0; attempt < 40; attempt++) {
@@ -206,7 +208,10 @@ export async function POST(request: Request, context: Context) {
     }
     throw new Error("supervisor-timeout");
   } catch {
-    console.error("Supervised voice connection failed.", { stage });
+    console.error("Supervised voice connection failed.", {
+      stage,
+      supervisorStatus,
+    });
     let terminated = !providerAttempted || rejectedHandshake;
     if (callId) terminated = await endVoiceCall(voiceProvider(), callId);
     if (terminated)
@@ -219,7 +224,9 @@ export async function POST(request: Request, context: Context) {
     return Response.json(
       {
         error:
-          "Voice could not establish a supervised connection. Microphone access will be released. Unconfirmed usage remains reserved.",
+          supervisorStatus === 401 || supervisorStatus === 403
+            ? "Preview access blocked the voice supervisor. Refresh the preview and retry."
+            : "Voice could not establish a supervised connection. Microphone access will be released. Unconfirmed usage remains reserved.",
       },
       { status: 502 },
     );

@@ -8,7 +8,8 @@ const nextConfig: NextConfig = {
   // Public build metadata only. Netlify's build context is not a function secret.
   env: {
     VOICE_DEPLOY_ENVIRONMENT: process.env.APP_ENV ?? "local",
-    VOICE_DEPLOY_ORIGIN: process.env.DEPLOY_URL ?? "",
+    VOICE_DEPLOY_ORIGIN:
+      process.env.DEPLOY_PRIME_URL ?? process.env.DEPLOY_URL ?? "",
     VOICE_BUILD_REF: process.env.COMMIT_REF ?? "local",
   },
 };
