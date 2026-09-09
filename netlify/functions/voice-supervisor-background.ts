@@ -50,6 +50,7 @@ export default async function handler(request: Request) {
   let inflight = false;
   let reason = "connection_ended";
   let closed = false;
+  let transportOpen = false;
   const seen = new Set<string>();
   const socket = new WebSocket(
     `wss://api.openai.com/v1/realtime?call_id=${encodeURIComponent(session.call_id)}`,
@@ -67,6 +68,11 @@ export default async function handler(request: Request) {
     if (closed) return;
     closed = true;
     reason = why;
+    console.info("Voice supervisor stopped", {
+      reason,
+      transportOpen,
+      readinessPublished,
+    });
     finish();
   };
   const deadline = setTimeout(
@@ -74,6 +80,9 @@ export default async function handler(request: Request) {
     Math.max(0, expires - Date.now()),
   );
   const readyTimeout = setTimeout(() => stop("supervisor_timeout"), 9000);
+  socket.on("open", () => {
+    transportOpen = true;
+  });
   socket.on("error", () => {
     unknownUsage = true;
     stop("supervisor_error");
