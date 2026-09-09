@@ -22,6 +22,7 @@ import {
   Minus,
   Plus,
   Presentation,
+  AudioLines,
   Share2,
   AlignJustify,
   Trash2,
@@ -541,6 +542,11 @@ function ProductCanvasWorkspace({
   }, [viewport]);
   useEffect(() => () => cancelSceneTransition(), [cancelSceneTransition]);
   const [scenePanelOpen, setScenePanelOpen] = useState(false);
+  const [voiceControlsOpen, setVoiceControlsOpen] = useState(false);
+  const voiceAvailable =
+    canvasRole !== "viewer" &&
+    (process.env.NEXT_PUBLIC_APP_ENV === "preview" ||
+      process.env.NODE_ENV !== "production");
   const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
   const [sceneLoopEnabled, setSceneLoopEnabled] = useState(
     () => window.localStorage.getItem(sceneLoopStorageKey) !== "false",
@@ -5074,7 +5080,7 @@ function ProductCanvasWorkspace({
         ) : null}
       </AnimatePresence>
 
-      <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
+      <div className="absolute right-4 bottom-4 z-30 flex max-w-[calc(100%-2rem)] items-center gap-1 overflow-x-auto rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl max-lg:bottom-20 [&_button]:size-11 [&_button]:shrink-0 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
         {storyScenes.length >= 2 ? (
           <Button
             type="button"
@@ -5091,6 +5097,20 @@ function ProductCanvasWorkspace({
             <ChevronLeft aria-hidden="true" />
           </Button>
         ) : null}
+        {voiceAvailable && (
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="AI voice"
+            title="AI voice"
+            aria-expanded={voiceControlsOpen}
+            aria-controls="live-voice-controls"
+            onClick={() => setVoiceControlsOpen((open) => !open)}
+          >
+            <AudioLines aria-hidden="true" />
+          </Button>
+        )}
         <Button
           type="button"
           size="icon-sm"
@@ -5200,10 +5220,12 @@ function ProductCanvasWorkspace({
         </WorkspacePanel>
       ) : null}
 
-      {canvasRole !== "viewer" &&
-      (process.env.NEXT_PUBLIC_APP_ENV === "preview" ||
-        process.env.NODE_ENV !== "production") ? (
-        <LiveVoice canvasId={canvasId} userId={userId} />
+      {voiceAvailable ? (
+        <LiveVoice
+          canvasId={canvasId}
+          userId={userId}
+          controlsOpen={voiceControlsOpen}
+        />
       ) : null}
 
       <CanvasComments

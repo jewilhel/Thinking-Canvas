@@ -28,14 +28,14 @@ import {
   type SupervisedVoice,
 } from "@/voice/supervised-webrtc";
 
-type Props = { canvasId: string; userId: string };
+type Props = { canvasId: string; userId: string; controlsOpen: boolean };
 type Caption = { id: string; speaker: "You" | "AI"; text: string };
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
     : {};
 }
-export function LiveVoice({ canvasId, userId }: Props) {
+export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
   const keys = voiceStorageKeys(userId, canvasId);
   const [draft, setDraft] = useState<VoiceSettings>({
     ...DEFAULT_VOICE_SETTINGS,
@@ -452,7 +452,9 @@ export function LiveVoice({ canvasId, userId }: Props) {
   return (
     <>
       <div
-        className="absolute bottom-4 left-4 z-50 flex max-w-[calc(100%-2rem)] flex-wrap items-center gap-2 rounded-2xl border border-zinc-200 bg-white p-2 text-zinc-900 shadow-lg max-[42rem]:bottom-20"
+        id="live-voice-controls"
+        hidden={!controlsOpen}
+        className="hidden:hidden absolute right-4 bottom-20 z-40 flex max-w-[calc(100%-2rem)] flex-wrap items-center gap-2 rounded-2xl border border-zinc-200 bg-white p-2 text-zinc-900 shadow-lg max-lg:bottom-36"
         onKeyDown={(e) => e.stopPropagation()}
       >
         <Button
@@ -517,6 +519,43 @@ export function LiveVoice({ canvasId, userId }: Props) {
           <SlidersHorizontal aria-hidden="true" />
           Voice settings
         </Button>
+        {connected &&
+          effective &&
+          (!object(object(effective.audio).input).turn_detection ||
+            object(object(object(effective.audio).input).turn_detection)
+              .create_response === false) && (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  connection.current?.send({
+                    type: "input_audio_buffer.commit",
+                  })
+                }
+              >
+                Finish my turn
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  connection.current?.send({ type: "response.create" })
+                }
+              >
+                Respond
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  connection.current?.send({ type: "response.cancel" });
+                  connection.current?.send({
+                    type: "output_audio_buffer.clear",
+                  });
+                }}
+              >
+                Stop response
+              </Button>
+            </div>
+          )}
       </div>
       {panel && (
         <WorkspacePanel
@@ -667,7 +706,7 @@ export function LiveVoice({ canvasId, userId }: Props) {
       {!panel && error && (
         <p
           role="alert"
-          className="absolute bottom-20 left-4 z-50 max-w-md rounded-lg border border-red-200 bg-white p-3 text-sm text-red-700 max-[42rem]:bottom-36"
+          className="absolute top-24 right-4 z-50 w-[min(28rem,calc(100%-2rem))] rounded-lg border border-red-200 bg-white p-3 text-sm text-red-700"
         >
           {error}
         </p>
@@ -680,39 +719,6 @@ export function LiveVoice({ canvasId, userId }: Props) {
           This test ends in {remaining} seconds.
         </p>
       )}
-      {connected &&
-        effective &&
-        (!object(object(effective.audio).input).turn_detection ||
-          object(object(object(effective.audio).input).turn_detection)
-            .create_response === false) && (
-          <div className="absolute bottom-20 left-4 z-50 flex gap-2 rounded-lg bg-white p-2">
-            <Button
-              variant="outline"
-              onClick={() =>
-                connection.current?.send({ type: "input_audio_buffer.commit" })
-              }
-            >
-              Finish my turn
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() =>
-                connection.current?.send({ type: "response.create" })
-              }
-            >
-              Respond
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                connection.current?.send({ type: "response.cancel" });
-                connection.current?.send({ type: "output_audio_buffer.clear" });
-              }}
-            >
-              Stop response
-            </Button>
-          </div>
-        )}
       {showCaptions && (
         <div className="absolute top-24 left-4 z-40 max-h-60 w-[min(28rem,calc(100%-2rem))] overflow-auto rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-900">
           <div className="flex items-center justify-between">

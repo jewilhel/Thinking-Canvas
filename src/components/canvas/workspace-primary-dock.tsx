@@ -239,7 +239,7 @@ export function WorkspacePrimaryDock({
     "size-11 border-zinc-200 bg-white text-zinc-700 shadow-none hover:bg-violet-50 hover:text-violet-700 aria-pressed:border-violet-600 aria-pressed:bg-violet-600 aria-pressed:text-white dark:border-zinc-200 dark:bg-white dark:text-zinc-700 dark:hover:bg-violet-50 dark:hover:text-violet-700 dark:aria-pressed:border-violet-600 dark:aria-pressed:bg-violet-600 dark:aria-pressed:text-white";
 
   return (
-    <div className="pointer-events-auto absolute right-[27rem] bottom-4 left-4 z-40 lg:right-auto lg:left-[calc(50%-10rem)] lg:max-w-[calc(100%-27rem)] lg:-translate-x-1/2">
+    <div className="pointer-events-auto absolute right-4 bottom-4 left-4 z-40 lg:right-auto lg:left-[calc(50%-10rem)] lg:max-w-[calc(100%-27rem)] lg:-translate-x-1/2">
       {openPalette ? (
         <div
           id={`workspace-${openPalette}-palette`}
