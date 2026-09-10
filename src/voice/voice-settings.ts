@@ -152,8 +152,8 @@ export function effectiveVoiceSettings(
               transcription: z
                 .object({
                   model: z.string(),
-                  language: z.string().optional(),
-                  prompt: z.string().optional(),
+                  language: z.string().nullish(),
+                  prompt: z.string().nullish(),
                 })
                 .nullable()
                 .optional(),

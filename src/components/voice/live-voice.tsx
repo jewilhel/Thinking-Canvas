@@ -265,6 +265,13 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
     const event = object(raw);
     if (event.type === "session.created" || event.type === "session.updated") {
       const accepted = effectiveVoiceSettings(event.session);
+      if (!Object.keys(accepted).length) {
+        log({ status: "rejected", errorCode: "unrecognized_session_settings" });
+        setError(
+          "The API settings could not be read. The last confirmed settings are retained; this update is not verified.",
+        );
+        return;
+      }
       setEffective(accepted);
       if (event.type === "session.updated" && pendingUpdate.current?.sent) {
         const update = pendingUpdate.current;
@@ -341,7 +348,9 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
         setPending(false);
       }
       setError(
-        `OpenAI rejected an operation (${code}). The confirmed settings remain visible below.`,
+        code === "input_audio_buffer_commit_empty"
+          ? "There is no new speech to submit. Speak before finishing your turn."
+          : `OpenAI rejected an operation (${code}). The confirmed settings remain visible below.`,
       );
     }
     if (event.type === "playback.blocked")
@@ -521,20 +530,23 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
         </Button>
         {connected &&
           effective &&
-          (!object(object(effective.audio).input).turn_detection ||
+          (object(object(effective.audio).input).turn_detection === null ||
             object(object(object(effective.audio).input).turn_detection)
               .create_response === false) && (
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() =>
-                  connection.current?.send({
-                    type: "input_audio_buffer.commit",
-                  })
-                }
-              >
-                Finish my turn
-              </Button>
+              {object(object(effective.audio).input).turn_detection ===
+                null && (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    connection.current?.send({
+                      type: "input_audio_buffer.commit",
+                    })
+                  }
+                >
+                  Finish my turn
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={() =>

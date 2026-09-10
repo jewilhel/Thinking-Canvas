@@ -54,6 +54,31 @@ describe("voice tuning contract", () => {
     expect(text).not.toContain("private");
     expect(effectiveVoiceSettings("bad")).toEqual({});
   });
+  it("retains confirmed automatic turn-taking when transcription defaults are null", () => {
+    const session = buildVoiceSession(defaults);
+    const result = effectiveVoiceSettings({
+      ...session,
+      audio: {
+        ...session.audio,
+        input: {
+          ...session.audio.input,
+          transcription: {
+            model: "gpt-4o-mini-transcribe",
+            language: null,
+            prompt: null,
+          },
+        },
+      },
+    });
+    expect(result).toMatchObject({
+      audio: {
+        input: {
+          transcription: { language: null, prompt: null },
+          turn_detection: { create_response: true },
+        },
+      },
+    });
+  });
   it("clears optional input transcription/noise reduction explicitly", () => {
     expect(
       buildVoiceSession({
