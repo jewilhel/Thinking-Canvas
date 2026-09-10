@@ -28,8 +28,16 @@ import {
   type SupervisedVoice,
 } from "@/voice/supervised-webrtc";
 
+import {
+  emptyTranscript,
+  markTranscriptGap,
+  rememberTranscriptTurn,
+  transcriptCoverage,
+  type ConversationTranscript,
+} from "@/voice/conversation-transcript";
+
 type Props = { canvasId: string; userId: string; controlsOpen: boolean };
-type Caption = { id: string; speaker: "You" | "AI"; text: string };
+
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -52,7 +60,10 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState("");
   const [remaining, setRemaining] = useState(600);
-  const [captions, setCaptions] = useState<Caption[]>([]);
+  const [transcript, setTranscript] =
+    useState<ConversationTranscript>(emptyTranscript);
+  const captions = transcript.turns.filter((turn) => turn.text);
+  const coverageWarnings = transcriptCoverage(transcript);
   const [showCaptions, setShowCaptions] = useState(false);
   const [presets, setPresets] = useState<VoicePreset[]>(() => {
     try {
@@ -273,6 +284,16 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
         return;
       }
       setEffective(accepted);
+      if (
+        connection.current &&
+        object(object(accepted.audio).input).transcription === null
+      )
+        setTranscript((previous) =>
+          markTranscriptGap(
+            previous,
+            "Input transcription was disabled for part of the conversation.",
+          ),
+        );
       if (event.type === "session.updated" && pendingUpdate.current?.sent) {
         const update = pendingUpdate.current;
         currentVoice.current = update.settings.voice;
@@ -300,8 +321,37 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
       setStatus(responding.current ? "Thinking" : "Listening");
       sendPending();
     }
-    if (event.type === "input_audio_buffer.speech_started")
+    if (event.type === "input_audio_buffer.speech_started") {
       setStatus("Listening");
+      if (typeof event.item_id === "string")
+        setTranscript((previous) =>
+          rememberTranscriptTurn(previous, {
+            id: event.item_id as string,
+            speaker: "You",
+          }),
+        );
+    }
+    if (event.type === "response.output_item.added") {
+      const item = object(event.item);
+      if (item.role === "assistant" && typeof item.id === "string")
+        setTranscript((previous) =>
+          rememberTranscriptTurn(previous, {
+            id: item.id as string,
+            speaker: "AI",
+          }),
+        );
+    }
+    if (event.type === "conversation.item.input_audio_transcription.failed")
+      setTranscript((previous) =>
+        markTranscriptGap(previous, "Some speech could not be transcribed."),
+      );
+    if (event.type === "output_audio_buffer.cleared")
+      setTranscript((previous) => {
+        const latest = previous.turns.findLast((turn) => turn.speaker === "AI");
+        return latest
+          ? rememberTranscriptTurn(previous, { ...latest, interrupted: true })
+          : previous;
+      });
     if (event.type === "response.done") {
       responding.current = false;
       if (!playing.current) setStatus("Listening");
@@ -318,12 +368,12 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
       const text = event.transcript ?? event.text;
       const id = event.item_id;
       if (typeof text === "string" && typeof id === "string")
-        setCaptions(
-          (previous) =>
-            [
-              ...previous.filter((item) => item.id !== id),
-              { id, speaker: human ? "You" : "AI", text },
-            ].slice(-200) as Caption[],
+        setTranscript((previous) =>
+          rememberTranscriptTurn(previous, {
+            id,
+            speaker: human ? "You" : "AI",
+            text,
+          }),
         );
     }
     if (event.type === "error") {
@@ -361,6 +411,13 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
   const start = async (restartOf?: string) => {
     if (abort.current) return;
     setConsent(false);
+    if (!draft.transcription)
+      setTranscript((previous) =>
+        markTranscriptGap(
+          previous,
+          "Input transcription was disabled for part of the conversation.",
+        ),
+      );
     setError("");
     setStatus("Connecting");
     setEffective(null);
@@ -739,6 +796,11 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
               Hide
             </Button>
           </div>
+          {coverageWarnings.length > 0 && (
+            <p role="status" className="mb-2 text-xs text-amber-800">
+              {coverageWarnings.join(" ")}
+            </p>
+          )}
           <p className="mb-2 text-xs text-zinc-500">
             May be incomplete; interrupted AI speech may include words you did
             not hear. Most recent 200 turns only. Not saved on reload.
