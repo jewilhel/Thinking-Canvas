@@ -29,6 +29,7 @@ import {
 } from "@/voice/supervised-webrtc";
 
 import {
+  availableTranscriptText,
   emptyTranscript,
   markTranscriptGap,
   rememberTranscriptTurn,
@@ -36,14 +37,26 @@ import {
   type ConversationTranscript,
 } from "@/voice/conversation-transcript";
 
-type Props = { canvasId: string; userId: string; controlsOpen: boolean };
+type Props = {
+  canvasId: string;
+  userId: string;
+  controlsOpen: boolean;
+  canSaveTranscript: boolean;
+  onSaveTranscript: (text: string) => void;
+};
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
     : {};
 }
-export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
+export function LiveVoice({
+  canvasId,
+  userId,
+  controlsOpen,
+  canSaveTranscript,
+  onSaveTranscript,
+}: Props) {
   const keys = voiceStorageKeys(userId, canvasId);
   const [draft, setDraft] = useState<VoiceSettings>({
     ...DEFAULT_VOICE_SETTINGS,
@@ -65,6 +78,12 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
   const captions = transcript.turns.filter((turn) => turn.text);
   const coverageWarnings = transcriptCoverage(transcript);
   const [showCaptions, setShowCaptions] = useState(false);
+  const [savePreview, setSavePreview] = useState<{
+    text: string;
+    gaps: string[];
+  } | null>(null);
+  const [savedTranscript, setSavedTranscript] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [presets, setPresets] = useState<VoicePreset[]>(() => {
     try {
       return parseVoicePresets(localStorage.getItem(keys.presets) ?? "[]");
@@ -565,13 +584,17 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
               <PhoneOff aria-hidden="true" />
               Leave
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => setShowCaptions(!showCaptions)}
-            >
-              Captions
-            </Button>
           </>
+        )}
+        {(connected ||
+          transcript.turns.length > 0 ||
+          coverageWarnings.length > 0) && (
+          <Button
+            variant="outline"
+            onClick={() => setShowCaptions(!showCaptions)}
+          >
+            Captions
+          </Button>
         )}
         <Button
           variant="outline"
@@ -805,6 +828,35 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
             May be incomplete; interrupted AI speech may include words you did
             not hear. Most recent 200 turns only. Not saved on reload.
           </p>
+          <Button
+            variant="outline"
+            disabled={
+              !canSaveTranscript ||
+              !captions.length ||
+              savedTranscript === availableTranscriptText(transcript)
+            }
+            onClick={(event) => {
+              setInvoker(event.currentTarget);
+              setSaveError("");
+              setSavePreview({
+                text: availableTranscriptText(transcript),
+                gaps: coverageWarnings,
+              });
+            }}
+          >
+            Save transcript as document
+          </Button>
+          {!canSaveTranscript && (
+            <p className="text-xs">
+              Editing access and a connected, saved canvas are required.
+            </p>
+          )}
+          {savedTranscript && (
+            <p role="status" className="text-xs">
+              Transcript added to the canvas. Check the canvas save indicator
+              before leaving.
+            </p>
+          )}
           {captions.map((caption) => (
             <p key={caption.id} className="mb-2">
               <strong>{caption.speaker}: </strong>
@@ -812,6 +864,61 @@ export function LiveVoice({ canvasId, userId, controlsOpen }: Props) {
             </p>
           ))}
         </div>
+      )}
+      {savePreview && (
+        <WorkspacePanel
+          title="Save conversation transcript"
+          invoker={invoker}
+          onDismiss={() => setSavePreview(null)}
+        >
+          <p>
+            This saves the text shown below as an ordinary canvas document
+            visible to canvas members. No audio is saved. Later speech is not
+            added automatically.
+          </p>
+          <p className="my-2 text-sm">
+            Transcriptions can contain errors. Interrupted AI text may contain
+            words you did not hear.
+          </p>
+          {savePreview.gaps.length > 0 && (
+            <p role="status" className="my-2 text-amber-800">
+              This is an incomplete transcript. {savePreview.gaps.join(" ")}
+            </p>
+          )}
+          <pre className="my-3 max-h-64 overflow-auto text-sm whitespace-pre-wrap">
+            {savePreview.text}
+          </pre>
+          {saveError && <p role="alert">{saveError}</p>}
+          <Button
+            disabled={!canSaveTranscript}
+            onClick={() => {
+              try {
+                const disclosure = savePreview.gaps.length
+                  ? `Coverage: Incomplete transcript. ${savePreview.gaps.join(" ")}\n\n`
+                  : "";
+                onSaveTranscript(
+                  `${disclosure}Temporary conversation transcript. Transcriptions may contain errors.\n\n${savePreview.text}`,
+                );
+                setSavedTranscript(savePreview.text);
+                setSavePreview(null);
+                setShowCaptions(false);
+              } catch (error) {
+                setSaveError(
+                  error instanceof Error
+                    ? error.message
+                    : "Could not create the document.",
+                );
+              }
+            }}
+          >
+            {savePreview.gaps.length
+              ? "Save available portion"
+              : "Save document"}
+          </Button>
+          <Button variant="ghost" onClick={() => setSavePreview(null)}>
+            Cancel
+          </Button>
+        </WorkspacePanel>
       )}
     </>
   );

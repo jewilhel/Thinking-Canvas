@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
 import { ProductDocumentEditor } from "@/components/documents/product-document-editor";
-import { createProductDocumentObject } from "@/documents/product-document";
+import {
+  createProductDocumentObject,
+  initializePlainTextDocument,
+} from "@/documents/product-document";
 
 vi.mock("@/comments/use-canvas-comments", () => ({
   useCanvasComments: () => ({
@@ -33,9 +36,17 @@ describe("ProductDocumentEditor", () => {
       geometry: { x: 10, y: 20, width: 440, height: 560, rotation: 0 },
     });
 
+    const original = new Y.Doc();
+    initializePlainTextDocument(
+      original,
+      objectId,
+      "You: Keep **literal** words.\n\nAI: Ready.",
+    );
+    const reloaded = new Y.Doc();
+    Y.applyUpdate(reloaded, Y.encodeStateAsUpdate(original));
     render(
       <ProductDocumentEditor
-        canvasDocument={new Y.Doc()}
+        canvasDocument={reloaded}
         canvasId={canvasId}
         canvasRole="owner"
         supabaseUrl="http://127.0.0.1:54321"
@@ -53,6 +64,10 @@ describe("ProductDocumentEditor", () => {
       />,
     );
 
+    expect(
+      screen.getByText("You: Keep **literal** words."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("AI: Ready.")).toBeInTheDocument();
     const surface = screen.getByTestId("document-reading-surface");
     expect(surface).toHaveAttribute("data-layout-mode", "continuous");
     expect(surface).toHaveStyle({

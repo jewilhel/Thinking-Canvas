@@ -116,3 +116,28 @@ export function copyProductDocumentContent(
     target.applyDelta(delta);
   }, "document.content.copy");
 }
+
+/** Initialize a new ordinary document from literal text, without interpreting markup. */
+export function initializePlainTextDocument(
+  canvasDocument: Y.Doc,
+  documentId: string,
+  text: string,
+) {
+  const root = getProductDocumentContentRoot(canvasDocument, documentId);
+  if (root.length) throw new Error("Document already contains text.");
+  if (!text.trim() || text.length > 120_000)
+    throw new Error("Document text is empty or too large.");
+  for (const line of text.split("\n")) {
+    const paragraph = new Y.XmlText();
+    paragraph.setAttribute("__type", "paragraph");
+    const metadata = new Y.Map<unknown>();
+    metadata.set("__type", "text");
+    metadata.set("__format", 0);
+    metadata.set("__style", "");
+    metadata.set("__mode", 0);
+    metadata.set("__detail", 0);
+    paragraph.insertEmbed(0, metadata);
+    if (line) paragraph.insert(1, line);
+    root.insertEmbed(root.length, paragraph);
+  }
+}

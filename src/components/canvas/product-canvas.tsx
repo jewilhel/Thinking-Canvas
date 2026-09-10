@@ -183,7 +183,10 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import type { CanvasRole } from "@/domain/command";
 import { focusedDocumentViewport } from "@/documents/document-presentation";
 import { documentFullyContainsGeometry } from "@/documents/document-containment";
-import { createProductDocumentObject } from "@/documents/product-document";
+import {
+  createProductDocumentObject,
+  initializePlainTextDocument,
+} from "@/documents/product-document";
 import { ScenePanel } from "@/components/stories/scene-panel";
 import {
   captureStoryFraming,
@@ -983,6 +986,34 @@ function ProductCanvasWorkspace({
         "Copy is unavailable. Use the address bar; access is still limited to members.",
       );
     }
+  }
+
+  function saveVoiceTranscript(text: string) {
+    if (!canMutateCanvas || saveStatus !== "Saved") {
+      throw new Error(
+        "Wait for the canvas to reconnect and finish saving. Editing access is required.",
+      );
+    }
+    const id = crypto.randomUUID();
+    const object = createProductDocumentObject({
+      canvasId,
+      objectId: id,
+      actorId: userId,
+      issuedAt: new Date().toISOString(),
+      title: "Conversation transcript",
+      geometry: {
+        x: (size.width / 2 - viewport.x) / viewport.scale - 220,
+        y: (size.height / 2 - viewport.y) / viewport.scale - 280,
+        width: 440,
+        height: 560,
+        rotation: 0,
+      },
+    });
+    document.transact(() => {
+      runCommand("object.create", { object });
+      initializePlainTextDocument(document, id, text);
+    }, `canvas.transcript.${id}`);
+    openDocument(object);
   }
 
   function createObject(
@@ -5225,6 +5256,8 @@ function ProductCanvasWorkspace({
           canvasId={canvasId}
           userId={userId}
           controlsOpen={voiceControlsOpen}
+          canSaveTranscript={canMutateCanvas && saveStatus === "Saved"}
+          onSaveTranscript={saveVoiceTranscript}
         />
       ) : null}
 
