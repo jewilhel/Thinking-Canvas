@@ -26,6 +26,32 @@ const speech = (delta: string, event_id = "speech1", start_ms = 4000) => ({
   end_ms: start_ms + 500,
 });
 describe("bounded voice delegation", () => {
+  it("routes the actual comment request and does not reuse its speech in a later delegation", async () => {
+    const { owner, hooks } = setup();
+    owner.receive(
+      speech("Leave a comment on Jason saying the label is clear."),
+    );
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    expect(hooks.run.mock.calls[0]).toEqual([
+      "task1",
+      expect.any(AbortSignal),
+      {
+        kind: "comment",
+        text: "Leave a comment on Jason saying the label is clear.",
+      },
+    ]);
+    await owner.cancel();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    owner.receive(
+      { ...delegated, delegation: { ...delegated.delegation, id: "task2" } },
+      4000,
+    );
+    owner.tick(6000);
+    expect(hooks.run).toHaveBeenCalledTimes(1);
+  });
   it("waits for late fragments, deduplicates work, then returns verified output only during quiet", async () => {
     const { owner, hooks } = setup();
     owner.receive(delegated, 0);

@@ -1,5 +1,45 @@
+import { z } from "zod";
+
+export const liveCanvasRequestSchema = z.strictObject({
+  kind: z.enum(["question", "comment"]),
+  text: z.string().trim().min(1).max(2000),
+});
+export type LiveCanvasRequest = z.infer<typeof liveCanvasRequestSchema>;
 export const VOICE_DESCRIPTION_REQUEST =
   "Describe the current canvas briefly without making changes.";
+export const defaultLiveCanvasRequest: LiveCanvasRequest = {
+  kind: "question",
+  text: VOICE_DESCRIPTION_REQUEST,
+};
+
+/** Only explicit canvas questions or comment requests enter this slice. */
+export function parseLiveCanvasRequest(text: string): LiveCanvasRequest | null {
+  const request = text.trim();
+  if (!request || request.length > 2000 || cancelsVoiceTask(request))
+    return null;
+  const prefix = "(?:please\\s+)?(?:(?:can|could|would) you\\s+)?";
+  if (
+    new RegExp(
+      `^${prefix}(?:add|leave|write|create|post)\\s+(?:a\\s+)?comment\\b`,
+      "i",
+    ).test(request) &&
+    !/\b(?:don't|do not|never|delete|remove|instead)\b/i.test(request)
+  ) {
+    return { kind: "comment", text: request };
+  }
+  if (
+    recognizesCanvasDescription(request) ||
+    (/^(?:(?:can|could|would) you\s+)?(?:tell me|describe|summarize|list|explain|what|which|where|how|why|are there|is there)\b/i.test(
+      request,
+    ) &&
+      /\b(?:canvas|shapes?|objects?|documents?|connectors?|notes?|tables?|labels?|colors?|colours?|overlap)\b/i.test(
+        request,
+      ))
+  ) {
+    return { kind: "question", text: request };
+  }
+  return null;
+}
 /** Deliberately bounded M3 proof. Ambiguous requests require clarification. */
 export function recognizesCanvasDescription(text: string) {
   if (/\b(?:not|never|don't|cancel|instead|actually)\b/i.test(text))

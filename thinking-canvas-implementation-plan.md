@@ -211,6 +211,8 @@ Evidence: [Milestone 3 implementation and verification record](docs/implementati
 
 ## Milestone 4 — AI collaborator, permissions, and typed interaction
 
+2026-09-11 approved default revision: new canvases start with the primary AI enabled and authority set to **Trusted Editor**. Owners can still disable AI or select a more restrictive authority; membership permissions remain enforced. Existing explicit settings are preserved. Implementation and verification are recorded in the Milestone 10 plan.
+
 ### Product requirements
 
 - [x] **FR-015 — One primary AI.** Every canvas can enable one clearly identified primary AI collaborator in the first version.

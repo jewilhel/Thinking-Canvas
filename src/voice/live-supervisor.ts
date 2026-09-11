@@ -93,7 +93,7 @@ export async function superviseLiveVoice(
         .eq("id", session.id);
       if (cancelled.error) stop("accounting_unavailable");
     },
-    run: async (id, signal) => {
+    run: async (id, signal, canvasRequest) => {
       const response = await fetch(
         `${app.origin}/api/canvases/${session.canvas_id}/voice/delegations`,
         {
@@ -101,9 +101,18 @@ export async function superviseLiveVoice(
           headers: {
             "Content-Type": "application/json",
             cookie: app.cookie,
-            "x-live-delegation": liveDelegationSignature(key, session.id, id),
+            "x-live-delegation": liveDelegationSignature(
+              key,
+              session.id,
+              id,
+              canvasRequest,
+            ),
           },
-          body: JSON.stringify({ sessionId: session.id, delegationId: id }),
+          body: JSON.stringify({
+            sessionId: session.id,
+            delegationId: id,
+            request: canvasRequest,
+          }),
           signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]),
         },
       );
@@ -135,7 +144,7 @@ export async function superviseLiveVoice(
         event_id: probeId,
         delegation_id: null,
         content:
-          "The application supervisor is connected. A read-only canvas description is available through client delegation. Changes are not available.",
+          "The application supervisor is connected. Canvas questions and explicit contextual comment requests are available through client delegation. Object editing is not available yet.",
       }),
     ),
   );

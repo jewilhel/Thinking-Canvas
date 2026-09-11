@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
-  recognizesCanvasDescription,
+  parseLiveCanvasRequest,
+  defaultLiveCanvasRequest,
+  type LiveCanvasRequest,
   cancelsVoiceTask,
 } from "./live-delegation-contract";
 
@@ -21,7 +23,11 @@ const delegation = z.object({
   }),
 });
 type Hooks = {
-  run: (id: string, signal: AbortSignal) => Promise<string>;
+  run: (
+    id: string,
+    signal: AbortSignal,
+    request: LiveCanvasRequest,
+  ) => Promise<string>;
   append: (
     type:
       | "session.thinking.append"
@@ -47,6 +53,7 @@ export class LiveDelegationOwner {
   };
   private closed = false;
   private task?: Promise<void>;
+  private consumedThrough = -1;
   constructor(private hooks: Hooks) {}
   get busy() {
     return !!this.active || this.pending.size > 0 || !!this.queued;
@@ -56,11 +63,11 @@ export class LiveDelegationOwner {
     this.seen.add(requestId);
     this.begin(requestId);
   }
-  private begin(id: string) {
+  private begin(id: string, request = defaultLiveCanvasRequest) {
     const controller = new AbortController();
     this.active = { id, controller };
     this.task = this.hooks
-      .run(id, controller.signal)
+      .run(id, controller.signal, request)
       .then((text) => {
         if (!this.closed && !controller.signal.aborted)
           this.queueReport(id, text);
@@ -69,7 +76,7 @@ export class LiveDelegationOwner {
         if (!this.closed && !controller.signal.aborted)
           this.queueReport(
             id,
-            "The canvas description did not complete. No canvas changes were made.",
+            "The canvas request did not finish successfully. Check Comments for any recorded result before retrying.",
           );
       })
       .finally(() => {
@@ -129,23 +136,26 @@ export class LiveDelegationOwner {
       this.pending.delete(id);
       const offset = this.offsets.get(id)!;
       this.offsets.delete(id);
-      const text = this.fragments
-        .filter(
-          (x) => x.end_ms >= offset - 12000 && x.start_ms <= offset + 2000,
-        )
-        .map((x) => x.delta)
-        .join("");
-      if (!recognizesCanvasDescription(text)) {
+      const relevant = this.fragments.filter(
+        (x) =>
+          x.end_ms > this.consumedThrough &&
+          x.end_ms >= offset - 12000 &&
+          x.start_ms <= offset + 2000,
+      );
+      const text = relevant.map((x) => x.delta).join("");
+      const request = parseLiveCanvasRequest(text);
+      if (!request) {
         void Promise.resolve(
           this.hooks.append(
             "session.commentary.append",
             id,
-            "No new canvas lookup was run for this request. If the latest Canvas AI report already contains the answer, use those facts. Otherwise clarify whether the participant wants a fresh canvas description. No canvas editing is available.",
+            "No new canvas task was run for this request. Use the latest report if it answers the question. Otherwise clarify the canvas question or explicit comment request. Object editing is not available yet.",
           ),
         ).catch(() => undefined);
         continue;
       }
-      this.begin(id);
+      this.consumedThrough = Math.max(...relevant.map((x) => x.end_ms));
+      this.begin(id, request);
     }
     if (this.queued && !this.queued.waiting && this.hooks.quiet()) {
       const result = this.queued;

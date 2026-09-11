@@ -230,11 +230,11 @@ export function LiveVoice({
             setBackendPending(Boolean(data.backendPending));
             if (data.taskStatus === "completed")
               setTaskNotice(
-                "Canvas description completed. See Comments for the result.",
+                "Canvas request completed. See Comments for the result.",
               );
             if (data.taskStatus === "failed")
               setTaskNotice(
-                "Canvas description failed. No canvas changes were made.",
+                "Canvas request failed. Check Comments before retrying.",
               );
             if (data.taskStatus === "cancelled")
               setTaskNotice("Voice task cancelled.");
@@ -579,8 +579,9 @@ export function LiveVoice({
             </label>
             <p>
               Initiative and interruption preferences are conversational
-              guidance, not API permissions. This version can describe the
-              canvas but cannot edit it yet.
+              guidance, not API permissions. This version can answer canvas
+              questions and leave requested comments, but cannot edit objects
+              yet.
             </p>
             <label className="block">
               Idle timeout (seconds)

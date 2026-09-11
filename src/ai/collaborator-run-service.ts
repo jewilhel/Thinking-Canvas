@@ -174,6 +174,8 @@ export async function completeAiRun(
     onStatus?: (status: "projecting" | "thinking" | "applying") => void;
     scenario?: FakeAiScenario;
     readOnly?: boolean;
+    /** Server-only metered voice owner; this slice permits contextual comments only. */
+    voiceTaskId?: string;
     gateway?: PrimaryAiGateway;
     beforeComplete?: () => Promise<void>;
   } = {},
@@ -202,7 +204,13 @@ export async function completeAiRun(
     .select("id")
     .eq("id", run.idempotency_key)
     .maybeSingle();
-  if (voiceTask.error || (voiceTask.data && !options.readOnly)) {
+  if (
+    voiceTask.error ||
+    (voiceTask.data &&
+      (options.voiceTaskId !== voiceTask.data.id ||
+        !options.gateway ||
+        !options.beforeComplete))
+  ) {
     throw new AiRunAccessError("Voice requests must use the live task owner.");
   }
   const accessResult = await supabase.rpc("get_canvas_ai_access", {
@@ -307,13 +315,16 @@ export async function completeAiRun(
     commentResult.data.comment_scene_targets,
   );
   const instruction = replyResult.data?.body ?? commentResult.data.body;
-  const allowedToolNames = options.readOnly
+  const authorityToolNames = options.readOnly
     ? []
     : sourceDocumentTarget
       ? [...allowedDocumentRangeAiToolNames(currentAuthority)]
       : sourceSceneTarget
         ? allowedSceneAiToolNames(currentAuthority)
         : allowedAiToolNames(currentAuthority);
+  const allowedToolNames = voiceTask.data
+    ? authorityToolNames.filter((name) => name === "create_contextual_comment")
+    : authorityToolNames;
   const sourceDocumentRange = sourceDocumentTarget
     ? currentDocumentRange(compacted.document, {
         documentObjectId: sourceDocumentTarget.document_object_id,
@@ -494,25 +505,27 @@ export async function completeAiRun(
     ...projectionBase,
     serializedBytes,
   });
-  const continuityResult = options.readOnly
-    ? null
-    : await repeatedLayoutContinuity({
-        runId: run.id,
-        commentId: run.invoking_comment_id,
-        invokingReplyId: run.invoking_reply_id,
-        instruction,
-        sourceInstruction: commentResult.data.body,
-        sourceObjects,
-      });
+  const continuityResult =
+    options.readOnly || voiceTask.data
+      ? null
+      : await repeatedLayoutContinuity({
+          runId: run.id,
+          commentId: run.invoking_comment_id,
+          invokingReplyId: run.invoking_reply_id,
+          instruction,
+          sourceInstruction: commentResult.data.body,
+          sourceObjects,
+        });
   options.onStatus?.("thinking");
   let gatewayResult = continuityResult;
   let providerAttemptCount = 0;
   const gateway = options.gateway ?? createPrimaryAiGateway();
-  const providerAttemptLimit = options.readOnly
-    ? 1
-    : sourceDocumentTarget
-      ? DOCUMENT_PROVIDER_ATTEMPT_LIMIT
-      : AI_PROVIDER_ATTEMPT_LIMIT;
+  const providerAttemptLimit =
+    options.readOnly || voiceTask.data
+      ? 1
+      : sourceDocumentTarget
+        ? DOCUMENT_PROVIDER_ATTEMPT_LIMIT
+        : AI_PROVIDER_ATTEMPT_LIMIT;
   const reviewVisualChange = continuityResult
     ? undefined
     : gateway.reviewVisualChange?.bind(gateway);
@@ -1394,6 +1407,8 @@ export async function completeAiRun(
         "The AI contextual comment referenced an unavailable object.",
       );
     }
+    await options.beforeComplete?.();
+    throwIfAiRunAborted(options.signal);
     const toolResult = await createServiceClient().rpc(
       "execute_ai_contextual_comment",
       {

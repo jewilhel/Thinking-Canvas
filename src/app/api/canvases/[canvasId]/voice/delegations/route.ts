@@ -8,7 +8,8 @@ import {
 } from "@/voice/voice-server";
 import { liveDelegationSignature } from "@/voice/live-delegation-signature";
 import {
-  VOICE_DESCRIPTION_REQUEST,
+  defaultLiveCanvasRequest,
+  liveCanvasRequestSchema,
   voiceBackendUnits,
 } from "@/voice/live-delegation-contract";
 import { createClient } from "@/lib/supabase/server";
@@ -29,6 +30,7 @@ export async function POST(
     .strictObject({
       sessionId: z.uuid(),
       delegationId: z.string().min(1).max(512),
+      request: liveCanvasRequestSchema.default(defaultLiveCanvasRequest),
     })
     .safeParse(await request.json().catch(() => null));
   const user = await authorizeVoice(canvasId);
@@ -38,6 +40,7 @@ export async function POST(
     process.env.OPENAI_API_KEY!,
     body.data.sessionId,
     body.data.delegationId,
+    body.data.request,
   );
   if (
     !/^[a-f0-9]{64}$/.test(signature) ||
@@ -62,7 +65,7 @@ export async function POST(
   });
   if (claim.error)
     return Response.json(
-      { error: "The read-only task could not reserve shared allowance." },
+      { error: "The voice task could not reserve shared allowance." },
       { status: 409 },
     );
   if (!claim.data?.id)
@@ -122,7 +125,7 @@ export async function POST(
     const comment = await auth.rpc("create_comment_thread", {
       target_canvas_id: canvasId,
       target_client_command_id: taskId,
-      target_body: VOICE_DESCRIPTION_REQUEST,
+      target_body: body.data.request.text,
       target_object_ids: [],
       target_anchor_x: 0,
       target_anchor_y: 0,
@@ -146,7 +149,7 @@ export async function POST(
             new TextEncoder().encode(JSON.stringify(input)).length > 100000 ||
             (input.max_output_tokens ?? Infinity) > 2048
           )
-            throw new Error("Read-only request exceeds its reserved bound");
+            throw new Error("Voice request exceeds its reserved bound");
           await stillAllowed();
           stage = "provider_request";
           attempted = true;
@@ -185,7 +188,13 @@ export async function POST(
     stage = "canvas_workflow";
     const completed = await completeAiRun(
       { runId, canvasId },
-      { signal, readOnly: true, gateway, beforeComplete: stillAllowed },
+      {
+        signal,
+        readOnly: body.data.request.kind === "question",
+        voiceTaskId: taskId,
+        gateway,
+        beforeComplete: stillAllowed,
+      },
     );
     await stillAllowed();
     const reply = await auth
