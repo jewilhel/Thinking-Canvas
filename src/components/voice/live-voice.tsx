@@ -694,6 +694,33 @@ export function LiveVoice({
               Retry ending failed test
             </Button>
           )}
+          <Button
+            variant="outline"
+            disabled={validating}
+            onClick={async () => {
+              setValidating(true);
+              setValidation("");
+              try {
+                const response = await fetch(
+                  `/api/canvases/${canvasId}/voice/live-readiness`,
+                );
+                const result = await response.json();
+                setValidation(
+                  response.ok && result.available
+                    ? "GPT-Live model access confirmed. No voice session was opened. Migration is still in progress."
+                    : "GPT-Live access could not be confirmed by this deployment. No voice session was opened.",
+                );
+              } catch {
+                setValidation(
+                  "The GPT-Live access check could not reach the deployment.",
+                );
+              } finally {
+                setValidating(false);
+              }
+            }}
+          >
+            Check GPT-Live access
+          </Button>
           <VoiceSettingsPanel
             validating={validating}
             validation={validation}
