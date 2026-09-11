@@ -83,6 +83,8 @@ Prefer modifier-click over double-click in the initial implementation: double-cl
 
 The panel contains mute/unmute, End session, captions and requested transcript saving, remaining time/budget, detailed connection state, tuning controls, presets, and post-run records. It can open while voice is off, including after Leave to save available temporary captions. Its opening/closing never owns the underlying session lifecycle. Idle/expiry warnings remain transient and actionable outside the hidden panel; no persistent status text is added to the toolbar.
 
+Owner refinement during hosted QA (2026-09-11): remove the floating caption preview. Available captions belong only inside Voice settings behind View captions; closing settings hides them. Requested transcript saving and settings-only test records remain available.
+
 Respect reduced motion with a static active marker. Use shape/mark and accessible state as well as color; expose accurate action labels such as Start AI voice, Cancel voice connection, and End AI voice, with concise state descriptions. Do not announce every waveform frame to screen readers. Keep the existing button hit target and focus ring. Verify narrow windows, 200% zoom, document focus, no toolbar growth/overlap, keyboard/touch/modifier actions, accidental rapid taps, denied permissions, and panel dismissal during a call. Hosted acceptance includes verifying that opening settings never creates an extra provider session or ends the current one.
 
 Only the migration plan is amended here; the current preview keeps its existing controls until implementation is approved and deployed.

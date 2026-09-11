@@ -446,8 +446,12 @@ export function LiveVoice({
                   End session
                 </Button>
               )}
-              <Button variant="outline" onClick={() => setCaptions(!captions)}>
-                Captions
+              <Button
+                variant="outline"
+                aria-expanded={captions}
+                onClick={() => setCaptions(!captions)}
+              >
+                {captions ? "Hide captions" : "View captions"}
               </Button>
               <Button
                 variant="outline"
@@ -457,6 +461,16 @@ export function LiveVoice({
                 Save available transcript
               </Button>
             </div>
+            {captions && (
+              <section
+                aria-label="Temporary voice captions"
+                className="max-h-52 overflow-auto rounded-lg border p-3"
+              >
+                <pre className="whitespace-pre-wrap">
+                  {text || "No captions yet."}
+                </pre>
+              </section>
+            )}
             <label className="block">
               AI voice
               <select
@@ -719,19 +733,6 @@ export function LiveVoice({
             </Button>
           </div>
         </WorkspacePanel>
-      )}
-      {captions && (
-        <div
-          className="absolute right-4 bottom-36 z-40 max-h-52 w-[min(32rem,calc(100%-2rem))] overflow-auto rounded-xl border bg-white p-3 text-sm"
-          aria-label="Temporary voice captions"
-        >
-          <Button variant="outline" onClick={() => setCaptions(false)}>
-            Close captions
-          </Button>
-          <pre className="whitespace-pre-wrap">
-            {text || "No captions yet."}
-          </pre>
-        </div>
       )}
       {error && (
         <div
