@@ -39,7 +39,7 @@ export async function GET(request: Request, context: Context) {
     const { data, error } = await voiceService()
       .from("voice_test_sessions")
       .select(
-        "supervisor_ready,ended_at,expires_at,worker_started_at,end_reason,charged_cents,voice_usage_final,idle_warning_at,backend_reserved_units,backend_charged_units,backend_usage_final,voice_usage_units,provider_closed_at",
+        "supervisor_ready,ended_at,expires_at,worker_started_at,end_reason,charged_cents,voice_usage_final,idle_warning_at,backend_reserved_units,backend_charged_units,backend_usage_final,voice_usage_units,provider_closed_at,describe_requested_at,backend_cancel_at",
       )
       .eq("id", sessionId)
       .eq("canvas_id", canvasId)
@@ -48,7 +48,7 @@ export async function GET(request: Request, context: Context) {
     if (error || !data) return new Response(null, { status: 404 });
     const latestTask = await voiceService()
       .from("voice_delegations")
-      .select("status")
+      .select("status,created_at")
       .eq("session_id", sessionId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -61,7 +61,16 @@ export async function GET(request: Request, context: Context) {
         chargedCents: data.charged_cents,
         finalUsage: data.voice_usage_final && data.backend_usage_final,
         backendPending: data.backend_reserved_units > 0,
-        taskStatus: latestTask.data?.status ?? null,
+        taskStatus:
+          data.describe_requested_at &&
+          data.backend_cancel_at &&
+          Date.parse(data.backend_cancel_at) >=
+            Date.parse(data.describe_requested_at) &&
+          (!latestTask.data ||
+            Date.parse(latestTask.data.created_at) <
+              Date.parse(data.describe_requested_at))
+            ? "cancelled"
+            : (latestTask.data?.status ?? null),
         backendUnits: data.backend_charged_units,
         voiceUnits: data.voice_usage_units,
         idleWarningAt: data.idle_warning_at,

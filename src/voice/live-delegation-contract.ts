@@ -35,3 +35,14 @@ export function voiceBackendUnits(
       1_000_000,
   );
 }
+
+export function controlRequestIsCurrent(
+  requestedAt: string,
+  cancelledAt: string | null,
+) {
+  const requested = Date.parse(requestedAt);
+  return (
+    Number.isFinite(requested) &&
+    (!cancelledAt || requested > Date.parse(cancelledAt))
+  );
+}

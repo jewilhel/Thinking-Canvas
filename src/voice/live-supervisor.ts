@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { controlRequestIsCurrent } from "./live-delegation-contract";
 import { LiveDelegationOwner } from "./live-delegation-owner";
 import { liveDelegationSignature } from "./live-delegation-signature";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -246,7 +247,10 @@ export async function superviseLiveVoice(
         state.data.describe_requested_at !== lastDescription
       ) {
         lastDescription = state.data.describe_requested_at;
-        owner.requestDescription(`control:${lastDescription}`);
+        if (
+          controlRequestIsCurrent(lastDescription, state.data.backend_cancel_at)
+        )
+          owner.requestDescription(`control:${lastDescription}`);
         lastActivity = Date.now();
       }
       if (owner.busy || state.data?.backend_reserved_units > 0)

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { LiveDelegationOwner } from "./live-delegation-owner";
-import { voiceBackendUnits } from "./live-delegation-contract";
+import {
+  voiceBackendUnits,
+  controlRequestIsCurrent,
+} from "./live-delegation-contract";
 function setup() {
   const hooks = {
     run: vi.fn(async () => "Verified canvas description"),
@@ -107,4 +110,16 @@ describe("bounded voice delegation", () => {
     expect(voiceBackendUnits("gpt-5.6-luna", -1, 0)).toBeNull();
     expect(voiceBackendUnits("gpt-5.6-luna", 1, 0)).toBe(1);
   });
+});
+
+it("a cancellation that arrives before the next heartbeat suppresses the queued application request", () => {
+  expect(
+    controlRequestIsCurrent("2026-09-11T21:00:00Z", "2026-09-11T21:00:01Z"),
+  ).toBe(false);
+  expect(
+    controlRequestIsCurrent("2026-09-11T21:00:01Z", "2026-09-11T21:00:01Z"),
+  ).toBe(false);
+  expect(
+    controlRequestIsCurrent("2026-09-11T21:00:02Z", "2026-09-11T21:00:01Z"),
+  ).toBe(true);
 });
