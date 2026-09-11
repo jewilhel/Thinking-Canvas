@@ -83,15 +83,22 @@ describe("bounded voice delegation", () => {
     owner.tick(6000);
     expect(hooks.append).not.toHaveBeenCalled();
   });
-  it("requires a real delegation even after the explicit settings test request", () => {
+  it("runs an authenticated application request once without inventing a provider delegation ID", async () => {
     const { owner, hooks } = setup();
-    owner.requestDescription(0);
-    owner.tick(3000);
-    expect(hooks.run).not.toHaveBeenCalled();
-    owner.receive(delegated, 3000);
+    owner.requestDescription("control:request1");
+    owner.requestDescription("control:request1");
+    await vi.waitFor(() => expect(owner.busy).toBe(true));
+    await Promise.resolve();
+    await Promise.resolve();
     owner.tick(5000);
     expect(hooks.run).toHaveBeenCalledTimes(1);
+    expect(hooks.append).toHaveBeenCalledWith(
+      "session.commentary.append",
+      null,
+      "Verified canvas description",
+    );
   });
+
   it("counts backend tokens in the same integer units without understating small usage", () => {
     expect(voiceBackendUnits("gpt-5.6-luna", 1000, 1000)).toBe(1680);
     expect(voiceBackendUnits("gpt-5.6-sol", 100000, 2048)).toBeLessThan(

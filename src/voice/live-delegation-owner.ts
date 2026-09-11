@@ -40,29 +40,38 @@ export class LiveDelegationOwner {
   private pending = new Map<string, number>();
   private active?: { id: string; controller: AbortController };
   private queued?: { id: string; text: string };
-  private testUntil = 0;
   private closed = false;
   private task?: Promise<void>;
   constructor(private hooks: Hooks) {}
   get busy() {
     return !!this.active || this.pending.size > 0 || !!this.queued;
   }
-  requestDescription(now = Date.now()) {
-    if (this.closed || this.busy) return;
-    this.testUntil = now + 15000;
-    this.hooks.append(
-      "session.instructions.append",
-      null,
-      "The participant explicitly pressed Describe this canvas. Delegate that read-only canvas description request to the client now. Wait for the application result before describing the canvas.",
-    );
-    this.hooks.append(
-      "session.commentary.append",
-      null,
-      "The participant has requested a description of the current canvas using the application control. A backend canvas read is needed before answering.",
-    );
+  requestDescription(requestId: string) {
+    if (this.closed || this.busy || this.seen.has(requestId)) return;
+    this.seen.add(requestId);
+    this.begin(requestId);
+  }
+  private begin(id: string) {
+    const controller = new AbortController();
+    this.active = { id, controller };
+    this.task = this.hooks
+      .run(id, controller.signal)
+      .then((text) => {
+        if (!this.closed && !controller.signal.aborted)
+          this.queued = { id, text };
+      })
+      .catch(() => {
+        if (!this.closed && !controller.signal.aborted)
+          this.queued = {
+            id,
+            text: "The canvas description did not complete. No canvas changes were made.",
+          };
+      })
+      .finally(() => {
+        if (this.active?.id === id) this.active = undefined;
+      });
   }
   async cancel(persist = true) {
-    this.testUntil = 0;
     this.pending.clear();
     this.offsets.clear();
     this.queued = undefined;
@@ -118,9 +127,7 @@ export class LiveDelegationOwner {
         )
         .map((x) => x.delta)
         .join("");
-      const explicitTest = this.testUntil >= now;
-      this.testUntil = 0;
-      if (!explicitTest && !recognizesCanvasDescription(text)) {
+      if (!recognizesCanvasDescription(text)) {
         this.hooks.append(
           "session.commentary.append",
           id,
@@ -128,24 +135,7 @@ export class LiveDelegationOwner {
         );
         continue;
       }
-      const controller = new AbortController();
-      this.active = { id, controller };
-      this.task = this.hooks
-        .run(id, controller.signal)
-        .then((text) => {
-          if (!this.closed && !controller.signal.aborted)
-            this.queued = { id, text };
-        })
-        .catch(() => {
-          if (!this.closed && !controller.signal.aborted)
-            this.queued = {
-              id,
-              text: "The canvas description did not complete. No canvas changes were made.",
-            };
-        })
-        .finally(() => {
-          if (this.active?.id === id) this.active = undefined;
-        });
+      this.begin(id);
     }
     if (this.queued && this.hooks.quiet()) {
       const result = this.queued;
@@ -154,7 +144,11 @@ export class LiveDelegationOwner {
       let text = result.text;
       while (new TextEncoder().encode(text).length > 450)
         text = text.slice(0, -1);
-      this.hooks.append("session.commentary.append", result.id, text);
+      this.hooks.append(
+        "session.commentary.append",
+        result.id.startsWith("control:") ? null : result.id,
+        text,
+      );
     }
   }
 }

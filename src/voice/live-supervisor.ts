@@ -246,7 +246,7 @@ export async function superviseLiveVoice(
         state.data.describe_requested_at !== lastDescription
       ) {
         lastDescription = state.data.describe_requested_at;
-        owner.requestDescription();
+        owner.requestDescription(`control:${lastDescription}`);
         lastActivity = Date.now();
       }
       if (owner.busy || state.data?.backend_reserved_units > 0)

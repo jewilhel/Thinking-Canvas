@@ -566,8 +566,8 @@ export function LiveVoice({
             </label>
             <p>
               Initiative and interruption preferences are conversational
-              guidance, not API permissions. This version cannot act on the
-              canvas yet.
+              guidance, not API permissions. This version can describe the
+              canvas but cannot edit it yet.
             </p>
             <label className="block">
               Idle timeout (seconds)
