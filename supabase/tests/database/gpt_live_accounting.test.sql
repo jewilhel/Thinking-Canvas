@@ -1,0 +1,30 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+select no_plan();
+insert into public.canvas_ai_settings(canvas_id,enabled,authority,changed_by)
+values('20000000-0000-4000-8000-000000000001',true,'comment_only','10000000-0000-4000-8000-000000000001')
+on conflict(canvas_id) do update set enabled=true;
+set local role authenticated;
+select throws_ok($$select public.reserve_live_voice_test(gen_random_uuid(),'20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001')$$,'42501',null,'browser cannot reserve by impersonating a user');
+select throws_ok($$select public.checkpoint_live_voice_usage(gen_random_uuid(),15000,true)$$,'42501',null,'browser cannot manufacture usage');
+reset role;
+set local role service_role;
+select throws_ok($$select public.reserve_live_voice_test(gen_random_uuid(),'20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000004')$$,'42501',null,'viewer admission denied');
+select lives_ok($$select public.reserve_live_voice_test('55555555-5555-4555-8555-555555555555','20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001')$$,'owner admitted');
+select throws_ok($$select public.reserve_voice_test(gen_random_uuid(),'20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001')$$,'P0001',null,'legacy admission cannot oversubscribe Live reservation');
+select public.checkpoint_live_voice_usage('55555555-5555-4555-8555-555555555555',600000,false);
+select public.checkpoint_live_voice_usage('55555555-5555-4555-8555-555555555555',15000,false);
+select is((select voice_usage_units from public.voice_test_sessions where id='55555555-5555-4555-8555-555555555555'),600000::bigint,'late usage snapshot cannot reduce observed duration');
+select public.checkpoint_live_voice_usage('55555555-5555-4555-8555-555555555555',600000,true);
+select public.finish_live_voice_test('55555555-5555-4555-8555-555555555555','closed');
+select public.finish_live_voice_test('55555555-5555-4555-8555-555555555555','duplicate');
+select is((select charged_cents from public.voice_test_sessions where id='55555555-5555-4555-8555-555555555555'),50,'ten minutes costs fifty cents, once');
+select lives_ok($$select public.reserve_live_voice_test('66666666-6666-4666-8666-666666666666','20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','55555555-5555-4555-8555-555555555555')$$,'explicit restart admitted');
+select is((select expires_at from public.voice_test_sessions where id='66666666-6666-4666-8666-666666666666'),(select expires_at from public.voice_test_sessions where id='55555555-5555-4555-8555-555555555555'),'restart retains original deadline');
+select is((select reserved_cents from public.voice_test_sessions where id='66666666-6666-4666-8666-666666666666'),1950,'prior actual charges remain in the shared ledger');
+select public.finish_live_voice_test('66666666-6666-4666-8666-666666666666','confirmed_close_usage_unknown');
+select is((select charged_cents from public.voice_test_sessions where id='66666666-6666-4666-8666-666666666666'),1950,'unconfirmed usage is never automatically refunded');
+select is((select spent_cents from public.voice_test_days where day=(now() at time zone 'America/Los_Angeles')::date),2000,'aggregate remains within cap');
+reset role;
+select * from finish();
+rollback;

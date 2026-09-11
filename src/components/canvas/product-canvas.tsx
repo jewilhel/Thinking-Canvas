@@ -1,6 +1,6 @@
 "use client";
 
-import { LiveVoice } from "@/components/voice/live-voice";
+import { LiveVoice } from "@/components/voice/live-conversation";
 import type Konva from "konva";
 import {
   ArrowLeft,

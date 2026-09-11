@@ -18,28 +18,25 @@ test("tuning panel preserves presets and distinguishes drafts from confirmed set
     exact: true,
   });
   await expect(panel).toBeVisible();
-  await panel.getByLabel("Detect a finished turn").selectOption("server_vad");
-  await expect(panel.getByLabel("Speech threshold")).toBeVisible();
-  await panel.getByLabel("Silence before responding (ms)").fill("900");
+  await expect(panel.getByLabel("Detect a finished turn")).toHaveCount(0);
+  await panel.getByLabel("Idle timeout (seconds)").fill("90");
   await panel.getByLabel("Preset name", { exact: true }).fill("QA pause");
   await panel.getByRole("button", { name: "Save preset", exact: true }).click();
   await panel.getByRole("button", { name: "Reset to baseline" }).click();
-  await expect(panel.getByLabel("Speech threshold")).toHaveCount(0);
+  await expect(panel.getByLabel("Idle timeout (seconds)")).toHaveValue("120");
   await panel
     .getByRole("button", { name: "Load QA pause", exact: true })
     .click();
-  await expect(panel.getByLabel("Silence before responding (ms)")).toHaveValue(
-    "900",
-  );
+  await expect(panel.getByLabel("Idle timeout (seconds)")).toHaveValue("90");
   await expect(
-    panel.getByRole("button", { name: "Apply settings", exact: true }),
-  ).toBeDisabled();
-  await panel
-    .getByText("API-confirmed effective values", { exact: true })
-    .click();
+    panel.getByRole("button", {
+      name: "Restart with these settings",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await expect(
     panel.getByText("No API-confirmed session yet.", { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Close Voice settings", exact: true })
     .click();
@@ -50,9 +47,7 @@ test("tuning panel preserves presets and distinguishes drafts from confirmed set
   await page
     .getByRole("button", { name: "Load QA pause", exact: true })
     .click();
-  await expect(page.getByLabel("Silence before responding (ms)")).toHaveValue(
-    "900",
-  );
+  await expect(page.getByLabel("Idle timeout (seconds)")).toHaveValue("90");
   const downloadPromise = page.waitForEvent("download");
   await page
     .getByRole("button", { name: "Export presets", exact: true })
@@ -64,7 +59,8 @@ test("tuning panel preserves presets and distinguishes drafts from confirmed set
   expect(exported).toEqual([
     expect.objectContaining({
       name: "QA pause",
-      settings: expect.objectContaining({ silenceMs: 900 }),
+      version: 2,
+      settings: expect.objectContaining({ idleSeconds: 90 }),
     }),
   ]);
 });

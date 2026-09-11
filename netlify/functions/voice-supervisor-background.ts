@@ -1,3 +1,4 @@
+import { superviseLiveVoice } from "../../src/voice/live-supervisor";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import OpenAI from "openai";
 import { endVoiceCall } from "../../src/voice/end-voice-call";
@@ -45,6 +46,7 @@ export default async function handler(request: Request) {
     .select()
     .maybeSingle();
   if (error || !session?.call_id) return;
+  if (session.api_kind === "live") return superviseLiveVoice(db, key, session);
   const expires = Date.parse(session.expires_at);
   let charged = 50; // Conservative allowance for trailing/unreported input and transcription.
   let unknownUsage = false;

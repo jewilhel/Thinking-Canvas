@@ -1448,6 +1448,120 @@ export type Database = {
           },
         ]
       }
+      voice_test_days: {
+        Row: {
+          day: string
+          reserved_cents: number
+          spent_cents: number
+        }
+        Insert: {
+          day: string
+          reserved_cents?: number
+          spent_cents?: number
+        }
+        Update: {
+          day?: string
+          reserved_cents?: number
+          spent_cents?: number
+        }
+        Relationships: []
+      }
+      voice_test_sessions: {
+        Row: {
+          accounting_version: number
+          api_kind: string
+          call_id: string | null
+          canvas_id: string
+          charged_cents: number
+          close_requested_at: string | null
+          day: string
+          end_reason: string | null
+          ended_at: string | null
+          expires_at: string
+          heartbeat_at: string | null
+          id: string
+          idle_keepalive_at: string | null
+          idle_seconds: number
+          idle_warning_at: string | null
+          idle_warning_seconds: number
+          reserved_cents: number
+          started_at: string
+          supervisor_ready: boolean
+          units_per_cent: number
+          user_id: string
+          voice_usage_final: boolean
+          voice_usage_units: number
+          worker_started_at: string | null
+        }
+        Insert: {
+          accounting_version?: number
+          api_kind?: string
+          call_id?: string | null
+          canvas_id: string
+          charged_cents?: number
+          close_requested_at?: string | null
+          day: string
+          end_reason?: string | null
+          ended_at?: string | null
+          expires_at: string
+          heartbeat_at?: string | null
+          id: string
+          idle_keepalive_at?: string | null
+          idle_seconds?: number
+          idle_warning_at?: string | null
+          idle_warning_seconds?: number
+          reserved_cents: number
+          started_at?: string
+          supervisor_ready?: boolean
+          units_per_cent?: number
+          user_id: string
+          voice_usage_final?: boolean
+          voice_usage_units?: number
+          worker_started_at?: string | null
+        }
+        Update: {
+          accounting_version?: number
+          api_kind?: string
+          call_id?: string | null
+          canvas_id?: string
+          charged_cents?: number
+          close_requested_at?: string | null
+          day?: string
+          end_reason?: string | null
+          ended_at?: string | null
+          expires_at?: string
+          heartbeat_at?: string | null
+          id?: string
+          idle_keepalive_at?: string | null
+          idle_seconds?: number
+          idle_warning_at?: string | null
+          idle_warning_seconds?: number
+          reserved_cents?: number
+          started_at?: string
+          supervisor_ready?: boolean
+          units_per_cent?: number
+          user_id?: string
+          voice_usage_final?: boolean
+          voice_usage_units?: number
+          worker_started_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_test_sessions_canvas_id_fkey"
+            columns: ["canvas_id"]
+            isOneToOne: false
+            referencedRelation: "canvases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_test_sessions_day_fkey"
+            columns: ["day"]
+            isOneToOne: false
+            referencedRelation: "voice_test_days"
+            referencedColumns: ["day"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1523,6 +1637,14 @@ export type Database = {
           story_id: string
           story_revision: number
         }[]
+      }
+      checkpoint_live_voice_usage: {
+        Args: {
+          target_final?: boolean
+          target_id: string
+          target_units: number
+        }
+        Returns: undefined
       }
       complete_ai_run: {
         Args: {
@@ -1757,6 +1879,18 @@ export type Database = {
           object_change_count: number
         }[]
       }
+      finish_live_voice_test: {
+        Args: {
+          target_id: string
+          target_reason: string
+          target_rejected?: boolean
+        }
+        Returns: undefined
+      }
+      finish_voice_test: {
+        Args: { target_cents: number; target_id: string; target_reason: string }
+        Returns: undefined
+      }
       get_ai_canvas_execution_retry: {
         Args: {
           target_call_key: string
@@ -1836,6 +1970,86 @@ export type Database = {
           user_request_count: number
           window_ends_at: string
         }[]
+      }
+      reserve_live_voice_test: {
+        Args: {
+          target_canvas: string
+          target_id: string
+          target_previous?: string
+          target_user: string
+        }
+        Returns: {
+          accounting_version: number
+          api_kind: string
+          call_id: string | null
+          canvas_id: string
+          charged_cents: number
+          close_requested_at: string | null
+          day: string
+          end_reason: string | null
+          ended_at: string | null
+          expires_at: string
+          heartbeat_at: string | null
+          id: string
+          idle_keepalive_at: string | null
+          idle_seconds: number
+          idle_warning_at: string | null
+          idle_warning_seconds: number
+          reserved_cents: number
+          started_at: string
+          supervisor_ready: boolean
+          units_per_cent: number
+          user_id: string
+          voice_usage_final: boolean
+          voice_usage_units: number
+          worker_started_at: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "voice_test_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      reserve_voice_test: {
+        Args: {
+          target_canvas: string
+          target_id: string
+          target_previous?: string
+          target_user: string
+        }
+        Returns: {
+          accounting_version: number
+          api_kind: string
+          call_id: string | null
+          canvas_id: string
+          charged_cents: number
+          close_requested_at: string | null
+          day: string
+          end_reason: string | null
+          ended_at: string | null
+          expires_at: string
+          heartbeat_at: string | null
+          id: string
+          idle_keepalive_at: string | null
+          idle_seconds: number
+          idle_warning_at: string | null
+          idle_warning_seconds: number
+          reserved_cents: number
+          started_at: string
+          supervisor_ready: boolean
+          units_per_cent: number
+          user_id: string
+          voice_usage_final: boolean
+          voice_usage_units: number
+          worker_started_at: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "voice_test_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       respond_to_comment_prompt: {
         Args: {
@@ -1966,6 +2180,7 @@ export type Database = {
         }
         Returns: number
       }
+      voice_test_has_access: { Args: { target_id: string }; Returns: boolean }
     }
     Enums: {
       ai_authority_level:
