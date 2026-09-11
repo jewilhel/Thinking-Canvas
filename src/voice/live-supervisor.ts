@@ -225,8 +225,14 @@ export async function superviseLiveVoice(
           )
           .single(),
       ]);
-      if (access.error || state.error) stop("authorization_unavailable");
-      else if (state.data.close_requested_at || state.data.ended_at)
+      if (access.error || state.error) {
+        console.warn("Live access check failed", {
+          sessionId: session.id,
+          accessCode: access.error?.code,
+          stateCode: state.error?.code,
+        });
+        stop("authorization_unavailable");
+      } else if (state.data.close_requested_at || state.data.ended_at)
         stop("user_left");
       else if (!access.data) stop("access_changed");
       if (state.data?.idle_keepalive_at)
@@ -277,8 +283,14 @@ export async function superviseLiveVoice(
         (session.idle_seconds + session.idle_warning_seconds) * 1000
       )
         stop("idle_limit");
-    } catch {
-      stop("authorization_unavailable");
+    } catch (error) {
+      console.warn("Live supervisor check threw", {
+        sessionId: session.id,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        frames:
+          error instanceof Error ? error.stack?.split("\n").slice(1, 4) : [],
+      });
+      stop("supervisor_check_failed");
     } finally {
       checking = false;
     }
