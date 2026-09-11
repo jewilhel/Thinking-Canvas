@@ -251,7 +251,6 @@ export function ProductDocumentCollaboration({
         binding.root.syncPropertiesFromYjs(binding, null);
         binding.root.applyChildrenYjsDelta(binding, sharedRoot.toDelta());
         binding.root.syncChildrenFromYjs(binding);
-        if (lexicalRoot.isEmpty()) lexicalRoot.append($createParagraphNode());
       },
       { discrete: true, skipTransforms: true, tag: COLLABORATION_TAG },
     );
@@ -348,6 +347,16 @@ export function ProductDocumentCollaboration({
         });
         syncCommentHighlights();
       },
+    );
+    // Bootstrap only after the write listener is attached. Creating this
+    // paragraph in the COLLABORATION_TAG hydration above leaves it outside
+    // Yjs; later typing compares the same paragraph key and never inserts it.
+    editor.update(
+      () => {
+        if (editor.isEditable() && $getRoot().isEmpty())
+          $getRoot().append($createParagraphNode());
+      },
+      { discrete: true },
     );
     syncCommentHighlights();
 
