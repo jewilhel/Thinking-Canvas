@@ -34,5 +34,11 @@ update public.canvas_ai_settings set enabled=false where canvas_id='20000000-000
 set local role service_role;
 select throws_ok($$select public.reserve_voice_delegation('66666666-6666-4666-8666-666666666666','revoked')$$,'42501',null,'permission revocation blocks new paid work');
 reset role;
+update public.canvas_ai_settings set enabled=true where canvas_id='20000000-0000-4000-8000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
+select lives_ok($$select public.create_comment_thread(target_canvas_id=>'20000000-0000-4000-8000-000000000001',target_client_command_id=>'77777777-7777-4777-8777-777777777777',target_body=>'Describe the current canvas briefly without making changes.',target_anchor_x=>0,target_anchor_y=>0,target_object_ids=>array[]::uuid[],target_ordered_context_ids=>array[]::uuid[],target_include_primary_ai=>true)$$,'explicit read-only request creates an ordinary anchored comment');
+select is((select count(*) from public.ai_runs where idempotency_key='77777777-7777-4777-8777-777777777777'),1::bigint,'ordinary comment creates one attributed AI run');
+reset role;
 select * from finish();
 rollback;

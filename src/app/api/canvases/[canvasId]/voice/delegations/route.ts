@@ -1,3 +1,4 @@
+import OpenAI from "openai";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
@@ -123,6 +124,8 @@ export async function POST(
       target_client_command_id: taskId,
       target_body: VOICE_DESCRIPTION_REQUEST,
       target_object_ids: [],
+      target_anchor_x: 0,
+      target_anchor_y: 0,
       target_ordered_context_ids: [],
       target_include_primary_ai: true,
     });
@@ -148,7 +151,16 @@ export async function POST(
           stage = "provider_request";
           attempted = true;
           units = null;
-          const result = await voiceProvider().responses.create(input, options);
+          const result = await voiceProvider()
+            .responses.create(input, options)
+            .catch((error) => {
+              if (
+                error instanceof OpenAI.APIError &&
+                [400, 401, 403, 404, 422, 429].includes(error.status ?? 0)
+              )
+                units = 0;
+              throw error;
+            });
           if (result.usage) {
             units = voiceBackendUnits(
               config.OPENAI_RESPONSES_MODEL,
