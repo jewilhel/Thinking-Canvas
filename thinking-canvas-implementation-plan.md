@@ -30,11 +30,13 @@ This document is the build and completion ledger for the first version of Thinki
 | Web framework | Next.js + TypeScript | App Router application, server-only AI routes, and typed domain code |
 | UI | Tailwind CSS + shadcn/ui | Application shell, dialogs, menus, panels, toolbars, forms, and accessible controls |
 | AI reasoning and actions | OpenAI Responses API | Multimodal canvas interpretation, grounded responses, validated tool calls, starter structures, document work, review explanations, and targeted visual feedback |
-| Live AI voice | OpenAI Realtime API | Low-latency speech sessions only; the Responses API remains the primary reasoning and action API |
+| Live AI voice | OpenAI GPT-Live API (`gpt-live-1`) — transition approved 2026-09-11 | Continuous voice with a separate Responses reasoning/action backend; migration precedes further Milestone 10 feature work. Existing preview remains on Realtime until verified cutover. |
 | Source control | GitHub | Repository, pull requests, protected main branch, and CI |
 | Domain | Any registrar | DNS points to Netlify; registrar choice remains independent of the application |
 
 ### Required voice clarification
+
+**2026-09-11 direction:** The product owner selected GPT-Live 1 without comparative testing, prioritizing voice as the primary canvas-AI interaction. The [Milestone 10 migration plan](docs/implementation/milestone-10-live-conversation.md#gpt-live-migration-plan--2026-09-11) is drafted for review before implementation and further feature work. The existing Responses executor, permissions, privacy policy, $20 daily testing allowance, and 10-minute cap remain. Native Live conversation is separate from application-owned actions and background announcements. Functional/acceptance testing is required; an A/B comparison is not. The following Realtime approvals are historical and do not describe the migration as implemented.
 
 The Responses API can stream generated results, but the first-version requirements call for a continuous, low-latency voice conversation. OpenAI documents the Realtime API as the interface for interactive voice over WebRTC. Therefore:
 
@@ -517,6 +519,7 @@ These are retained as cross-feature release tests rather than substitutes for th
 - [x] **PD-003 — Page sizes:** offer Continuous, US Letter, and A4 layouts; paginated Letter and A4 support portrait and landscape using stable logical document dimensions. Approved by the product owner with the Milestone 8 plan on 2026-09-02.
 - [x] **PD-004 — Rating scale:** use one fixed inclusive `1–5` numeric rating scale in the first version; the comment author does not choose among multiple ranges. Approved by the product owner on 2026-08-19.
 - [ ] **PD-005 — Important interruption:** define testable examples and non-examples for `FR-013` and `FR-014`.
+  - 2026-09-11: Product owner requested a single icon-only voice button beside Scenes instead of the expanded Live/status/settings strip. Use a simple active/listening animation with accessible state and secondary settings access; retain mute, leave, captions, tuning, and settings records inside the panel. Detailed interaction and reduced-motion/keyboard/touch verification are in the Milestone 10 migration amendment. This changes the planned UI, not requirement completion or the current deployed preview.
   - 2026-09-08: Product owner approved a temporary button-opened live conversation control panel to experiment with all applicable Realtime API settings and select natural-feeling defaults. Final interruption policy, testable examples, default settings, and which controls remain in the permanent UI will be decided after hands-on experimentation; `PD-005`, `FR-013`, and `FR-014` remain unchecked.
 - [x] **PD-006 — Permission ownership:** only the canvas owner may enable or disable the primary AI and change its authority; editors may invoke tools allowed by the selected authority, commenters may invoke comment-only interaction when enabled, and viewers remain read-only. Approved by the product owner with the Milestone 4 plan on 2026-08-24.
   - 2026-09-08: Product owner approved the Milestone 10 AI-only voice permission model: owners/editors may start voice with their permitted AI actions; commenters may use voice for discussion and comments without canvas/document edits; viewers remain read-only without starting voice. Only the owner changes AI enablement or authority. Voice never raises the participant’s existing permissions.

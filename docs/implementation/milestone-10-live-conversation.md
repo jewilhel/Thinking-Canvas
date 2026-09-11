@@ -1,12 +1,108 @@
 # Milestone 10 — Live conversation
 
-Status: Approved for implementation
+Status: Approved for implementation — GPT-Live migration and single-button UI approved 2026-09-11. Further feature work follows migration verification.
 
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 
 Plan owner: Product owner
 
-Last updated: 2026-09-09
+Last updated: 2026-09-11
+
+## GPT-Live migration plan — 2026-09-11
+
+**Status: Approved for implementation — 2026-09-11.** The owner approved the concrete migration plan and single-button amendment with “ok great, let go for it.” Client delegation, the 120-second plus 15-second idle policy, and bounded same-tab restart context are included. The owner explicitly chose `gpt-live-1` and requested a transition plan before further feature work. No A/B comparison, model-selection trial, or proof that Live beats Realtime is required. Acceptance testing of the new implementation remains required. This section takes precedence over earlier Realtime-specific instructions for future work; earlier decisions and evidence remain historical and are not rewritten as GPT-Live results.
+
+### What is already done and what comes next
+
+The current branch is `codex/milestone-10-live-conversation`. Code `6ddaedd01ef77aeb4cbc5abd5a8fe991dfd9c2bf`, with evidence recorded through `fc74ecb`, provides supervised Realtime voice, a collapsible strip, tuning/presets/records, volatile captions, and explicitly requested transcript documents. Earlier hosted QA established those paths on Realtime only. Spoken canvas actions, generated summaries/design briefs, and the background-announcement coordinator are still unfinished. Existing master requirement checkboxes remain unchanged.
+
+Insert migration slices M1–M4 ahead of the remaining original Slice 3/4/5 work. First restore the already delivered experience on GPT-Live and establish a safe backend connection contract. Then resume canvas-action and announcement features against that contract. Voice is the owner's preferred AI interaction, so typed comments and voice should ultimately reach the same executor, permission checks, and undo history.
+
+### Architecture and scope
+
+Target: GPT-Live `gpt-live-1` over browser WebRTC, with an authenticated server creating sessions and a server sideband supervising them. Keep the existing Netlify/Supabase deployment and the existing OpenAI Responses canvas backend. Use **client delegation**: Thinking Canvas owns request context, provider invocation, validation, task state, and which verified results return to the voice model. This avoids introducing a second independently configured canvas agent. Keep the current Responses model selection; this migration does not choose a stronger model or add a router.
+
+OpenAI documents client delegation as an application-managed backend path; it is a design choice proposed here, not a claim that the adapter already exists. Live delegation events identify a task but do not contain parsed task arguments. The adapter must correlate server-observed speech/context, handle unfinished requests and later corrections, and never execute a mutation merely because a fragment arrived. [Delegation guide](https://developers.openai.com/api/docs/guides/live-delegation)
+
+Preserve: one participant plus AI, current role/AI authority, 10-minute logical-session deadline, $20 aggregate daily testing allowance and Pacific reset, no audio recording, temporary conversation text, request-only ordinary documents, and existing typed collaboration. The provisional background policy remains: ordinary updates wait for a natural pause; only explicit requests for immediate spoken updates may interrupt; blocking failures appear visually immediately and wait to speak. Distinguish short native listening acknowledgments from application-triggered announcements.
+
+No production enablement, PR, merge, milestone closure, remote-human voice, or new feature scope is included in this planning pass. No browser interaction, deployment, or active-call termination is needed to prepare this plan.
+
+### M1 — Safe GPT-Live session and spending lifecycle
+
+**Outcome:** start, converse, mute, and leave on the hosted preview with server-enforced limits and confirmed cleanup.
+
+- Replace Realtime creation/attachment/hangup contracts in the voice route, `supervised-webrtc.ts`, `end-voice-call.ts`, and `voice-supervisor-background.ts`. Audit the installed SDK and update only the required dependency/lockfile if Live support is missing; use verified typed schemas or a small typed HTTP adapter.
+- Create through `POST /v1/live/sessions`; retain the opaque provider session ID from its JSON response. Attach the supervisor to `/v1/live/sessions/{session_id}/attach`. Startup readiness must prove the worker is alive, the actual Live session started, and required configuration is resolved. Do not reuse the old empty `session.updated` acknowledgment as a ready signal. [Connection and supervision](https://developers.openai.com/api/docs/guides/voice-server-controls?api=live)
+- Keep microphone capture disabled and playback gated until supervision succeeds, within the previously approved bounded startup interval. Test the actual Live ordering first. If Netlify cannot support the necessary connection or termination contract, stop at that concrete architecture blocker; do not silently change hosts.
+- Leave immediately stops local capture/playback and rejects new work, while the server drains finalization with a bounded timeout. Use `session.close`/`session.closed` and a verified REST termination fallback. Worker timeout, browser disappearance, revoked membership, AI disablement, and original deadline all require provider termination attempts and auditable accounting. A dropped socket alone is not proof that billing stopped.
+- Use an additive migration for API kind, opaque Live ID, accounting-version/rate snapshot, cumulative duration, finalization status, and separate backend reservations/usage. Preserve existing Realtime records and charges; dispatch cleanup by recorded API kind. Keep sensitive metadata service-only and regenerate types. No transcript/audio columns.
+- Compute Live voice charges from cumulative seconds at $0.05/minute using integer sub-cent units; replace snapshots rather than adding them. Account for the documented 15-second WebRTC initialization charge credited toward the running duration, not added twice. Preserve uncertainty for failed creation/finalization and reserve a defensible upper bound; never automatically refund unconfirmed charges. [Billing](https://developers.openai.com/api/docs/guides/voice-latency-cost)
+- Under database locks, reserve startup plus the remaining bounded voice duration and termination headroom before connection. Before enabling delegated provider calls, reserve their worst-case bounded cost in the same $20 ledger, including retries, reviews, and tool fees. Set hard token/time limits; settle using actual usage once per request. Do not assume the older per-run AI limit is the shared monetary cap. Prevent both old and new paths from admitting work beyond the daily total. No dual active providers or silent fallback calls.
+- Prove admission races, midnight rollover, restarts retaining the original deadline, failed startup, repeated Leave, duplicate usage, worker failure, revocation, and late finalization. Keep canvas and typed controls usable through failures.
+
+### M2 — Conversation controls, captions, and privacy parity
+
+**Outcome:** one compact voice button replaces the expanded control strip; requested transcript documents and tuning remain available through its panel, with honest Live state.
+
+- Replace the provider-event adapter in `live-voice.tsx`; separate connection, local mute/playback, provider acknowledgment, and backend activity. Acknowledged context does not mean it has been spoken. Use the single-button interaction below and retain upper-right, dismissible error placement.
+- Rebuild the tuning inventory from Live's supported schema. Voice changes require a new session; frontend instructions are appended rather than replaced live. Do not send Realtime VAD/eagerness, speed, noise-reduction, manual commit, output-token, or truncation fields unless the Live schema explicitly supports them. Present personality, initiative, listening acknowledgments, and interruption preferences as prompt/application settings, not invented API parameters. A reset that cannot remove prior instructions requires an explicit restart. [Session configuration](https://developers.openai.com/api/docs/guides/live-conversations)
+- Version presets and run records by API/model. Preserve historical Realtime presets read-only/exportable; migrate compatible fields explicitly and label unsupported fields. Record requested settings, API-resolved settings, correlated accepted/rejected changes, restarts, build ID, duration, cost components, and sanitised failures. Never store conversation text in those records. Do not claim every setting was tested when only some were exercised.
+- Adapt `conversation-transcript.ts` to independently ordered input/output fragments and session-relative timestamps. Keep literal fragment text and overlapping speakers; deduplicate event IDs without deleting intentional repeated words. Local display groups are not authoritative semantic turns. Retain bounded volatile coverage warnings for late/missing data, interrupted playback, truncation, and connection boundaries. Re-test snapshot consent, partial-save confirmation, editing, reload, normal deletion, and duplicate-save prevention.
+- Explicitly set provider `store: false`; disable stored-session/fork/recording paths. Audit provider data-retention terms separately: this setting must not be described as a guarantee of zero provider retention. The Live sideband can reflect raw audio; discard audio payloads immediately without file/DB/Broadcast/log retention. Suppress raw provider payload/error logging and bound all in-memory processing.
+- Preserve temporary transcript text across Leave as now. Proposed restart behavior is to restore bounded same-tab text context, disclosed as partial when necessary, without enabling provider storage. Reload/departure clears unsaved conversation context; saved documents remain. No automatic recording, summary generation, or durable resume archive.
+
+#### Single-button voice UI amendment — requested 2026-09-11
+
+The owner requested replacing the expanded Live / Ended / Voice settings strip shown in their screenshot with one icon-only button beside Scenes in the existing lower toolbar. This amendment supersedes the earlier strip-toggle design and standalone settings-button requirement for future implementation. It does not add a second persistent control group. Prototype the simplest treatment first; visual details remain subject to hands-on refinement.
+
+| Interaction/state                                     | Proposed behavior                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Off/ended                                             | Neutral waveform icon. Single click starts voice through the existing consent/admission flow. No visible Live or Ended label.                                                                                                                                                      |
+| Connecting/reconnecting                               | Same button footprint and waveform, with a subtle busy treatment. Do not show the listening animation until the microphone is actually active. Single click cancels/ends the attempt.                                                                                              |
+| Connected and listening                               | Active button treatment plus a gentle waveform animation indicating microphone/listening availability, including while AI speech overlaps. It is a state cue, not a recording indicator or a fabricated loudness meter. Single click ends the session and releases the microphone. |
+| Muted                                                 | Static waveform with a small muted mark; distinguish an open, billed session from ended voice. Single click ends the session; unmute is available in the panel.                                                                                                                    |
+| AI speaking                                           | Preserve the active treatment; do not add another control or a separate speaking palette. Tooltip/accessibility state and panel can show speaking independently of listening.                                                                                                      |
+| Failed                                                | Return to inactive after cleanup; explain the failure in the existing upper-right notice. The same button retries through normal admission.                                                                                                                                        |
+| Command-click (macOS) / Control-click (Windows/Linux) | Open the Voice settings panel immediately, without starting, stopping, or muting voice. Handle the modifier before the ordinary click action.                                                                                                                                      |
+| Keyboard / touch                                      | Enter or Space performs the ordinary button action. Shift+F10/right-click offers Voice settings; a touch long-press opens the same panel without also triggering a start/end tap. Tooltip and accessible description explain settings access.                                      |
+
+Prefer modifier-click over double-click in the initial implementation: double-click settings must otherwise delay normal activation or risk starting and immediately ending a paid session. No double-click shortcut is planned for the first version. Touch long-press must cancel cleanly on movement or pointer cancellation. The panel remains keyboard navigable, dismisses with Escape, and returns focus to the voice button.
+
+The panel contains mute/unmute, End session, captions and requested transcript saving, remaining time/budget, detailed connection state, tuning controls, presets, and post-run records. It can open while voice is off, including after Leave to save available temporary captions. Its opening/closing never owns the underlying session lifecycle. Idle/expiry warnings remain transient and actionable outside the hidden panel; no persistent status text is added to the toolbar.
+
+Respect reduced motion with a static active marker. Use shape/mark and accessible state as well as color; expose accurate action labels such as Start AI voice, Cancel voice connection, and End AI voice, with concise state descriptions. Do not announce every waveform frame to screen readers. Keep the existing button hit target and focus ring. Verify narrow windows, 200% zoom, document focus, no toolbar growth/overlap, keyboard/touch/modifier actions, accidental rapid taps, denied permissions, and panel dismissal during a call. Hosted acceptance includes verifying that opening settings never creates an extra provider session or ends the current one.
+
+Only the migration plan is amended here; the current preview keeps its existing controls until implementation is approved and deployed.
+
+### M3 — Backend handoff foundation and idle protection
+
+**Outcome:** prove a small authorized read-only request can reach the existing backend while voice remains available, and stale or duplicate requests cannot create work twice.
+
+- One server owner handles each delegation. Bind identifiers to authenticated user, canvas, session generation, and server-observed delegation; the browser cannot manufacture completion or another user's task. Correlate relevant transcript intervals and a fresh authorized canvas projection. Keep untrusted canvas content out of trusted instructions.
+- Validate intent against accumulated context rather than a gap timeout alone. Use bounded clarification when intent is incomplete; corrections supersede pending work and trigger a fresh permission/context check. Separate “stop speaking” from “cancel this task.” Provider-call cancellation and permission revocation block future mutations even if speech continues.
+- Add the adapter around the existing Responses workflow with stable idempotency keys and metadata-only task linkage. Persist only explicit actionable requests as ordinary attributed comments; general conversation remains volatile. Do not create a parallel durable chat store. Before any billable delegation, use M1's shared reservation.
+- Demonstrate an explicit, read-only canvas request and a verified result returned to Live; also test late transcript delivery, retries, corrections, cancellation, and permission loss. Keep canvas mutation/document-generation capabilities unavailable and accurately described until the subsequent original Slice 3 implements them. This proof does not count as FR-012/AS-001 acceptance.
+- Keep progress/result presentation independent of captions. Queue application-triggered spoken results under the approved pause policy; discard stale results and deduplicate deliveries. Prompt text alone cannot enforce action permissions or prove the listener heard a result. The full unsolicited observation policy remains original Slice 4 work.
+- **Proposed idle default for this plan's approval:** after 120 seconds without meaningful user/AI speech and without a running requested task, show a 15-second countdown with Keep talking. Speech or explicit Keep talking clears it; otherwise close and settle the session. Silence detection must use audio activity plus task state, not missing transcript events. Keep thresholds as temporary application tuning controls and report why the call ended. The server's 10-minute limit remains authoritative even if browser timers are suspended. A pending task never bypasses that hard limit. Do not treat ordinary canvas clicking as proof the user wants paid voice kept open indefinitely.
+
+### M4 — Preview cutover and acceptance gate
+
+**Outcome:** GPT-Live replaces Realtime for new preview sessions; only then resume remaining feature slices.
+
+Use the existing milestone branch and scoped commits/pushes under the owner's standing slice-delivery authorization after plan approval. Each executable slice must pass relevant tests before push; verify its exact deployed code in Codex's in-app browser before owner review. Coordinate the final switch after an active owner test ends; never disrupt the current test merely to publish a new build. Existing calls must drain under their recorded API/accounting version.
+
+Run focused unit/component, migration/pgTAP, type/lint/build, and browser tests; then the affected regression suite. Hosted checks cover real audible speech, overlapping input/output, mute/leave, denied microphone, delayed startup, provider rejection, interruption, idle warning/cancel/expiry, hard expiry, disconnect/reconnect, settings/restart, post-run records, transcript-document save/reload/delete, and the bounded delegated read. Include owner/editor/commenter/viewer/non-member, cross-canvas access, revoked access, duplicate events, and concurrent reservation fixtures. Ordinary preview QA uses Codex's browser; use an additional isolated user session only for required collaboration tests.
+
+Retain exact commit/deploy/CI/migration identifiers and privacy-safe results. Verify provider charges against final duration plus separate backend usage; test sub-cent rounding and reconnect initialization. Do not use the old 50-cent QA startup cushion as Live's actual price. Rollback is an explicit operator release rollback or disabling new voice sessions, preserving records and canvases; never silently route users back to Realtime. Keep temporary old cleanup code only until all prior calls are finalized.
+
+Migration completion requires existing UI/privacy parity, correct termination/accounting, a successful authorized backend handoff, no unauthorized action or automatic content retention, and owner acceptance of the new voice experience. This is acceptance of the selected API, not comparison testing. Then resume original Slice 3 (spoken canvas actions and requested generated documents), Slice 4 (full announcement/recovery policy), and Slice 5 (AS-001 and milestone exit). No master checkbox closes from migration alone.
+
+### Review items and known limits
+
+The model transition, no-comparison direction, and simpler single-button UI direction are already approved. The interaction details above are the proposed first implementation. Approval of this concrete plan selects client delegation, the proposed 120-second plus 15-second idle policy, and same-tab bounded text restoration on explicit restart. Final permanent controls/defaults remain open. SDK availability, account access, deployment transport limits, observable activity for reliable silence detection, and final usage on abnormal closure are implementation verification gates, not assumed results. If a gate requires a different hosting, privacy, cost, or permission boundary, document that specific change for review before proceeding.
+
+Planning only on 2026-09-11: inspected current files and official API contracts; no application code, dependencies, database, configuration, deployment, or master completion checkboxes changed. No tests or Live calls were run for this plan.
 
 ## Goal and user-visible outcome
 
