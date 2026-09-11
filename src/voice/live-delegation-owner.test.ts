@@ -26,6 +26,38 @@ const speech = (delta: string, event_id = "speech1", start_ms = 4000) => ({
   end_ms: start_ms + 500,
 });
 describe("bounded voice delegation", () => {
+  it.each([
+    {
+      kind: "question",
+      parts: [
+        " Yeah.",
+        " Can you tell me",
+        " what kinds of shapes are on this canvas",
+      ],
+    },
+    {
+      kind: "comment",
+      parts: [
+        " How about,",
+        " can you leave a comment on on the object JSON",
+        " that says 'voice comment test",
+      ],
+    },
+  ])(
+    "routes conversational $kind speech through provider delegation",
+    ({ kind, parts }) => {
+      const { owner, hooks } = setup();
+      owner.receive(delegated, 0);
+      parts.forEach((part, index) =>
+        owner.receive(speech(part, `fragment${index}`, 3500 + index * 500)),
+      );
+      owner.tick(2000);
+      expect(hooks.run).toHaveBeenCalledWith("task1", expect.any(AbortSignal), {
+        kind,
+        text: parts.join("").trim(),
+      });
+    },
+  );
   it("routes the actual comment request and does not reuse its speech in a later delegation", async () => {
     const { owner, hooks } = setup();
     owner.receive(

@@ -17,22 +17,29 @@ export function parseLiveCanvasRequest(text: string): LiveCanvasRequest | null {
   const request = text.trim();
   if (!request || request.length > 2000 || cancelsVoiceTask(request))
     return null;
+  // Speech commonly starts with acknowledgments/fillers. Strip only this
+  // bounded leading vocabulary for classification; preserve the signed wording.
+  // Never search inside arbitrary prose for a command (e.g. a quoted example).
+  const intent = request.replace(
+    /^(?:(?:yeah|yes|okay|ok|well|so|um|uh|how about)\b[\s,.!?]*)+/i,
+    "",
+  );
   const prefix = "(?:please\\s+)?(?:(?:can|could|would) you\\s+)?";
   if (
     new RegExp(
       `^${prefix}(?:add|leave|write|create|post)\\s+(?:a\\s+)?comment\\b`,
       "i",
-    ).test(request) &&
+    ).test(intent) &&
     !/\b(?:don't|do not|never|delete|remove|instead)\b/i.test(request)
   ) {
     return { kind: "comment", text: request };
   }
   if (
-    recognizesCanvasDescription(request) ||
+    recognizesCanvasDescription(intent) ||
     (new RegExp(
       `^${prefix}(?:tell(?: me)?|describe|summarize|list|explain|what|which|where|how|why|are there|is there)\\b`,
       "i",
-    ).test(request) &&
+    ).test(intent) &&
       /\b(?:canvas|shapes?|objects?|documents?|connectors?|notes?|tables?|labels?|colors?|colours?|overlap)\b/i.test(
         request,
       ))
