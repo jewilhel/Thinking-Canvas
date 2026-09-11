@@ -290,6 +290,9 @@ export function LiveVoice({
     sessionId.current = null;
     setStatus("Connecting");
     setMuted(false);
+    setBackendPending(false);
+    setTaskNotice("");
+    setIdleWarningAt(null);
     const controller = new AbortController();
     abort.current = controller;
     const id = crypto.randomUUID();
