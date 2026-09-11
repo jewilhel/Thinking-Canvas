@@ -29,9 +29,10 @@ export function parseLiveCanvasRequest(text: string): LiveCanvasRequest | null {
   }
   if (
     recognizesCanvasDescription(request) ||
-    (/^(?:(?:can|could|would) you\s+)?(?:tell me|describe|summarize|list|explain|what|which|where|how|why|are there|is there)\b/i.test(
-      request,
-    ) &&
+    (new RegExp(
+      `^${prefix}(?:tell(?: me)?|describe|summarize|list|explain|what|which|where|how|why|are there|is there)\\b`,
+      "i",
+    ).test(request) &&
       /\b(?:canvas|shapes?|objects?|documents?|connectors?|notes?|tables?|labels?|colors?|colours?|overlap)\b/i.test(
         request,
       ))

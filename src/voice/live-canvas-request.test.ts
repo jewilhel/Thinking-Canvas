@@ -6,6 +6,8 @@ describe("bounded spoken canvas requests", () => {
   it.each([
     "Can you tell me what kind of shapes are on the canvas?",
     "Which objects overlap?",
+    "Can you tell what kind of shapes?",
+    "Please explain the canvas.",
     "What is in the document?",
     "Describe this canvas.",
   ])("preserves the actual question: %s", (text) => {
