@@ -10,10 +10,9 @@ test("tuning panel preserves presets and distinguishes drafts from confirmed set
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(/\/app$/);
   await page.goto(`/app/canvases/${canvasId}`);
-  await page.getByRole("button", { name: "AI voice", exact: true }).click();
   await page
-    .getByRole("button", { name: "Voice settings", exact: true })
-    .click();
+    .getByRole("button", { name: "Start AI voice", exact: true })
+    .click({ modifiers: ["Control"] });
   const panel = page.getByRole("dialog", {
     name: "Voice settings",
     exact: true,
@@ -45,10 +44,9 @@ test("tuning panel preserves presets and distinguishes drafts from confirmed set
     .getByRole("button", { name: "Close Voice settings", exact: true })
     .click();
   await page.reload();
-  await page.getByRole("button", { name: "AI voice", exact: true }).click();
   await page
-    .getByRole("button", { name: "Voice settings", exact: true })
-    .click();
+    .getByRole("button", { name: "Start AI voice", exact: true })
+    .click({ modifiers: ["Control"] });
   await page
     .getByRole("button", { name: "Load QA pause", exact: true })
     .click();

@@ -22,7 +22,6 @@ import {
   Minus,
   Plus,
   Presentation,
-  AudioLines,
   Share2,
   AlignJustify,
   Trash2,
@@ -545,7 +544,8 @@ function ProductCanvasWorkspace({
   }, [viewport]);
   useEffect(() => () => cancelSceneTransition(), [cancelSceneTransition]);
   const [scenePanelOpen, setScenePanelOpen] = useState(false);
-  const [voiceControlsOpen, setVoiceControlsOpen] = useState(false);
+  const [voiceControlTarget, setVoiceControlTarget] =
+    useState<HTMLSpanElement | null>(null);
   const voiceAvailable =
     canvasRole !== "viewer" &&
     (process.env.NEXT_PUBLIC_APP_ENV === "preview" ||
@@ -5129,19 +5129,9 @@ function ProductCanvasWorkspace({
           </Button>
         ) : null}
         {voiceAvailable && (
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="outline"
-            aria-label="AI voice"
-            title="AI voice"
-            aria-expanded={voiceControlsOpen}
-            aria-controls="live-voice-controls"
-            onClick={() => setVoiceControlsOpen((open) => !open)}
-          >
-            <AudioLines aria-hidden="true" />
-          </Button>
+          <span className="contents" ref={setVoiceControlTarget} />
         )}
+
         <Button
           type="button"
           size="icon-sm"
@@ -5255,7 +5245,7 @@ function ProductCanvasWorkspace({
         <LiveVoice
           canvasId={canvasId}
           userId={userId}
-          controlsOpen={voiceControlsOpen}
+          controlTarget={voiceControlTarget}
           canSaveTranscript={canMutateCanvas && saveStatus === "Saved"}
           onSaveTranscript={saveVoiceTranscript}
         />

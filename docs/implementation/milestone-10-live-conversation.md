@@ -28,6 +28,13 @@ Preserve: one participant plus AI, current role/AI authority, 10-minute logical-
 
 No production enablement, PR, merge, milestone closure, remote-human voice, or new feature scope is included in this planning pass. No browser interaction, deployment, or active-call termination is needed to prepare this plan.
 
+### Implementation progress — 2026-09-11
+
+- First implementation slice: replace the expanded strip with the single toolbar button and move existing session controls into Voice settings. Modifier-click, context menu, keyboard, and touch long-press open settings without starting/ending voice. Current transport remains Realtime until M1 cutover; this UI slice is not GPT-Live acceptance.
+- Upgrade OpenAI SDK from 7.4.0 to pinned 7.15.0, which includes typed Live resources. Add a strict startup contract with provider storage disabled, client delegation, restricted browser events, and integer duration accounting helpers; these are not yet connected to session admission or settlement.
+- Add an authenticated, unbilled preview model-access check. Netlify's secret environment values are masked in administrative reads, so actual model access must be verified from the deployed runtime rather than treating the masked value as a credential.
+- Local validation: existing 442 unit tests passed; three additional gesture tests passed; both voice settings browser tests passed. Hosted narrow-layout, settings interaction, and model-access checks pending deployment. No new voice provider session was intentionally opened during local checks.
+
 ### M1 — Safe GPT-Live session and spending lifecycle
 
 **Outcome:** start, converse, mute, and leave on the hosted preview with server-enforced limits and confirmed cleanup.

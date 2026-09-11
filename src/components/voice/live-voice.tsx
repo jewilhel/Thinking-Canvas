@@ -1,6 +1,8 @@
 "use client";
-import { Mic, MicOff, PhoneOff, SlidersHorizontal } from "lucide-react";
+import { Mic, MicOff, PhoneOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { VoiceControlButton } from "./voice-control-button";
 import { Button } from "@/components/ui/button";
 import { WorkspacePanel } from "@/components/canvas/workspace-panel";
 import { VoiceSettingsPanel } from "./voice-settings-panel";
@@ -40,7 +42,7 @@ import {
 type Props = {
   canvasId: string;
   userId: string;
-  controlsOpen: boolean;
+  controlTarget: HTMLElement | null;
   canSaveTranscript: boolean;
   onSaveTranscript: (text: string) => void;
 };
@@ -53,7 +55,7 @@ function object(value: unknown): Record<string, unknown> {
 export function LiveVoice({
   canvasId,
   userId,
-  controlsOpen,
+  controlTarget,
   canSaveTranscript,
   onSaveTranscript,
 }: Props) {
@@ -536,119 +538,30 @@ export function LiveVoice({
   };
   return (
     <>
-      <div
-        id="live-voice-controls"
-        hidden={!controlsOpen}
-        className="hidden:hidden absolute right-4 bottom-20 z-40 flex max-w-[calc(100%-2rem)] flex-wrap items-center gap-2 rounded-2xl border border-zinc-200 bg-white p-2 text-zinc-900 shadow-lg max-lg:bottom-36"
-        onKeyDown={(e) => e.stopPropagation()}
-      >
-        <Button
-          onClick={() => (connecting ? finish() : setConsent(true))}
-          disabled={connected || (!availability.enabled && !connecting)}
-        >
-          <Mic aria-hidden="true" />
-          {connecting ? "Cancel connection" : "Live"}
-        </Button>
-        {!availability.enabled && !connecting && !connected && (
-          <span role="status" className="max-w-64 text-xs">
-            {availability.reason}
-            {availability.refreshRequired && (
-              <Button
-                variant="outline"
-                onClick={() => window.location.reload()}
-              >
-                Refresh preview
-              </Button>
-            )}
-          </span>
+      {controlTarget &&
+        createPortal(
+          <VoiceControlButton
+            active={connected}
+            connecting={connecting}
+            muted={muted}
+            status={status}
+            settingsOpen={panel}
+            onSettings={(button) => {
+              setInvoker(button);
+              setPanel(true);
+            }}
+            onAction={(button) => {
+              setInvoker(button);
+              if (connected || connecting) finish();
+              else if (availability.enabled) setConsent(true);
+              else {
+                setError(availability.reason ?? "Voice is unavailable.");
+                setPanel(true);
+              }
+            }}
+          />,
+          controlTarget,
         )}
-        <span role="status" className="text-xs">
-          {muted && connected ? "Muted" : status}
-          {connected
-            ? ` · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`
-            : ""}
-        </span>
-        {connected && (
-          <>
-            <Button
-              variant="outline"
-              aria-label={muted ? "Unmute microphone" : "Mute microphone"}
-              onClick={() => {
-                connection.current?.mute(!muted);
-                setMuted(!muted);
-              }}
-            >
-              {muted ? <MicOff /> : <Mic />}
-            </Button>
-            <Button variant="outline" onClick={finish}>
-              <PhoneOff aria-hidden="true" />
-              Leave
-            </Button>
-          </>
-        )}
-        {(connected ||
-          transcript.turns.length > 0 ||
-          coverageWarnings.length > 0) && (
-          <Button
-            variant="outline"
-            onClick={() => setShowCaptions(!showCaptions)}
-          >
-            Captions
-          </Button>
-        )}
-        <Button
-          variant="outline"
-          aria-expanded={panel}
-          aria-controls="voice-settings-panel"
-          onClick={(event) => {
-            setInvoker(event.currentTarget);
-            setPanel(!panel);
-          }}
-        >
-          <SlidersHorizontal aria-hidden="true" />
-          Voice settings
-        </Button>
-        {connected &&
-          effective &&
-          (object(object(effective.audio).input).turn_detection === null ||
-            object(object(object(effective.audio).input).turn_detection)
-              .create_response === false) && (
-            <div className="flex flex-wrap gap-2">
-              {object(object(effective.audio).input).turn_detection ===
-                null && (
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    connection.current?.send({
-                      type: "input_audio_buffer.commit",
-                    })
-                  }
-                >
-                  Finish my turn
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                onClick={() =>
-                  connection.current?.send({ type: "response.create" })
-                }
-              >
-                Respond
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  connection.current?.send({ type: "response.cancel" });
-                  connection.current?.send({
-                    type: "output_audio_buffer.clear",
-                  });
-                }}
-              >
-                Stop response
-              </Button>
-            </div>
-          )}
-      </div>
       {panel && (
         <WorkspacePanel
           panelId="voice-settings-panel"
@@ -656,6 +569,98 @@ export function LiveVoice({
           invoker={invoker}
           onDismiss={() => setPanel(false)}
         >
+          <div
+            className="mb-4 flex flex-wrap items-center gap-2"
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            {!availability.enabled && !connecting && !connected && (
+              <span role="status" className="max-w-64 text-xs">
+                {availability.reason}
+                {availability.refreshRequired && (
+                  <Button
+                    variant="outline"
+                    onClick={() => window.location.reload()}
+                  >
+                    Refresh preview
+                  </Button>
+                )}
+              </span>
+            )}
+            <span role="status" className="text-xs">
+              {muted && connected ? "Muted" : status}
+              {connected
+                ? ` · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`
+                : ""}
+            </span>
+            {connected && (
+              <>
+                <Button
+                  variant="outline"
+                  aria-label={muted ? "Unmute microphone" : "Mute microphone"}
+                  onClick={() => {
+                    connection.current?.mute(!muted);
+                    setMuted(!muted);
+                  }}
+                >
+                  {muted ? <MicOff /> : <Mic />}
+                </Button>
+                <Button variant="outline" onClick={finish}>
+                  <PhoneOff aria-hidden="true" />
+                  Leave
+                </Button>
+              </>
+            )}
+            {(connected ||
+              transcript.turns.length > 0 ||
+              coverageWarnings.length > 0) && (
+              <Button
+                variant="outline"
+                onClick={() => setShowCaptions(!showCaptions)}
+              >
+                Captions
+              </Button>
+            )}
+            {connected &&
+              effective &&
+              (object(object(effective.audio).input).turn_detection === null ||
+                object(object(object(effective.audio).input).turn_detection)
+                  .create_response === false) && (
+                <div className="flex flex-wrap gap-2">
+                  {object(object(effective.audio).input).turn_detection ===
+                    null && (
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        connection.current?.send({
+                          type: "input_audio_buffer.commit",
+                        })
+                      }
+                    >
+                      Finish my turn
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      connection.current?.send({ type: "response.create" })
+                    }
+                  >
+                    Respond
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      connection.current?.send({ type: "response.cancel" });
+                      connection.current?.send({
+                        type: "output_audio_buffer.clear",
+                      });
+                    }}
+                  >
+                    Stop response
+                  </Button>
+                </div>
+              )}
+          </div>
           <p className="mb-4 text-sm text-zinc-600">
             {availability.enabled
               ? `Shared daily allowance: $${((availability.spentCents ?? 0) / 100).toFixed(2)} conservatively charged; $${((availability.reservedCents ?? 0) / 100).toFixed(2)} reserved. $20 limit, resets at midnight Pacific.`
@@ -786,8 +791,8 @@ export function LiveVoice({
             </p>
             <p>
               This test lasts up to 10 minutes and shares a $20 daily testing
-              allowance. Canvas actions and requested documents will be added in
-              the next slice.
+              allowance. Canvas actions are not available yet. You can
+              explicitly save available captions as a canvas document.
             </p>
             <Button onClick={() => void start()}>
               Allow microphone and start
