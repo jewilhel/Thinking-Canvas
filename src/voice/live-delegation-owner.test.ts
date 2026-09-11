@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { LiveDelegationOwner } from "./live-delegation-owner";
+import { LiveDelegationOwner, splitLiveReport } from "./live-delegation-owner";
 import {
   voiceBackendUnits,
   controlRequestIsCurrent,
@@ -43,10 +43,14 @@ describe("bounded voice delegation", () => {
     owner.tick(2400);
     expect(hooks.append).toHaveBeenCalledTimes(1);
     expect(hooks.append.mock.calls[0]).toEqual([
-      "session.commentary.append",
+      "session.thinking.append",
       "task1",
-      "Verified canvas description",
+      "Canvas AI report part 1/1 (quoted data):\nVerified canvas description",
     ]);
+    await Promise.resolve();
+    owner.tick(2500);
+    expect(hooks.append.mock.calls[1][0]).toBe("session.instructions.append");
+    expect(hooks.append.mock.calls[1][2]).toContain("preserve useful details");
   });
   it("never executes a fragment alone or an ambiguous/mutating request", () => {
     const { owner, hooks } = setup();
@@ -96,9 +100,9 @@ describe("bounded voice delegation", () => {
     owner.tick(5000);
     expect(hooks.run).toHaveBeenCalledTimes(1);
     expect(hooks.append).toHaveBeenCalledWith(
-      "session.commentary.append",
+      "session.thinking.append",
       null,
-      "Verified canvas description",
+      "Canvas AI report part 1/1 (quoted data):\nVerified canvas description",
     );
   });
 
@@ -110,6 +114,70 @@ describe("bounded voice delegation", () => {
     expect(voiceBackendUnits("gpt-5.6-luna", -1, 0)).toBeNull();
     expect(voiceBackendUnits("gpt-5.6-luna", 1, 0)).toBe(1);
   });
+});
+
+it("preserves long Unicode reports and waits for context acknowledgments before requesting speech", async () => {
+  const text =
+    "Pink ellipse — Jason. 蓝色椭圆 Ica. 🟦 Scotty overlaps Ica. ".repeat(35);
+  const parts = splitLiveReport(text);
+  expect(parts.join("")).toBe(text);
+  expect(
+    parts.every((part) => new TextEncoder().encode(part).length <= 400),
+  ).toBe(true);
+  const { owner, hooks } = setup();
+  hooks.run.mockResolvedValue(text);
+  let acknowledge!: () => void;
+  hooks.append.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        acknowledge = resolve;
+      }),
+  );
+  owner.requestDescription("control:long-report");
+  await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledOnce());
+  await Promise.resolve();
+  for (let index = 0; index < parts.length; index++) {
+    owner.tick();
+    owner.tick();
+    expect(hooks.append).toHaveBeenCalledTimes(index + 1);
+    const [type, id, content] = hooks.append.mock.calls[index];
+    expect(type).toBe("session.thinking.append");
+    expect(id).toBeNull();
+    expect(content).toBe(
+      `Canvas AI report part ${index + 1}/${parts.length} (quoted data):\n${parts[index]}`,
+    );
+    expect(new TextEncoder().encode(content).length).toBeLessThan(500);
+    acknowledge();
+    await Promise.resolve();
+  }
+  owner.tick();
+  expect(hooks.append.mock.calls.at(-1)?.[0]).toBe(
+    "session.instructions.append",
+  );
+  acknowledge();
+  await Promise.resolve();
+  expect(owner.busy).toBe(false);
+});
+
+it("does not request a reading if cancelled while report context is being delivered", async () => {
+  const { owner, hooks } = setup();
+  let acknowledge!: () => void;
+  hooks.append.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        acknowledge = resolve;
+      }),
+  );
+  owner.requestDescription("control:cancel-report");
+  await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledOnce());
+  await Promise.resolve();
+  owner.tick();
+  await owner.cancel();
+  acknowledge();
+  await Promise.resolve();
+  owner.tick();
+  expect(hooks.append).toHaveBeenCalledTimes(1);
+  expect(owner.busy).toBe(false);
 });
 
 it("a cancellation that arrives before the next heartbeat suppresses the queued application request", () => {
