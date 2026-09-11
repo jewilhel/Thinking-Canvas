@@ -55,6 +55,11 @@ export class LiveDelegationOwner {
       null,
       "The participant explicitly pressed Describe this canvas. Delegate that read-only canvas description request to the client now. Wait for the application result before describing the canvas.",
     );
+    this.hooks.append(
+      "session.commentary.append",
+      null,
+      "The participant has requested a description of the current canvas using the application control. A backend canvas read is needed before answering.",
+    );
   }
   async cancel(persist = true) {
     this.testUntil = 0;

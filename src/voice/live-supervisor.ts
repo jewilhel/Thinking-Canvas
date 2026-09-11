@@ -137,6 +137,18 @@ export async function superviseLiveVoice(
           if (result.error) stop("accounting_unavailable");
         });
     }
+    if (
+      [
+        "session.delegation.created",
+        "session.instructions.appended",
+        "session.commentary.appended",
+      ].includes(event.type)
+    )
+      console.info("Live control event", {
+        sessionId: session.id,
+        type: event.type,
+        clientEventId: event.client_event_id ?? null,
+      });
     if (!stopping) owner.receive(event);
     if (event.type === "session.input_audio.muted") muted = true;
     if (event.type === "session.input_audio.unmuted") {
