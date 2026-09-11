@@ -46,6 +46,13 @@ export async function GET(request: Request, context: Context) {
       .eq("user_id", user.id)
       .maybeSingle();
     if (error || !data) return new Response(null, { status: 404 });
+    const latestTask = await voiceService()
+      .from("voice_delegations")
+      .select("status")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
     return Response.json(
       {
         ready: data.supervisor_ready && !data.ended_at,
@@ -54,6 +61,7 @@ export async function GET(request: Request, context: Context) {
         chargedCents: data.charged_cents,
         finalUsage: data.voice_usage_final && data.backend_usage_final,
         backendPending: data.backend_reserved_units > 0,
+        taskStatus: latestTask.data?.status ?? null,
         backendUnits: data.backend_charged_units,
         voiceUnits: data.voice_usage_units,
         idleWarningAt: data.idle_warning_at,

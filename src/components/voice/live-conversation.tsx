@@ -228,6 +228,16 @@ export function LiveVoice({
           if (record.sessionId === sessionId.current) {
             setIdleWarningAt(data.idleWarningAt ?? null);
             setBackendPending(Boolean(data.backendPending));
+            if (data.taskStatus === "completed")
+              setTaskNotice(
+                "Canvas description completed. See Comments for the result.",
+              );
+            if (data.taskStatus === "failed")
+              setTaskNotice(
+                "Canvas description failed. No canvas changes were made.",
+              );
+            if (data.taskStatus === "cancelled")
+              setTaskNotice("Voice task cancelled.");
             if (data.ended && connection.current)
               finishRef.current(data.reason ?? "Provider session ended");
           }
