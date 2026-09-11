@@ -539,3 +539,9 @@ describe("primary AI gateway configuration", () => {
     ).toThrow("not configured");
   });
 });
+
+it("offers no product action in the read-only delegation schema", () => {
+  const tool = buildSubmitTurnTool([]);
+  expect(tool.parameters.properties.toolCalls.maxItems).toBe(0);
+  expect(JSON.stringify(tool)).not.toContain('"enum":[]');
+});

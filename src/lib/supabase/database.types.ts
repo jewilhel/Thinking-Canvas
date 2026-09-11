@@ -1448,6 +1448,69 @@ export type Database = {
           },
         ]
       }
+      voice_delegations: {
+        Row: {
+          ai_run_id: string | null
+          charged_units: number | null
+          created_at: string
+          delegation_id: string
+          finished_at: string | null
+          id: string
+          input_tokens: number | null
+          model: string | null
+          output_tokens: number | null
+          reserved_units: number
+          session_id: string
+          status: string
+          usage_final: boolean
+        }
+        Insert: {
+          ai_run_id?: string | null
+          charged_units?: number | null
+          created_at?: string
+          delegation_id: string
+          finished_at?: string | null
+          id?: string
+          input_tokens?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          reserved_units?: number
+          session_id: string
+          status?: string
+          usage_final?: boolean
+        }
+        Update: {
+          ai_run_id?: string | null
+          charged_units?: number | null
+          created_at?: string
+          delegation_id?: string
+          finished_at?: string | null
+          id?: string
+          input_tokens?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          reserved_units?: number
+          session_id?: string
+          status?: string
+          usage_final?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_delegations_ai_run_id_fkey"
+            columns: ["ai_run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_delegations_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "voice_test_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       voice_test_days: {
         Row: {
           day: string
@@ -1470,11 +1533,16 @@ export type Database = {
         Row: {
           accounting_version: number
           api_kind: string
+          backend_cancel_at: string | null
+          backend_charged_units: number
+          backend_reserved_units: number
+          backend_usage_final: boolean
           call_id: string | null
           canvas_id: string
           charged_cents: number
           close_requested_at: string | null
           day: string
+          describe_requested_at: string | null
           end_reason: string | null
           ended_at: string | null
           expires_at: string
@@ -1484,6 +1552,7 @@ export type Database = {
           idle_seconds: number
           idle_warning_at: string | null
           idle_warning_seconds: number
+          provider_closed_at: string | null
           reserved_cents: number
           started_at: string
           supervisor_ready: boolean
@@ -1496,11 +1565,16 @@ export type Database = {
         Insert: {
           accounting_version?: number
           api_kind?: string
+          backend_cancel_at?: string | null
+          backend_charged_units?: number
+          backend_reserved_units?: number
+          backend_usage_final?: boolean
           call_id?: string | null
           canvas_id: string
           charged_cents?: number
           close_requested_at?: string | null
           day: string
+          describe_requested_at?: string | null
           end_reason?: string | null
           ended_at?: string | null
           expires_at: string
@@ -1510,6 +1584,7 @@ export type Database = {
           idle_seconds?: number
           idle_warning_at?: string | null
           idle_warning_seconds?: number
+          provider_closed_at?: string | null
           reserved_cents: number
           started_at?: string
           supervisor_ready?: boolean
@@ -1522,11 +1597,16 @@ export type Database = {
         Update: {
           accounting_version?: number
           api_kind?: string
+          backend_cancel_at?: string | null
+          backend_charged_units?: number
+          backend_reserved_units?: number
+          backend_usage_final?: boolean
           call_id?: string | null
           canvas_id?: string
           charged_cents?: number
           close_requested_at?: string | null
           day?: string
+          describe_requested_at?: string | null
           end_reason?: string | null
           ended_at?: string | null
           expires_at?: string
@@ -1536,6 +1616,7 @@ export type Database = {
           idle_seconds?: number
           idle_warning_at?: string | null
           idle_warning_seconds?: number
+          provider_closed_at?: string | null
           reserved_cents?: number
           started_at?: string
           supervisor_ready?: boolean
@@ -1887,6 +1968,14 @@ export type Database = {
         }
         Returns: undefined
       }
+      finish_voice_delegation: {
+        Args: {
+          target_id: string
+          target_status: string
+          target_units?: number
+        }
+        Returns: undefined
+      }
       finish_voice_test: {
         Args: { target_cents: number; target_id: string; target_reason: string }
         Returns: undefined
@@ -1981,11 +2070,16 @@ export type Database = {
         Returns: {
           accounting_version: number
           api_kind: string
+          backend_cancel_at: string | null
+          backend_charged_units: number
+          backend_reserved_units: number
+          backend_usage_final: boolean
           call_id: string | null
           canvas_id: string
           charged_cents: number
           close_requested_at: string | null
           day: string
+          describe_requested_at: string | null
           end_reason: string | null
           ended_at: string | null
           expires_at: string
@@ -1995,6 +2089,7 @@ export type Database = {
           idle_seconds: number
           idle_warning_at: string | null
           idle_warning_seconds: number
+          provider_closed_at: string | null
           reserved_cents: number
           started_at: string
           supervisor_ready: boolean
@@ -2011,6 +2106,30 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      reserve_voice_delegation: {
+        Args: { target_delegation: string; target_session: string }
+        Returns: {
+          ai_run_id: string | null
+          charged_units: number | null
+          created_at: string
+          delegation_id: string
+          finished_at: string | null
+          id: string
+          input_tokens: number | null
+          model: string | null
+          output_tokens: number | null
+          reserved_units: number
+          session_id: string
+          status: string
+          usage_final: boolean
+        }
+        SetofOptions: {
+          from: "*"
+          to: "voice_delegations"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       reserve_voice_test: {
         Args: {
           target_canvas: string
@@ -2021,11 +2140,16 @@ export type Database = {
         Returns: {
           accounting_version: number
           api_kind: string
+          backend_cancel_at: string | null
+          backend_charged_units: number
+          backend_reserved_units: number
+          backend_usage_final: boolean
           call_id: string | null
           canvas_id: string
           charged_cents: number
           close_requested_at: string | null
           day: string
+          describe_requested_at: string | null
           end_reason: string | null
           ended_at: string | null
           expires_at: string
@@ -2035,6 +2159,7 @@ export type Database = {
           idle_seconds: number
           idle_warning_at: string | null
           idle_warning_seconds: number
+          provider_closed_at: string | null
           reserved_cents: number
           started_at: string
           supervisor_ready: boolean

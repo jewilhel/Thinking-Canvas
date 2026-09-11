@@ -39,6 +39,8 @@ const recordSchema = z.strictObject({
   reason: z.string().optional(),
   seconds: z.number().optional(),
   chargedCents: z.number().optional(),
+  voiceUnits: z.number().nonnegative().optional(),
+  backendUnits: z.number().nonnegative().optional(),
   finalUsage: z.boolean().optional(),
   notes: z.string().max(4000),
 });
@@ -117,6 +119,8 @@ export function LiveVoice({
       return [];
     }
   });
+  const [backendPending, setBackendPending] = useState(false);
+  const [taskNotice, setTaskNotice] = useState("");
   const [idleWarningAt, setIdleWarningAt] = useState<string | null>(null);
   const [presetName, setPresetName] = useState("");
   const connection = useRef<SupervisedVoice | null>(null),
@@ -223,6 +227,7 @@ export function LiveVoice({
           if (disposed) return;
           if (record.sessionId === sessionId.current) {
             setIdleWarningAt(data.idleWarningAt ?? null);
+            setBackendPending(Boolean(data.backendPending));
             if (data.ended && connection.current)
               finishRef.current(data.reason ?? "Provider session ended");
           }
@@ -236,6 +241,8 @@ export function LiveVoice({
                 ? {
                     ...r,
                     chargedCents: data.chargedCents,
+                    voiceUnits: data.voiceUnits,
+                    backendUnits: data.backendUnits,
                     finalUsage: data.finalUsage,
                     reason:
                       typeof data.reason === "string" ? data.reason : "Ended",
@@ -441,6 +448,57 @@ export function LiveVoice({
                   {muted ? "Unmute microphone" : "Mute microphone"}
                 </Button>
               )}
+              {active && (
+                <>
+                  <Button
+                    variant="outline"
+                    disabled={backendPending}
+                    onClick={async () => {
+                      const response = await fetch(
+                        `/api/canvases/${canvasId}/voice`,
+                        {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            id: sessionId.current,
+                            describeThisCanvas: true,
+                          }),
+                        },
+                      );
+                      setTaskNotice(
+                        response.ok
+                          ? "Canvas description requested. Its request and result appear in Comments."
+                          : "The canvas description could not be requested.",
+                      );
+                    }}
+                  >
+                    Describe this canvas
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      const response = await fetch(
+                        `/api/canvases/${canvasId}/voice`,
+                        {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            id: sessionId.current,
+                            cancelTask: true,
+                          }),
+                        },
+                      );
+                      setTaskNotice(
+                        response.ok
+                          ? "Task cancellation requested."
+                          : "Task cancellation failed; end the session to stop work.",
+                      );
+                    }}
+                  >
+                    Cancel voice task
+                  </Button>
+                </>
+              )}
               {(active || connecting) && (
                 <Button variant="outline" onClick={() => finish()}>
                   End session
@@ -461,6 +519,11 @@ export function LiveVoice({
                 Save available transcript
               </Button>
             </div>
+            {active && (
+              <p role="status">
+                {backendPending ? "Reading the canvas…" : taskNotice}
+              </p>
+            )}
             {captions && (
               <section
                 aria-label="Temporary voice captions"

@@ -1,0 +1,38 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+select no_plan();
+insert into public.canvas_ai_settings(canvas_id,enabled,authority,changed_by)
+values('20000000-0000-4000-8000-000000000001',true,'comment_only','10000000-0000-4000-8000-000000000001')
+on conflict(canvas_id) do update set enabled=true;
+set local role authenticated;
+select throws_ok($$select public.reserve_voice_delegation(gen_random_uuid(),'forged')$$,'42501',null,'browser cannot fabricate delegation');
+select throws_ok($$select public.finish_voice_delegation(gen_random_uuid(),'completed',0)$$,'42501',null,'browser cannot fabricate task usage');
+reset role;
+set local role service_role;
+select public.reserve_live_voice_test('55555555-5555-4555-8555-555555555555','20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001');
+select throws_ok($$select public.reserve_voice_delegation('55555555-5555-4555-8555-555555555555','early')$$,'42501',null,'unsupervised task denied');
+update public.voice_test_sessions set supervisor_ready=true,heartbeat_at=now() where id='55555555-5555-4555-8555-555555555555';
+select lives_ok($$select public.reserve_voice_delegation('55555555-5555-4555-8555-555555555555','one')$$,'supervised owner can reserve task');
+select is((public.reserve_voice_delegation('55555555-5555-4555-8555-555555555555','one')).id,null::uuid,'duplicate delegation has no second task');
+select throws_ok($$select public.reserve_voice_delegation('55555555-5555-4555-8555-555555555555','two')$$,'P0001',null,'parallel task cannot double reserve');
+select public.checkpoint_live_voice_usage('55555555-5555-4555-8555-555555555555',60000,true);
+update public.voice_test_sessions set provider_closed_at=now(),end_reason='closed' where id='55555555-5555-4555-8555-555555555555';
+select public.finish_live_voice_test('55555555-5555-4555-8555-555555555555','closed');
+select is((select ended_at from public.voice_test_sessions where id='55555555-5555-4555-8555-555555555555'),null::timestamptz,'voice finalization waits for backend usage');
+select public.finish_voice_delegation((select id from public.voice_delegations where delegation_id='one'),'completed',12000);
+select public.finish_voice_delegation((select id from public.voice_delegations where delegation_id='one'),'completed',12000);
+select is((select charged_cents from public.voice_test_sessions where id='55555555-5555-4555-8555-555555555555'),6,'one minute plus one cent backend settled exactly once');
+select is((select backend_reserved_units from public.voice_test_sessions where id='55555555-5555-4555-8555-555555555555'),0::bigint,'nested reservation released');
+select public.reserve_live_voice_test('66666666-6666-4666-8666-666666666666','20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001');
+update public.voice_test_sessions set supervisor_ready=true,heartbeat_at=now() where id='66666666-6666-4666-8666-666666666666';
+select public.reserve_voice_delegation('66666666-6666-4666-8666-666666666666','unknown');
+select public.finish_voice_delegation((select id from public.voice_delegations where delegation_id='unknown'),'cancelled',null);
+select is((select backend_charged_units from public.voice_test_sessions where id='66666666-6666-4666-8666-666666666666'),1200000::bigint,'unconfirmed cancelled task conservatively charges reservation');
+select is((select backend_usage_final from public.voice_test_sessions where id='66666666-6666-4666-8666-666666666666'),false,'unknown backend usage remains distinguishable');
+reset role;
+update public.canvas_ai_settings set enabled=false where canvas_id='20000000-0000-4000-8000-000000000001';
+set local role service_role;
+select throws_ok($$select public.reserve_voice_delegation('66666666-6666-4666-8666-666666666666','revoked')$$,'42501',null,'permission revocation blocks new paid work');
+reset role;
+select * from finish();
+rollback;

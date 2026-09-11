@@ -39,7 +39,7 @@ export async function GET(request: Request, context: Context) {
     const { data, error } = await voiceService()
       .from("voice_test_sessions")
       .select(
-        "supervisor_ready,ended_at,expires_at,worker_started_at,end_reason,charged_cents,voice_usage_final,idle_warning_at",
+        "supervisor_ready,ended_at,expires_at,worker_started_at,end_reason,charged_cents,voice_usage_final,idle_warning_at,backend_reserved_units,backend_charged_units,backend_usage_final,voice_usage_units,provider_closed_at",
       )
       .eq("id", sessionId)
       .eq("canvas_id", canvasId)
@@ -52,10 +52,14 @@ export async function GET(request: Request, context: Context) {
         settled: Boolean(data.ended_at),
         reason: data.end_reason,
         chargedCents: data.charged_cents,
-        finalUsage: data.voice_usage_final,
+        finalUsage: data.voice_usage_final && data.backend_usage_final,
+        backendPending: data.backend_reserved_units > 0,
+        backendUnits: data.backend_charged_units,
+        voiceUnits: data.voice_usage_units,
         idleWarningAt: data.idle_warning_at,
         ended:
-          Boolean(data.ended_at) || Date.parse(data.expires_at) <= Date.now(),
+          Boolean(data.ended_at || data.provider_closed_at) ||
+          Date.parse(data.expires_at) <= Date.now(),
       },
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -398,12 +402,22 @@ export async function PATCH(request: Request, context: Context) {
   const { canvasId } = await context.params;
   const user = await authorizeVoice(canvasId);
   const body = z
-    .strictObject({ id: z.uuid(), keepTalking: z.literal(true) })
+    .union([
+      z.strictObject({ id: z.uuid(), keepTalking: z.literal(true) }),
+      z.strictObject({ id: z.uuid(), describeThisCanvas: z.literal(true) }),
+      z.strictObject({ id: z.uuid(), cancelTask: z.literal(true) }),
+    ])
     .safeParse(await request.json().catch(() => null));
   if (!user || !body.success) return new Response(null, { status: 403 });
   const { error } = await voiceService()
     .from("voice_test_sessions")
-    .update({ idle_keepalive_at: new Date().toISOString() })
+    .update({
+      ["keepTalking" in body.data
+        ? "idle_keepalive_at"
+        : "cancelTask" in body.data
+          ? "backend_cancel_at"
+          : "describe_requested_at"]: new Date().toISOString(),
+    })
     .eq("id", body.data.id)
     .eq("canvas_id", canvasId)
     .eq("user_id", user.id)

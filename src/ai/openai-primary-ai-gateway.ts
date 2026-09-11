@@ -175,12 +175,15 @@ export function buildSubmitTurnTool(allowedToolNames: AiToolName[]) {
         },
         toolCalls: {
           type: "array",
-          maxItems: MAX_TOOL_CALLS_PER_TURN,
+          maxItems: actionToolNames.length ? MAX_TOOL_CALLS_PER_TURN : 0,
           items: {
             type: "object",
             properties: {
               callKey: { type: "string", minLength: 1, maxLength: 255 },
-              toolName: { type: "string", enum: actionToolNames },
+              toolName: {
+                type: "string",
+                ...(actionToolNames.length ? { enum: actionToolNames } : {}),
+              },
               ...(directDocumentAction
                 ? { arguments: documentRangeActionParameters() }
                 : {
