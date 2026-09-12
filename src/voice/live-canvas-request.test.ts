@@ -1,47 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { parseLiveCanvasRequest } from "./live-delegation-contract";
+import {
+  liveCanvasRequestSchema,
+  voiceConversationInstruction,
+  VOICE_CONVERSATION_MARKER,
+} from "./live-delegation-contract";
 import { liveDelegationSignature } from "./live-delegation-signature";
 
 describe("bounded spoken canvas requests", () => {
-  it.each([
-    "Can you tell me what kind of shapes are on the canvas?",
-    "Which objects overlap?",
-    "Can you tell what kind of shapes?",
-    "Please explain the canvas.",
-    "What is in the document?",
-    "Describe this canvas.",
-    "Yeah. Can you tell me what kinds of shapes are on this canvas",
-    "Well, um, could you describe the canvas?",
-    "Can you explain how to leave a comment on the canvas?",
-  ])("preserves the actual question: %s", (text) => {
-    expect(parseLiveCanvasRequest(text)).toEqual({ kind: "question", text });
+  it("accepts bounded conversation wording without requiring command syntax", () => {
+    const text = JSON.stringify({
+      fragments: [
+        {
+          speaker: "user",
+          text: "Well, can you, um, tell me what shapes are here?",
+        },
+      ],
+    });
+    expect(
+      liveCanvasRequestSchema.parse({ kind: "conversation", text }),
+    ).toEqual({ kind: "conversation", text });
+    expect(() =>
+      liveCanvasRequestSchema.parse({
+        kind: "conversation",
+        text: "x".repeat(16001),
+      }),
+    ).toThrow();
+    expect(voiceConversationInstruction(text)).toContain(text);
+    expect(voiceConversationInstruction(text)).toContain("explicitly requests");
+    expect(VOICE_CONVERSATION_MARKER).not.toContain(text);
   });
-  it.each([
-    "Leave a comment on Jason saying the label is clear.",
-    "Could you add a comment about the overlapping shapes?",
-    "How about, can you leave a comment on on the object JSON that says 'voice comment test",
-    "Okay, please leave a comment on Jason saying 'Voice comment test.'",
-  ])("accepts explicit contextual comments: %s", (text) => {
-    expect(parseLiveCanvasRequest(text)).toEqual({ kind: "comment", text });
-  });
-  it.each([
-    "Delete the canvas",
-    "Move Jason to the left",
-    "I might leave a comment later",
-    "Don't leave a comment",
-    "Actually, leave a comment",
-    "Hello there",
-    "How about not leaving a comment on the canvas?",
-    "a".repeat(2001),
-  ])(
-    "does not execute unsupported, tentative, cancelled, or oversized speech",
-    (text) => {
-      expect(parseLiveCanvasRequest(text)).toBeNull();
-    },
-  );
   it("binds request text and kind to the authenticated signature", () => {
     const question = {
-      kind: "question" as const,
+      kind: "conversation" as const,
       text: "Which objects overlap?",
     };
     const signature = liveDelegationSignature(

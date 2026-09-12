@@ -11,6 +11,7 @@ import {
   defaultLiveCanvasRequest,
   liveCanvasRequestSchema,
   voiceBackendUnits,
+  VOICE_CONVERSATION_MARKER,
 } from "@/voice/live-delegation-contract";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -125,7 +126,10 @@ export async function POST(
     const comment = await auth.rpc("create_comment_thread", {
       target_canvas_id: canvasId,
       target_client_command_id: taskId,
-      target_body: body.data.request.text,
+      target_body:
+        body.data.request.kind === "conversation"
+          ? VOICE_CONVERSATION_MARKER
+          : body.data.request.text,
       target_object_ids: [],
       target_anchor_x: 0,
       target_anchor_y: 0,
@@ -192,6 +196,10 @@ export async function POST(
         signal,
         readOnly: body.data.request.kind === "question",
         voiceTaskId: taskId,
+        voiceConversation:
+          body.data.request.kind === "conversation"
+            ? body.data.request.text
+            : undefined,
         gateway,
         beforeComplete: stillAllowed,
       },
@@ -219,10 +227,10 @@ export async function POST(
       if (signal.aborted)
         await cancelAiRun({ canvasId, runId }).catch(() => undefined);
       else
-        await failAiRun(runId, "voice_read_only_failed").catch(() => undefined);
+        await failAiRun(runId, "voice_request_failed").catch(() => undefined);
     }
     return Response.json(
-      { error: "The read-only canvas request did not complete.", taskId },
+      { error: "The canvas request did not complete.", taskId },
       { status: 502 },
     );
   } finally {

@@ -55,6 +55,12 @@ export async function superviseLiveVoice(
     { resolve: () => void; reject: () => void }
   >();
   const owner = new LiveDelegationOwner({
+    diagnostic: (stage, delegationId) =>
+      console.info("Live handoff stage", {
+        sessionId: session.id,
+        delegationId,
+        stage,
+      }),
     quiet: () => Date.now() - lastAudio >= 2000,
     append: (type, id, content) => {
       if (stopping || socket.readyState !== WebSocket.OPEN)

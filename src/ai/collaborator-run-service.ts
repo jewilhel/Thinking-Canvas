@@ -1,4 +1,5 @@
 import "server-only";
+import { voiceConversationInstruction } from "@/voice/live-delegation-contract";
 import { prepareCanvasNarration } from "@/stories/narration-audio-service";
 
 import { z } from "zod";
@@ -176,6 +177,8 @@ export async function completeAiRun(
     readOnly?: boolean;
     /** Server-only metered voice owner; this slice permits contextual comments only. */
     voiceTaskId?: string;
+    /** Volatile context; never stored in the invoking comment or run metadata. */
+    voiceConversation?: string;
     gateway?: PrimaryAiGateway;
     beforeComplete?: () => Promise<void>;
   } = {},
@@ -206,6 +209,8 @@ export async function completeAiRun(
     .maybeSingle();
   if (
     voiceTask.error ||
+    (options.voiceConversation !== undefined &&
+      (!voiceTask.data || options.voiceConversation.length > 16000)) ||
     (voiceTask.data &&
       (options.voiceTaskId !== voiceTask.data.id ||
         !options.gateway ||
@@ -314,7 +319,10 @@ export async function completeAiRun(
   const sourceSceneTarget = firstRelatedRow(
     commentResult.data.comment_scene_targets,
   );
-  const instruction = replyResult.data?.body ?? commentResult.data.body;
+  const instruction =
+    options.voiceConversation !== undefined
+      ? voiceConversationInstruction(options.voiceConversation)
+      : (replyResult.data?.body ?? commentResult.data.body);
   const authorityToolNames = options.readOnly
     ? []
     : sourceDocumentTarget

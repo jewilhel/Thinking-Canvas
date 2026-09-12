@@ -6,7 +6,13 @@ import {
 } from "./live-delegation-contract";
 function setup() {
   const hooks = {
-    run: vi.fn(async () => "Verified canvas description"),
+    run: vi.fn<
+      (
+        id: string,
+        signal: AbortSignal,
+        request: import("./live-delegation-contract").LiveCanvasRequest,
+      ) => Promise<string>
+    >(async () => "Verified canvas description"),
     append: vi.fn(),
     cancel: vi.fn(async () => {}),
     quiet: vi.fn(() => true),
@@ -26,6 +32,88 @@ const speech = (delta: string, event_id = "speech1", start_ms = 4000) => ({
   end_ms: start_ms + 500,
 });
 describe("bounded voice delegation", () => {
+  it("includes both speakers for a short confirmation without phrase matching", () => {
+    const { owner, hooks } = setup();
+    owner.receive(
+      speech(
+        "Well, can you, um, tell me what kinds of shapes are on this canvas",
+        "s1",
+        0,
+      ),
+      0,
+    );
+    owner.receive(
+      {
+        ...speech("Do you mean this canvas?", "a1", 2000),
+        type: "session.output_transcript.delta",
+      },
+      0,
+    );
+    owner.receive(speech("Yes", "s2", 4000), 0);
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    const context = JSON.parse(hooks.run.mock.calls[0][2].text);
+    expect(
+      context.fragments.map((x: { speaker: string }) => x.speaker),
+    ).toEqual(["user", "assistant", "user"]);
+    expect(context.fragments.at(-1).text).toBe("Yes");
+  });
+  it("waits for late wording and includes speech beyond the old fixed timeline window", () => {
+    const { owner, hooks } = setup();
+    owner.receive(
+      speech("[tongue click] Leave a comment on Jason", "s1", 4000),
+      0,
+    );
+    owner.receive(delegated, 0);
+    owner.receive(speech(" saying voice comment test", "s2", 18000), 1900);
+    owner.tick(2200);
+    expect(hooks.run).not.toHaveBeenCalled();
+    owner.tick(3500);
+    expect(
+      JSON.parse(hooks.run.mock.calls[0][2].text).fragments.at(-1).text,
+    ).toBe(" saying voice comment test");
+  });
+  it("keeps a handoff received while busy and includes the previous completed outcome", async () => {
+    const { owner, hooks } = setup();
+    owner.receive(speech("Leave a comment on Jason saying test."), 0);
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    await vi.waitFor(() => expect(owner.busy).toBe(true));
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    owner.receive(
+      speech("Did that comment get added?", "followup", 20000),
+      3000,
+    );
+    owner.receive(
+      {
+        ...delegated,
+        offset_ms: 21000,
+        delegation: { ...delegated.delegation, id: "task2" },
+      },
+      3000,
+    );
+    // Deliver the first report before starting the queued follow-up.
+    for (let i = 0; i < 5; i++) {
+      owner.tick(6000);
+      await Promise.resolve();
+    }
+    expect(hooks.run).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(hooks.run.mock.calls[1][2].text).completedTasks).toEqual([
+      { id: "task1", text: "Verified canvas description" },
+    ]);
+  });
+  it("aborts pending execution when later speech changes its context", async () => {
+    const { owner, hooks } = setup();
+    hooks.run.mockImplementation(() => new Promise(() => {}));
+    owner.receive(speech("Leave a comment on Jason saying test."), 0);
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    owner.receive(speech("No, use Scotty", "correction", 10000), 2500);
+    expect(hooks.run.mock.calls[0][1].aborted).toBe(true);
+    expect(hooks.cancel).toHaveBeenCalledOnce();
+  });
   it.each([
     {
       kind: "question",
@@ -45,34 +133,33 @@ describe("bounded voice delegation", () => {
     },
   ])(
     "routes conversational $kind speech through provider delegation",
-    ({ kind, parts }) => {
+    ({ parts }) => {
       const { owner, hooks } = setup();
       owner.receive(delegated, 0);
       parts.forEach((part, index) =>
-        owner.receive(speech(part, `fragment${index}`, 3500 + index * 500)),
+        owner.receive(speech(part, `fragment${index}`, 3500 + index * 500), 0),
       );
       owner.tick(2000);
-      expect(hooks.run).toHaveBeenCalledWith("task1", expect.any(AbortSignal), {
-        kind,
-        text: parts.join("").trim(),
-      });
+      expect(hooks.run).toHaveBeenCalledOnce();
+      const request = hooks.run.mock.calls[0][2];
+      expect(request.kind).toBe("conversation");
+      expect(
+        JSON.parse(request.text)
+          .fragments.map((x: { text: string }) => x.text)
+          .join(""),
+      ).toBe(parts.join(""));
     },
   );
   it("routes the actual comment request and does not reuse its speech in a later delegation", async () => {
     const { owner, hooks } = setup();
     owner.receive(
       speech("Leave a comment on Jason saying the label is clear."),
+      0,
     );
     owner.receive(delegated, 0);
     owner.tick(2000);
-    expect(hooks.run.mock.calls[0]).toEqual([
-      "task1",
-      expect.any(AbortSignal),
-      {
-        kind: "comment",
-        text: "Leave a comment on Jason saying the label is clear.",
-      },
-    ]);
+    expect(hooks.run).toHaveBeenCalledOnce();
+    expect(hooks.run.mock.calls[0][2].kind).toBe("conversation");
     await owner.cancel();
     await Promise.resolve();
     await Promise.resolve();
@@ -90,7 +177,7 @@ describe("bounded voice delegation", () => {
     owner.tick(1000);
     expect(hooks.run).not.toHaveBeenCalled();
     owner.receive(speech("Describe this canvas."), 1500);
-    owner.tick(2000);
+    owner.tick(3000);
     await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledTimes(1));
     owner.receive(delegated, 2100);
     hooks.quiet.mockReturnValue(false);
@@ -110,15 +197,15 @@ describe("bounded voice delegation", () => {
     expect(hooks.append.mock.calls[1][0]).toBe("session.instructions.append");
     expect(hooks.append.mock.calls[1][2]).toContain("preserve useful details");
   });
-  it("never executes a fragment alone or an ambiguous/mutating request", () => {
+  it("never runs on a fragment alone; delegates interpretation of a request to the existing AI", () => {
     const { owner, hooks } = setup();
-    owner.receive(speech("Delete this canvas."));
+    owner.receive(speech("Delete this canvas."), 0);
     owner.tick(5000);
     expect(hooks.run).not.toHaveBeenCalled();
     owner.receive(delegated, 0);
     owner.tick(3000);
-    expect(hooks.run).not.toHaveBeenCalled();
-    expect(hooks.append).toHaveBeenCalledTimes(1);
+    expect(hooks.run).toHaveBeenCalledOnce();
+    expect(hooks.run.mock.calls[0][2].kind).toBe("conversation");
   });
   it("corrections cancel pending work; stopping speech does not cancel a task", async () => {
     const { owner, hooks } = setup();
@@ -140,7 +227,7 @@ describe("bounded voice delegation", () => {
         }),
     );
     owner.receive(delegated, 0);
-    owner.receive(speech("Describe this canvas."));
+    owner.receive(speech("Describe this canvas."), 0);
     owner.tick(3000);
     await owner.cancel();
     resolve("Stale result");
