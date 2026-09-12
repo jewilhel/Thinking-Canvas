@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getAuthenticatedUser } from "@/lib/auth/session";
 import { endVoiceCall } from "@/voice/end-voice-call";
 import { VOICE_DAILY_CENTS } from "@/voice/voice-settings";
 import {
@@ -21,11 +22,20 @@ export async function GET(request: Request, context: Context) {
   if (
     !z.uuid().safeParse(canvasId).success ||
     !(await authorizeVoice(canvasId))
-  )
+  ) {
+    const signedIn = await getAuthenticatedUser();
     return Response.json(
-      { error: "Voice requires canvas AI access." },
-      { status: 403 },
+      {
+        error: signedIn
+          ? "Voice requires canvas AI access."
+          : "Please sign in again to use voice.",
+      },
+      {
+        status: signedIn ? 403 : 401,
+        headers: { "Cache-Control": "no-store" },
+      },
     );
+  }
   if (!voiceEnabled())
     return Response.json({
       enabled: false,

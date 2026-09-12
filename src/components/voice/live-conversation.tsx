@@ -24,6 +24,7 @@ import {
   voiceStorageKeys,
 } from "@/voice/voice-test-record";
 import { z } from "zod";
+import { useVoiceAvailability } from "@/voice/use-voice-availability";
 const recordSchema = z.strictObject({
   version: z.literal(2),
   id: z.string(),
@@ -86,13 +87,13 @@ export function LiveVoice({
   const [status, setStatus] = useState("Ended"),
     [muted, setMuted] = useState(false),
     [error, setError] = useState("");
-  const [availability, setAvailability] = useState<{
-    enabled: boolean;
-    reason?: string;
-    spentCents?: number;
-    reservedCents?: number;
-    build?: string;
-  }>({ enabled: false, reason: "Checking voice availability…" });
+  const {
+    availability,
+    check: checkAvailability,
+    accessError,
+    setAccessError,
+  } = useVoiceAvailability(canvasId);
+  const startingCheck = useRef(false);
   const [remaining, setRemaining] = useState(600),
     [captions, setCaptions] = useState(false);
   const [transcript, setTranscript] =
@@ -166,33 +167,8 @@ export function LiveVoice({
   });
   useEffect(() => {
     mounted.current = true;
-    const check = async () => {
-      try {
-        const response = await fetch(`/api/canvases/${canvasId}/voice`);
-        if (!mounted.current) return;
-        if (!response.ok) {
-          setAvailability({
-            enabled: false,
-            reason:
-              "Voice access is unavailable. Refresh if preview access expired.",
-          });
-          return;
-        }
-        const data = await response.json();
-        if (mounted.current) setAvailability(data);
-      } catch {
-        if (mounted.current)
-          setAvailability({
-            enabled: false,
-            reason: "Voice availability could not be checked.",
-          });
-      }
-    };
-    void check();
-    const timer = setInterval(check, 15000);
     return () => {
       mounted.current = false;
-      clearInterval(timer);
       connection.current?.close();
       abort.current?.abort();
     };
@@ -411,15 +387,26 @@ export function LiveVoice({
               setInvoker(button);
               setPanel(true);
             }}
-            onAction={(button) => {
+            onAction={async (button) => {
               setInvoker(button);
-              if (active || connecting) finish();
-              else if (availability.enabled) {
-                setPanel(false);
-                setConsent(true);
-              } else {
-                setError(availability.reason ?? "Voice unavailable.");
-                setPanel(true);
+              if (active || connecting) {
+                finish();
+                return;
+              }
+              if (startingCheck.current) return;
+              startingCheck.current = true;
+              setAccessError("");
+              try {
+                const current = await checkAvailability();
+                if (!mounted.current) return;
+                if (current.enabled) {
+                  setPanel(false);
+                  setConsent(true);
+                } else {
+                  setAccessError(current.reason ?? "Voice unavailable.");
+                }
+              } finally {
+                startingCheck.current = false;
               }
             }}
           />,
@@ -811,13 +798,19 @@ export function LiveVoice({
           </div>
         </WorkspacePanel>
       )}
-      {error && (
+      {(error || accessError) && (
         <div
           role="alert"
           className="absolute top-24 right-4 z-50 w-[min(28rem,calc(100%-2rem))] rounded-lg border border-red-200 bg-white p-3 text-sm text-red-700"
         >
-          {error}
-          <Button variant="outline" onClick={() => setError("")}>
+          {error || accessError}
+          <Button
+            variant="outline"
+            onClick={() => {
+              setError("");
+              setAccessError("");
+            }}
+          >
             Dismiss
           </Button>
         </div>
