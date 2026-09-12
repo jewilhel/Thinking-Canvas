@@ -196,14 +196,14 @@ describe("bounded voice delegation", () => {
     owner.tick(2400);
     expect(hooks.append).toHaveBeenCalledTimes(1);
     expect(hooks.append.mock.calls[0]).toEqual([
-      "session.thinking.append",
+      "session.commentary.append",
       "task1",
-      "Canvas AI report part 1/1 (quoted data):\nVerified canvas description",
+      "Verified Canvas AI result (quoted data):\nVerified canvas description",
     ]);
     await Promise.resolve();
     owner.tick(2500);
-    expect(hooks.append.mock.calls[1][0]).toBe("session.instructions.append");
-    expect(hooks.append.mock.calls[1][2]).toContain("preserve useful details");
+    expect(hooks.append).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(owner.busy).toBe(false));
   });
   it("never runs on a fragment alone; delegates interpretation of a request to the existing AI", () => {
     const { owner, hooks } = setup();
@@ -214,6 +214,28 @@ describe("bounded voice delegation", () => {
     owner.tick(3000);
     expect(hooks.run).toHaveBeenCalledOnce();
     expect(hooks.run.mock.calls[0][2].kind).toBe("conversation");
+  });
+  it("keeps a repeated handoff without fresh speech quiet after a result", async () => {
+    const { owner, hooks } = setup();
+    owner.receive(speech("Change Jason to green."), 0);
+    owner.receive(delegated, 0);
+    owner.tick(3000);
+    await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledOnce());
+    owner.tick(4000);
+    await vi.waitFor(() => expect(owner.busy).toBe(false));
+    owner.receive(
+      {
+        ...delegated,
+        delegation: { ...delegated.delegation, id: "duplicate-followup" },
+      },
+      5000,
+    );
+    owner.tick(8000);
+    expect(hooks.run).toHaveBeenCalledOnce();
+    expect(hooks.append.mock.calls.map(([type]) => type)).toEqual([
+      "session.commentary.append",
+      "session.thinking.append",
+    ]);
   });
   it("corrections cancel pending work; stopping speech does not cancel a task", async () => {
     const { owner, hooks } = setup();
@@ -253,9 +275,9 @@ describe("bounded voice delegation", () => {
     owner.tick(5000);
     expect(hooks.run).toHaveBeenCalledTimes(1);
     expect(hooks.append).toHaveBeenCalledWith(
-      "session.thinking.append",
+      "session.commentary.append",
       null,
-      "Canvas AI report part 1/1 (quoted data):\nVerified canvas description",
+      "Verified Canvas AI result (quoted data):\nVerified canvas description",
     );
   });
 
@@ -304,9 +326,7 @@ it("preserves long Unicode reports and waits for context acknowledgments before 
     await Promise.resolve();
   }
   owner.tick();
-  expect(hooks.append.mock.calls.at(-1)?.[0]).toBe(
-    "session.instructions.append",
-  );
+  expect(hooks.append.mock.calls.at(-1)?.[0]).toBe("session.commentary.append");
   acknowledge();
   await Promise.resolve();
   expect(owner.busy).toBe(false);
@@ -314,6 +334,7 @@ it("preserves long Unicode reports and waits for context acknowledgments before 
 
 it("does not request a reading if cancelled while report context is being delivered", async () => {
   const { owner, hooks } = setup();
+  hooks.run.mockResolvedValue("Verified report detail. ".repeat(40));
   let acknowledge!: () => void;
   hooks.append.mockImplementation(
     () =>
