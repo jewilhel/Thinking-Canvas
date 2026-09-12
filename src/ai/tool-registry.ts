@@ -478,6 +478,15 @@ export function allowedAiToolNames(authority: AiAuthorityLevel) {
   );
 }
 
+/** Voice progressively exposes existing actions without increasing authority. */
+export function allowedVoiceAiToolNames(authority: AiAuthorityLevel) {
+  return allowedAiToolNames(authority).filter(
+    (name) =>
+      name === "create_contextual_comment" ||
+      name === "execute_canvas_commands",
+  );
+}
+
 const documentRangeToolNames = new Set<AiToolName>([
   "propose_document_changes",
   "stage_document_changes",

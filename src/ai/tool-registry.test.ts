@@ -4,6 +4,7 @@ import {
   AiToolNotFoundError,
   AiToolPermissionError,
   allowedAiToolNames,
+  allowedVoiceAiToolNames,
   allowedDocumentRangeAiToolNames,
   allowedSceneAiToolNames,
   storySceneArgumentsSchema,
@@ -13,6 +14,21 @@ import {
 const objectId = "61000000-0000-4000-8000-000000000001";
 
 describe("AI authority tool registry", () => {
+  it("permits voice object execution only at Trusted Editor authority", () => {
+    for (const authority of [
+      "comment_only",
+      "propose_changes",
+      "edit_with_review",
+    ] as const) {
+      expect(allowedVoiceAiToolNames(authority)).toEqual([
+        "create_contextual_comment",
+      ]);
+    }
+    expect(allowedVoiceAiToolNames("trusted_editor")).toEqual([
+      "create_contextual_comment",
+      "execute_canvas_commands",
+    ]);
+  });
   it("derives a cumulative fail-closed allowlist for every authority", () => {
     expect(allowedAiToolNames("comment_only")).toEqual([
       "inspect_canvas_objects",

@@ -51,6 +51,7 @@ import {
 } from "@/ai/review-scope";
 import {
   allowedAiToolNames,
+  allowedVoiceAiToolNames,
   allowedDocumentRangeAiToolNames,
   allowedSceneAiToolNames,
   contextualCommentArgumentsSchema,
@@ -175,7 +176,7 @@ export async function completeAiRun(
     onStatus?: (status: "projecting" | "thinking" | "applying") => void;
     scenario?: FakeAiScenario;
     readOnly?: boolean;
-    /** Server-only metered voice owner; this slice permits contextual comments only. */
+    /** Server-only metered voice owner; exposes only the current voice action allowlist. */
     voiceTaskId?: string;
     /** Volatile context; never stored in the invoking comment or run metadata. */
     voiceConversation?: string;
@@ -331,7 +332,11 @@ export async function completeAiRun(
         ? allowedSceneAiToolNames(currentAuthority)
         : allowedAiToolNames(currentAuthority);
   const allowedToolNames = voiceTask.data
-    ? authorityToolNames.filter((name) => name === "create_contextual_comment")
+    ? authorityToolNames.filter((name) =>
+        allowedVoiceAiToolNames(currentAuthority).some(
+          (allowed) => allowed === name,
+        ),
+      )
     : authorityToolNames;
   const sourceDocumentRange = sourceDocumentTarget
     ? currentDocumentRange(compacted.document, {
@@ -628,6 +633,7 @@ export async function completeAiRun(
     throw new AiProviderOutputError();
   }
   if (options.readOnly && toolCalls.length) throw new AiProviderOutputError();
+  if (voiceTask.data && toolCalls.length > 1) throw new AiProviderOutputError();
   const isNewObjectReview = toolCalls.some(
     (toolCall) =>
       toolCall.toolName === "stage_new_shapes" ||
@@ -818,6 +824,8 @@ export async function completeAiRun(
                 affectedObjectIds: edit.affectedObjectIds,
               };
             })();
+        await options.beforeComplete?.();
+        options.signal?.throwIfAborted();
         const toolResult = await service.rpc("execute_ai_canvas_commands", {
           target_run_id: run.id,
           target_requester_id: run.requested_by,
