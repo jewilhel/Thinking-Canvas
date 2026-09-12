@@ -567,8 +567,9 @@ export function LiveVoice({
             <p>
               Initiative and interruption preferences are conversational
               guidance, not API permissions. This version can answer canvas
-              questions and leave requested comments, but cannot edit objects
-              yet.
+              questions, leave requested comments, and edit canvas objects with
+              Trusted Editor authority. Spoken document saving and undo are not
+              available yet.
             </p>
             <label className="block">
               Idle timeout (seconds)
