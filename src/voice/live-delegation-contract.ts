@@ -20,7 +20,7 @@ export const defaultLiveCanvasRequest: LiveCanvasRequest = {
 };
 
 export function cancelsVoiceTask(text: string) {
-  return /\b(?:cancel (?:this|that|the) (?:task|request)|never mind|actually|instead)\b/i.test(
+  return /\b(?:cancel (?:this|that|the) (?:task|request)|never mind)\b/i.test(
     text,
   );
 }

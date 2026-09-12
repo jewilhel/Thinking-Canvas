@@ -58,6 +58,14 @@ describe("bounded voice delegation", () => {
     ).toEqual(["user", "assistant", "user"]);
     expect(context.fragments.at(-1).text).toBe("Yes");
   });
+  it("does not discard a new natural request merely because it contains actually or instead", () => {
+    const { owner, hooks } = setup();
+    owner.receive(speech("Actually, can you describe the shapes instead?"), 0);
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    expect(hooks.run).toHaveBeenCalledOnce();
+    expect(hooks.cancel).not.toHaveBeenCalled();
+  });
   it("waits for late wording and includes speech beyond the old fixed timeline window", () => {
     const { owner, hooks } = setup();
     owner.receive(
