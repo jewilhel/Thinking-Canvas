@@ -83,7 +83,12 @@ function providerArgumentsSchema(toolName: AiToolName) {
   ) {
     return z.toJSONSchema(providerDocumentChangesArgumentsSchema);
   }
-  return z.toJSONSchema(AI_TOOL_REGISTRY[toolName].argumentsSchema);
+  // Canvas commands reuse geometry/style/object schemas across many variants.
+  // Inline expansion alone exceeds the voice request's 100 KB budget. Keep
+  // shared definitions inside this action schema; runtime validation is unchanged.
+  return z.toJSONSchema(AI_TOOL_REGISTRY[toolName].argumentsSchema, {
+    reused: toolName === "execute_canvas_commands" ? "ref" : "inline",
+  });
 }
 
 function directDocumentActionName(actionToolNames: AiToolName[]) {

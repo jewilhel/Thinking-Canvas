@@ -25,6 +25,7 @@ import { AiProviderTimeoutError } from "@/ai/primary-ai-gateway";
 import {
   allowedAiToolNames,
   allowedSceneAiToolNames,
+  allowedVoiceAiToolNames,
 } from "@/ai/tool-registry";
 
 const ids = {
@@ -151,6 +152,61 @@ function clientReturning(response: Response) {
 }
 
 describe("OpenAiPrimaryAiGateway", () => {
+  it("fits the complete Trusted Editor voice request within its provider bound", async () => {
+    const client = clientReturning(
+      providerResponse({
+        body: "Ready.",
+        evidence: [],
+        contextualTargetObjectIds: [],
+        toolCalls: [],
+      }),
+    );
+    const gateway = new OpenAiPrimaryAiGateway({
+      apiKey: "test-key",
+      model: "gpt-5.6-luna",
+      maxOutputTokens: 2048,
+      client,
+    });
+    await gateway.request({
+      invocation: {
+        ...invocation,
+        authority: "trusted_editor",
+        instruction: "x".repeat(16000),
+      },
+      projection,
+      allowedToolNames: allowedVoiceAiToolNames("trusted_editor"),
+      signal: new AbortController().signal,
+    });
+    const request = client.create.mock.calls[0]![0];
+    expect(
+      new TextEncoder().encode(JSON.stringify(request)).length,
+    ).toBeLessThan(100000);
+    expect(request.max_output_tokens).toBe(2048);
+    const tool = buildSubmitTurnTool(allowedVoiceAiToolNames("trusted_editor"));
+    const properties = tool.parameters.properties.toolCalls.items.properties;
+    if (!("argumentsJson" in properties))
+      throw new Error("Expected canvas action schema");
+    const description = properties.argumentsJson.description;
+    const schemas = JSON.parse(
+      description.split("Exact schemas by tool name: ")[1]!,
+    );
+    const schema = schemas.execute_canvas_commands;
+    let referenceCount = 0;
+    const checkReferences = (value: unknown): void => {
+      if (!value || typeof value !== "object") return;
+      const object = value as Record<string, unknown>;
+      if (typeof object.$ref === "string") {
+        referenceCount++;
+        expect(object.$ref.startsWith("#/$defs/")).toBe(true);
+        expect(
+          schema.$defs[object.$ref.slice("#/$defs/".length)],
+        ).toBeDefined();
+      }
+      Object.values(object).forEach(checkReferences);
+    };
+    checkReferences(schema);
+    expect(referenceCount).toBeGreaterThan(0);
+  });
   it("streams a stateless, bounded, privacy-safe collaborator request", async () => {
     const client = clientReturning(
       providerResponse({
