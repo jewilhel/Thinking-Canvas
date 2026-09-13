@@ -505,6 +505,29 @@ export function allowedVoiceAiToolNames(authority: AiAuthorityLevel) {
   return names;
 }
 
+/** Resolve run scope before exposing actions to the provider. */
+export function allowedRunAiToolNames(input: {
+  authority: AiAuthorityLevel;
+  readOnly: boolean;
+  voice: boolean;
+  scope: "canvas" | "document" | "scene";
+}) {
+  if (input.readOnly) return [];
+  const names =
+    input.scope === "document"
+      ? [...allowedDocumentRangeAiToolNames(input.authority)]
+      : input.scope === "scene"
+        ? allowedSceneAiToolNames(input.authority)
+        : input.voice
+          ? allowedVoiceAiToolNames(input.authority)
+          : allowedAiToolNames(input.authority);
+  return input.voice
+    ? names.filter((name) =>
+        allowedVoiceAiToolNames(input.authority).includes(name),
+      )
+    : names;
+}
+
 const documentRangeToolNames = new Set<AiToolName>([
   "propose_document_changes",
   "stage_document_changes",

@@ -4,6 +4,7 @@ import {
   AiToolNotFoundError,
   AiToolPermissionError,
   allowedAiToolNames,
+  allowedRunAiToolNames,
   allowedVoiceAiToolNames,
   allowedDocumentRangeAiToolNames,
   allowedSceneAiToolNames,
@@ -14,6 +15,29 @@ import {
 const objectId = "61000000-0000-4000-8000-000000000001";
 
 describe("AI authority tool registry", () => {
+  it("exposes conversation documents only to writable trusted canvas voice runs", () => {
+    const base = {
+      authority: "trusted_editor",
+      readOnly: false,
+      voice: true,
+      scope: "canvas",
+    } as const;
+    expect(allowedRunAiToolNames(base)).toContain(
+      "create_conversation_document",
+    );
+    for (const override of [
+      { readOnly: true },
+      { voice: false },
+      { scope: "document" as const },
+      { scope: "scene" as const },
+      { authority: "edit_with_review" as const },
+      { authority: "comment_only" as const },
+    ]) {
+      expect(allowedRunAiToolNames({ ...base, ...override })).not.toContain(
+        "create_conversation_document",
+      );
+    }
+  });
   it("selects the existing voice edit path for current authority", () => {
     for (const authority of ["comment_only", "propose_changes"] as const) {
       expect(allowedVoiceAiToolNames(authority)).toEqual([

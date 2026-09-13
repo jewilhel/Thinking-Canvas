@@ -51,10 +51,6 @@ import {
   deriveAiReviewScope,
 } from "@/ai/review-scope";
 import {
-  allowedAiToolNames,
-  allowedVoiceAiToolNames,
-  allowedDocumentRangeAiToolNames,
-  allowedSceneAiToolNames,
   contextualCommentArgumentsSchema,
   documentChangesArgumentsSchema,
   executeArgumentsSchema,
@@ -66,6 +62,7 @@ import {
   reviewNewShapesArgumentsSchema,
   reviewStageArgumentsSchema,
   storySceneArgumentsSchema,
+  allowedRunAiToolNames,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
 import { buildValidatedDocumentEdit } from "@/ai/document-semantic-edit";
@@ -326,20 +323,16 @@ export async function completeAiRun(
     options.voiceConversation !== undefined
       ? voiceConversationInstruction(options.voiceConversation)
       : (replyResult.data?.body ?? commentResult.data.body);
-  const authorityToolNames = options.readOnly
-    ? []
-    : sourceDocumentTarget
-      ? [...allowedDocumentRangeAiToolNames(currentAuthority)]
+  const allowedToolNames = allowedRunAiToolNames({
+    authority: currentAuthority,
+    readOnly: Boolean(options.readOnly),
+    voice: Boolean(voiceTask.data),
+    scope: sourceDocumentTarget
+      ? "document"
       : sourceSceneTarget
-        ? allowedSceneAiToolNames(currentAuthority)
-        : allowedAiToolNames(currentAuthority);
-  const allowedToolNames = voiceTask.data
-    ? authorityToolNames.filter((name) =>
-        allowedVoiceAiToolNames(currentAuthority).some(
-          (allowed) => allowed === name,
-        ),
-      )
-    : authorityToolNames;
+        ? "scene"
+        : "canvas",
+  });
   const sourceDocumentRange = sourceDocumentTarget
     ? currentDocumentRange(compacted.document, {
         documentObjectId: sourceDocumentTarget.document_object_id,
