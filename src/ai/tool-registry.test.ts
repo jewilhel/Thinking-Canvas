@@ -27,6 +27,7 @@ describe("AI authority tool registry", () => {
     expect(allowedVoiceAiToolNames("trusted_editor")).toEqual([
       "create_contextual_comment",
       "execute_canvas_commands",
+      "create_conversation_document",
     ]);
   });
   it("derives a cumulative fail-closed allowlist for every authority", () => {

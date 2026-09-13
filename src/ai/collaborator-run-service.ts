@@ -1,4 +1,5 @@
 import "server-only";
+import { buildConversationDocumentUpdate } from "./conversation-document";
 import { voiceConversationInstruction } from "@/voice/live-delegation-contract";
 import { prepareCanvasNarration } from "@/stories/narration-audio-service";
 
@@ -57,6 +58,7 @@ import {
   contextualCommentArgumentsSchema,
   documentChangesArgumentsSchema,
   executeArgumentsSchema,
+  conversationDocumentArgumentsSchema,
   proposalArgumentsSchema,
   reviewLayoutArgumentsSchema,
   reviewNewAnnotationsArgumentsSchema,
@@ -764,9 +766,20 @@ export async function completeAiRun(
     }
     if (
       validatedTool.toolName === "execute_canvas_commands" ||
-      validatedTool.toolName === "execute_document_changes"
+      validatedTool.toolName === "execute_document_changes" ||
+      validatedTool.toolName === "create_conversation_document"
     ) {
       options.onStatus?.("applying");
+      const isConversationDocument =
+        validatedTool.toolName === "create_conversation_document";
+      if (
+        isConversationDocument &&
+        (!voiceTask.data || !options.voiceConversation)
+      ) {
+        throw new AiRunConflictError(
+          "Conversation documents require an active voice conversation request.",
+        );
+      }
       const canvasToolArguments =
         validatedTool.toolName === "execute_canvas_commands"
           ? executeArgumentsSchema.parse(validatedTool.arguments)
@@ -800,30 +813,39 @@ export async function completeAiRun(
         sequence = retryResult.data[0].sequence;
         created = false;
       } else {
-        const execution = canvasToolArguments
-          ? await buildTrustedCanvasUpdate({
+        const execution = isConversationDocument
+          ? await buildConversationDocumentUpdate({
               document: compacted.document,
               canvasId: run.canvas_id,
               actorId: run.requested_by,
               runId: run.id,
               callKey: toolCall.callKey,
-              commands: canvasToolArguments.commands,
+              arguments: validatedTool.arguments,
             })
-          : (() => {
-              const edit = buildValidatedDocumentEdit({
+          : canvasToolArguments
+            ? await buildTrustedCanvasUpdate({
                 document: compacted.document,
                 canvasId: run.canvas_id,
                 actorId: run.requested_by,
-                toolName: "execute_document_changes",
-                arguments: documentToolArguments,
-                range: aiDocumentRange,
-              });
-              return {
-                commandId,
-                update: edit.tentativeUpdate,
-                affectedObjectIds: edit.affectedObjectIds,
-              };
-            })();
+                runId: run.id,
+                callKey: toolCall.callKey,
+                commands: canvasToolArguments.commands,
+              })
+            : (() => {
+                const edit = buildValidatedDocumentEdit({
+                  document: compacted.document,
+                  canvasId: run.canvas_id,
+                  actorId: run.requested_by,
+                  toolName: "execute_document_changes",
+                  arguments: documentToolArguments,
+                  range: aiDocumentRange,
+                });
+                return {
+                  commandId,
+                  update: edit.tentativeUpdate,
+                  affectedObjectIds: edit.affectedObjectIds,
+                };
+              })();
         await options.beforeComplete?.();
         options.signal?.throwIfAborted();
         const toolResult = await service.rpc("execute_ai_canvas_commands", {
@@ -854,18 +876,22 @@ export async function completeAiRun(
       });
       trustedExecutionResults.push({
         callKey: toolCall.callKey,
-        commandTypes: canvasToolArguments
-          ? canvasToolArguments.commands.map((command) => command.type)
-          : documentToolArguments!.operations.map(
-              (operation) => `document.${operation.kind}`,
-            ),
+        commandTypes: isConversationDocument
+          ? ["document.create"]
+          : canvasToolArguments
+            ? canvasToolArguments.commands.map((command) => command.type)
+            : documentToolArguments!.operations.map(
+                (operation) => `document.${operation.kind}`,
+              ),
         affectedObjectIds,
         commandId,
         sequence,
         created,
       });
       replySections.push(
-        "The change is on the canvas. Reply with any further adjustments.",
+        isConversationDocument
+          ? `Created “${conversationDocumentArgumentsSchema.parse(validatedTool.arguments).title}” as a new canvas document, based on available recent conversation. It is visible to canvas collaborators.`
+          : "The change is on the canvas. Reply with any further adjustments.",
       );
       continue;
     }

@@ -569,8 +569,9 @@ export function LiveVoice({
               guidance, not API permissions. This version can answer canvas
               questions, leave requested comments, and edit canvas objects with
               Edit with undo or Trusted Editor authority. Edit with undo adds an
-              Undo control in Comments. Spoken document saving and spoken undo
-              are not available yet.
+              Undo control in Comments. Trusted Editor can save requested
+              conversation summaries and design briefs. Full transcripts use
+              Save available transcript; spoken undo is not available yet.
             </p>
             <label className="block">
               Idle timeout (seconds)

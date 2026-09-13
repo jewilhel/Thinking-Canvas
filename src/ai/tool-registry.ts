@@ -208,6 +208,11 @@ export type ReviewNewAnnotationsArguments = z.infer<
 export const executeArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
 });
+export const conversationDocumentArgumentsSchema = z.strictObject({
+  kind: z.enum(["summary", "design_brief"]),
+  title: z.string().trim().min(1).max(200),
+  text: z.string().trim().min(1).max(12000),
+});
 
 const documentTextFormatSchema = z.enum([
   "plain",
@@ -442,6 +447,13 @@ export const AI_TOOL_REGISTRY = {
       "Execute validated ordered product commands against current durable canvas state with idempotent persistence.",
     argumentsSchema: executeArgumentsSchema,
   },
+  create_conversation_document: {
+    effect: "mutation" as const,
+    minimumAuthority: "trusted_editor" as const,
+    description:
+      "Only on an explicit request to save a conversation summary or design brief: create one new ordinary canvas document from available conversation context. Separate agreed decisions from open questions. Plain text with headings and paragraphs. Never use for a verbatim or full transcript, never invent missing discussion, and never save automatically. The server adds an available-context coverage notice and assigns identity and placement.",
+    argumentsSchema: conversationDocumentArgumentsSchema,
+  },
   execute_document_changes: {
     effect: "mutation" as const,
     minimumAuthority: "trusted_editor" as const,
@@ -474,19 +486,23 @@ export function allowedAiToolNames(authority: AiAuthorityLevel) {
   return (Object.keys(AI_TOOL_REGISTRY) as AiToolName[]).filter(
     (name) =>
       name !== "execute_story_scene" &&
+      name !== "create_conversation_document" &&
       isAiToolAllowedByAuthority(authority, name),
   );
 }
 
 /** Voice progressively exposes existing actions without increasing authority. */
 export function allowedVoiceAiToolNames(authority: AiAuthorityLevel) {
-  return allowedAiToolNames(authority).filter(
+  const names = allowedAiToolNames(authority).filter(
     (name) =>
       name === "create_contextual_comment" ||
       (authority === "edit_with_review"
         ? name === "stage_canvas_changes"
         : name === "execute_canvas_commands"),
   );
+  if (authority === "trusted_editor")
+    names.push("create_conversation_document");
+  return names;
 }
 
 const documentRangeToolNames = new Set<AiToolName>([
