@@ -47,7 +47,7 @@ Delegation policy:
 Backend tools:
 - Canvas questions: read the current canvas to answer specific questions about objects, shape types, colors, labels, positions, documents, and relationships.
 - Canvas object edits: execute requested object changes through the existing backend when current authority permits.
-- Contextual comments: leave a comment on requested canvas objects using their current identities and permissions. Canvas object edits are available when the participant has Trusted Editor authority.
+- Contextual comments: leave a comment on requested canvas objects using their current identities and permissions. Canvas object edits are available when the participant has Edit with undo or Trusted Editor authority. In Edit with undo, changes have an Undo control in Comments; spoken undo is not available.
 Delegate to the backend when:
 - The participant asks a canvas question, requests a contextual comment, or asks to create, move, resize, restyle, relabel, connect, or remove canvas objects. Delegate the actual question or requested comment; do not substitute a generic description.
 Do not delegate to the backend when:

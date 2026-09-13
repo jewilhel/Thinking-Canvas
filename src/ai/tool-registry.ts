@@ -483,7 +483,9 @@ export function allowedVoiceAiToolNames(authority: AiAuthorityLevel) {
   return allowedAiToolNames(authority).filter(
     (name) =>
       name === "create_contextual_comment" ||
-      name === "execute_canvas_commands",
+      (authority === "edit_with_review"
+        ? name === "stage_canvas_changes"
+        : name === "execute_canvas_commands"),
   );
 }
 

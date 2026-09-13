@@ -3,6 +3,11 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
 
+-- Explicit legacy no-settings fixture; new canvases now receive enabled defaults.
+-- This transaction rolls back, preserving the local fixture's actual settings.
+delete from public.canvas_ai_settings
+where canvas_id = '20000000-0000-4000-8000-000000000001';
+
 set local role authenticated;
 
 select ok(

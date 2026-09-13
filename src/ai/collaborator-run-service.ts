@@ -1331,6 +1331,8 @@ export async function completeAiRun(
           throw error;
         }
       }
+      await options.beforeComplete?.();
+      options.signal?.throwIfAborted();
       const toolResult = await createServiceClient().rpc(
         "stage_ai_canvas_changes",
         {
@@ -1376,6 +1378,8 @@ export async function completeAiRun(
             "The review-stage contract could not be finalized.",
         );
       }
+      await options.beforeComplete?.();
+      options.signal?.throwIfAborted();
       const activationResult = await createServiceClient().rpc(
         "activate_ai_review_stage",
         {

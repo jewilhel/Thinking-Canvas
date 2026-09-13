@@ -14,16 +14,16 @@ import {
 const objectId = "61000000-0000-4000-8000-000000000001";
 
 describe("AI authority tool registry", () => {
-  it("permits voice object execution only at Trusted Editor authority", () => {
-    for (const authority of [
-      "comment_only",
-      "propose_changes",
-      "edit_with_review",
-    ] as const) {
+  it("selects the existing voice edit path for current authority", () => {
+    for (const authority of ["comment_only", "propose_changes"] as const) {
       expect(allowedVoiceAiToolNames(authority)).toEqual([
         "create_contextual_comment",
       ]);
     }
+    expect(allowedVoiceAiToolNames("edit_with_review")).toEqual([
+      "create_contextual_comment",
+      "stage_canvas_changes",
+    ]);
     expect(allowedVoiceAiToolNames("trusted_editor")).toEqual([
       "create_contextual_comment",
       "execute_canvas_commands",
