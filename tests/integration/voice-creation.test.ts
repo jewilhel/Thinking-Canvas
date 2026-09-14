@@ -121,33 +121,63 @@ it
       target_user: h.user.id,
     });
     if (session.error) throw session.error;
-    await h.service
-      .from("voice_test_sessions")
-      .update({
-        supervisor_ready: true,
-        heartbeat_at: new Date().toISOString(),
-      })
-      .eq("id", sessionId);
-    const task = await h.service.rpc("reserve_voice_delegation", {
-      target_session: sessionId,
-      target_delegation: "fixture",
-    });
-    if (task.error) throw task.error;
-    h.task = task.data.id;
-    const r = await h.client.rpc("create_comment_thread", {
-      target_canvas_id: c.data.id,
-      target_client_command_id: h.task,
-      target_body: "Canvas assistance requested during live voice.",
-      target_anchor_x: 0,
-      target_anchor_y: 0,
-      target_include_primary_ai: true,
-    });
-    if (r.error) throw r.error;
-    await h.service
-      .from("voice_delegations")
-      .update({ ai_run_id: r.data[0].ai_run_id })
-      .eq("id", h.task);
+    h.task = "";
     try {
+      await h.service
+        .from("voice_test_sessions")
+        .update({
+          supervisor_ready: true,
+          heartbeat_at: new Date().toISOString(),
+        })
+        .eq("id", sessionId);
+      // A document requested after four successful actions must still reach Canvas AI.
+      if (kind === "transcript") {
+        for (let index = 0; index < 4; index++) {
+          const earlier = await h.service.rpc("reserve_voice_delegation", {
+            target_session: sessionId,
+            target_delegation: `earlier-${index}`,
+          });
+          if (earlier.error) throw earlier.error;
+          const finished = await h.service.rpc("finish_voice_delegation", {
+            target_id: earlier.data.id,
+            target_status: "completed",
+            target_units: 0,
+          });
+          if (finished.error) throw finished.error;
+        }
+      }
+      const task = await h.service.rpc("reserve_voice_delegation", {
+        target_session: sessionId,
+        target_delegation: "fixture",
+      });
+      if (task.error) throw task.error;
+      h.task = task.data.id;
+      if (kind === "transcript") {
+        const duplicate = await h.service.rpc("reserve_voice_delegation", {
+          target_session: sessionId,
+          target_delegation: "fixture",
+        });
+        expect(duplicate.error).toBeNull();
+        expect(duplicate.data?.id).toBeNull();
+        const concurrent = await h.service.rpc("reserve_voice_delegation", {
+          target_session: sessionId,
+          target_delegation: "concurrent",
+        });
+        expect(concurrent.error?.message).toContain("already running");
+      }
+      const r = await h.client.rpc("create_comment_thread", {
+        target_canvas_id: c.data.id,
+        target_client_command_id: h.task,
+        target_body: "Canvas assistance requested during live voice.",
+        target_anchor_x: 0,
+        target_anchor_y: 0,
+        target_include_primary_ai: true,
+      });
+      if (r.error) throw r.error;
+      await h.service
+        .from("voice_delegations")
+        .update({ ai_run_id: r.data[0].ai_run_id })
+        .eq("id", h.task);
       const result = await completeAiRun(
         { runId: r.data[0].ai_run_id, canvasId: c.data.id },
         {
@@ -410,11 +440,12 @@ it
       console.log("RPC checkpoints", h.calls);
       throw e;
     } finally {
-      await h.service.rpc("finish_voice_delegation", {
-        target_id: h.task,
-        target_status: "completed",
-        target_units: 0,
-      });
+      if (h.task)
+        await h.service.rpc("finish_voice_delegation", {
+          target_id: h.task,
+          target_status: "completed",
+          target_units: 0,
+        });
       await h.service.rpc("finish_live_voice_test", {
         target_id: sessionId,
         target_reason: "fixture",
