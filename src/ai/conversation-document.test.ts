@@ -19,6 +19,35 @@ const actorId = "10000000-0000-4000-8000-000000000001";
 const runId = "80000000-0000-4000-8000-000000000001";
 
 describe("requested conversation document", () => {
+  it("copies only the selected prior conversation and never falls back to the current session", () => {
+    const source = JSON.stringify({
+      sessionTranscript: {
+        text: "You: Save the previous conversation",
+        gaps: [],
+      },
+      previousSessionTranscript: {
+        text: "You: The earlier idea\nAI: Its details",
+        gaps: [],
+      },
+    });
+    const previous = conversationDocumentBody(
+      { kind: "transcript", text: "", sourceSession: "previous" },
+      source,
+    );
+    expect(previous).toContain("The earlier idea");
+    expect(previous).not.toContain("Save the previous conversation");
+    const current = conversationDocumentBody(
+      { kind: "transcript", text: "" },
+      source,
+    );
+    expect(current).not.toContain("The earlier idea");
+    expect(() =>
+      conversationDocumentBody(
+        { kind: "transcript", text: "", sourceSession: "previous" },
+        "{}",
+      ),
+    ).toThrow("previous conversation");
+  });
   it.each(["summary", "design_brief"])(
     "persists %s body and coverage with ordinary deletion",
     async (kind) => {

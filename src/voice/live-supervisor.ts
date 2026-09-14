@@ -1,4 +1,6 @@
+import type { PreviousConversation } from "./previous-conversation";
 import OpenAI from "openai";
+import { retryVoiceCheck } from "./retry-voice-check";
 import { controlRequestIsCurrent } from "./live-delegation-contract";
 import { LiveDelegationOwner } from "./live-delegation-owner";
 import { liveDelegationSignature } from "./live-delegation-signature";
@@ -21,7 +23,11 @@ export async function superviseLiveVoice(
   db: SupabaseClient,
   key: string,
   session: Session,
-  app: { origin: string; cookie: string },
+  app: {
+    origin: string;
+    cookie: string;
+    previousConversation?: PreviousConversation;
+  },
 ) {
   const provider = new OpenAI({ apiKey: key, timeout: 5000, maxRetries: 0 });
   const socket = new WebSocket(
@@ -56,6 +62,7 @@ export async function superviseLiveVoice(
     { resolve: () => void; reject: () => void }
   >();
   const owner = new LiveDelegationOwner({
+    previousConversation: app.previousConversation,
     diagnostic: (stage, delegationId) =>
       console.info("Live handoff stage", {
         sessionId: session.id,
@@ -272,6 +279,21 @@ export async function superviseLiveVoice(
     () => stop("session_limit"),
     Math.max(0, Date.parse(session.expires_at) - Date.now()),
   );
+  const limitWarning = setTimeout(
+    () => {
+      if (!stopping && ready && socket.readyState === WebSocket.OPEN)
+        socket.send(
+          JSON.stringify({
+            type: "session.commentary.append",
+            event_id: crypto.randomUUID(),
+            delegation_id: null,
+            content:
+              "Briefly let the participant know this voice session has about one minute left before the ten-minute test limit. They can ask to save this conversation to a document, or save it from Voice settings afterward. Do not save without a request. Then continue the conversation naturally.",
+          }),
+        );
+    },
+    Math.max(0, Date.parse(session.expires_at) - Date.now() - 60_000),
+  );
   const readyTimeout = setTimeout(() => {
     if (!ready) stop("supervisor_timeout");
   }, 10000);
@@ -279,19 +301,24 @@ export async function superviseLiveVoice(
     if (checking || stopping) return;
     checking = true;
     try {
-      const [access, state] = await Promise.all([
-        db.rpc("voice_test_has_access", { target_id: session.id }),
-        db
-          .from("voice_test_sessions")
-          .update({
-            heartbeat_at: new Date().toISOString(),
-          })
-          .eq("id", session.id)
-          .select(
-            "close_requested_at,ended_at,idle_keepalive_at,backend_cancel_at,describe_requested_at,backend_reserved_units",
-          )
-          .single(),
-      ]);
+      const [access, state] = await retryVoiceCheck(
+        () =>
+          Promise.all([
+            db.rpc("voice_test_has_access", { target_id: session.id }),
+            db
+              .from("voice_test_sessions")
+              .update({
+                heartbeat_at: new Date().toISOString(),
+              })
+              .eq("id", session.id)
+              .select(
+                "close_requested_at,ended_at,idle_keepalive_at,backend_cancel_at,describe_requested_at,backend_reserved_units",
+              )
+              .single(),
+          ]),
+        ([access, state]) => Boolean(access.error || state.error),
+      );
+      if (stopping) return;
       if (access.error || state.error) {
         console.warn("Live access check failed", {
           sessionId: session.id,
@@ -299,9 +326,11 @@ export async function superviseLiveVoice(
           stateCode: state.error?.code,
         });
         stop("authorization_unavailable");
+        return;
       } else if (state.data.close_requested_at || state.data.ended_at)
         stop("user_left");
       else if (!access.data) stop("access_changed");
+      if (stopping) return;
       if (state.data?.idle_keepalive_at)
         lastActivity = Math.max(
           lastActivity,
@@ -371,6 +400,7 @@ export async function superviseLiveVoice(
     await completed;
   } finally {
     clearTimeout(deadline);
+    clearTimeout(limitWarning);
     clearTimeout(readyTimeout);
     clearTimeout(drain);
     clearInterval(heartbeat);

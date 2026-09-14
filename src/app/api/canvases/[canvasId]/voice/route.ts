@@ -1,3 +1,4 @@
+import { previousConversationSchema } from "@/voice/previous-conversation";
 import { z } from "zod";
 import { getAuthenticatedUser } from "@/lib/auth/session";
 import { endVoiceCall } from "@/voice/end-voice-call";
@@ -148,6 +149,7 @@ export async function POST(request: Request, context: Context) {
       sdp: z.string().min(1).max(100_000),
       restartOf: z.uuid().optional(),
       restartContext: z.string().max(1500).optional(),
+      previousConversation: previousConversationSchema.optional(),
       settings: liveSettingsSchema,
     })
     .safeParse(await request.json().catch(() => null));
@@ -289,12 +291,18 @@ export async function POST(request: Request, context: Context) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-voice-signature": supervisorSignature(id),
+          "x-voice-signature": supervisorSignature(
+            id,
+            parsed.data.previousConversation,
+          ),
           // The configured deploy belongs to this same application. Preserve
           // visitor access credentials for Netlify's protected preview gate.
           Cookie: request.headers.get("cookie") ?? "",
         },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({
+          id,
+          previousConversation: parsed.data.previousConversation,
+        }),
         redirect: "error",
         signal: AbortSignal.timeout(10000),
       },

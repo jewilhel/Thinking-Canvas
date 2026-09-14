@@ -32,6 +32,25 @@ const speech = (delta: string, event_id = "speech1", start_ms = 4000) => ({
   end_ms: start_ms + 500,
 });
 describe("bounded voice delegation", () => {
+  it("passes the prior session separately without interpreting old requests as current commands", () => {
+    const { hooks } = setup();
+    const previousConversation = {
+      id: "11111111-1111-4111-8111-111111111111",
+      startedAt: "2026-09-14T12:00:00.000Z",
+      text: "You: Create an idea document",
+      gaps: [],
+    };
+    const owner = new LiveDelegationOwner({ ...hooks, previousConversation });
+    owner.receive(speech("Save the previous conversation as a transcript"), 0);
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    const context = JSON.parse(hooks.run.mock.calls[0][2].text);
+    expect(context.previousSessionTranscript).toEqual(previousConversation);
+    expect(context.sessionTranscript.text).not.toContain(
+      "Create an idea document",
+    );
+    expect(context.fragments).toHaveLength(1);
+  });
   it("includes both speakers for a short confirmation without phrase matching", () => {
     const { owner, hooks } = setup();
     owner.receive(

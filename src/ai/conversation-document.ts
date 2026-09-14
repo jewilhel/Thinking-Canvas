@@ -90,14 +90,25 @@ export async function buildConversationDocumentUpdate(input: {
 }
 
 export function conversationDocumentBody(
-  args: { kind: string; text: string },
+  args: {
+    kind: string;
+    text: string;
+    sourceSession?: "current" | "previous" | null;
+  },
   conversation?: string,
 ) {
   let body = args.text;
   if (args.kind === "transcript") {
     const parsed = JSON.parse(conversation ?? "{}");
-    if (parsed.sessionTranscript) {
-      const source = parsed.sessionTranscript;
+    const source =
+      args.sourceSession === "previous"
+        ? parsed.previousSessionTranscript
+        : parsed.sessionTranscript;
+    if (args.sourceSession === "previous" && !source)
+      throw new Error(
+        "The previous conversation is not available in this tab.",
+      );
+    if (source) {
       if (
         typeof source.text !== "string" ||
         !source.text.trim() ||
@@ -116,7 +127,10 @@ export function conversationDocumentBody(
           "The session transcript has missing text; it cannot be saved as a full transcript.",
         );
       return (
-        "Source: Captured wording from this voice session up to this request. Provider captions may contain recognition errors or AI words that were interrupted.\n\n" +
+        (args.sourceSession === "previous"
+          ? `Source: Captured wording from the previous voice conversation${typeof source.startedAt === "string" ? ` (${source.startedAt})` : ""}. `
+          : "Source: Captured wording from this voice session up to this request. ") +
+        "Provider captions may contain recognition errors or AI words that were interrupted.\n\n" +
         source.text
       );
     }

@@ -1,4 +1,8 @@
 import "server-only";
+import {
+  supervisorSignatureInput,
+  type PreviousConversation,
+} from "./previous-conversation";
 import { createHmac } from "node:crypto";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
@@ -20,9 +24,12 @@ export function voiceProvider() {
     maxRetries: 0,
   });
 }
-export function supervisorSignature(id: string) {
+export function supervisorSignature(
+  id: string,
+  previous?: PreviousConversation,
+) {
   return createHmac("sha256", process.env.OPENAI_API_KEY!)
-    .update(`voice-supervisor:${id}`)
+    .update(supervisorSignatureInput(id, previous))
     .digest("hex");
 }
 export async function authorizeVoice(canvasId: string) {

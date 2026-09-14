@@ -12,6 +12,7 @@ import {
 } from "@/voice/live-protocol";
 import { connectLiveVoice } from "@/voice/live-webrtc";
 import type { SupervisedVoice } from "@/voice/supervised-webrtc";
+import { voiceEndMessage } from "@/voice/voice-end-message";
 import { LiveTranscript } from "@/voice/live-transcript";
 import {
   availableTranscriptText,
@@ -101,6 +102,14 @@ export function LiveVoice({
       useState<ConversationTranscript>(emptyTranscript),
     [preview, setPreview] = useState<string | null>(null),
     [saved, setSaved] = useState("");
+  const [captionSessions, setCaptionSessions] = useState<
+    { id: string; startedAt: string }[]
+  >([]);
+  const [selectedSession, setSelectedSession] = useState("");
+  const selectedSessionRef = useRef("");
+  const [endNotice, setEndNotice] = useState("");
+  const endedGeneration = useRef("");
+  const reportedEndReason = useRef("");
   const [records, setRecords] = useState<Run[]>(() => {
     try {
       return z
@@ -154,6 +163,16 @@ export function LiveVoice({
       ),
     );
   const finish = (reason = "User ended session") => {
+    if (endedGeneration.current === generation.current) return;
+    endedGeneration.current = generation.current;
+    if (
+      ![
+        "User ended session",
+        "Restart requested",
+        "Connection failed",
+      ].includes(reason)
+    )
+      setEndNotice(voiceEndMessage(reason));
     connection.current?.close();
     connection.current = null;
     abort.current?.abort();
@@ -217,6 +236,17 @@ export function LiveVoice({
               setTaskNotice("Voice task cancelled.");
             if (data.ended && connection.current)
               finishRef.current(data.reason ?? "Provider session ended");
+            else if (
+              data.ended &&
+              data.reason &&
+              reportedEndReason.current !==
+                `${record.sessionId}:${data.reason}` &&
+              record.reason !== "User ended session" &&
+              record.reason !== "Restart requested"
+            ) {
+              reportedEndReason.current = `${record.sessionId}:${data.reason}`;
+              setEndNotice(voiceEndMessage(data.reason));
+            }
           }
           if (
             data.settled &&
@@ -264,6 +294,7 @@ export function LiveVoice({
     }
     setConsent(false);
     setError("");
+    setEndNotice("");
     sessionId.current = null;
     setStatus("Connecting");
     setMuted(false);
@@ -272,13 +303,31 @@ export function LiveVoice({
     setIdleWarningAt(null);
     const controller = new AbortController();
     abort.current = controller;
+    const previousSession = captionSessions.find(
+      (session) => accumulator.current.snapshot(session.id).turns.length > 0,
+    );
+    const previousSnapshot = previousSession
+      ? accumulator.current.snapshot(previousSession.id)
+      : null;
+    const previousConversation =
+      previousSession && previousSnapshot
+        ? {
+            ...previousSession,
+            text: availableTranscriptText(previousSnapshot),
+            gaps: previousSnapshot.gaps,
+          }
+        : undefined;
     const id = crypto.randomUUID();
     runId.current = id;
     generation.current = id;
     offset.current = Date.now();
-    accumulator.current.markGap(
-      "Conversation boundaries and any unsent speech are not a complete transcript.",
-    );
+    selectedSessionRef.current = id;
+    setSelectedSession(id);
+    setCaptionSessions((sessions) => [
+      { id, startedAt: new Date(offset.current).toISOString() },
+      ...sessions,
+    ]);
+    setTranscript(accumulator.current.snapshot(id));
     persist([
       {
         version: 2,
@@ -312,7 +361,8 @@ export function LiveVoice({
             usage?: { seconds?: number };
           };
           accumulator.current.append(value, id, offset.current);
-          setTranscript(accumulator.current.snapshot());
+          if (selectedSessionRef.current === id)
+            setTranscript(accumulator.current.snapshot(id));
           if (
             event.type === "session.started" &&
             event.session?.model === LIVE_MODEL
@@ -338,14 +388,17 @@ export function LiveVoice({
             );
         },
         (state) => {
-          if (state === "failed" || state === "closed")
+          if (
+            generation.current === id &&
+            (state === "failed" || state === "closed")
+          )
             finishRef.current("Voice connection ended");
         },
         controller.signal,
         restartOf,
-        restartOf
-          ? availableTranscriptText(accumulator.current.snapshot()).slice(-1500)
-          : undefined,
+        restartOf ? previousConversation?.text.slice(-1500) : undefined,
+        undefined,
+        previousConversation,
       );
       if (controller.signal.aborted) {
         result.close();
@@ -373,7 +426,16 @@ export function LiveVoice({
       finishRef.current("Connection failed");
     }
   };
+  const selectedCaptionSession = captionSessions.find(
+    (session) => session.id === selectedSession,
+  );
+  const sessionLabel = selectedCaptionSession
+    ? new Date(selectedCaptionSession.startedAt).toLocaleString()
+    : "";
   const text = availableTranscriptText(transcript);
+  const documentText = text
+    ? `Voice conversation — ${sessionLabel}\n\n${text}`
+    : "";
   return (
     <>
       {controlTarget &&
@@ -516,16 +578,46 @@ export function LiveVoice({
               </Button>
               <Button
                 variant="outline"
-                disabled={!text || text === saved || !canSaveTranscript}
-                onClick={() => setPreview(text)}
+                disabled={!text || documentText === saved || !canSaveTranscript}
+                onClick={() => setPreview(documentText)}
               >
-                Save available transcript
+                Save selected conversation
               </Button>
             </div>
             {active && (
               <p role="status">
                 {backendPending ? "Reading the canvas…" : taskNotice}
               </p>
+            )}
+            {captionSessions.length > 0 && (
+              <label className="block">
+                Conversation
+                <select
+                  aria-label="Transcript conversation"
+                  className="mt-1 block w-full rounded border p-2"
+                  value={selectedSession}
+                  onChange={(event) => {
+                    const id = event.target.value;
+                    selectedSessionRef.current = id;
+                    setSelectedSession(id);
+                    setTranscript(accumulator.current.snapshot(id));
+                  }}
+                >
+                  {captionSessions.map((session, index) => (
+                    <option key={session.id} value={session.id}>
+                      {index === 0 ? "Latest — " : ""}
+                      {new Date(session.startedAt).toLocaleString()}
+                      {session.id === generation.current && active
+                        ? " · In progress"
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-sm">
+                  Only this conversation is shown and saved. Captions remain in
+                  this tab until it closes or reloads.
+                </span>
+              </label>
             )}
             {captions && (
               <section
@@ -775,7 +867,7 @@ export function LiveVoice({
       {preview !== null && (
         <WorkspacePanel
           panelId="voice-transcript-save"
-          title="Save available transcript"
+          title="Save selected conversation"
           invoker={invoker}
           onDismiss={() => setPreview(null)}
         >
@@ -803,6 +895,26 @@ export function LiveVoice({
             </Button>
           </div>
         </WorkspacePanel>
+      )}
+      {endNotice && !active && !connecting && (
+        <div
+          role="status"
+          className="absolute top-24 right-4 z-40 w-[min(28rem,calc(100%-2rem))] rounded-lg border bg-white p-3 text-sm"
+        >
+          {endNotice} Your captured conversation is still in Voice settings.
+          <Button
+            variant="outline"
+            onClick={() => {
+              setPanel(true);
+              setCaptions(true);
+            }}
+          >
+            View conversation
+          </Button>
+          <Button variant="outline" onClick={() => setEndNotice("")}>
+            Dismiss
+          </Button>
+        </div>
       )}
       {(error || accessError) && (
         <div

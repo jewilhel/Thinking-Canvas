@@ -1,3 +1,7 @@
+import {
+  previousConversationSchema,
+  supervisorSignatureInput,
+} from "../../src/voice/previous-conversation";
 import { superviseLiveVoice } from "../../src/voice/live-supervisor";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import OpenAI from "openai";
@@ -22,9 +26,13 @@ export default async function handler(request: Request) {
     !/^[a-f0-9-]{36}$/.test(input.id)
   )
     return new Response(null, { status: 400 });
+  const previous = previousConversationSchema
+    .optional()
+    .safeParse(input.previousConversation);
+  if (!previous.success) return new Response(null, { status: 400 });
   const signature = request.headers.get("x-voice-signature") ?? "";
   const expected = createHmac("sha256", key)
-    .update(`voice-supervisor:${input.id}`)
+    .update(supervisorSignatureInput(input.id, previous.data))
     .digest("hex");
   if (
     signature.length !== expected.length ||
@@ -50,6 +58,7 @@ export default async function handler(request: Request) {
     return superviseLiveVoice(db, key, session, {
       origin: new URL(request.url).origin,
       cookie: request.headers.get("cookie") ?? "",
+      previousConversation: previous.data,
     });
   const expires = Date.parse(session.expires_at);
   let charged = 50; // Conservative allowance for trailing/unreported input and transcription.

@@ -8,6 +8,20 @@ const input = (id: string, delta: string, start: number) => ({
   end_ms: start + 100,
 });
 describe("Live fragments", () => {
+  it("isolates consecutive sessions even with repeated event IDs and the same speaker", () => {
+    const transcript = new LiveTranscript();
+    transcript.append(input("1", "Earlier discussion", 0), "first", 0);
+    transcript.append(input("1", "Latest discussion", 0), "second", 200);
+    transcript.append(input("2", " continued", 100), "second", 200);
+    expect(transcript.snapshot("second").turns.map((t) => t.text)).toEqual([
+      "Latest discussion continued",
+    ]);
+    expect(transcript.snapshot("first").turns.map((t) => t.text)).toEqual([
+      "Earlier discussion",
+    ]);
+    expect(transcript.snapshot("empty").turns).toEqual([]);
+    expect(transcript.snapshot().turns).toHaveLength(2);
+  });
   it("keeps literal spaces and repeated words while deduplicating event IDs", () => {
     const transcript = new LiveTranscript();
     transcript.append(input("1", "yes ", 0), "run", 0);

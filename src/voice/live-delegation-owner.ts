@@ -1,3 +1,4 @@
+import type { PreviousConversation } from "./previous-conversation";
 import { z } from "zod";
 import { LiveTranscript } from "./live-transcript";
 import { availableTranscriptText } from "./conversation-transcript";
@@ -29,6 +30,7 @@ const delegation = z.object({
   }),
 });
 type Hooks = {
+  previousConversation?: PreviousConversation;
   run: (
     id: string,
     signal: AbortSignal,
@@ -263,6 +265,7 @@ export class LiveDelegationOwner {
       );
       const context = () =>
         JSON.stringify({
+          previousSessionTranscript: this.hooks.previousConversation,
           sessionTranscript: {
             text: availableTranscriptText(this.transcript.snapshot()),
             gaps: this.transcript.snapshot().gaps,

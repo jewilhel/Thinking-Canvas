@@ -12,6 +12,7 @@ const fragmentSchema = z.object({
 });
 type Fragment = {
   id: string;
+  generation: string;
   speaker: "You" | "AI";
   text: string;
   start: number;
@@ -40,6 +41,7 @@ export class LiveTranscript {
     this.seen.add(id);
     this.fragments.push({
       id,
+      generation,
       text: e.delta,
       speaker: e.type === "session.input_transcript.delta" ? "You" : "AI",
       start,
@@ -57,12 +59,19 @@ export class LiveTranscript {
       );
     }
   }
-  snapshot(): ConversationTranscript {
+  snapshot(generation?: string): ConversationTranscript {
     const turns: ConversationTranscript["turns"] = [];
     let previousEnd = -Infinity;
+    let previousGeneration: string | undefined;
     for (const f of this.fragments) {
+      if (generation !== undefined && f.generation !== generation) continue;
       const last = turns.at(-1);
-      if (last && last.speaker === f.speaker && f.start - previousEnd < 5000)
+      if (
+        last &&
+        previousGeneration === f.generation &&
+        last.speaker === f.speaker &&
+        f.start - previousEnd < 5000
+      )
         last.text += f.text;
       else
         turns.push({
@@ -72,6 +81,7 @@ export class LiveTranscript {
           interrupted: false,
         });
       previousEnd = f.end;
+      previousGeneration = f.generation;
     }
     return {
       turns,

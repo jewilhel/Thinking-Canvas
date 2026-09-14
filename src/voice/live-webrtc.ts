@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { PreviousConversation } from "./previous-conversation";
 import { LIVE_MODEL, type LiveSettings } from "./live-protocol";
 import type { RealtimeDependencies } from "./realtime-webrtc";
 const sessionSchema = z.object({
@@ -31,6 +32,7 @@ export async function connectLiveVoice(
       navigator.mediaDevices.getUserMedia(constraints),
     createAudioElement: () => document.createElement("audio"),
   },
+  previousConversation?: PreviousConversation,
 ): Promise<SupervisedVoice> {
   signal.throwIfAborted();
   const peer = dependencies.createPeerConnection();
@@ -121,6 +123,7 @@ export async function connectLiveVoice(
         body: JSON.stringify({
           sdp: offer.sdp,
           settings,
+          ...(previousConversation ? { previousConversation } : {}),
           ...(restartContext ? { restartContext } : {}),
           ...(restartOf ? { restartOf } : {}),
         }),

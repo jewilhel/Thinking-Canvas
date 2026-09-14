@@ -636,7 +636,6 @@ Hosted recovery checkpoint: ready deploy `6aa496724afe13000820d0ea` matches `e28
 
 **Decision needed.** Approve the additional bounded interpretation step and its transient context/cost treatment. This revises the migration's earlier no-router statement; implementation has not begun. Official source checked September 11: [OpenAI client delegation guidance](https://developers.openai.com/api/docs/guides/live-delegation). It requires application-owned conversation context; the proposal above is our implementation choice, not an API guarantee of reliable request understanding.
 
-
 ### Direct conversation handoff — approved (2026-09-11)
 
 Owner acceptance: after the direct handoff deployment, the owner reported both natural spoken canvas questions and contextual-comment requests worked flawlessly, and authorized continuing Milestone 10. This accepts those two spoken scenarios, not all migration failure/recovery cases or milestone closure.
@@ -823,3 +822,15 @@ Automatic task threads retain their independent execution, retry, and undo recor
 Verification: 515 ordinary tests pass, eight database cases skipped in that run. Two affected real database workflows pass separately, including provenance before task execution and transcript persistence/undo. TypeScript and affected ESLint pass. Local migration applied; linked deployment and hosted QA checkpoint follow.
 
 Hosted checkpoint: linked migration applied successfully. The owner's canvas retains seven automatic threads across two session IDs. Ready deploy `6aa87174e93356000833c944` matches `2851ad495cef3e02c7fd71f2ff039275be02bcfc`. Codex in-app browser loaded the updated canvas at Saved sequence 83 with zero automatic markers; Comments history shows two expandable voice sessions containing three and four actions. An existing action opens with its result and Undo AI change control intact; no old edit was undone during QA. The dedicated recovery page renders successfully. Expired-access detection and popup/poll/close recovery are covered by simulated browser-state tests; a new real Netlify expiry has not yet been observed on this build. Original canvas content was not changed or reloaded by the QA flow.
+
+### Session boundaries and unexpected endings — 2026-09-14
+
+Owner reported a pleasant voice session stopped without warning and manual transcript export included every earlier session. Linked session `7573a0d3-3f6b-40d7-8d1f-6f943ea231bf` ran from 22:33:16 to 22:41:41 UTC and ended with `authorization_unavailable`, before its 22:43:16 limit. The supervisor immediately stopped on one failed database access/heartbeat check; the UI discarded the reason when transport closed. The underlying database/transport error is not identified by this row.
+
+Captions now filter by generation, never merge adjacent sessions, and show a dated session picker with latest selected by default. Export snapshots only that conversation and includes its date. The most recent nonempty prior conversation is passed separately, in volatile request memory, through the authenticated start and HMAC-bound supervisor payload. Canvas AI receives current and previous sources separately; conversation-document actions explicitly choose current/previous. Missing prior source fails clearly rather than copying current text. Summaries/briefs use the corresponding full source. Existing retention and request bounds remain; captions are not written to logs or durable history. Starting a new session does not clear older in-tab source; reload still does.
+
+Access/heartbeat transport errors get at most three attempts separated by 300ms; successful authorization denial stops immediately. Session ending now shows a user-facing reason and a route to retained captions. A server-side one-minute commentary warning supplements the existing visual countdown. Duplicate close callbacks and old-generation connection callbacks cannot end a newer session.
+
+Focused validation: 95 voice/conversation-document tests passed, including consecutive same-speaker session isolation, previous-source export and absent-source rejection, prior-session handoff separation, and bounded access-check recovery. Broader verification and hosted QA pending.
+
+Broader local checkpoint: TypeScript and affected ESLint pass; 520 ordinary tests pass, eight explicit database tests skipped. A test-only generic annotation was corrected before the successful type check. Hosted verification pending.
