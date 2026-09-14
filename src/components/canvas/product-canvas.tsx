@@ -808,10 +808,7 @@ function ProductCanvasWorkspace({
     (object) => object.type !== "text" && object.type !== "document",
   );
   const textStyleObjects = selectedObjects.filter(
-    (object) =>
-      object.type === "shape" ||
-      object.type === "text" ||
-      object.type === "table",
+    (object) => object.type === "text" || object.type === "table",
   );
 
   useEffect(() => {
@@ -5555,13 +5552,11 @@ function ProductCanvasWorkspace({
                     linkUrl={commonStyleValue(textStyleObjects, "linkUrl")}
                     textColor={commonStyleValue(textStyleObjects, "textColor")}
                     allowLists={textStyleObjects.every(
-                      (object) =>
-                        object.type === "shape" || object.type === "text",
+                      (object) => object.type === "text",
                     )}
                     allowLink={
                       textStyleObjects.length === 1 &&
-                      (textStyleObjects[0]?.type === "shape" ||
-                        textStyleObjects[0]?.type === "text")
+                      textStyleObjects[0]?.type === "text"
                     }
                     onApply={(style) =>
                       applyStyleToObjects(textStyleObjects, style)
