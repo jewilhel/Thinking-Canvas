@@ -377,6 +377,12 @@ test("permanently deletes an authored comment after confirmation", async ({
     name: "Confirm comment deletion",
   });
   await expect(deletion).toContainText("cannot be undone");
+  await expect(
+    deletion.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await expect(
+    deletion.getByRole("button", { name: "Delete permanently", exact: true }),
+  ).toBeInViewport();
   await deletion.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(deletion).not.toBeVisible();
   await expect(thread).toBeVisible();
@@ -1440,6 +1446,12 @@ test("repeats an inherited multi-object layout request after undo", async ({
     name: "Confirm comment deletion",
   });
   await expect(deletion).toContainText("cannot be undone");
+  await expect(
+    deletion.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await expect(
+    deletion.getByRole("button", { name: "Delete permanently", exact: true }),
+  ).toBeInViewport();
   await deletion.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(deletion).not.toBeVisible();
   await expect(thread).toBeVisible();

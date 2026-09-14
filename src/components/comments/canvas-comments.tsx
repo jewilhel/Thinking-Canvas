@@ -739,6 +739,13 @@ export function ThreadBody({
     null,
   );
   const [deleteConfirmation, setDeleteConfirmation] = useState(false);
+  const deleteCancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (deleteConfirmation) {
+      deleteCancelRef.current?.focus();
+      deleteCancelRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [deleteConfirmation]);
   const [undoError, setUndoError] = useState("");
   const [undoNotice, setUndoNotice] = useState("");
   const [currentTime, setCurrentTime] = useState(() => Date.now());
@@ -1160,6 +1167,7 @@ export function ThreadBody({
               size="sm"
               variant="outline"
               disabled={pending}
+              ref={deleteCancelRef}
               onClick={() => setDeleteConfirmation(false)}
             >
               Cancel
