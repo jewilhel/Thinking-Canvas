@@ -46,6 +46,7 @@ export type Database = {
           document_undo_update: string | null
           finalization_fingerprint: string | null
           id: string
+          organization_undo: Json | null
           request_id: string | null
           requested_by: string
           scope_kind: string | null
@@ -74,6 +75,7 @@ export type Database = {
           document_undo_update?: string | null
           finalization_fingerprint?: string | null
           id?: string
+          organization_undo?: Json | null
           request_id?: string | null
           requested_by: string
           scope_kind?: string | null
@@ -102,6 +104,7 @@ export type Database = {
           document_undo_update?: string | null
           finalization_fingerprint?: string | null
           id?: string
+          organization_undo?: Json | null
           request_id?: string | null
           requested_by?: string
           scope_kind?: string | null
@@ -1685,6 +1688,15 @@ export type Database = {
           target_change_set_id: string
           target_document_object_id: string
           target_document_undo_update: string
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: boolean
+      }
+      attach_ai_organization_undo: {
+        Args: {
+          target_change_set_id: string
+          target_history: Json
           target_requester_id: string
           target_run_id: string
         }

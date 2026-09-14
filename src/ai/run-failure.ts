@@ -11,6 +11,16 @@ import {
 import { AiVisualQualityError } from "@/ai/visual-grounding";
 
 export function privacySafeAiRunErrorCode(error: unknown) {
+  if (
+    error instanceof Error &&
+    error.message === "A selected-range edit requires a document range comment."
+  )
+    return "document_range_required";
+  if (
+    error instanceof Error &&
+    error.message === "The selected document range is detached."
+  )
+    return "document_range_detached";
   if (error instanceof ConnectedPathError)
     return `connected_path_${error.code}`;
   if (error instanceof AiRunLimitError) return "rate_or_budget_limit";

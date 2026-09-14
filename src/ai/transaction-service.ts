@@ -77,7 +77,7 @@ export async function undoAiTransaction(
   const { data: changeSet, error } = await supabase
     .from("ai_change_sets")
     .select(
-      "id,status,transaction_undone_at,visual_feedback_metadata,document_object_id,document_undo_update,ai_object_changes(id,object_id,before_state,after_state,affected_fields,created_at)",
+      "id,status,transaction_undone_at,visual_feedback_metadata,organization_undo,document_object_id,document_undo_update,ai_object_changes(id,object_id,before_state,after_state,affected_fields,created_at)",
     )
     .eq("id", parsed.changeSetId)
     .eq("canvas_id", canvasId)
@@ -114,9 +114,11 @@ export async function undoAiTransaction(
   }
   const undo = buildUndoAiChangeSetUpdate({
     document: current.document,
-    organizationHistory: creation?.organizationHistory
-      ? JSON.parse(creation.organizationHistory)
-      : undefined,
+    organizationHistory:
+      changeSet.organization_undo ??
+      (creation?.organizationHistory
+        ? JSON.parse(creation.organizationHistory)
+        : undefined),
     objectChanges: [...changeSet.ai_object_changes]
       .sort((left, right) => left.created_at.localeCompare(right.created_at))
       .map((change) => ({

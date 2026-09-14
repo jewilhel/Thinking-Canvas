@@ -1606,6 +1606,23 @@ export async function completeAiRun(
         );
       }
       options.onCheckpoint?.("finalize_undo_record");
+      if (reviewStage.organizationHistory) {
+        const historyResult = await createServiceClient().rpc(
+          "attach_ai_organization_undo",
+          {
+            target_change_set_id: toolResult.data[0].change_set_id,
+            target_run_id: run.id,
+            target_requester_id: run.requested_by,
+            target_history: JSON.parse(
+              JSON.stringify(reviewStage.organizationHistory),
+            ) as Json,
+          },
+        );
+        if (historyResult.error || historyResult.data !== true)
+          throw new AiRunConflictError(
+            "The organization undo record could not be saved.",
+          );
+      }
       const finalizationResult = await createServiceClient().rpc(
         "finalize_ai_review_stage",
         {
@@ -1623,20 +1640,13 @@ export async function completeAiRun(
           ) as Json,
           target_scope_kind: reviewScope.kind,
           target_scope_object_ids: reviewScope.objectIds,
-          target_visual_feedback_metadata: reviewStage.organizationHistory
+          target_visual_feedback_metadata: conversationDocument
             ? {
                 ...visualFeedbackMetadata,
-                organizationHistory: JSON.stringify(
-                  reviewStage.organizationHistory,
-                ),
+                documentCreationContentHash: conversationDocument.contentHash,
+                documentCreationObjectId: conversationDocument.objectId,
               }
-            : conversationDocument
-              ? {
-                  ...visualFeedbackMetadata,
-                  documentCreationContentHash: conversationDocument.contentHash,
-                  documentCreationObjectId: conversationDocument.objectId,
-                }
-              : visualFeedbackMetadata,
+            : visualFeedbackMetadata,
         },
       );
       if (finalizationResult.error || !finalizationResult.data?.[0]) {
