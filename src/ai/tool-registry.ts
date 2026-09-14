@@ -1,4 +1,4 @@
-import { organizeCanvasSchema } from "@/ai/organize-canvas";
+import { organizeCanvasSchema } from "@/ai/canvas-organization-schema";
 import { z } from "zod";
 import { canvasNavigationSchema } from "./canvas-navigation";
 

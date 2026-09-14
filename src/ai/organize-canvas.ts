@@ -1,13 +1,7 @@
-import { z } from "zod";
+import { organizeCanvasSchema } from "./canvas-organization-schema";
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
 import type { ProductCanvasMutation } from "@/domain/canvas-command";
 import { stableAiToolCommandId } from "./trusted-execution";
-export const organizeCanvasSchema = z.strictObject({
-  action: z.enum(["group", "ungroup", "nest", "detach"]),
-  objectIds: z.array(z.uuid()).min(1).max(100),
-  parentId: z.uuid().nullable(),
-  summary: z.string().trim().min(1).max(2000),
-});
 export async function organizeCanvasCommands(input: {
   arguments: unknown;
   objects: CanvasObjectV2[];
