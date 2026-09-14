@@ -143,7 +143,14 @@ export async function organizeCanvasCommands(input: {
           if (geometry !== object!.geometry)
             commands.push({
               type: "object.transform",
-              payload: { objectId: object!.id, ...geometry },
+              payload: {
+                objectId: object!.id,
+                x: geometry.x,
+                y: geometry.y,
+                width: geometry.width,
+                height: geometry.height,
+                rotation: geometry.rotation,
+              },
             });
         }
         commands.push(

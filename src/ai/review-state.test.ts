@@ -364,7 +364,14 @@ it("places an outside child inside a rotated parent and undoes placement with th
   });
   putCanvasObjectV2(document, {
     ...object(900),
-    geometry: { x: 900, y: 700, width: 180, height: 96, rotation: 10 },
+    geometry: {
+      x: 900,
+      y: 700,
+      width: 180,
+      height: 96,
+      rotation: 10,
+      flipX: true,
+    },
   });
   const before = readCanvasObjectV2(document, objectId)!.geometry;
   const result = await organizeCanvasCommands({
