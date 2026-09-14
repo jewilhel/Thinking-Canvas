@@ -303,7 +303,7 @@ describe("bounded voice delegation", () => {
 
   it("counts backend tokens in the same integer units without understating small usage", () => {
     expect(voiceBackendUnits("gpt-5.6-luna", 1000, 1000)).toBe(1680);
-    expect(voiceBackendUnits("gpt-5.6-sol", 100000, 2048)).toBeLessThan(
+    expect(voiceBackendUnits("gpt-5.6-sol", 200000, 4096)).toBeLessThan(
       1200000,
     );
     expect(voiceBackendUnits("gpt-5.6-luna", -1, 0)).toBeNull();

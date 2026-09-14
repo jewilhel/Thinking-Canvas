@@ -11,6 +11,8 @@ import {
   defaultLiveCanvasRequest,
   liveCanvasRequestSchema,
   voiceBackendUnits,
+  VOICE_REQUEST_MAX_BYTES,
+  VOICE_RESPONSE_MAX_TOKENS,
   VOICE_CONVERSATION_MARKER,
 } from "@/voice/live-delegation-contract";
 import { createClient } from "@/lib/supabase/server";
@@ -145,14 +147,15 @@ export async function POST(
       .eq("id", taskId);
     const gateway = new OpenAiPrimaryAiGateway({
       model: config.OPENAI_RESPONSES_MODEL,
-      maxOutputTokens: 2048,
+      maxOutputTokens: VOICE_RESPONSE_MAX_TOKENS,
       timeoutMs: 35000,
       client: {
         async create(input, options) {
           if (
             attempted ||
-            new TextEncoder().encode(JSON.stringify(input)).length > 100000 ||
-            (input.max_output_tokens ?? Infinity) > 2048
+            new TextEncoder().encode(JSON.stringify(input)).length >
+              VOICE_REQUEST_MAX_BYTES ||
+            (input.max_output_tokens ?? Infinity) > VOICE_RESPONSE_MAX_TOKENS
           )
             throw new Error("Voice request exceeds its reserved bound");
           await stillAllowed();
@@ -198,6 +201,9 @@ export async function POST(
         signal,
         readOnly: body.data.request.kind === "question",
         voiceTaskId: taskId,
+        onCheckpoint: (checkpoint) => {
+          stage = checkpoint;
+        },
         voiceConversation:
           body.data.request.kind === "conversation"
             ? body.data.request.text

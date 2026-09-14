@@ -87,9 +87,11 @@ function providerArgumentsSchema(toolName: AiToolName) {
   // Inline expansion alone exceeds the voice request's 100 KB budget. Keep
   // shared definitions inside this action schema; runtime validation is unchanged.
   return z.toJSONSchema(AI_TOOL_REGISTRY[toolName].argumentsSchema, {
-    reused: ["execute_canvas_commands", "stage_canvas_changes"].includes(
-      toolName,
-    )
+    reused: [
+      "execute_canvas_commands",
+      "stage_canvas_changes",
+      "propose_canvas_commands",
+    ].includes(toolName)
       ? "ref"
       : "inline",
   });

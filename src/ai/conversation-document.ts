@@ -5,7 +5,6 @@ import {
   listCanvasObjectsV2,
   readCanvasObjectV2,
 } from "@/canvas/canvas-document";
-import { prepareVoiceCreationCommands } from "./voice-creation-layout";
 import { validateCanvasReviewStage } from "@/ai/proposals";
 import {
   createProductDocumentObject,
@@ -66,10 +65,7 @@ export async function buildConversationDocumentUpdate(input: {
     document: input.document,
     canvasId: input.canvasId,
     actorId: input.actorId,
-    commands: prepareVoiceCreationCommands(
-      [{ type: "object.create", payload: { object } }],
-      objects,
-    ),
+    commands: [{ type: "object.create", payload: { object } }],
   });
   let body = args.text;
   if (args.kind === "transcript") {

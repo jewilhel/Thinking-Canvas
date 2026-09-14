@@ -166,7 +166,7 @@ describe("OpenAiPrimaryAiGateway", () => {
       const gateway = new OpenAiPrimaryAiGateway({
         apiKey: "test-key",
         model: "gpt-5.6-luna",
-        maxOutputTokens: 2048,
+        maxOutputTokens: 4096,
         client,
       });
       await gateway.request({
@@ -182,8 +182,8 @@ describe("OpenAiPrimaryAiGateway", () => {
       const request = client.create.mock.calls[0]![0];
       expect(
         new TextEncoder().encode(JSON.stringify(request)).length,
-      ).toBeLessThan(100000);
-      expect(request.max_output_tokens).toBe(2048);
+      ).toBeLessThan(200000);
+      expect(request.max_output_tokens).toBe(4096);
       const tool = buildSubmitTurnTool(allowedVoiceAiToolNames(authority));
       const properties = tool.parameters.properties.toolCalls.items.properties;
       if (!("argumentsJson" in properties))

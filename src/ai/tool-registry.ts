@@ -518,20 +518,9 @@ export function allowedAiToolNames(authority: AiAuthorityLevel) {
   );
 }
 
-/** Voice progressively exposes existing actions without increasing authority. */
+/** Voice shares the Canvas AI capabilities, with conversation-specific actions added. */
 export function allowedVoiceAiToolNames(authority: AiAuthorityLevel) {
-  const names = allowedAiToolNames(authority).filter(
-    (name) =>
-      name === "create_contextual_comment" ||
-      [
-        "stage_canvas_changes",
-        "stage_document_changes",
-        "stage_layout_changes",
-        "stage_new_shapes",
-        "stage_new_connectors",
-        "stage_new_annotations",
-      ].includes(name),
-  );
+  const names = allowedAiToolNames(authority);
   names.push("manage_comment_thread");
   if (authority === "trusted_editor")
     names.push("create_conversation_document");
@@ -556,11 +545,7 @@ export function allowedRunAiToolNames(input: {
         : input.voice
           ? allowedVoiceAiToolNames(input.authority)
           : allowedAiToolNames(input.authority);
-  return input.voice
-    ? names.filter((name) =>
-        allowedVoiceAiToolNames(input.authority).includes(name),
-      )
-    : names;
+  return names;
 }
 
 const documentRangeToolNames = new Set<AiToolName>([

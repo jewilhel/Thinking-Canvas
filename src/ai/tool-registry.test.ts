@@ -40,8 +40,15 @@ describe("AI authority tool registry", () => {
   });
   it("provides full undoable voice editing without switching modes", () => {
     const commentTools = ["create_contextual_comment", "manage_comment_thread"];
-    for (const authority of ["comment_only", "propose_changes"] as const) {
-      expect(allowedVoiceAiToolNames(authority)).toEqual(commentTools);
+    for (const authority of [
+      "comment_only",
+      "propose_changes",
+      "edit_with_review",
+      "trusted_editor",
+    ] as const) {
+      expect(allowedVoiceAiToolNames(authority)).toEqual(
+        expect.arrayContaining(allowedAiToolNames(authority)),
+      );
     }
     for (const authority of ["edit_with_review", "trusted_editor"] as const) {
       expect(allowedVoiceAiToolNames(authority)).toEqual(
@@ -55,9 +62,6 @@ describe("AI authority tool registry", () => {
           "stage_layout_changes",
           "undo_last_ai_change",
         ]),
-      );
-      expect(allowedVoiceAiToolNames(authority)).not.toContain(
-        "execute_canvas_commands",
       );
     }
     expect(allowedVoiceAiToolNames("trusted_editor")).toContain(

@@ -37,9 +37,14 @@ import { getProductDocumentContentRoot } from "../../src/documents/product-docum
 import {
   createProductCanvasDocument,
   listCanvasObjectsV2,
+  putCanvasObjectV2,
+  migrateLegacyShapeLabels,
+  projectCanvasCompositions,
 } from "../../src/canvas/canvas-document";
 import { completeAiRun } from "../../src/ai/collaborator-run-service";
-it.skipIf(process.env.RUN_VOICE_DB_TESTS !== "1").each(["transcript", "shape"])(
+it
+  .skipIf(process.env.RUN_VOICE_DB_TESTS !== "1")
+  .each(["transcript", "shape", "direct-edit"])(
   "creates %s through the guarded voice workflow",
   async (kind) => {
     const env = JSON.parse(
@@ -75,7 +80,33 @@ it.skipIf(process.env.RUN_VOICE_DB_TESTS !== "1").each(["transcript", "shape"])(
       ],
       { stdio: "ignore" },
     );
-    const state = Y.encodeStateAsUpdate(createProductCanvasDocument(c.data.id));
+    const initialDocument = createProductCanvasDocument(c.data.id);
+    const existingId = crypto.randomUUID();
+    if (kind === "direct-edit")
+      putCanvasObjectV2(initialDocument, {
+        schemaVersion: 2,
+        id: existingId,
+        canvasId: c.data.id,
+        createdBy: h.user.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        type: "shape",
+        shape: "rectangle",
+        text: "Voice creation test",
+        geometry: { x: 0, y: 0, width: 220, height: 80, rotation: 0 },
+        style: {
+          fill: "#ffffff",
+          outline: "#18181b",
+          outlineWidth: 1,
+          fontFamily: "Inter",
+          fontSize: 16,
+          fontWeight: "normal",
+          textAlign: "center",
+          textColor: "#18181b",
+        },
+      });
+    if (kind === "direct-edit") migrateLegacyShapeLabels(initialDocument);
+    const state = Y.encodeStateAsUpdate(initialDocument);
     const initial = await h.client.rpc("append_canvas_update", {
       target_canvas_id: c.data.id,
       client_update_id: crypto.randomUUID(),
@@ -139,49 +170,78 @@ it.skipIf(process.env.RUN_VOICE_DB_TESTS !== "1").each(["transcript", "shape"])(
                 contextualTargetObjectIds: [],
               },
               toolCalls: [
-                kind === "transcript"
+                kind === "direct-edit"
                   ? {
-                      callKey: "create-doc",
-                      toolName: "create_conversation_document",
+                      callKey: "direct-edit",
+                      toolName: "execute_canvas_commands",
                       arguments: {
-                        kind: "transcript",
-                        title: "Test transcript",
-                        text: "",
+                        commands: [
+                          {
+                            type: "object.style",
+                            payload: {
+                              objectId: existingId,
+                              style: { fill: "#fefefe", textColor: "#ffffff" },
+                            },
+                          },
+                        ],
                       },
                     }
-                  : {
-                      callKey: "create-shape",
-                      toolName: "stage_new_shapes",
-                      arguments: {
-                        summary: "Create a labeled sticky.",
-                        shapes: [
-                          {
-                            key: "sticky",
-                            shape: "rectangle",
-                            text: "Voice creation test",
-                            x: 0,
-                            y: 0,
-                            width: 100,
-                            height: 24,
-                            fill: "#ffffff",
-                            outline: "#18181b",
-                            outlineWidth: 1,
-                            fontFamily: "Inter",
-                            fontSize: 16,
-                            fontWeight: "normal",
-                            textAlign: "center",
-                            textColor: "#ffffff",
-                          },
-                        ],
-                        explanations: [
-                          {
-                            key: "sticky",
-                            whatChanged: "Created a labeled sticky.",
-                            why: "Requested by the user.",
-                          },
-                        ],
+                  : kind === "transcript"
+                    ? {
+                        callKey: "create-doc",
+                        toolName: "create_conversation_document",
+                        arguments: {
+                          kind: "transcript",
+                          title: "Test transcript",
+                          text: "",
+                        },
+                      }
+                    : {
+                        callKey: "create-shape",
+                        toolName: "stage_new_shapes",
+                        arguments: {
+                          summary: "Create a labeled sticky.",
+                          shapes: [
+                            {
+                              key: "sticky",
+                              shape: "rectangle",
+                              text: "Voice creation test",
+                              x: 0,
+                              y: 0,
+                              width: 100,
+                              height: 24,
+                              fill: "#ffffff",
+                              outline: "#18181b",
+                              outlineWidth: 1,
+                              fontFamily: "Inter",
+                              fontSize: 16,
+                              fontWeight: "normal",
+                              textAlign: "center",
+                              textColor: "#ffffff",
+                            },
+                          ],
+                          explanations: [
+                            {
+                              key: "sticky",
+                              whatChanged: "Created a labeled sticky.",
+                              why: "Requested by the user.",
+                            },
+                          ],
+                        },
                       },
-                    },
+                ...(kind === "shape"
+                  ? [
+                      {
+                        callKey: "comment",
+                        toolName: "manage_comment_thread",
+                        arguments: {
+                          action: "create",
+                          commentId: null,
+                          body: "Created the requested shape.",
+                        },
+                      },
+                    ]
+                  : []),
               ],
             }),
           } as any,
@@ -189,6 +249,20 @@ it.skipIf(process.env.RUN_VOICE_DB_TESTS !== "1").each(["transcript", "shape"])(
       );
       expect(result.status).toBe("completed");
       expect(result.changeSetId).toBeTruthy();
+      if (kind === "direct-edit") {
+        const saved = await h.client
+          .from("ai_change_sets")
+          .select("visual_feedback_metadata")
+          .eq("id", result.changeSetId)
+          .single();
+        expect(saved.error).toBeNull();
+        expect(saved.data.visual_feedback_metadata.feedbackStatus).toBe(
+          "advisory",
+        );
+        expect(
+          saved.data.visual_feedback_metadata.feedbackIssueCount,
+        ).toBeGreaterThan(0);
+      }
       const updates = await h.client
         .from("canvas_updates")
         .select("update_data")
@@ -201,7 +275,7 @@ it.skipIf(process.env.RUN_VOICE_DB_TESTS !== "1").each(["transcript", "shape"])(
           restored,
           Buffer.from(update.update_data.slice(2), "hex"),
         );
-      const objects = listCanvasObjectsV2(restored);
+      const objects = projectCanvasCompositions(listCanvasObjectsV2(restored));
       expect(objects).toHaveLength(1);
       expect(objects[0].type).toBe(
         kind === "transcript" ? "document" : "shape",
@@ -215,6 +289,76 @@ it.skipIf(process.env.RUN_VOICE_DB_TESTS !== "1").each(["transcript", "shape"])(
       else {
         if (objects[0].type !== "shape") throw new Error("Expected a shape");
         expect(objects[0].text).toBe("Voice creation test");
+        expect(objects[0].style.textColor).toBe("#ffffff");
+      }
+      if (kind === "direct-edit") {
+        await h.service.rpc("finish_voice_delegation", {
+          target_id: h.task,
+          target_status: "completed",
+          target_units: 0,
+        });
+        const undoTask = await h.service.rpc("reserve_voice_delegation", {
+          target_session: sessionId,
+          target_delegation: "undo-fixture",
+        });
+        if (undoTask.error) throw undoTask.error;
+        h.task = undoTask.data.id;
+        const undoRun = await h.client.rpc("create_comment_thread", {
+          target_canvas_id: c.data.id,
+          target_client_command_id: h.task,
+          target_body: "Canvas assistance requested during live voice.",
+          target_anchor_x: 0,
+          target_anchor_y: 0,
+          target_include_primary_ai: true,
+        });
+        if (undoRun.error) throw undoRun.error;
+        await h.service
+          .from("voice_delegations")
+          .update({ ai_run_id: undoRun.data[0].ai_run_id })
+          .eq("id", h.task);
+        const undone = await completeAiRun(
+          { runId: undoRun.data[0].ai_run_id, canvasId: c.data.id },
+          {
+            voiceTaskId: h.task,
+            voiceConversation: JSON.stringify({
+              fragments: [{ speaker: "user", text: "Undo that change." }],
+            }),
+            beforeComplete: async () => {},
+            gateway: {
+              request: async () => ({
+                status: "completed",
+                requestId: "undo-fixture",
+                reply: {
+                  body: "Undoing that edit.",
+                  evidence: [],
+                  contextualTargetObjectIds: [],
+                },
+                toolCalls: [
+                  {
+                    callKey: "undo",
+                    toolName: "undo_last_ai_change",
+                    arguments: {},
+                  },
+                ],
+              }),
+            } as any,
+          },
+        );
+        expect(undone.status).toBe("completed");
+        const afterUndo = await h.client
+          .from("canvas_updates")
+          .select("update_data")
+          .eq("canvas_id", c.data.id)
+          .order("sequence");
+        for (const update of afterUndo.data)
+          Y.applyUpdate(
+            restored,
+            Buffer.from(update.update_data.slice(2), "hex"),
+          );
+        expect(
+          projectCanvasCompositions(listCanvasObjectsV2(restored))[0].style
+            .textColor,
+        ).toBe("#18181b");
       }
     } catch (e) {
       console.log("RPC checkpoints", h.calls);
