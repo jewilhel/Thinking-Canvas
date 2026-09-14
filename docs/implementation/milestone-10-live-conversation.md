@@ -742,3 +742,5 @@ Verification checkpoint: 498 unit tests pass; TypeScript and affected-file lint 
 ### Text properties belong to selected text — 2026-09-14
 
 Owner requested that parent shapes and sticky notes no longer expose Text style. The selection palette now offers those controls for selected text objects (including intrinsic labels), while retaining the existing table text controls. Parent typography commands remain compatible for natural voice requests. This follows FR-079's first-class nested label model. TypeScript and affected-file ESLint pass; hosted selection QA pending.
+
+Hosted verification: ready deploy `6aa8307ee933560008278bba` matches `1227aa58098b25e2551f93969298ff1d20531f5e`. Codex in-app browser on the owner's QA canvas at saved sequence 61 verified Scotty's parent selection exposes Fill/Stroke without Text style; its intrinsic text selection exposes Text style and opens the typography panel with Bold checked. Selecting the parent again closes the text panel. No content mutations or voice sessions were needed. Preview remains open.
