@@ -741,10 +741,14 @@ export function ThreadBody({
   const [deleteConfirmation, setDeleteConfirmation] = useState(false);
   const deleteCancelRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (deleteConfirmation) {
-      deleteCancelRef.current?.focus();
-      deleteCancelRef.current?.scrollIntoView({ block: "nearest" });
-    }
+    if (!deleteConfirmation) return;
+    const frame = window.requestAnimationFrame(() => {
+      deleteCancelRef.current?.focus({ preventScroll: true });
+      deleteCancelRef.current?.parentElement?.parentElement?.scrollIntoView({
+        block: "end",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [deleteConfirmation]);
   const [undoError, setUndoError] = useState("");
   const [undoNotice, setUndoNotice] = useState("");
