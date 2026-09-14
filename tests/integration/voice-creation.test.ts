@@ -232,6 +232,15 @@ it
                 ...(kind === "shape"
                   ? [
                       {
+                        callKey: "extra-document",
+                        toolName: "create_conversation_document",
+                        arguments: {
+                          kind: "document",
+                          title: "Alongside the shape",
+                          text: "Requested document body.",
+                        },
+                      },
+                      {
                         callKey: "comment",
                         toolName: "manage_comment_thread",
                         arguments: {
@@ -276,7 +285,7 @@ it
           Buffer.from(update.update_data.slice(2), "hex"),
         );
       const objects = projectCanvasCompositions(listCanvasObjectsV2(restored));
-      expect(objects).toHaveLength(1);
+      expect(objects).toHaveLength(kind === "shape" ? 2 : 1);
       expect(objects[0].type).toBe(
         kind === "transcript" ? "document" : "shape",
       );

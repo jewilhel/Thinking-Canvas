@@ -4,6 +4,7 @@ import { voiceConversationInstruction } from "@/voice/live-delegation-contract";
 import { prepareCanvasNarration } from "@/stories/narration-audio-service";
 
 import { z } from "zod";
+import * as Y from "yjs";
 
 import {
   AI_PROJECTION_MAX_SERIALIZED_BYTES,
@@ -1059,7 +1060,7 @@ export async function completeAiRun(
       continue;
     }
     if (validatedTool.toolName === "stage_document_changes") {
-      if (reviewStageToolResults.length > 0) {
+      if (!voiceTask.data && reviewStageToolResults.length > 0) {
         throw new AiRunConflictError(
           "One AI run may create only one reviewable change set.",
         );
@@ -1175,6 +1176,15 @@ export async function completeAiRun(
         sequence: activationResult.data[0].sequence,
         update: edit.tentativeUpdate,
       });
+      if (voiceTask.data) {
+        Y.applyUpdate(compacted.document, edit.tentativeUpdate);
+        compacted.lastSequence = activationResult.data[0].sequence;
+        sourceObjects.splice(
+          0,
+          sourceObjects.length,
+          ...listCanvasObjectsV2(compacted.document),
+        );
+      }
       reviewStageToolResults.push({
         callKey: toolCall.callKey,
         changeSetId,
@@ -1199,7 +1209,7 @@ export async function completeAiRun(
       validatedTool.toolName === "stage_new_annotations" ||
       validatedTool.toolName === "create_conversation_document"
     ) {
-      if (reviewStageToolResults.length > 0) {
+      if (!voiceTask.data && reviewStageToolResults.length > 0) {
         throw new AiRunConflictError(
           "One AI run may create only one reviewable change set.",
         );
@@ -1599,6 +1609,15 @@ export async function completeAiRun(
         sequence: activationResult.data[0].sequence,
         update: reviewStage.tentativeUpdate,
       });
+      if (voiceTask.data) {
+        Y.applyUpdate(compacted.document, reviewStage.tentativeUpdate);
+        compacted.lastSequence = activationResult.data[0].sequence;
+        sourceObjects.splice(
+          0,
+          sourceObjects.length,
+          ...listCanvasObjectsV2(compacted.document),
+        );
+      }
       reviewStageToolResults.push({
         callKey: toolCall.callKey,
         changeSetId: toolResult.data[0].change_set_id,
