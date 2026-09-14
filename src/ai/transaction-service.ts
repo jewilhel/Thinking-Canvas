@@ -98,6 +98,7 @@ export async function undoAiTransaction(
   const creation = changeSet.visual_feedback_metadata as {
     documentCreationContentHash?: string;
     documentCreationObjectId?: string;
+    organizationHistory?: string;
   } | null;
   if (
     creation?.documentCreationContentHash &&
@@ -113,6 +114,9 @@ export async function undoAiTransaction(
   }
   const undo = buildUndoAiChangeSetUpdate({
     document: current.document,
+    organizationHistory: creation?.organizationHistory
+      ? JSON.parse(creation.organizationHistory)
+      : undefined,
     objectChanges: [...changeSet.ai_object_changes]
       .sort((left, right) => left.created_at.localeCompare(right.created_at))
       .map((change) => ({

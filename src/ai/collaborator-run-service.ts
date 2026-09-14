@@ -1,3 +1,4 @@
+import { organizeCanvasCommands } from "@/ai/organize-canvas";
 import "server-only";
 import {
   validateCanvasNavigation,
@@ -725,6 +726,32 @@ export async function completeAiRun(
         .question;
       replySections.splice(0, replySections.length, clarificationQuestion);
       continue;
+    }
+    if (validatedTool.toolName === "organize_canvas") {
+      const organized = await organizeCanvasCommands({
+        arguments: validatedTool.arguments,
+        objects: sourceObjects,
+        runId: run.id,
+        callKey: toolCall.callKey,
+      });
+      const stage = validateCanvasReviewStage({
+        document: compacted.document,
+        canvasId: run.canvas_id,
+        actorId: run.requested_by,
+        commands: organized.commands,
+      });
+      validatedTool = validateAiToolRequest({
+        authority: currentAuthority,
+        toolName: "stage_canvas_changes",
+        arguments: {
+          ...organized,
+          explanations: stage.objectChanges.map((change) => ({
+            objectId: change.objectId,
+            whatChanged: organized.summary,
+            why: "Requested canvas organization.",
+          })),
+        },
+      });
     }
     // Share the ordinary action vocabulary while preserving voice-accessible undo.
     if (
@@ -1596,13 +1623,20 @@ export async function completeAiRun(
           ) as Json,
           target_scope_kind: reviewScope.kind,
           target_scope_object_ids: reviewScope.objectIds,
-          target_visual_feedback_metadata: conversationDocument
+          target_visual_feedback_metadata: reviewStage.organizationHistory
             ? {
                 ...visualFeedbackMetadata,
-                documentCreationContentHash: conversationDocument.contentHash,
-                documentCreationObjectId: conversationDocument.objectId,
+                organizationHistory: JSON.stringify(
+                  reviewStage.organizationHistory,
+                ),
               }
-            : visualFeedbackMetadata,
+            : conversationDocument
+              ? {
+                  ...visualFeedbackMetadata,
+                  documentCreationContentHash: conversationDocument.contentHash,
+                  documentCreationObjectId: conversationDocument.objectId,
+                }
+              : visualFeedbackMetadata,
         },
       );
       if (finalizationResult.error || !finalizationResult.data?.[0]) {

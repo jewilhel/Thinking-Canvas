@@ -102,6 +102,7 @@ describe("AI authority tool registry", () => {
       "create_contextual_comment",
       "propose_canvas_commands",
       "propose_document_changes",
+      "organize_canvas",
       "stage_canvas_changes",
       "stage_document_changes",
       "stage_layout_changes",

@@ -271,7 +271,7 @@ describe("OpenAiPrimaryAiGateway", () => {
     };
     expect(
       parameters.properties.toolCalls.items.properties.toolName.enum,
-    ).toEqual(["create_contextual_comment"]);
+    ).toEqual(["create_contextual_comment", "navigate_canvas"]);
     expect(tool.strict).toBe(true);
   });
 

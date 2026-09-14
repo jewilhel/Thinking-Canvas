@@ -1,3 +1,5 @@
+import { validateCanvasReviewStage } from "@/ai/proposals";
+import { organizeCanvasCommands } from "@/ai/organize-canvas";
 import * as Y from "yjs";
 import { describe, expect, it } from "vitest";
 
@@ -7,6 +9,8 @@ import {
 } from "@/ai/review-state";
 import {
   createProductCanvasDocument,
+  listCanvasGroupsV2,
+  listCanvasObjectsV2,
   putCanvasObjectV2,
   readCanvasObjectV2,
   setCanvasObjectField,
@@ -187,4 +191,165 @@ describe("review decision state", () => {
       text: "Human adopted this object",
     });
   });
+});
+
+describe("AI organization persistence and undo", () => {
+  it("groups, ungroups, and reverses both membership and group records", async () => {
+    const document = createProductCanvasDocument(canvasId);
+    const secondId = "61000000-0000-4000-8000-000000000002";
+    putCanvasObjectV2(document, object(0));
+    putCanvasObjectV2(document, { ...object(220), id: secondId });
+    const before = listCanvasObjectsV2(document).map((o) => ({
+      ...o,
+      groupId: o.groupId ?? null,
+    }));
+    const args = {
+      action: "group",
+      objectIds: [objectId, secondId],
+      parentId: null,
+      summary: "Group the pair",
+    };
+    const input = {
+      arguments: args,
+      objects: listCanvasObjectsV2(document),
+      runId: canvasId,
+      callKey: "group",
+    };
+    const grouped = await organizeCanvasCommands(input);
+    expect(await organizeCanvasCommands(input)).toEqual(grouped);
+    const stage = validateCanvasReviewStage({
+      document,
+      canvasId,
+      actorId: canvasId,
+      commands: grouped.commands,
+    });
+    Y.applyUpdate(document, stage.tentativeUpdate);
+    expect(listCanvasGroupsV2(document)).toHaveLength(1);
+    const groupId = listCanvasGroupsV2(document)[0].id;
+    expect(
+      listCanvasObjectsV2(document).every((o) => o.groupId === groupId),
+    ).toBe(true);
+    const ungrouped = await organizeCanvasCommands({
+      ...input,
+      objects: listCanvasObjectsV2(document),
+      arguments: { ...args, action: "ungroup" },
+    });
+    const ungroupStage = validateCanvasReviewStage({
+      document,
+      canvasId,
+      actorId: canvasId,
+      commands: ungrouped.commands,
+    });
+    Y.applyUpdate(document, ungroupStage.tentativeUpdate);
+    expect(listCanvasGroupsV2(document)).toHaveLength(0);
+    const undoStage = (value: typeof stage) =>
+      buildUndoAiChangeSetUpdate({
+        document,
+        organizationHistory: value.organizationHistory,
+        objectChanges: value.objectChanges.map((c, i) => ({
+          ...c,
+          id: String(i),
+        })),
+      });
+    const undoUngroup = undoStage(ungroupStage);
+    expect(undoUngroup.conflicts).toEqual([]);
+    Y.applyUpdate(document, undoUngroup.update);
+    expect(listCanvasGroupsV2(document)).toHaveLength(1);
+    const undoGroup = undoStage(stage);
+    expect(undoGroup.conflicts).toEqual([]);
+    Y.applyUpdate(document, undoGroup.update);
+    expect(listCanvasGroupsV2(document)).toHaveLength(0);
+    expect(
+      listCanvasObjectsV2(document).map((o) => ({
+        ...o,
+        groupId: o.groupId ?? null,
+      })),
+    ).toEqual(before);
+  });
+  it("preserves the whole organization when a member was regrouped later", async () => {
+    const document = createProductCanvasDocument(canvasId);
+    const secondId = "61000000-0000-4000-8000-000000000002";
+    putCanvasObjectV2(document, object(0));
+    putCanvasObjectV2(document, { ...object(220), id: secondId });
+    const organized = await organizeCanvasCommands({
+      arguments: {
+        action: "group",
+        objectIds: [objectId, secondId],
+        parentId: null,
+        summary: "Group pair",
+      },
+      objects: listCanvasObjectsV2(document),
+      runId: canvasId,
+      callKey: "group",
+    });
+    const stage = validateCanvasReviewStage({
+      document,
+      canvasId,
+      actorId: canvasId,
+      commands: organized.commands,
+    });
+    Y.applyUpdate(document, stage.tentativeUpdate);
+    setCanvasObjectField(document, objectId, ["groupId"], null);
+    const before = Y.encodeStateAsUpdate(document);
+    const undo = buildUndoAiChangeSetUpdate({
+      document,
+      organizationHistory: stage.organizationHistory,
+      objectChanges: stage.objectChanges.map((c, i) => ({
+        ...c,
+        id: String(i),
+      })),
+    });
+    expect(undo.conflicts).not.toEqual([]);
+    Y.applyUpdate(document, undo.update);
+    expect(Y.encodeStateAsUpdate(document)).toEqual(before);
+    expect(listCanvasGroupsV2(document)).toHaveLength(1);
+  });
+});
+
+it("nests and detaches a child using canonical commands and restores its parent on undo", async () => {
+  const document = createProductCanvasDocument(canvasId);
+  const parentId = "61000000-0000-4000-8000-000000000003";
+  putCanvasObjectV2(document, {
+    ...object(-100),
+    id: parentId,
+    geometry: { x: -100, y: -100, width: 600, height: 400, rotation: 0 },
+  });
+  putCanvasObjectV2(document, object(0));
+  const organize = async (action: string) => {
+    const result = await organizeCanvasCommands({
+      arguments: {
+        action,
+        objectIds: [objectId],
+        parentId: action === "nest" ? parentId : null,
+        summary: action,
+      },
+      objects: listCanvasObjectsV2(document),
+      runId: canvasId,
+      callKey: action,
+    });
+    const stage = validateCanvasReviewStage({
+      document,
+      canvasId,
+      actorId: canvasId,
+      commands: result.commands,
+    });
+    Y.applyUpdate(document, stage.tentativeUpdate);
+    return stage;
+  };
+  await organize("nest");
+  expect(readCanvasObjectV2(document, objectId)).toMatchObject({ parentId });
+  const detached = await organize("detach");
+  expect(readCanvasObjectV2(document, objectId)).toMatchObject({
+    parentId: null,
+  });
+  const undo = buildUndoAiChangeSetUpdate({
+    document,
+    objectChanges: detached.objectChanges.map((c, i) => ({
+      ...c,
+      id: String(i),
+    })),
+  });
+  expect(undo.conflicts).toEqual([]);
+  Y.applyUpdate(document, undo.update);
+  expect(readCanvasObjectV2(document, objectId)).toMatchObject({ parentId });
 });

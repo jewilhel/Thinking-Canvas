@@ -1,3 +1,4 @@
+import { organizeCanvasSchema } from "@/ai/organize-canvas";
 import { z } from "zod";
 import { canvasNavigationSchema } from "./canvas-navigation";
 
@@ -398,6 +399,13 @@ export const AI_TOOL_REGISTRY = {
     description:
       "Return a non-mutating proposal for semantic document text, formatting, presentation, or existing internal-object changes. Use only a document ID present in the semantic projection; range operations use the invoking comment range.",
     argumentsSchema: documentChangesArgumentsSchema,
+  },
+  organize_canvas: {
+    effect: "review" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Group or ungroup existing objects, or nest/detach objects and groups in a parent shape. Identify targets by their existing object IDs, including members of an existing group. For nest supply the existing parentId; otherwise parentId is null. The server creates new group identities. Applies as one undoable edit. Ask for clarification if the intended parent or targets are ambiguous.",
+    argumentsSchema: organizeCanvasSchema,
   },
   stage_canvas_changes: {
     effect: "review" as const,
