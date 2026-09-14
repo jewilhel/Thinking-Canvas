@@ -157,7 +157,7 @@ describe("Live supervised lifecycle", () => {
     expect(h.track.enabled).toBe(true);
     expect(h.channel.send).toHaveBeenCalledOnce();
     expect(
-      JSON.parse(vi.mocked(h.channel.send).mock.calls[0][0] as string),
+      JSON.parse(String(vi.mocked(h.channel.send).mock.calls[0][0])),
     ).toEqual({
       type: "session.input_audio.unmute",
       event_id: expect.stringMatching(/^voice-ready-/),
