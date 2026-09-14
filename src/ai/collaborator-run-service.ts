@@ -1,4 +1,5 @@
 import "server-only";
+import { prepareVoiceCreationCommands } from "./voice-creation-layout";
 import { buildConversationDocumentUpdate } from "./conversation-document";
 import { voiceConversationInstruction } from "@/voice/live-delegation-contract";
 import { prepareCanvasNarration } from "@/stories/narration-audio-service";
@@ -1243,7 +1244,7 @@ export async function completeAiRun(
               actorId: run.requested_by,
             })
           : null;
-      const commands =
+      let commands =
         "commands" in toolArguments
           ? toolArguments.commands
           : "layout" in toolArguments
@@ -1254,6 +1255,11 @@ export async function completeAiRun(
             : (newShapeStage?.commands ??
               newConnectorStage?.commands ??
               newAnnotationStage!.commands);
+      if (voiceTask.data && !conversationDocument)
+        commands = prepareVoiceCreationCommands(
+          commands,
+          projectCanvasCompositions(sourceObjects),
+        );
       let reviewStage =
         conversationDocument?.reviewStage ??
         validateCanvasReviewStage({
@@ -1319,6 +1325,8 @@ export async function completeAiRun(
         feedbackIssueCount: 0,
       };
       try {
+        if (voiceTask.data)
+          throw new Error("Voice uses deterministic layout checks.");
         const { renderTargetedCanvasCapture } =
           await import("@/ai/render-capture");
         const [beforeCapture, afterCapture, beforeOverview, afterOverview] =

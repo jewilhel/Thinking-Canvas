@@ -119,7 +119,7 @@ export async function superviseLiveVoice(
             delegationId: id,
             request: canvasRequest,
           }),
-          signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]),
+          signal: AbortSignal.any([signal, AbortSignal.timeout(50000)]),
         },
       );
       const result = await response.json();

@@ -76,7 +76,7 @@ export async function POST(
   const signal = AbortSignal.any([
     request.signal,
     controller.signal,
-    AbortSignal.timeout(25000),
+    AbortSignal.timeout(45000),
   ]);
   let attempted = false,
     units: number | null = 0,
@@ -146,6 +146,7 @@ export async function POST(
     const gateway = new OpenAiPrimaryAiGateway({
       model: config.OPENAI_RESPONSES_MODEL,
       maxOutputTokens: 2048,
+      timeoutMs: 35000,
       client: {
         async create(input, options) {
           if (
@@ -168,6 +169,7 @@ export async function POST(
                 units = 0;
               throw error;
             });
+          stage = "apply_canvas_result";
           if (result.usage) {
             units = voiceBackendUnits(
               config.OPENAI_RESPONSES_MODEL,
@@ -221,6 +223,16 @@ export async function POST(
       taskId,
       stage,
       errorName: error instanceof Error ? error.name : "UnknownError",
+      visualIssues:
+        error instanceof Error && error.name === "AiVisualQualityError"
+          ? [
+              ...new Set(
+                error.message.match(
+                  /minimum_bounds|text_clipped|text_contrast|overlap|spacing|start_target_missing|end_target_missing/g,
+                ) ?? [],
+              ),
+            ]
+          : undefined,
     });
     taskStatus = signal.aborted ? "cancelled" : "failed";
     if (runId) {
