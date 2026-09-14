@@ -372,10 +372,28 @@ test("permanently deletes an authored comment after confirmation", async ({
   await composer.getByRole("button", { name: "Submit comment" }).click();
 
   const thread = page.getByRole("dialog", { name: "Comment thread" });
+  // Reopen as a reader, without focus in the reply form. Focusing Delete must
+  // not expand the reply textarea and move the button before pointer-up.
+  await thread.getByRole("button", { name: "Close comment thread" }).click();
+  await page
+    .getByRole("button", { name: "Open comment by Owner Example", exact: true })
+    .click();
+  const replyField = thread.getByRole("textbox", {
+    name: "Reply",
+    exact: true,
+  });
+  const replyHeight = await replyField.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
   await thread.getByRole("button", { name: "Delete", exact: true }).click();
   const deletion = thread.getByRole("group", {
     name: "Confirm comment deletion",
   });
+  await expect
+    .poll(() =>
+      replyField.evaluate((element) => element.getBoundingClientRect().height),
+    )
+    .toBe(replyHeight);
   await expect(deletion).toContainText("cannot be undone");
   await expect(
     deletion.getByRole("button", { name: "Cancel", exact: true }),

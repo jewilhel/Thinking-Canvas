@@ -606,7 +606,7 @@ export function RecipientComposer({
         maxLength={100_000}
         disabled={pending}
         placeholder={placeholder}
-        className="h-10 min-h-10 w-full resize-none bg-transparent px-2 py-1 text-sm transition-[height] outline-none group-focus-within:h-24 placeholder:text-zinc-400"
+        className="h-10 min-h-10 w-full resize-none bg-transparent px-2 py-1 text-sm transition-[height] outline-none group-focus-within/reply-composer:h-24 placeholder:text-zinc-400"
         onChange={(event) => updateValue(event.target.value)}
         onKeyDown={(event) => {
           if (query === null) return;
@@ -1062,7 +1062,7 @@ export function ThreadBody({
       !thread.prompt &&
       replyReady ? (
         <form
-          className="group mt-4 w-full rounded-2xl bg-zinc-100 p-3"
+          className="group/reply-composer mt-4 w-full rounded-2xl bg-zinc-100 p-3"
           onSubmit={(event) => {
             event.preventDefault();
             const body = reply.trim();
