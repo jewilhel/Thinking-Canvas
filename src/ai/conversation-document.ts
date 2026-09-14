@@ -1,4 +1,6 @@
 import * as Y from "yjs";
+import { LiveTranscript } from "@/voice/live-transcript";
+import { availableTranscriptText } from "@/voice/conversation-transcript";
 import { conversationDocumentArgumentsSchema } from "./tool-registry";
 import { stableAiToolCommandId } from "./trusted-execution";
 import {
@@ -72,16 +74,39 @@ export async function buildConversationDocumentUpdate(input: {
     const parsed = JSON.parse(input.conversation ?? "{}");
     if (!Array.isArray(parsed.fragments) || !parsed.fragments.length)
       throw new Error("No conversation wording is available to save.");
-    body = parsed.fragments
-      .map((part: { speaker: string; text: string }) => {
+    const transcript = new LiveTranscript();
+    parsed.fragments.forEach(
+      (
+        part: {
+          speaker: string;
+          text: string;
+          startMs?: number;
+          endMs?: number;
+        },
+        index: number,
+      ) => {
         if (
           !["user", "assistant"].includes(part.speaker) ||
           typeof part.text !== "string"
         )
           throw new Error("Invalid conversation wording.");
-        return `${part.speaker === "user" ? "You" : "AI"}: ${part.text}`;
-      })
-      .join("\n\n");
+        transcript.append(
+          {
+            type:
+              part.speaker === "user"
+                ? "session.input_transcript.delta"
+                : "session.output_transcript.delta",
+            event_id: String(index),
+            delta: part.text,
+            start_ms: part.startMs ?? index,
+            end_ms: part.endMs ?? part.startMs ?? index,
+          },
+          "saved",
+          0,
+        );
+      },
+    );
+    body = availableTranscriptText(transcript.snapshot());
     body =
       "Source coverage: This is the recent transcript available to Canvas AI, not a complete session recording. Earlier speech may be missing; AI text may include words that were interrupted.\n\n" +
       body;

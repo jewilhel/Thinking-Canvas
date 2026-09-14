@@ -143,3 +143,32 @@ describe("requested conversation document", () => {
     ).rejects.toThrow();
   });
 });
+
+it("assembles streaming words into readable speaker turns in the saved document", async () => {
+  const document = createProductCanvasDocument(canvasId);
+  const result = await buildConversationDocumentUpdate({
+    document,
+    canvasId,
+    actorId,
+    runId,
+    callKey: "fragmented",
+    arguments: { kind: "transcript", title: "Conversation", text: "" },
+    conversation: JSON.stringify({
+      fragments: [
+        { speaker: "user", text: "Create", startMs: 0, endMs: 100 },
+        { speaker: "user", text: " a document.", startMs: 120, endMs: 400 },
+        { speaker: "assistant", text: "Sure", startMs: 700, endMs: 850 },
+        { speaker: "assistant", text: ", I can.", startMs: 900, endMs: 1300 },
+        { speaker: "user", text: "Thanks.", startMs: 1600, endMs: 1900 },
+      ],
+    }),
+  });
+  Y.applyUpdate(document, result.update);
+  const body = JSON.stringify(
+    getProductDocumentContentRoot(document, result.objectId).toJSON(),
+  );
+  expect(body).toContain("You: Create a document.");
+  expect(body).toContain("AI: Sure, I can.");
+  expect(body).toContain("You: Thanks.");
+  expect(body).not.toContain("You:  a document");
+});
