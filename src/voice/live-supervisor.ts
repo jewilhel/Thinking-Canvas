@@ -37,6 +37,7 @@ export async function superviseLiveVoice(
     stopping = false,
     providerClosed = false,
     ready = false,
+    greeted = false,
     final = false;
   let units = 0,
     lastActivity = Date.now(),
@@ -203,6 +204,24 @@ export async function superviseLiveVoice(
     if (event.type === "session.input_audio.unmuted") {
       muted = false;
       lastActivity = Date.now();
+      if (
+        ready &&
+        !stopping &&
+        !greeted &&
+        typeof event.client_event_id === "string" &&
+        event.client_event_id.startsWith("voice-ready-")
+      ) {
+        greeted = true;
+        socket.send(
+          JSON.stringify({
+            type: "session.commentary.append",
+            event_id: crypto.randomUUID(),
+            delegation_id: null,
+            content:
+              "The participant's audio connection is now ready. Greet them briefly once, for example: Hi, I'm here. What would you like to work on? Then listen. If they are already speaking, let them finish and respond to their request instead of interrupting with a greeting. Do not inspect or change the canvas for this greeting.",
+          }),
+        );
+      }
     }
     if (
       event.type === "session.input_audio.append" ||

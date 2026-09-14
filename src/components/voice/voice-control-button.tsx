@@ -1,5 +1,5 @@
 "use client";
-import { AudioLines, MicOff } from "lucide-react";
+import { AudioLines, LoaderCircle, MicOff } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -46,10 +46,11 @@ export function VoiceControlButton({
       size="icon-sm"
       variant="outline"
       aria-label={label}
+      aria-pressed={active}
       aria-description={`${status}. Command-click or Control-click, right-click, or long-press for Voice settings.`}
       aria-expanded={settingsOpen}
       aria-controls="voice-settings-panel"
-      title={`${label} · ⌘/Ctrl-click for Voice settings`}
+      title={`${connecting ? "Connecting…" : active ? "Voice ready — you can speak" : label} · ⌘/Ctrl-click for Voice settings`}
       data-voice-state={
         connecting
           ? "connecting"
@@ -60,9 +61,11 @@ export function VoiceControlButton({
             : "off"
       }
       className={
-        active || connecting
-          ? "relative border-violet-500 bg-violet-50 text-violet-800"
-          : "relative"
+        active
+          ? "relative border-violet-600 bg-violet-600! text-white! ring-2 ring-violet-300 ring-offset-2 hover:bg-violet-700!"
+          : connecting
+            ? "relative border-violet-500 text-violet-700!"
+            : "relative"
       }
       onClick={(event) => {
         clear();
@@ -113,16 +116,23 @@ export function VoiceControlButton({
         clear();
       }}
     >
-      <AudioLines
-        aria-hidden="true"
-        className={
-          active && !muted
-            ? "motion-safe:animate-pulse"
-            : connecting
-              ? "opacity-50"
-              : ""
-        }
-      />
+      {connecting ? (
+        <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" />
+      ) : (
+        <AudioLines
+          aria-hidden="true"
+          className={active && !muted ? "motion-safe:animate-pulse" : ""}
+        />
+      )}
+      <span role="status" className="sr-only">
+        {connecting
+          ? "Connecting voice"
+          : active
+            ? muted
+              ? "Voice microphone muted"
+              : "Voice ready. You can start talking."
+            : "Voice off"}
+      </span>
       {active && muted && (
         <MicOff
           aria-hidden="true"

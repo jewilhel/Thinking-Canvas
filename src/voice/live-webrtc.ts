@@ -202,6 +202,13 @@ export async function connectLiveVoice(
     });
     audio.muted = false;
     onState("connected");
+    // Signal audible readiness only after supervision and local playback are enabled.
+    channel.send(
+      JSON.stringify({
+        type: "session.input_audio.unmute",
+        event_id: `voice-ready-${crypto.randomUUID()}`,
+      }),
+    );
     return {
       id,
       expiresAt: session.expiresAt,

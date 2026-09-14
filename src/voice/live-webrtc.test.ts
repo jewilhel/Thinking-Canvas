@@ -155,7 +155,13 @@ describe("Live supervised lifecycle", () => {
       sessionId,
     );
     expect(h.track.enabled).toBe(true);
-    expect(h.channel.send).not.toHaveBeenCalled();
+    expect(h.channel.send).toHaveBeenCalledOnce();
+    expect(
+      JSON.parse(vi.mocked(h.channel.send).mock.calls[0][0] as string),
+    ).toEqual({
+      type: "session.input_audio.unmute",
+      event_id: expect.stringMatching(/^voice-ready-/),
+    });
     active.mute(true);
     expect(h.track.enabled).toBe(false);
     active.mute(false);

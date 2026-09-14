@@ -40,6 +40,10 @@ describe("single voice control", () => {
   it("uses the same button for an ordinary session action", () => {
     const { button, onAction, onSettings } = setup(true);
     expect(button.getAttribute("aria-label")).toBe("End AI voice");
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("status").textContent).toBe(
+      "Voice ready. You can start talking.",
+    );
     fireEvent.click(button);
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onSettings).not.toHaveBeenCalled();

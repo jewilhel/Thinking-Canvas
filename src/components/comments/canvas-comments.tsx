@@ -1639,7 +1639,7 @@ export function CanvasComments({
                         {commentRelativeTime(thread.createdAt)}
                       </span>
                     </span>
-                    <span className="mt-1 line-clamp-2 block text-sm leading-5 text-zinc-700">
+                    <span className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-700">
                       {thread.body}
                     </span>
                   </span>

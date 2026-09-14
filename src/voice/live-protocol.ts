@@ -43,6 +43,7 @@ export function buildLiveSession(settings: LiveSettings): MediaSessionConfig {
     instructions:
       s.instructions +
       `
+Delegate ordinary color, text and line styling requests directly. Canvas AI knows the available palette and style options; do not ask for a precise color code or permission to interpret a familiar color or style name.
 Delegation policy:
 Backend tools:
 - Canvas questions: read the current canvas to answer specific questions about objects, shape types, colors, labels, positions, documents, and relationships.
