@@ -404,7 +404,7 @@ export const AI_TOOL_REGISTRY = {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
-      "Group or ungroup existing objects, or nest/detach objects and groups in a parent shape. Identify targets by their existing object IDs, including members of an existing group. For nest supply the existing parentId; otherwise parentId is null. The server creates new group identities. Applies as one undoable edit. Ask for clarification if the intended parent or targets are ambiguous.",
+      "Group or ungroup existing objects, or nest/detach objects and groups in a parent shape. Identify targets by their existing object IDs, including members of an existing group. For nest supply the existing parentId; otherwise parentId is null. The server creates new group identities. Nesting moves the requested object or complete group inside the parent when necessary and proportionally reduces it only when needed to fit; existing placement is preserved when already contained. Applies as one undoable edit. Ask for clarification if the intended parent or targets are ambiguous.",
     argumentsSchema: organizeCanvasSchema,
   },
   stage_canvas_changes: {

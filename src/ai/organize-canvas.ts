@@ -1,10 +1,63 @@
 import { organizeCanvasSchema } from "./canvas-organization-schema";
-import type { CanvasObjectV2 } from "@/canvas/canvas-document";
+import {
+  fullyContains,
+  isObjectParent,
+  worldPoint,
+  type ObjectParent,
+} from "@/canvas/icon-containment";
+import type { CanvasGroupV2, CanvasObjectV2 } from "@/canvas/canvas-document";
 import type { ProductCanvasMutation } from "@/domain/canvas-command";
 import { stableAiToolCommandId } from "./trusted-execution";
+function nestedGeometry(
+  geometry: CanvasObjectV2["geometry"],
+  parent: ObjectParent,
+) {
+  if (fullyContains(parent, geometry)) return geometry;
+  const angle =
+    ((geometry.rotation - parent.geometry.rotation) * Math.PI) / 180;
+  const corners = [
+    [0, 0],
+    [geometry.width, 0],
+    [0, geometry.height],
+    [geometry.width, geometry.height],
+  ].map(([x, y]) => ({
+    x: x * Math.cos(angle) - y * Math.sin(angle),
+    y: x * Math.sin(angle) + y * Math.cos(angle),
+  }));
+  const minX = Math.min(...corners.map((p) => p.x)),
+    minY = Math.min(...corners.map((p) => p.y));
+  const width = Math.max(...corners.map((p) => p.x)) - minX,
+    height = Math.max(...corners.map((p) => p.y)) - minY;
+  const padding = Math.min(
+    16,
+    parent.geometry.width / 10,
+    parent.geometry.height / 10,
+  );
+  const scale = Math.min(
+    1,
+    (parent.geometry.width - 2 * padding) / width,
+    (parent.geometry.height - 2 * padding) / height,
+  );
+  if (geometry.width * scale < 8 || geometry.height * scale < 8)
+    throw new Error(
+      "The parent is too small to contain this object at a usable size.",
+    );
+  const origin = worldPoint(
+    parent,
+    (parent.geometry.width - width * scale) / 2 - minX * scale,
+    (parent.geometry.height - height * scale) / 2 - minY * scale,
+  );
+  return {
+    ...geometry,
+    ...origin,
+    width: geometry.width * scale,
+    height: geometry.height * scale,
+  };
+}
 export async function organizeCanvasCommands(input: {
   arguments: unknown;
   objects: CanvasObjectV2[];
+  groups?: CanvasGroupV2[];
   runId: string;
   callKey: string;
 }) {
@@ -44,12 +97,33 @@ export async function organizeCanvasCommands(input: {
         !input.objects.some((object) => object.id === args.parentId))
     )
       throw new Error("Nesting requires an existing parent.");
+    const parent = input.objects.find((object) => object.id === args.parentId);
+    if (args.action === "nest" && (!parent || !isObjectParent(parent)))
+      throw new Error("Choose a top-level shape as the parent.");
     const handledGroups = new Set<string>();
     for (const object of targets) {
       const groupId = object!.groupId;
       if (groupId) {
         if (handledGroups.has(groupId)) continue;
         handledGroups.add(groupId);
+        if (args.action === "nest" && parent && isObjectParent(parent)) {
+          const group = input.groups?.find((group) => group.id === groupId);
+          if (!group) throw new Error("The group frame is unavailable.");
+          if (group.parentId)
+            commands.push({ type: "group.detach", payload: { groupId } });
+          const geometry = nestedGeometry(group.geometry, parent);
+          if (geometry !== group.geometry)
+            commands.push({
+              type: "group.transform",
+              payload: {
+                groupId,
+                x: geometry.x,
+                y: geometry.y,
+                width: geometry.width,
+                height: geometry.height,
+              },
+            });
+        }
         commands.push(
           args.action === "nest"
             ? {
@@ -58,7 +132,20 @@ export async function organizeCanvasCommands(input: {
               }
             : { type: "group.detach", payload: { groupId } },
         );
-      } else
+      } else {
+        if (args.action === "nest" && parent && isObjectParent(parent)) {
+          if ("parentId" in object! && object!.parentId)
+            commands.push({
+              type: "object.detach",
+              payload: { objectId: object!.id },
+            });
+          const geometry = nestedGeometry(object!.geometry, parent);
+          if (geometry !== object!.geometry)
+            commands.push({
+              type: "object.transform",
+              payload: { objectId: object!.id, ...geometry },
+            });
+        }
         commands.push(
           args.action === "nest"
             ? {
@@ -67,6 +154,7 @@ export async function organizeCanvasCommands(input: {
               }
             : { type: "object.detach", payload: { objectId: object!.id } },
         );
+      }
     }
   }
   return { commands, summary: args.summary };

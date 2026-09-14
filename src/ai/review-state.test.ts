@@ -353,3 +353,96 @@ it("nests and detaches a child using canonical commands and restores its parent 
   Y.applyUpdate(document, undo.update);
   expect(readCanvasObjectV2(document, objectId)).toMatchObject({ parentId });
 });
+
+it("places an outside child inside a rotated parent and undoes placement with the relationship", async () => {
+  const document = createProductCanvasDocument(canvasId);
+  const parentId = "61000000-0000-4000-8000-000000000003";
+  putCanvasObjectV2(document, {
+    ...object(-100),
+    id: parentId,
+    geometry: { x: -100, y: -100, width: 300, height: 240, rotation: 25 },
+  });
+  putCanvasObjectV2(document, {
+    ...object(900),
+    geometry: { x: 900, y: 700, width: 180, height: 96, rotation: 10 },
+  });
+  const before = readCanvasObjectV2(document, objectId)!.geometry;
+  const result = await organizeCanvasCommands({
+    arguments: {
+      action: "nest",
+      objectIds: [objectId],
+      parentId,
+      summary: "Put the child inside its parent",
+    },
+    objects: listCanvasObjectsV2(document),
+    runId: canvasId,
+    callKey: "nest-outside",
+  });
+  const stage = validateCanvasReviewStage({
+    document,
+    canvasId,
+    actorId: canvasId,
+    commands: result.commands,
+  });
+  Y.applyUpdate(document, stage.tentativeUpdate);
+  expect(readCanvasObjectV2(document, objectId)).toMatchObject({ parentId });
+  expect(readCanvasObjectV2(document, objectId)!.geometry.x).not.toBe(before.x);
+  const undo = buildUndoAiChangeSetUpdate({
+    document,
+    objectChanges: stage.objectChanges.map((c, i) => ({ ...c, id: String(i) })),
+  });
+  expect(undo.conflicts).toEqual([]);
+  Y.applyUpdate(document, undo.update);
+  expect(readCanvasObjectV2(document, objectId)!.geometry).toEqual(before);
+  expect(
+    (readCanvasObjectV2(document, objectId) as { parentId?: string | null })
+      .parentId ?? null,
+  ).toBeNull();
+});
+
+it("moves a complete group into a parent and reverses its frame and member placement together", async () => {
+  const document = createProductCanvasDocument(canvasId);
+  const secondId = "61000000-0000-4000-8000-000000000002",
+    parentId = "61000000-0000-4000-8000-000000000003";
+  putCanvasObjectV2(document, object(800));
+  putCanvasObjectV2(document, { ...object(1000), id: secondId });
+  putCanvasObjectV2(document, {
+    ...object(0),
+    id: parentId,
+    geometry: { x: 0, y: 0, width: 500, height: 400, rotation: 0 },
+  });
+  const stageAction = async (
+    action: string,
+    ids: string[],
+    parent: string | null,
+  ) => {
+    const result = await organizeCanvasCommands({
+      arguments: { action, objectIds: ids, parentId: parent, summary: action },
+      objects: listCanvasObjectsV2(document),
+      groups: listCanvasGroupsV2(document),
+      runId: canvasId,
+      callKey: action,
+    });
+    const stage = validateCanvasReviewStage({
+      document,
+      canvasId,
+      actorId: canvasId,
+      commands: result.commands,
+    });
+    Y.applyUpdate(document, stage.tentativeUpdate);
+    return stage;
+  };
+  await stageAction("group", [objectId, secondId], null);
+  const before = listCanvasGroupsV2(document);
+  const stage = await stageAction("nest", [objectId], parentId);
+  expect(listCanvasGroupsV2(document)[0]).toMatchObject({ parentId });
+  const undo = buildUndoAiChangeSetUpdate({
+    document,
+    organizationHistory: stage.organizationHistory,
+    objectChanges: stage.objectChanges.map((c, i) => ({ ...c, id: String(i) })),
+  });
+  expect(undo.conflicts).toEqual([]);
+  Y.applyUpdate(document, undo.update);
+  expect(listCanvasGroupsV2(document)).toEqual(before);
+  expect(readCanvasObjectV2(document, objectId)!.geometry.x).toBe(800);
+});

@@ -44,6 +44,7 @@ import {
 import {
   isIntrinsicShapeLabel,
   listCanvasObjectsV2,
+  listCanvasGroupsV2,
   projectCanvasCompositions,
 } from "@/canvas/canvas-document";
 import {
@@ -731,6 +732,7 @@ export async function completeAiRun(
       const organized = await organizeCanvasCommands({
         arguments: validatedTool.arguments,
         objects: sourceObjects,
+        groups: listCanvasGroupsV2(compacted.document),
         runId: run.id,
         callKey: toolCall.callKey,
       });

@@ -52,11 +52,14 @@ it
     "direct-edit",
     "clarification",
     "organization",
+    "typed-organization",
     "document-edit",
   ])(
   "creates %s through the guarded voice workflow",
   async (kind) => {
     h.calls = [];
+    const organization =
+      kind === "organization" || kind === "typed-organization";
     const env = JSON.parse(
       execFileSync("pnpm", ["exec", "supabase", "status", "--output", "json"], {
         encoding: "utf8",
@@ -108,7 +111,7 @@ it
       Y.applyUpdate(initialDocument, doc.update);
       existingId = doc.objectId;
     }
-    if (kind === "direct-edit" || kind === "organization")
+    if (kind === "direct-edit" || organization)
       putCanvasObjectV2(initialDocument, {
         schemaVersion: 2,
         id: existingId,
@@ -132,13 +135,13 @@ it
         },
       });
     const secondId = crypto.randomUUID();
-    if (kind === "organization")
+    if (organization)
       putCanvasObjectV2(initialDocument, {
         ...listCanvasObjectsV2(initialDocument)[0],
         id: secondId,
         geometry: { x: 300, y: 0, width: 220, height: 80, rotation: 0 },
       });
-    if (kind === "direct-edit" || kind === "organization")
+    if (kind === "direct-edit" || organization)
       migrateLegacyShapeLabels(initialDocument);
     const state = Y.encodeStateAsUpdate(initialDocument);
     const initial = await h.client.rpc("append_canvas_update", {
@@ -200,7 +203,8 @@ it
       }
       const r = await h.client.rpc("create_comment_thread", {
         target_canvas_id: c.data.id,
-        target_client_command_id: h.task,
+        target_client_command_id:
+          kind === "typed-organization" ? crypto.randomUUID() : h.task,
         target_body: "Canvas assistance requested during live voice.",
         target_anchor_x: 0,
         target_anchor_y: 0,
@@ -214,15 +218,18 @@ it
       const result = await completeAiRun(
         { runId: r.data[0].ai_run_id, canvasId: c.data.id },
         {
-          voiceTaskId: h.task,
-          voiceConversation: JSON.stringify({
-            fragments: [
-              {
-                speaker: "user",
-                text: "Create a document with the partial transcript.",
-              },
-            ],
-          }),
+          voiceTaskId: kind === "typed-organization" ? undefined : h.task,
+          voiceConversation:
+            kind === "typed-organization"
+              ? undefined
+              : JSON.stringify({
+                  fragments: [
+                    {
+                      speaker: "user",
+                      text: "Create a document with the partial transcript.",
+                    },
+                  ],
+                }),
           beforeComplete: async () => {},
           gateway: {
             request: async () => ({
@@ -258,7 +265,7 @@ it
                         objectExplanations: [],
                       },
                     }
-                  : kind === "organization"
+                  : organization
                     ? {
                         callKey: "group",
                         toolName: "organize_canvas",
@@ -422,9 +429,7 @@ it
           Buffer.from(update.update_data.slice(2), "hex"),
         );
       const objects = projectCanvasCompositions(listCanvasObjectsV2(restored));
-      expect(objects).toHaveLength(
-        kind === "shape" || kind === "organization" ? 2 : 1,
-      );
+      expect(objects).toHaveLength(kind === "shape" || organization ? 2 : 1);
       expect(objects[0].type).toBe(
         kind === "transcript" || kind === "document-edit"
           ? "document"
@@ -436,24 +441,30 @@ it
             getProductDocumentContentRoot(restored, objects[0].id).toJSON(),
           ),
         ).toContain("Create a document with the partial transcript.");
-      else if (kind !== "organization" && kind !== "document-edit") {
+      else if (!organization && kind !== "document-edit") {
         if (objects[0].type !== "shape") throw new Error("Expected a shape");
         expect(objects[0].text).toBe("Voice creation test");
         expect(objects[0].style.textColor).toBe("#ffffff");
       }
-      if (kind === "organization")
+      if (organization) {
         expect(listCanvasGroupsV2(restored)).toHaveLength(1);
+        const saved = await h.client
+          .from("ai_change_sets")
+          .select("organization_undo,visual_feedback_metadata")
+          .eq("id", result.changeSetId)
+          .single();
+        expect(saved.data.organization_undo).toBeTruthy();
+        expect(saved.data.visual_feedback_metadata.feedbackStatus).toBe(
+          "advisory",
+        );
+      }
       if (kind === "document-edit")
         expect(
           JSON.stringify(
             getProductDocumentContentRoot(restored, existingId).toJSON(),
           ),
         ).toContain("The document can be edited through Canvas AI.");
-      if (
-        kind === "direct-edit" ||
-        kind === "organization" ||
-        kind === "document-edit"
-      ) {
+      if (kind === "direct-edit" || organization || kind === "document-edit") {
         await h.service.rpc("finish_voice_delegation", {
           target_id: h.task,
           target_status: "completed",
@@ -517,7 +528,7 @@ it
             restored,
             Buffer.from(update.update_data.slice(2), "hex"),
           );
-        if (kind === "organization") {
+        if (organization) {
           expect(listCanvasGroupsV2(restored)).toHaveLength(0);
           expect(
             listCanvasObjectsV2(restored).every((object) => !object.groupId),
