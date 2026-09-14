@@ -7,6 +7,7 @@ import {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 const ready = () => Response.json({ enabled: true, build: "test" });
@@ -91,4 +92,45 @@ describe("voice availability recovery", () => {
     expect(signal.aborted).toBe(true);
     expect(fetch).toHaveBeenCalledOnce();
   });
+});
+
+it("recognizes a preview redirect without following cross-origin sign-in through fetch", async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 302 }));
+  vi.stubGlobal("fetch", fetch);
+  const result = await readVoiceAvailability(
+    "canvas",
+    new AbortController().signal,
+  );
+  expect(result.needsPreviewAccess).toBe(true);
+  expect(fetch.mock.calls[0][1].redirect).toBe("manual");
+});
+it("renews preview access in a separate window and closes it after recovery", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 302 }))
+      .mockResolvedValue(ready()),
+  );
+  const popup = { closed: false, close: vi.fn() };
+  const open = vi
+    .spyOn(window, "open")
+    .mockReturnValue(popup as unknown as Window);
+  const originalUrl = window.location.href;
+  const { result } = renderHook(() => useVoiceAvailability("canvas"));
+  await waitFor(() =>
+    expect(result.current.availability.needsPreviewAccess).toBe(true),
+  );
+  expect(open).not.toHaveBeenCalled();
+  await act(async () => {
+    expect((await result.current.renewPreviewAccess()).enabled).toBe(true);
+  });
+  expect(open).toHaveBeenCalledWith(
+    "/voice-access",
+    "thinking-canvas-preview-access",
+    expect.any(String),
+  );
+  expect(popup.close).toHaveBeenCalledOnce();
+  expect(window.location.href).toBe(originalUrl);
+  expect(result.current.accessError).toBe("");
 });

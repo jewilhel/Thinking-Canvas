@@ -1,4 +1,5 @@
 "use client";
+import { groupCommentHistory } from "@/comments/comment-history";
 import {
   navigationForParticipant,
   type CanvasNavigation,
@@ -171,10 +172,14 @@ function commentMarkerStyle(
 }
 
 export function threadAnchor(
-  thread: Pick<CommentThread, "targetObjectIds" | "canvasAnchor">,
+  thread: Pick<
+    CommentThread,
+    "targetObjectIds" | "canvasAnchor" | "voiceSessionId"
+  >,
   objectsById: Map<string, CanvasObjectV2>,
   viewport: Viewport,
 ) {
+  if (thread.voiceSessionId) return null;
   if (thread.canvasAnchor) {
     return {
       left: viewport.x + thread.canvasAnchor.x * viewport.scale,
@@ -273,7 +278,10 @@ function topmostObjectAtPoint(
 }
 
 function threadTargetBounds(
-  thread: Pick<CommentThread, "targetObjectIds" | "canvasAnchor">,
+  thread: Pick<
+    CommentThread,
+    "targetObjectIds" | "canvasAnchor" | "voiceSessionId"
+  >,
   objectsById: Map<string, CanvasObjectV2>,
   viewport: Viewport,
 ): ScreenBounds | null {
@@ -1596,7 +1604,9 @@ export function CanvasComments({
 
       {overlayVisible
         ? threads
-            .filter((thread) => thread.status === "open")
+            .filter(
+              (thread) => thread.status === "open" && !thread.voiceSessionId,
+            )
             .map((thread) => {
               const position = threadAnchor(thread, objectsById, viewport);
               if (!position) return null;
@@ -1871,57 +1881,82 @@ export function CanvasComments({
             {!loading && !threads.length ? (
               <p className="text-sm text-zinc-500">No comments yet.</p>
             ) : null}
-            {threads.map((thread) => {
-              const targetAvailable =
-                thread.sceneTarget !== null && thread.sceneTarget !== undefined
-                  ? true
-                  : thread.canvasAnchor !== null ||
-                    (thread.documentRange !== null &&
-                      objectsById.has(thread.documentRange.documentObjectId)) ||
-                    thread.targetObjectIds.some((id) => objectsById.has(id));
-              return (
-                <button
-                  key={thread.id}
-                  type="button"
-                  className="flex w-full items-start gap-3 rounded-xl border border-zinc-200 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50"
-                  onClick={() => {
-                    onOverlayVisibilityChange(true);
-                    onPlacementModeChange(false);
-                    focusThread(thread.id);
-                  }}
+            {groupCommentHistory(threads).map((entry) => {
+              const items = entry.threads.map((thread) => {
+                const targetAvailable =
+                  thread.sceneTarget !== null &&
+                  thread.sceneTarget !== undefined
+                    ? true
+                    : thread.canvasAnchor !== null ||
+                      (thread.documentRange !== null &&
+                        objectsById.has(
+                          thread.documentRange.documentObjectId,
+                        )) ||
+                      thread.targetObjectIds.some((id) => objectsById.has(id));
+                return (
+                  <button
+                    key={thread.id}
+                    type="button"
+                    className="flex w-full items-start gap-3 rounded-xl border border-zinc-200 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50"
+                    onClick={() => {
+                      onOverlayVisibilityChange(true);
+                      onPlacementModeChange(false);
+                      focusThread(thread.id);
+                    }}
+                  >
+                    <Avatar
+                      name={thread.authorName}
+                      identityKey={thread.authorKey}
+                      ai={thread.authorKind === "ai"}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-semibold">
+                          {thread.authorName}
+                        </span>
+                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600">
+                          {thread.status}
+                        </span>
+                      </span>
+                      <span className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-600">
+                        {thread.voiceSessionId
+                          ? ([...thread.replies]
+                              .reverse()
+                              .find((reply) => reply.authorKind === "ai")
+                              ?.body ?? "Voice action in progress")
+                          : thread.body}
+                      </span>
+                      {thread.sceneTarget ? (
+                        <span className="mt-1 block text-xs font-medium text-violet-700">
+                          {thread.sceneTarget.deleted
+                            ? "Deleted scene: "
+                            : "Scene: "}
+                          {thread.sceneTarget.title}
+                        </span>
+                      ) : null}
+                      {!targetAvailable ? (
+                        <span className="mt-1 block text-xs text-amber-700">
+                          Target unavailable
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                );
+              });
+              return entry.sessionId ? (
+                <details
+                  key={entry.key}
+                  className="rounded-xl border border-zinc-200 p-3"
                 >
-                  <Avatar
-                    name={thread.authorName}
-                    identityKey={thread.authorKey}
-                    ai={thread.authorKind === "ai"}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-semibold">
-                        {thread.authorName}
-                      </span>
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600">
-                        {thread.status}
-                      </span>
-                    </span>
-                    <span className="mt-1 line-clamp-2 block text-sm leading-5 text-zinc-600">
-                      {thread.body}
-                    </span>
-                    {thread.sceneTarget ? (
-                      <span className="mt-1 block text-xs font-medium text-violet-700">
-                        {thread.sceneTarget.deleted
-                          ? "Deleted scene: "
-                          : "Scene: "}
-                        {thread.sceneTarget.title}
-                      </span>
-                    ) : null}
-                    {!targetAvailable ? (
-                      <span className="mt-1 block text-xs text-amber-700">
-                        Target unavailable
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Voice session ·{" "}
+                    {new Date(entry.threads[0].createdAt).toLocaleString()} ·{" "}
+                    {entry.threads.length} actions
+                  </summary>
+                  <div className="mt-3 space-y-2">{items}</div>
+                </details>
+              ) : (
+                <div key={entry.key}>{items}</div>
               );
             })}
           </div>

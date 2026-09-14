@@ -218,6 +218,14 @@ it
         .from("voice_delegations")
         .update({ ai_run_id: r.data[0].ai_run_id })
         .eq("id", h.task);
+      if (kind !== "typed-organization") {
+        const tagged = await h.client
+          .from("ai_runs")
+          .select("projection_metadata")
+          .eq("id", r.data[0].ai_run_id)
+          .single();
+        expect(tagged.data.projection_metadata.voiceSessionId).toBe(sessionId);
+      }
       const result = await completeAiRun(
         { runId: r.data[0].ai_run_id, canvasId: c.data.id },
         {

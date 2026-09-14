@@ -90,6 +90,7 @@ export function LiveVoice({
   const {
     availability,
     check: checkAvailability,
+    renewPreviewAccess,
     accessError,
     setAccessError,
   } = useVoiceAvailability(canvasId);
@@ -397,7 +398,9 @@ export function LiveVoice({
               startingCheck.current = true;
               setAccessError("");
               try {
-                const current = await checkAvailability();
+                const current = availability.needsPreviewAccess
+                  ? await renewPreviewAccess()
+                  : await checkAvailability();
                 if (!mounted.current) return;
                 if (current.enabled) {
                   setPanel(false);

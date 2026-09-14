@@ -301,6 +301,19 @@ export class SupabaseCommentRepository {
           }
         : null;
       return {
+        voiceSessionId:
+          runs
+            .filter((run) => run.invoking_comment_id === comment.id)
+            .map((run) => {
+              const metadata = run.projection_metadata;
+              return metadata &&
+                typeof metadata === "object" &&
+                !Array.isArray(metadata) &&
+                typeof metadata.voiceSessionId === "string"
+                ? metadata.voiceSessionId
+                : null;
+            })
+            .find(Boolean) ?? null,
         id: comment.id,
         canvasId: comment.canvas_id,
         authorId: comment.author_id,

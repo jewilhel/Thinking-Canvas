@@ -219,7 +219,7 @@ export async function completeAiRun(
   // Voice-created requests can only run through their bounded, metered owner.
   const voiceTask = await createServiceClient()
     .from("voice_delegations")
-    .select("id")
+    .select("id,session_id")
     .eq("id", run.idempotency_key)
     .maybeSingle();
   if (
@@ -1816,6 +1816,7 @@ export async function completeAiRun(
     target_output_tokens: gatewayResult.telemetry?.outputTokens ?? 0,
     target_latency_ms: gatewayResult.telemetry?.latencyMs ?? 0,
     target_projection_metadata: {
+      ...(voiceTask.data ? { voiceSessionId: voiceTask.data.session_id } : {}),
       version: projection.version,
       objectCount: projection.objects.length,
       commentThreadCount: projection.commentThreads.length,

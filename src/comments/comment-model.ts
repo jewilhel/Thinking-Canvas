@@ -227,6 +227,7 @@ export type CommentPrompt = {
 };
 
 export type CommentThread = {
+  voiceSessionId?: string | null;
   id: string;
   canvasId: string;
   authorId: string;
