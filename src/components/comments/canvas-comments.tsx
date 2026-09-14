@@ -1157,7 +1157,7 @@ export function ThreadBody({
       </div>
       {canDelete && deleteConfirmation ? (
         <div
-          className="space-y-3 rounded-lg border border-red-200 bg-red-50 p-3"
+          className="sticky bottom-0 z-10 space-y-3 rounded-lg border border-red-200 bg-red-50 p-3"
           role="group"
           aria-label="Confirm comment deletion"
         >
