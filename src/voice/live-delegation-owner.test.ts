@@ -11,7 +11,7 @@ function setup() {
         id: string,
         signal: AbortSignal,
         request: import("./live-delegation-contract").LiveCanvasRequest,
-      ) => Promise<string>
+      ) => Promise<import("./live-delegation-contract").LiveCanvasResult>
     >(async () => "Verified canvas description"),
     append: vi.fn(),
     cancel: vi.fn(async () => {}),
@@ -384,4 +384,84 @@ it("a cancellation that arrives before the next heartbeat suppresses the queued 
   expect(
     controlRequestIsCurrent("2026-09-11T21:00:02Z", "2026-09-11T21:00:01Z"),
   ).toBe(true);
+});
+
+it("asks clarification and carries the original request through a short answer", async () => {
+  const { owner, hooks } = setup();
+  hooks.run.mockResolvedValueOnce({
+    text: "Which one?",
+    clarificationQuestion: "Do you mean Scotty's shape or its text?",
+  });
+  owner.receive(speech("Make Scotty green."), 0);
+  owner.receive(delegated, 0);
+  owner.tick(2000);
+  await vi.waitFor(() => expect(hooks.run).toHaveResolved());
+  owner.tick(2200);
+  await vi.waitFor(() => expect(hooks.append).toHaveBeenCalled());
+  expect(hooks.append.mock.calls.at(-1)?.[2]).toContain("needs clarification");
+  expect(hooks.append.mock.calls.at(-1)?.[2]).toContain(
+    "Scotty's shape or its text?",
+  );
+  owner.receive(speech("The shape.", "answer", 7000), 3000);
+  owner.receive(
+    {
+      ...delegated,
+      offset_ms: 8000,
+      delegation: { ...delegated.delegation, id: "answer-task" },
+    },
+    3000,
+  );
+  owner.tick(5500);
+  await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledTimes(2));
+  const context = JSON.parse(hooks.run.mock.calls[1][2].text);
+  expect(context.pendingClarification.request).toEqual([
+    { speaker: "user", text: "Make Scotty green." },
+  ]);
+  expect(context.fragments.at(-1).text).toBe("The shape.");
+  expect(context.completedTasks).toEqual([]);
+});
+
+it("clears a pending clarification when the participant cancels", async () => {
+  const { owner, hooks } = setup();
+  hooks.run.mockResolvedValueOnce({
+    text: "Which?",
+    clarificationQuestion: "Which shape?",
+  });
+  owner.receive(speech("Change that."), 0);
+  owner.receive(delegated, 0);
+  owner.tick(2000);
+  await vi.waitFor(() => expect(hooks.run).toHaveResolved());
+  await owner.cancel();
+  owner.receive(speech("Describe the canvas.", "new", 7000), 3000);
+  owner.receive(
+    {
+      ...delegated,
+      offset_ms: 8000,
+      delegation: { ...delegated.delegation, id: "new-task" },
+    },
+    3000,
+  );
+  owner.tick(5500);
+  await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledTimes(2));
+  expect(
+    JSON.parse(hooks.run.mock.calls[1][2].text).pendingClarification,
+  ).toBeUndefined();
+});
+
+it("does not present a technical failure as a clarification", async () => {
+  const { owner, hooks } = setup();
+  hooks.run.mockRejectedValueOnce(new Error("Database unavailable"));
+  owner.receive(speech("Create a shape."), 0);
+  owner.receive(delegated, 0);
+  owner.tick(2000);
+  await vi.waitFor(() => {
+    owner.tick(2200);
+    expect(hooks.append).toHaveBeenCalled();
+  });
+  expect(hooks.append.mock.calls.at(-1)?.[2]).toContain(
+    "did not finish successfully",
+  );
+  expect(hooks.append.mock.calls.at(-1)?.[2]).not.toContain(
+    "needs clarification",
+  );
 });

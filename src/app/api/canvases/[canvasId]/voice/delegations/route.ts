@@ -221,7 +221,15 @@ export async function POST(
     if (reply.error) throw new Error("Verified reply unavailable");
     taskStatus = "completed";
     return Response.json(
-      { completed: true, text: reply.data.body, taskId },
+      {
+        completed: true,
+        text: reply.data.body,
+        taskId,
+        clarificationQuestion:
+          "clarificationQuestion" in completed
+            ? completed.clarificationQuestion
+            : null,
+      },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

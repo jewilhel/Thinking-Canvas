@@ -447,6 +447,15 @@ export const AI_TOOL_REGISTRY = {
       "Execute validated ordered product commands against current durable canvas state with idempotent persistence.",
     argumentsSchema: executeArgumentsSchema,
   },
+  ask_voice_clarification: {
+    effect: "comment" as const,
+    minimumAuthority: "comment_only" as const,
+    description:
+      "Ask one specific question when the participant's intent, target, or required content is ambiguous. Return only this action; do not change the canvas until the participant answers. Do not use this for technical failures or unavailable capabilities.",
+    argumentsSchema: z.strictObject({
+      question: z.string().trim().min(1).max(1000),
+    }),
+  },
   manage_comment_thread: {
     effect: "mutation" as const,
     minimumAuthority: "comment_only" as const,
@@ -511,6 +520,7 @@ export function allowedAiToolNames(authority: AiAuthorityLevel) {
   return (Object.keys(AI_TOOL_REGISTRY) as AiToolName[]).filter(
     (name) =>
       name !== "execute_story_scene" &&
+      name !== "ask_voice_clarification" &&
       name !== "create_conversation_document" &&
       name !== "undo_last_ai_change" &&
       name !== "manage_comment_thread" &&
@@ -521,7 +531,7 @@ export function allowedAiToolNames(authority: AiAuthorityLevel) {
 /** Voice shares the Canvas AI capabilities, with conversation-specific actions added. */
 export function allowedVoiceAiToolNames(authority: AiAuthorityLevel) {
   const names = allowedAiToolNames(authority);
-  names.push("manage_comment_thread");
+  names.push("manage_comment_thread", "ask_voice_clarification");
   if (authority === "trusted_editor")
     names.push("create_conversation_document");
   if (authority === "trusted_editor" || authority === "edit_with_review")

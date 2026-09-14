@@ -125,7 +125,12 @@ export async function superviseLiveVoice(
       const result = await response.json();
       if (!response.ok || !result.completed || typeof result.text !== "string")
         throw new Error("Task failed");
-      return result.text;
+      return typeof result.clarificationQuestion === "string"
+        ? {
+            text: result.text,
+            clarificationQuestion: result.clarificationQuestion,
+          }
+        : result.text;
     },
   });
   const taskTimer = setInterval(() => owner.tick(), 250);

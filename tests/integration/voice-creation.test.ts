@@ -44,9 +44,10 @@ import {
 import { completeAiRun } from "../../src/ai/collaborator-run-service";
 it
   .skipIf(process.env.RUN_VOICE_DB_TESTS !== "1")
-  .each(["transcript", "shape", "direct-edit"])(
+  .each(["transcript", "shape", "direct-edit", "clarification"])(
   "creates %s through the guarded voice workflow",
   async (kind) => {
+    h.calls = [];
     const env = JSON.parse(
       execFileSync("pnpm", ["exec", "supabase", "status", "--output", "json"], {
         encoding: "utf8",
@@ -170,65 +171,87 @@ it
                 contextualTargetObjectIds: [],
               },
               toolCalls: [
-                kind === "direct-edit"
+                kind === "clarification"
                   ? {
-                      callKey: "direct-edit",
-                      toolName: "execute_canvas_commands",
-                      arguments: {
-                        commands: [
-                          {
-                            type: "object.style",
-                            payload: {
-                              objectId: existingId,
-                              style: { fill: "#fefefe", textColor: "#ffffff" },
-                            },
-                          },
-                        ],
-                      },
+                      callKey: "clarify",
+                      toolName: "ask_voice_clarification",
+                      arguments: { question: "Which shape should I change?" },
                     }
-                  : kind === "transcript"
+                  : kind === "direct-edit"
                     ? {
-                        callKey: "create-doc",
-                        toolName: "create_conversation_document",
+                        callKey: "direct-edit",
+                        toolName: "execute_canvas_commands",
                         arguments: {
-                          kind: "transcript",
-                          title: "Test transcript",
-                          text: "",
+                          commands: [
+                            {
+                              type: "object.style",
+                              payload: {
+                                objectId: existingId,
+                                style: {
+                                  fill: "#fefefe",
+                                  textColor: "#ffffff",
+                                },
+                              },
+                            },
+                          ],
                         },
                       }
-                    : {
-                        callKey: "create-shape",
-                        toolName: "stage_new_shapes",
+                    : kind === "transcript"
+                      ? {
+                          callKey: "create-doc",
+                          toolName: "create_conversation_document",
+                          arguments: {
+                            kind: "transcript",
+                            title: "Test transcript",
+                            text: "",
+                          },
+                        }
+                      : {
+                          callKey: "create-shape",
+                          toolName: "stage_new_shapes",
+                          arguments: {
+                            summary: "Create a labeled sticky.",
+                            shapes: [
+                              {
+                                key: "sticky",
+                                shape: "rectangle",
+                                text: "Voice creation test",
+                                x: 0,
+                                y: 0,
+                                width: 100,
+                                height: 24,
+                                fill: "#ffffff",
+                                outline: "#18181b",
+                                outlineWidth: 1,
+                                fontFamily: "Inter",
+                                fontSize: 16,
+                                fontWeight: "normal",
+                                textAlign: "center",
+                                textColor: "#ffffff",
+                              },
+                            ],
+                            explanations: [
+                              {
+                                key: "sticky",
+                                whatChanged: "Created a labeled sticky.",
+                                why: "Requested by the user.",
+                              },
+                            ],
+                          },
+                        },
+                ...(kind === "clarification"
+                  ? [
+                      {
+                        callKey: "must-not-run",
+                        toolName: "manage_comment_thread",
                         arguments: {
-                          summary: "Create a labeled sticky.",
-                          shapes: [
-                            {
-                              key: "sticky",
-                              shape: "rectangle",
-                              text: "Voice creation test",
-                              x: 0,
-                              y: 0,
-                              width: 100,
-                              height: 24,
-                              fill: "#ffffff",
-                              outline: "#18181b",
-                              outlineWidth: 1,
-                              fontFamily: "Inter",
-                              fontSize: 16,
-                              fontWeight: "normal",
-                              textAlign: "center",
-                              textColor: "#ffffff",
-                            },
-                          ],
-                          explanations: [
-                            {
-                              key: "sticky",
-                              whatChanged: "Created a labeled sticky.",
-                              why: "Requested by the user.",
-                            },
-                          ],
+                          action: "create",
+                          commentId: null,
+                          body: "Must not save while asking for clarification.",
                         },
                       },
+                    ]
+                  : []),
                 ...(kind === "shape"
                   ? [
                       {
@@ -257,6 +280,20 @@ it
         },
       );
       expect(result.status).toBe("completed");
+      if (kind === "clarification") {
+        expect(
+          "clarificationQuestion" in result && result.clarificationQuestion,
+        ).toBe("Which shape should I change?");
+        expect(result.changeSetId).toBeNull();
+        expect(h.calls).not.toContain("manage_voice_comment");
+        expect(h.calls).not.toContain("stage_ai_canvas_changes");
+        const unchanged = await h.client
+          .from("canvas_updates")
+          .select("sequence")
+          .eq("canvas_id", c.data.id);
+        expect(unchanged.data).toHaveLength(1);
+        return;
+      }
       expect(result.changeSetId).toBeTruthy();
       if (kind === "direct-edit") {
         const saved = await h.client

@@ -632,6 +632,11 @@ export async function completeAiRun(
     throw new AiProviderOutputError();
   }
   if (options.readOnly && toolCalls.length) throw new AiProviderOutputError();
+  const clarification =
+    voiceTask.data &&
+    toolCalls.find((call) => call.toolName === "ask_voice_clarification");
+  if (clarification) toolCalls = [clarification];
+  let clarificationQuestion: string | null = null;
   const isNewObjectReview = toolCalls.some(
     (toolCall) =>
       toolCall.toolName === "stage_new_shapes" ||
@@ -701,6 +706,14 @@ export async function completeAiRun(
       });
     } catch {
       throw new AiProviderOutputError();
+    }
+    if (validatedTool.toolName === "ask_voice_clarification") {
+      if (!voiceTask.data)
+        throw new AiRunConflictError("Clarification requires a voice request.");
+      clarificationQuestion = (validatedTool.arguments as { question: string })
+        .question;
+      replySections.splice(0, replySections.length, clarificationQuestion);
+      continue;
     }
     // Share the ordinary action vocabulary while preserving voice-accessible undo.
     if (
@@ -1714,6 +1727,7 @@ export async function completeAiRun(
     status: completionResult.data[0].status,
     changeSetId: reviewStageToolResults.at(-1)?.changeSetId ?? null,
     storyChanged: storyToolResults.length > 0,
+    clarificationQuestion,
   };
 }
 
