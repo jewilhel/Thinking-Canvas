@@ -1410,14 +1410,16 @@ export async function completeAiRun(
         afterObjects: projectCanvasCompositions(reviewStage.visualObjects),
         targetObjectIds: reviewStage.affectedObjectIds,
       };
-      // Layout heuristics are feedback, not authority over requested voice edits.
-      const voiceVisualIssues = voiceTask.data
+      // Requested relationships use canonical constraints, not visual redesign.
+      const advisoryVisuals =
+        !!voiceTask.data || toolCall.toolName === "organize_canvas";
+      const visualIssues = advisoryVisuals
         ? deterministicVisualIssueKeys({
             objects: visualCheck.afterObjects,
             targetObjectIds: visualCheck.targetObjectIds,
           })
         : [];
-      if (!voiceTask.data) assertNoNewDeterministicVisualDefects(visualCheck);
+      if (!advisoryVisuals) assertNoNewDeterministicVisualDefects(visualCheck);
       const allFocusObjects = [...sourceObjects, ...reviewStage.visualObjects];
       const allObjectIds = [
         ...new Set(allFocusObjects.map((object) => object.id)),
@@ -1427,12 +1429,12 @@ export async function completeAiRun(
         rendererVersion: TARGETED_CAPTURE_RENDERER_VERSION,
         captureCount: 0,
         feedbackPassCount: 0,
-        feedbackStatus: voiceTask.data ? "advisory" : "unavailable",
-        feedbackIssueCount: voiceVisualIssues.length,
+        feedbackStatus: advisoryVisuals ? "advisory" : "unavailable",
+        feedbackIssueCount: visualIssues.length,
       };
       try {
-        if (voiceTask.data)
-          throw new Error("Voice uses deterministic layout checks.");
+        if (advisoryVisuals)
+          throw new Error("Requested action uses advisory visual checks.");
         const { renderTargetedCanvasCapture } =
           await import("@/ai/render-capture");
         const [beforeCapture, afterCapture, beforeOverview, afterOverview] =
