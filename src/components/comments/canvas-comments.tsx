@@ -738,6 +738,7 @@ export function ThreadBody({
   const [undoingChangeSetId, setUndoingChangeSetId] = useState<string | null>(
     null,
   );
+  const [deleteConfirmation, setDeleteConfirmation] = useState(false);
   const [undoError, setUndoError] = useState("");
   const [undoNotice, setUndoNotice] = useState("");
   const [currentTime, setCurrentTime] = useState(() => Date.now());
@@ -1130,27 +1131,52 @@ export function ThreadBody({
             Dismiss
           </Button>
         ) : null}
-        {canDelete ? (
+        {canDelete && !deleteConfirmation ? (
           <Button
             type="button"
             size="sm"
             variant="ghost"
             className="text-red-700 hover:bg-red-50 hover:text-red-800"
             disabled={pending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Permanently delete this comment and its entire thread? This cannot be undone.",
-                )
-              ) {
-                void onDelete();
-              }
-            }}
+            onClick={() => setDeleteConfirmation(true)}
           >
             <Trash2 aria-hidden="true" /> Delete
           </Button>
         ) : null}
       </div>
+      {canDelete && deleteConfirmation ? (
+        <div
+          className="space-y-3 rounded-lg border border-red-200 bg-red-50 p-3"
+          role="group"
+          aria-label="Confirm comment deletion"
+        >
+          <p role="alert" className="text-sm text-red-900">
+            Permanently delete this comment and its entire thread? This cannot
+            be undone.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() => setDeleteConfirmation(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="text-red-700"
+              disabled={pending}
+              onClick={() => void onDelete()}
+            >
+              Delete permanently
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

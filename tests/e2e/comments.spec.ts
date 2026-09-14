@@ -372,11 +372,18 @@ test("permanently deletes an authored comment after confirmation", async ({
   await composer.getByRole("button", { name: "Submit comment" }).click();
 
   const thread = page.getByRole("dialog", { name: "Comment thread" });
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("cannot be undone");
-    await dialog.accept();
-  });
   await thread.getByRole("button", { name: "Delete", exact: true }).click();
+  const deletion = thread.getByRole("group", {
+    name: "Confirm comment deletion",
+  });
+  await expect(deletion).toContainText("cannot be undone");
+  await deletion.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(deletion).not.toBeVisible();
+  await expect(thread).toBeVisible();
+  await thread.getByRole("button", { name: "Delete", exact: true }).click();
+  await deletion
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
   await expect(thread).not.toBeVisible();
   await expect(
     page.getByText("Temporary feedback to remove."),
@@ -1428,11 +1435,18 @@ test("repeats an inherited multi-object layout request after undo", async ({
     thread.getByRole("button", { name: "Undo AI change" }),
   ).toHaveCount(1);
 
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("cannot be undone");
-    await dialog.accept();
-  });
   await thread.getByRole("button", { name: "Delete", exact: true }).click();
+  const deletion = thread.getByRole("group", {
+    name: "Confirm comment deletion",
+  });
+  await expect(deletion).toContainText("cannot be undone");
+  await deletion.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(deletion).not.toBeVisible();
+  await expect(thread).toBeVisible();
+  await thread.getByRole("button", { name: "Delete", exact: true }).click();
+  await deletion
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
   await expect(thread).not.toBeVisible();
 });
 
