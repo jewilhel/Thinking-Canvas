@@ -54,9 +54,12 @@ it
     "organization",
     "typed-organization",
     "document-edit",
+    "transcript-existing",
   ])(
   "creates %s through the guarded voice workflow",
   async (kind) => {
+    const documentEdit =
+      kind === "document-edit" || kind === "transcript-existing";
     h.calls = [];
     const organization =
       kind === "organization" || kind === "typed-organization";
@@ -95,7 +98,7 @@ it
     );
     const initialDocument = createProductCanvasDocument(c.data.id);
     let existingId = crypto.randomUUID();
-    if (kind === "document-edit") {
+    if (documentEdit) {
       const doc = await buildConversationDocumentUpdate({
         document: initialDocument,
         canvasId: c.data.id,
@@ -223,6 +226,13 @@ it
             kind === "typed-organization"
               ? undefined
               : JSON.stringify({
+                  sessionTranscript: {
+                    text:
+                      "You: Early health app idea.\nAI: " +
+                      "Discussion detail. ".repeat(1200) +
+                      "\nYou: Save our full conversation.",
+                    gaps: [],
+                  },
                   fragments: [
                     {
                       speaker: "user",
@@ -241,127 +251,139 @@ it
                 contextualTargetObjectIds: [],
               },
               toolCalls: [
-                kind === "document-edit"
+                kind === "transcript-existing"
                   ? {
-                      callKey: "edit-doc",
-                      toolName: "execute_document_changes",
+                      callKey: "save-existing",
+                      toolName: "create_conversation_document",
                       arguments: {
-                        summary: "Replace the paragraph",
-                        documentObjectId: existingId,
-                        operations: [
-                          {
-                            kind: "replace_document",
-                            blocks: [
+                        kind: "transcript",
+                        title: "Conversation",
+                        text: "",
+                        destinationDocumentId: existingId,
+                      },
+                    }
+                  : documentEdit
+                    ? {
+                        callKey: "edit-doc",
+                        toolName: "execute_document_changes",
+                        arguments: {
+                          summary: "Replace the paragraph",
+                          documentObjectId: existingId,
+                          operations: [
+                            {
+                              kind: "replace_document",
+                              blocks: [
+                                {
+                                  kind: "paragraph",
+                                  text: "The document can be edited through Canvas AI.",
+                                },
+                              ],
+                            },
+                          ],
+                          whatChanged: "Updated paragraph",
+                          why: "Requested",
+                          objectCommands: [],
+                          objectExplanations: [],
+                        },
+                      }
+                    : kind === "typed-organization"
+                      ? {
+                          callKey: "group",
+                          toolName: "execute_canvas_commands",
+                          arguments: {
+                            commands: [
                               {
-                                kind: "paragraph",
-                                text: "The document can be edited through Canvas AI.",
+                                type: "selection.group",
+                                payload: {
+                                  objectIds: [existingId, secondId],
+                                  groupId: crypto.randomUUID(),
+                                },
                               },
                             ],
                           },
-                        ],
-                        whatChanged: "Updated paragraph",
-                        why: "Requested",
-                        objectCommands: [],
-                        objectExplanations: [],
-                      },
-                    }
-                  : kind === "typed-organization"
-                    ? {
-                        callKey: "group",
-                        toolName: "execute_canvas_commands",
-                        arguments: {
-                          commands: [
-                            {
-                              type: "selection.group",
-                              payload: {
-                                objectIds: [existingId, secondId],
-                                groupId: crypto.randomUUID(),
-                              },
-                            },
-                          ],
-                        },
-                      }
-                    : organization
-                      ? {
-                          callKey: "group",
-                          toolName: "organize_canvas",
-                          arguments: {
-                            action: "group",
-                            objectIds: [existingId, secondId],
-                            parentId: null,
-                            summary: "Group the pair",
-                          },
                         }
-                      : kind === "clarification"
+                      : organization
                         ? {
-                            callKey: "clarify",
-                            toolName: "ask_voice_clarification",
+                            callKey: "group",
+                            toolName: "organize_canvas",
                             arguments: {
-                              question: "Which shape should I change?",
+                              action: "group",
+                              objectIds: [existingId, secondId],
+                              parentId: null,
+                              summary: "Group the pair",
                             },
                           }
-                        : kind === "direct-edit"
+                        : kind === "clarification"
                           ? {
-                              callKey: "direct-edit",
-                              toolName: "execute_canvas_commands",
+                              callKey: "clarify",
+                              toolName: "ask_voice_clarification",
                               arguments: {
-                                commands: [
-                                  {
-                                    type: "object.style",
-                                    payload: {
-                                      objectId: existingId,
-                                      style: {
-                                        fill: "#fefefe",
-                                        textColor: "#ffffff",
-                                      },
-                                    },
-                                  },
-                                ],
+                                question: "Which shape should I change?",
                               },
                             }
-                          : kind === "transcript"
+                          : kind === "direct-edit"
                             ? {
-                                callKey: "create-doc",
-                                toolName: "create_conversation_document",
+                                callKey: "direct-edit",
+                                toolName: "execute_canvas_commands",
                                 arguments: {
-                                  kind: "transcript",
-                                  title: "Test transcript",
-                                  text: "",
+                                  commands: [
+                                    {
+                                      type: "object.style",
+                                      payload: {
+                                        objectId: existingId,
+                                        style: {
+                                          fill: "#fefefe",
+                                          textColor: "#ffffff",
+                                        },
+                                      },
+                                    },
+                                  ],
                                 },
                               }
-                            : {
-                                callKey: "create-shape",
-                                toolName: "stage_new_shapes",
-                                arguments: {
-                                  summary: "Create a labeled sticky.",
-                                  shapes: [
-                                    {
-                                      key: "sticky",
-                                      shape: "rectangle",
-                                      text: "Voice creation test",
-                                      x: 0,
-                                      y: 0,
-                                      width: 100,
-                                      height: 24,
-                                      fill: "#ffffff",
-                                      outline: "#18181b",
-                                      outlineWidth: 1,
-                                      fontFamily: "Inter",
-                                      fontSize: 16,
-                                      fontWeight: "normal",
-                                      textAlign: "center",
-                                      textColor: "#ffffff",
-                                    },
-                                  ],
-                                  explanations: [
-                                    {
-                                      key: "sticky",
-                                      whatChanged: "Created a labeled sticky.",
-                                      why: "Requested by the user.",
-                                    },
-                                  ],
+                            : kind === "transcript"
+                              ? {
+                                  callKey: "create-doc",
+                                  toolName: "create_conversation_document",
+                                  arguments: {
+                                    kind: "transcript",
+                                    title: "Test transcript",
+                                    text: "",
+                                  },
+                                }
+                              : {
+                                  callKey: "create-shape",
+                                  toolName: "stage_new_shapes",
+                                  arguments: {
+                                    summary: "Create a labeled sticky.",
+                                    shapes: [
+                                      {
+                                        key: "sticky",
+                                        shape: "rectangle",
+                                        text: "Voice creation test",
+                                        x: 0,
+                                        y: 0,
+                                        width: 100,
+                                        height: 24,
+                                        fill: "#ffffff",
+                                        outline: "#18181b",
+                                        outlineWidth: 1,
+                                        fontFamily: "Inter",
+                                        fontSize: 16,
+                                        fontWeight: "normal",
+                                        textAlign: "center",
+                                        textColor: "#ffffff",
+                                      },
+                                    ],
+                                    explanations: [
+                                      {
+                                        key: "sticky",
+                                        whatChanged:
+                                          "Created a labeled sticky.",
+                                        why: "Requested by the user.",
+                                      },
+                                    ],
+                                  },
                                 },
-                              },
                 ...(kind === "clarification"
                   ? [
                       {
@@ -447,20 +469,25 @@ it
       const objects = projectCanvasCompositions(listCanvasObjectsV2(restored));
       expect(objects).toHaveLength(kind === "shape" || organization ? 2 : 1);
       expect(objects[0].type).toBe(
-        kind === "transcript" || kind === "document-edit"
-          ? "document"
-          : "shape",
+        kind === "transcript" || documentEdit ? "document" : "shape",
       );
       if (kind === "transcript")
         expect(
           JSON.stringify(
             getProductDocumentContentRoot(restored, objects[0].id).toJSON(),
           ),
-        ).toContain("Create a document with the partial transcript.");
-      else if (!organization && kind !== "document-edit") {
+        ).toContain("Early health app idea.");
+      else if (!organization && !documentEdit) {
         if (objects[0].type !== "shape") throw new Error("Expected a shape");
         expect(objects[0].text).toBe("Voice creation test");
         expect(objects[0].style.textColor).toBe("#ffffff");
+      }
+      if (kind === "transcript" || kind === "transcript-existing") {
+        const savedText = JSON.stringify(
+          getProductDocumentContentRoot(restored, objects[0].id).toJSON(),
+        );
+        expect(savedText).toContain("Save our full conversation.");
+        expect(savedText.match(/Discussion detail\./g)).toHaveLength(1200);
       }
       if (organization) {
         expect(listCanvasGroupsV2(restored)).toHaveLength(1);
@@ -474,13 +501,17 @@ it
           "advisory",
         );
       }
-      if (kind === "document-edit")
+      if (documentEdit)
         expect(
           JSON.stringify(
             getProductDocumentContentRoot(restored, existingId).toJSON(),
           ),
-        ).toContain("The document can be edited through Canvas AI.");
-      if (kind === "direct-edit" || organization || kind === "document-edit") {
+        ).toContain(
+          kind === "transcript-existing"
+            ? "Early health app idea."
+            : "The document can be edited through Canvas AI.",
+        );
+      if (kind === "direct-edit" || organization || documentEdit) {
         await h.service.rpc("finish_voice_delegation", {
           target_id: h.task,
           target_status: "completed",
@@ -550,7 +581,7 @@ it
             listCanvasObjectsV2(restored).every((object) => !object.groupId),
           ).toBe(true);
         }
-        if (kind === "document-edit")
+        if (documentEdit)
           expect(
             JSON.stringify(
               getProductDocumentContentRoot(restored, existingId).toJSON(),

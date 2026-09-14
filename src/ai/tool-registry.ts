@@ -212,6 +212,7 @@ export const executeArgumentsSchema = z.strictObject({
 });
 export const conversationDocumentArgumentsSchema = z.strictObject({
   kind: z.enum(["summary", "design_brief", "document", "transcript"]),
+  destinationDocumentId: z.uuid().nullable().optional(),
   title: z.string().trim().min(1).max(200),
   text: z.string().trim().max(12000),
 });
@@ -501,7 +502,7 @@ export const AI_TOOL_REGISTRY = {
     effect: "mutation" as const,
     minimumAuthority: "trusted_editor" as const,
     description:
-      "Create a new ordinary document, requested conversation summary, design brief, or available transcript only when explicitly requested. Use document for new blank or authored documents; summary/design_brief for conversation synthesis. For transcript pass empty text: the server copies available conversation wording without model rewriting and discloses limited coverage. Never invent missing discussion or save automatically.",
+      "Create a new ordinary document, requested conversation summary, design brief, or available transcript only when explicitly requested. Use document for new blank or authored documents; summary/design_brief for conversation synthesis. For transcript pass empty text: the server copies the full captured session wording without model rewriting. Supply destinationDocumentId only when asked to put the result in that existing document (replaces its body); omit/null creates a new document. Summaries and briefs must use the full sessionTranscript source, not only recent command fragments. Never invent missing discussion or save automatically.",
     argumentsSchema: conversationDocumentArgumentsSchema,
   },
   execute_document_changes: {

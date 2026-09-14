@@ -15,7 +15,7 @@ import {
 } from "@/documents/product-document";
 
 export const CONVERSATION_DOCUMENT_COVERAGE =
-  "Source coverage: Created from the recent conversation context available to Canvas AI. Earlier or missing discussion may not be included. This is a generated document, not a verbatim transcript.";
+  "Source coverage: Generated from the conversation source supplied to Canvas AI. This is a synthesis, not a verbatim transcript. Provider captions may contain recognition errors.";
 
 export async function documentContentHash(document: Y.Doc, objectId: string) {
   const text = JSON.stringify(
@@ -69,9 +69,57 @@ export async function buildConversationDocumentUpdate(input: {
     actorId: input.actorId,
     commands: [{ type: "object.create", payload: { object } }],
   });
+  const body = conversationDocumentBody(args, input.conversation);
+  const next = new Y.Doc();
+  try {
+    Y.applyUpdate(next, Y.encodeStateAsUpdate(input.document));
+    Y.applyUpdate(next, reviewStage.tentativeUpdate);
+    if (body.trim()) initializePlainTextDocument(next, objectId, body);
+    return {
+      commandId,
+      reviewStage,
+      contentHash: await documentContentHash(next, objectId),
+      objectId,
+      title: args.title,
+      affectedObjectIds: [objectId],
+      update: Y.encodeStateAsUpdate(next, Y.encodeStateVector(input.document)),
+    };
+  } finally {
+    next.destroy();
+  }
+}
+
+export function conversationDocumentBody(
+  args: { kind: string; text: string },
+  conversation?: string,
+) {
   let body = args.text;
   if (args.kind === "transcript") {
-    const parsed = JSON.parse(input.conversation ?? "{}");
+    const parsed = JSON.parse(conversation ?? "{}");
+    if (parsed.sessionTranscript) {
+      const source = parsed.sessionTranscript;
+      if (
+        typeof source.text !== "string" ||
+        !source.text.trim() ||
+        source.text.length > 100_000 ||
+        !Array.isArray(source.gaps)
+      )
+        throw new Error("No valid session transcript is available to save.");
+      if (
+        source.gaps.some(
+          (gap: unknown) =>
+            typeof gap !== "string" ||
+            /exceeded|could not be included/.test(gap),
+        )
+      )
+        throw new Error(
+          "The session transcript has missing text; it cannot be saved as a full transcript.",
+        );
+      return (
+        "Source: Captured wording from this voice session up to this request. Provider captions may contain recognition errors or AI words that were interrupted.\n\n" +
+        source.text
+      );
+    }
     if (!Array.isArray(parsed.fragments) || !parsed.fragments.length)
       throw new Error("No conversation wording is available to save.");
     const transcript = new LiveTranscript();
@@ -117,21 +165,5 @@ export async function buildConversationDocumentUpdate(input: {
       );
     body = `${CONVERSATION_DOCUMENT_COVERAGE}\n\n${body}`;
   }
-  const next = new Y.Doc();
-  try {
-    Y.applyUpdate(next, Y.encodeStateAsUpdate(input.document));
-    Y.applyUpdate(next, reviewStage.tentativeUpdate);
-    if (body.trim()) initializePlainTextDocument(next, objectId, body);
-    return {
-      commandId,
-      reviewStage,
-      contentHash: await documentContentHash(next, objectId),
-      objectId,
-      title: args.title,
-      affectedObjectIds: [objectId],
-      update: Y.encodeStateAsUpdate(next, Y.encodeStateVector(input.document)),
-    };
-  } finally {
-    next.destroy();
-  }
+  return body;
 }

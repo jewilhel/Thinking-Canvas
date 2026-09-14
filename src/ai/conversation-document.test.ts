@@ -4,6 +4,7 @@ import {
   buildConversationDocumentUpdate,
   CONVERSATION_DOCUMENT_COVERAGE,
   documentContentHash,
+  conversationDocumentBody,
 } from "./conversation-document";
 import {
   createProductCanvasDocument,
@@ -171,4 +172,33 @@ it("assembles streaming words into readable speaker turns in the saved document"
   expect(body).toContain("AI: Sure, I can.");
   expect(body).toContain("You: Thanks.");
   expect(body).not.toContain("You:  a document");
+});
+
+it("copies the entire session source verbatim instead of the recent command or model text", () => {
+  const text =
+    "You: Our app serves rural clinics.\nAI: " +
+    "A detailed discussion. ".repeat(2500) +
+    "\nYou: Save everything.";
+  const body = conversationDocumentBody(
+    { kind: "transcript", text: "An invented summary" },
+    JSON.stringify({
+      sessionTranscript: { text, gaps: [] },
+      fragments: [{ speaker: "user", text: "Save everything." }],
+    }),
+  );
+  expect(body.endsWith(text)).toBe(true);
+  expect(body).not.toContain("An invented summary");
+  expect(() =>
+    conversationDocumentBody(
+      { kind: "transcript", text: "" },
+      JSON.stringify({
+        sessionTranscript: {
+          text,
+          gaps: [
+            "Earlier conversation text exceeded the temporary memory limit.",
+          ],
+        },
+      }),
+    ),
+  ).toThrow("missing text");
 });

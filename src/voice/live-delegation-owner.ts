@@ -1,6 +1,9 @@
 import { z } from "zod";
+import { LiveTranscript } from "./live-transcript";
+import { availableTranscriptText } from "./conversation-transcript";
 import {
   defaultLiveCanvasRequest,
+  LIVE_CONVERSATION_MAX_CHARACTERS,
   type LiveCanvasRequest,
   type LiveCanvasResult,
   cancelsVoiceTask,
@@ -45,6 +48,7 @@ type Hooks = {
 };
 /** Volatile speech correlation only. No fragment is itself authority to execute. */
 export class LiveDelegationOwner {
+  private transcript = new LiveTranscript();
   private fragments: z.infer<typeof fragment>[] = [];
   private seen = new Set<string>();
   private pending = new Map<string, number>();
@@ -162,12 +166,14 @@ export class LiveDelegationOwner {
     await this.cancel();
     await this.task;
     this.fragments = [];
+    this.transcript = new LiveTranscript();
   }
   receive(value: unknown, now = Date.now()) {
     if (this.closed) return;
     const f = fragment.safeParse(value);
     if (f.success) {
       if (this.fragments.some((x) => x.event_id === f.data.event_id)) return;
+      this.transcript.append(f.data, "session", 0);
       this.fragments.push(f.data);
       this.fragments.sort((a, b) => a.start_ms - b.start_ms);
       this.fragments = this.fragments.slice(-100);
@@ -257,6 +263,10 @@ export class LiveDelegationOwner {
       );
       const context = () =>
         JSON.stringify({
+          sessionTranscript: {
+            text: availableTranscriptText(this.transcript.snapshot()),
+            gaps: this.transcript.snapshot().gaps,
+          },
           delegationOffsetMs: offset,
           previouslyHandledThroughMs: this.consumedThrough,
           fragments: fragments.map((x) => ({
@@ -274,20 +284,20 @@ export class LiveDelegationOwner {
       // Drop whole old fragments, never truncate the participant's latest request.
       let text = context();
       while (
-        text.length > 16000 &&
+        text.length > LIVE_CONVERSATION_MAX_CHARACTERS &&
         fragments.length &&
         fragments[0].end_ms <= this.consumedThrough
       ) {
         fragments.shift();
         text = context();
       }
-      if (text.length > 16000) {
+      if (text.length > LIVE_CONVERSATION_MAX_CHARACTERS) {
         this.hooks.diagnostic?.("context_limit", id);
         void Promise.resolve(
           this.hooks.append(
             "session.commentary.append",
             id,
-            "The canvas request exceeded the available context limit. No action was started; ask which part to handle first.",
+            "The session source exceeds the available context limit. No document or action was created. Explain this limit honestly; do not offer a partial source as a full transcript or complete summary.",
           ),
         ).catch(() => undefined);
         continue;

@@ -47,7 +47,7 @@ export class LiveTranscript {
     });
     this.fragments.sort((a, b) => a.start - b.start);
     let characters = this.fragments.reduce((n, f) => n + f.text.length, 0);
-    while (this.fragments.length > 2000 || characters > 100_000) {
+    while (this.fragments.length > 20_000 || characters > 100_000) {
       const removed = this.fragments.shift()!;
       characters -= removed.text.length;
       this.seen.delete(removed.id);

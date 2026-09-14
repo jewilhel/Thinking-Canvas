@@ -22,7 +22,7 @@ describe("bounded spoken canvas requests", () => {
     expect(() =>
       liveCanvasRequestSchema.parse({
         kind: "conversation",
-        text: "x".repeat(16001),
+        text: "x".repeat(90001),
       }),
     ).toThrow();
     expect(voiceConversationInstruction(text)).toContain(text);

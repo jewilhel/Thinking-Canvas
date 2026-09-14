@@ -4,8 +4,14 @@ import {
   validateCanvasNavigation,
   type CanvasNavigation,
 } from "./canvas-navigation";
-import { buildConversationDocumentUpdate } from "./conversation-document";
-import { voiceConversationInstruction } from "@/voice/live-delegation-contract";
+import {
+  buildConversationDocumentUpdate,
+  conversationDocumentBody,
+} from "./conversation-document";
+import {
+  LIVE_CONVERSATION_MAX_CHARACTERS,
+  voiceConversationInstruction,
+} from "@/voice/live-delegation-contract";
 import { prepareCanvasNarration } from "@/stories/narration-audio-service";
 
 import { z } from "zod";
@@ -219,7 +225,8 @@ export async function completeAiRun(
   if (
     voiceTask.error ||
     (options.voiceConversation !== undefined &&
-      (!voiceTask.data || options.voiceConversation.length > 16000)) ||
+      (!voiceTask.data ||
+        options.voiceConversation.length > LIVE_CONVERSATION_MAX_CHARACTERS)) ||
     (voiceTask.data &&
       (options.voiceTaskId !== voiceTask.data.id ||
         !options.gateway ||
@@ -713,6 +720,43 @@ export async function completeAiRun(
       });
     } catch {
       throw new AiProviderOutputError();
+    }
+    if (validatedTool.toolName === "create_conversation_document") {
+      const args = validatedTool.arguments as {
+        kind: string;
+        text: string;
+        destinationDocumentId?: string | null;
+      };
+      if (args.destinationDocumentId) {
+        if (!voiceTask.data || !options.voiceConversation)
+          throw new AiRunConflictError(
+            "Conversation documents require an active voice request.",
+          );
+        const body = conversationDocumentBody(args, options.voiceConversation);
+        const lines = body.split("\n");
+        const blocks = lines.length <= 250 ? lines : [body];
+        validatedTool = validateAiToolRequest({
+          authority: currentAuthority,
+          toolName: "stage_document_changes",
+          arguments: {
+            documentObjectId: args.destinationDocumentId,
+            summary: "Updated the requested conversation document.",
+            whatChanged:
+              "Replaced its body with the requested conversation content.",
+            why: "Explicitly requested during voice conversation.",
+            operations: [
+              {
+                kind: "replace_document",
+                blocks: blocks.map((text) => ({
+                  kind: "paragraph",
+                  text,
+                  format: "plain",
+                })),
+              },
+            ],
+          },
+        });
+      }
     }
     if (validatedTool.toolName === "navigate_canvas") {
       navigationTools.push(

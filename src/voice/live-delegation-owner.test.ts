@@ -465,3 +465,28 @@ it("does not present a technical failure as a clarification", async () => {
     "needs clarification",
   );
 });
+
+it("keeps the beginning of a long session independently of the recent command window", () => {
+  const { owner, hooks } = setup();
+  for (let i = 0; i < 3000; i++)
+    owner.receive(
+      speech(
+        i === 0 ? "Our app serves rural clinics. " : `word${i} `,
+        `long-${i}`,
+        i * 100,
+      ),
+      0,
+    );
+  owner.receive(speech("Save the full transcript.", "save", 300500), 0);
+  owner.receive({ ...delegated, offset_ms: 301000 }, 0);
+  owner.tick(2500);
+  expect(hooks.run).toHaveBeenCalledOnce();
+  const context = JSON.parse(hooks.run.mock.calls[0][2].text);
+  expect(context.fragments).toHaveLength(100);
+  expect(context.sessionTranscript.text).toContain(
+    "Our app serves rural clinics.",
+  );
+  expect(context.sessionTranscript.text).toContain("word2999");
+  expect(context.sessionTranscript.text).toContain("Save the full transcript.");
+  expect(context.sessionTranscript.gaps.join(" ")).not.toContain("exceeded");
+});
