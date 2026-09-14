@@ -1,0 +1,124 @@
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+import { connectLiveVoice } from "@/voice/live-webrtc";
+import { LiveVoice } from "./live-conversation";
+
+vi.mock("@/voice/live-webrtc", () => ({ connectLiveVoice: vi.fn() }));
+vi.mock("@/voice/use-voice-availability", () => ({
+  useVoiceAvailability: () => ({
+    availability: { enabled: true },
+    check: async () => ({ enabled: true }),
+    setAccessError: vi.fn(),
+  }),
+}));
+vi.mock("@/components/canvas/workspace-panel", () => ({
+  WorkspacePanel: ({ children }: { children: ReactNode }) => (
+    <section>{children}</section>
+  ),
+}));
+vi.mock("./voice-control-button", () => ({
+  VoiceControlButton: ({
+    active,
+    onAction,
+    onSettings,
+  }: {
+    active: boolean;
+    onAction: (button: HTMLButtonElement) => void;
+    onSettings: (button: HTMLButtonElement) => void;
+  }) => (
+    <>
+      <button onClick={(e) => onAction(e.currentTarget)}>
+        {active ? "Stop test voice" : "Start test voice"}
+      </button>
+      <button onClick={(e) => onSettings(e.currentTarget)}>
+        Test settings
+      </button>
+    </>
+  ),
+}));
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  vi.resetAllMocks();
+  vi.unstubAllGlobals();
+});
+
+it("defaults to the latest session, exports only the selected session, and ignores an old transport closure", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({})),
+  );
+  vi.mocked(connectLiveVoice).mockImplementation(async () => ({
+    id: crypto.randomUUID(),
+    expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    model: "gpt-live-1",
+    send: vi.fn(),
+    mute: vi.fn(),
+    close: vi.fn(),
+  }));
+  const save = vi.fn();
+  const controls = document.createElement("div");
+  document.body.append(controls);
+  const view = render(
+    <LiveVoice
+      canvasId="test"
+      userId="test"
+      controlTarget={controls}
+      canSaveTranscript
+      onSaveTranscript={save}
+    />,
+  );
+  const start = async () => {
+    fireEvent.click(screen.getByText("Start test voice"));
+    fireEvent.click(await screen.findByText("Allow microphone and start"));
+    await screen.findByText("Stop test voice");
+  };
+  const emit = (call: number, text: string) =>
+    act(() =>
+      vi.mocked(connectLiveVoice).mock.calls[call][2]({
+        type: "session.input_transcript.delta",
+        event_id: "repeated",
+        delta: text,
+        start_ms: 0,
+        end_ms: 100,
+      }),
+    );
+  await start();
+  emit(0, "First conversation only");
+  fireEvent.click(screen.getByText("Stop test voice"));
+  await start();
+  emit(1, "Second conversation only");
+  act(() => vi.mocked(connectLiveVoice).mock.calls[0][3]("closed"));
+  expect(screen.getByText("Stop test voice")).toBeTruthy();
+  expect(vi.mocked(connectLiveVoice).mock.calls[1][8]?.text).toContain(
+    "First conversation only",
+  );
+  fireEvent.click(screen.getByText("Test settings"));
+  fireEvent.click(screen.getByText("Save selected conversation"));
+  fireEvent.click(
+    screen.getByText("Save partial transcript as canvas document"),
+  );
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0]).toContain("Second conversation only");
+  expect(save.mock.calls[0][0]).not.toContain("First conversation only");
+  const picker = screen.getByLabelText(
+    "Transcript conversation",
+  ) as HTMLSelectElement;
+  fireEvent.change(picker, { target: { value: picker.options[1].value } });
+  fireEvent.click(screen.getByText("Save selected conversation"));
+  fireEvent.click(
+    screen.getByText("Save partial transcript as canvas document"),
+  );
+  expect(save.mock.calls[1][0]).toContain("First conversation only");
+  expect(save.mock.calls[1][0]).not.toContain("Second conversation only");
+  view.unmount();
+  controls.remove();
+});
