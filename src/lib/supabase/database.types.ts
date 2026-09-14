@@ -2272,6 +2272,27 @@ export type Database = {
           result_sequence: number
         }[]
       }
+      undo_voice_ai_change_set: {
+        Args: {
+          target_actor_id: string
+          target_change_set_id: string
+          target_conflicts?: Json
+          target_expected_sequence: number
+          target_idempotency_key: string
+          target_run_id: string
+          target_update_data: string
+        }
+        Returns: {
+          change_set_id: string
+          conflict_count: number
+          created: boolean
+          result_sequence: number
+        }[]
+      }
+      manage_voice_comment: {
+        Args: { target_run_id: string; target_call_key: string; target_command_id: string; target_action: string; target_comment_id: string | null; target_body: string }
+        Returns: string | null
+      }
       update_comment_body: {
         Args: { target_body: string; target_comment_id: string }
         Returns: string

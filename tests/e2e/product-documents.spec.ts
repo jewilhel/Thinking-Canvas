@@ -1,3 +1,4 @@
+import { setAiAuthorityFixture } from "./ai-authority-fixture";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
@@ -32,7 +33,7 @@ async function configurePrimaryAiForDocuments(page: Page) {
     .getByRole("button", { name: "Open comment history and AI settings" })
     .click();
   const panel = page.getByRole("dialog", { name: "Comments" });
-  await panel.getByLabel("AI authority").selectOption("edit_with_review");
+  await setAiAuthorityFixture(page, "edit_with_review");
   const enabled = panel.getByRole("checkbox", { name: "Enabled" });
   if (!(await enabled.isChecked())) await enabled.click();
   await panel.getByRole("button", { name: "Close Comments" }).click();

@@ -568,10 +568,10 @@ export function LiveVoice({
               Initiative and interruption preferences are conversational
               guidance, not API permissions. This version can answer canvas
               questions, leave requested comments, and edit canvas objects with
-              Edit with undo or Trusted Editor authority. Edit with undo adds an
-              Undo control in Comments. Trusted Editor can save requested
-              conversation summaries and design briefs. Full transcripts use
-              Save available transcript; spoken undo is not available yet.
+              your canvas permissions. Create or change objects, manage
+              comments, request documents, or say “undo that” to reverse your
+              last AI edit. Transcript saves include only available conversation
+              text.
             </p>
             <label className="block">
               Idle timeout (seconds)

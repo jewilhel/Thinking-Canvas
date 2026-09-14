@@ -38,21 +38,31 @@ describe("AI authority tool registry", () => {
       );
     }
   });
-  it("selects the existing voice edit path for current authority", () => {
+  it("provides full undoable voice editing without switching modes", () => {
+    const commentTools = ["create_contextual_comment", "manage_comment_thread"];
     for (const authority of ["comment_only", "propose_changes"] as const) {
-      expect(allowedVoiceAiToolNames(authority)).toEqual([
-        "create_contextual_comment",
-      ]);
+      expect(allowedVoiceAiToolNames(authority)).toEqual(commentTools);
     }
-    expect(allowedVoiceAiToolNames("edit_with_review")).toEqual([
-      "create_contextual_comment",
-      "stage_canvas_changes",
-    ]);
-    expect(allowedVoiceAiToolNames("trusted_editor")).toEqual([
-      "create_contextual_comment",
-      "execute_canvas_commands",
+    for (const authority of ["edit_with_review", "trusted_editor"] as const) {
+      expect(allowedVoiceAiToolNames(authority)).toEqual(
+        expect.arrayContaining([
+          ...commentTools,
+          "stage_canvas_changes",
+          "stage_document_changes",
+          "stage_new_shapes",
+          "stage_new_connectors",
+          "stage_new_annotations",
+          "stage_layout_changes",
+          "undo_last_ai_change",
+        ]),
+      );
+      expect(allowedVoiceAiToolNames(authority)).not.toContain(
+        "execute_canvas_commands",
+      );
+    }
+    expect(allowedVoiceAiToolNames("trusted_editor")).toContain(
       "create_conversation_document",
-    ]);
+    );
   });
   it("derives a cumulative fail-closed allowlist for every authority", () => {
     expect(allowedAiToolNames("comment_only")).toEqual([

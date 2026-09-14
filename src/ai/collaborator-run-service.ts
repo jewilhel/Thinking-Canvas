@@ -54,7 +54,6 @@ import {
   contextualCommentArgumentsSchema,
   documentChangesArgumentsSchema,
   executeArgumentsSchema,
-  conversationDocumentArgumentsSchema,
   proposalArgumentsSchema,
   reviewLayoutArgumentsSchema,
   reviewNewAnnotationsArgumentsSchema,
@@ -97,6 +96,7 @@ import {
 } from "@/documents/document-range";
 import { getAuthenticatedUser } from "@/lib/auth/session";
 import type { Json } from "@/lib/supabase/database.types";
+import { undoAiTransaction } from "@/ai/transaction-service";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 const runRequestSchema = z.strictObject({
@@ -534,9 +534,10 @@ export async function completeAiRun(
       : sourceDocumentTarget
         ? DOCUMENT_PROVIDER_ATTEMPT_LIMIT
         : AI_PROVIDER_ATTEMPT_LIMIT;
-  const reviewVisualChange = continuityResult
-    ? undefined
-    : gateway.reviewVisualChange?.bind(gateway);
+  const reviewVisualChange =
+    continuityResult || voiceTask.data
+      ? undefined
+      : gateway.reviewVisualChange?.bind(gateway);
   const gatewayInput = {
     invocation: {
       runId: run.id,
@@ -699,6 +700,107 @@ export async function completeAiRun(
     } catch {
       throw new AiProviderOutputError();
     }
+    if (validatedTool.toolName === "manage_comment_thread") {
+      if (!voiceTask.data || !options.beforeComplete)
+        throw new AiRunConflictError(
+          "Comment actions require a voice request.",
+        );
+      const args = validatedTool.arguments as {
+        action: string;
+        commentId: string | null;
+        body: string;
+      };
+      if (
+        args.action !== "create" &&
+        !threadDetails.some((thread) => thread.id === args.commentId)
+      )
+        throw new AiRunConflictError(
+          "The target comment was not in the current canvas context.",
+        );
+      await options.beforeComplete();
+      options.signal?.throwIfAborted();
+      const result = await supabase.rpc("manage_voice_comment", {
+        target_run_id: run.id,
+        target_call_key: toolCall.callKey,
+        target_command_id: await stableAiToolCommandId({
+          runId: run.id,
+          callKey: toolCall.callKey,
+        }),
+        target_action: args.action,
+        target_comment_id: args.commentId,
+        target_body: args.body,
+      });
+      if (result.error) throw new AiRunConflictError(result.error.message);
+      replySections.push(
+        {
+          create: "Created the canvas comment.",
+          reply: "Added your reply to the comment.",
+          resolve: "Resolved the comment.",
+          dismiss: "Dismissed the comment.",
+          reopen: "Reopened the comment.",
+          delete: "Deleted the comment and its thread.",
+        }[args.action] ?? "Updated the comment.",
+      );
+      continue;
+    }
+    if (validatedTool.toolName === "undo_last_ai_change") {
+      if (!voiceTask.data || !options.beforeComplete)
+        throw new AiRunConflictError(
+          "Voice undo requires an active voice request.",
+        );
+      const idempotencyKey = await stableAiToolCommandId({
+        runId: run.id,
+        callKey: toolCall.callKey,
+      });
+      const service = createServiceClient();
+      const retried = await service
+        .from("ai_change_sets")
+        .select("id")
+        .eq("canvas_id", run.canvas_id)
+        .eq("transaction_undone_by", run.requested_by)
+        .eq("transaction_undo_idempotency_key", idempotencyKey)
+        .maybeSingle();
+      if (retried.error)
+        throw new AiRunConflictError("The previous undo could not be checked.");
+      const latest = retried.data
+        ? retried
+        : await service
+            .from("ai_change_sets")
+            .select("id,ai_runs!inner(requested_by)")
+            .eq("canvas_id", run.canvas_id)
+            .eq("ai_runs.requested_by", run.requested_by)
+            .eq("status", "applied")
+            .is("transaction_undone_at", null)
+            .not("activation_sequence", "is", null)
+            .order("activation_sequence", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+      if (latest.error)
+        throw new AiRunConflictError(
+          "The latest AI change could not be loaded.",
+        );
+      if (!latest.data) {
+        replySections.push(
+          "There is no remaining undoable AI change from you on this canvas.",
+        );
+        continue;
+      }
+      const undo = await undoAiTransaction(
+        run.canvas_id,
+        { changeSetId: latest.data.id, idempotencyKey },
+        {
+          runId: run.id,
+          beforeCommit: options.beforeComplete,
+          signal: options.signal,
+        },
+      );
+      replySections.push(
+        undo.conflicts.length
+          ? "Undid the parts of the last AI change that could be safely reversed. Conflicting later edits were preserved."
+          : "Undid your last AI change. Unrelated later edits were preserved.",
+      );
+      continue;
+    }
     if (validatedTool.toolName === "execute_story_scene") {
       if (!sourceSceneTarget) {
         throw new AiRunConflictError(
@@ -759,20 +861,9 @@ export async function completeAiRun(
     }
     if (
       validatedTool.toolName === "execute_canvas_commands" ||
-      validatedTool.toolName === "execute_document_changes" ||
-      validatedTool.toolName === "create_conversation_document"
+      validatedTool.toolName === "execute_document_changes"
     ) {
       options.onStatus?.("applying");
-      const isConversationDocument =
-        validatedTool.toolName === "create_conversation_document";
-      if (
-        isConversationDocument &&
-        (!voiceTask.data || !options.voiceConversation)
-      ) {
-        throw new AiRunConflictError(
-          "Conversation documents require an active voice conversation request.",
-        );
-      }
       const canvasToolArguments =
         validatedTool.toolName === "execute_canvas_commands"
           ? executeArgumentsSchema.parse(validatedTool.arguments)
@@ -806,39 +897,30 @@ export async function completeAiRun(
         sequence = retryResult.data[0].sequence;
         created = false;
       } else {
-        const execution = isConversationDocument
-          ? await buildConversationDocumentUpdate({
+        const execution = canvasToolArguments
+          ? await buildTrustedCanvasUpdate({
               document: compacted.document,
               canvasId: run.canvas_id,
               actorId: run.requested_by,
               runId: run.id,
               callKey: toolCall.callKey,
-              arguments: validatedTool.arguments,
+              commands: canvasToolArguments.commands,
             })
-          : canvasToolArguments
-            ? await buildTrustedCanvasUpdate({
+          : (() => {
+              const edit = buildValidatedDocumentEdit({
                 document: compacted.document,
                 canvasId: run.canvas_id,
                 actorId: run.requested_by,
-                runId: run.id,
-                callKey: toolCall.callKey,
-                commands: canvasToolArguments.commands,
-              })
-            : (() => {
-                const edit = buildValidatedDocumentEdit({
-                  document: compacted.document,
-                  canvasId: run.canvas_id,
-                  actorId: run.requested_by,
-                  toolName: "execute_document_changes",
-                  arguments: documentToolArguments,
-                  range: aiDocumentRange,
-                });
-                return {
-                  commandId,
-                  update: edit.tentativeUpdate,
-                  affectedObjectIds: edit.affectedObjectIds,
-                };
-              })();
+                toolName: "execute_document_changes",
+                arguments: documentToolArguments,
+                range: aiDocumentRange,
+              });
+              return {
+                commandId,
+                update: edit.tentativeUpdate,
+                affectedObjectIds: edit.affectedObjectIds,
+              };
+            })();
         await options.beforeComplete?.();
         options.signal?.throwIfAborted();
         const toolResult = await service.rpc("execute_ai_canvas_commands", {
@@ -869,22 +951,18 @@ export async function completeAiRun(
       });
       trustedExecutionResults.push({
         callKey: toolCall.callKey,
-        commandTypes: isConversationDocument
-          ? ["document.create"]
-          : canvasToolArguments
-            ? canvasToolArguments.commands.map((command) => command.type)
-            : documentToolArguments!.operations.map(
-                (operation) => `document.${operation.kind}`,
-              ),
+        commandTypes: canvasToolArguments
+          ? canvasToolArguments.commands.map((command) => command.type)
+          : documentToolArguments!.operations.map(
+              (operation) => `document.${operation.kind}`,
+            ),
         affectedObjectIds,
         commandId,
         sequence,
         created,
       });
       replySections.push(
-        isConversationDocument
-          ? `Created “${conversationDocumentArgumentsSchema.parse(validatedTool.arguments).title}” as a new canvas document, based on available recent conversation. It is visible to canvas collaborators.`
-          : "The change is on the canvas. Reply with any further adjustments.",
+        "The change is on the canvas. Reply with any further adjustments.",
       );
       continue;
     }
@@ -986,6 +1064,8 @@ export async function completeAiRun(
         );
       }
       const service = createServiceClient();
+      await options.beforeComplete?.();
+      options.signal?.throwIfAborted();
       const toolResult = await service.rpc("stage_ai_canvas_changes", {
         target_run_id: run.id,
         target_requester_id: run.requested_by,
@@ -1040,6 +1120,8 @@ export async function completeAiRun(
             "The document edit contract could not be finalized.",
         );
       }
+      await options.beforeComplete?.();
+      options.signal?.throwIfAborted();
       const activationResult = await service.rpc("activate_ai_review_stage", {
         target_change_set_id: changeSetId,
         target_requester_id: run.requested_by,
@@ -1078,15 +1160,46 @@ export async function completeAiRun(
       validatedTool.toolName === "stage_layout_changes" ||
       validatedTool.toolName === "stage_new_shapes" ||
       validatedTool.toolName === "stage_new_connectors" ||
-      validatedTool.toolName === "stage_new_annotations"
+      validatedTool.toolName === "stage_new_annotations" ||
+      validatedTool.toolName === "create_conversation_document"
     ) {
       if (reviewStageToolResults.length > 0) {
         throw new AiRunConflictError(
           "One AI run may create only one reviewable change set.",
         );
       }
-      const toolArguments =
-        validatedTool.toolName === "stage_canvas_changes"
+      const conversationDocument =
+        validatedTool.toolName === "create_conversation_document"
+          ? await buildConversationDocumentUpdate({
+              document: compacted.document,
+              canvasId: run.canvas_id,
+              actorId: run.requested_by,
+              runId: run.id,
+              callKey: toolCall.callKey,
+              arguments: validatedTool.arguments,
+              conversation: options.voiceConversation,
+            })
+          : null;
+      if (
+        conversationDocument &&
+        (!voiceTask.data || !options.voiceConversation)
+      )
+        throw new AiRunConflictError(
+          "Document creation requires an active voice request.",
+        );
+      const toolArguments = conversationDocument
+        ? {
+            summary: `Created “${conversationDocument.title}”.`,
+            commands: conversationDocument.reviewStage.commands,
+            explanations: [
+              {
+                objectId: conversationDocument.objectId,
+                whatChanged: `Created “${conversationDocument.title}”.`,
+                why: "Requested during voice conversation.",
+              },
+            ],
+          }
+        : validatedTool.toolName === "stage_canvas_changes"
           ? reviewStageArgumentsSchema.parse(validatedTool.arguments)
           : validatedTool.toolName === "stage_layout_changes"
             ? reviewLayoutArgumentsSchema.parse(validatedTool.arguments)
@@ -1141,12 +1254,19 @@ export async function completeAiRun(
             : (newShapeStage?.commands ??
               newConnectorStage?.commands ??
               newAnnotationStage!.commands);
-      let reviewStage = validateCanvasReviewStage({
-        document: compacted.document,
-        canvasId: run.canvas_id,
-        actorId: run.requested_by,
-        commands,
-      });
+      let reviewStage =
+        conversationDocument?.reviewStage ??
+        validateCanvasReviewStage({
+          document: compacted.document,
+          canvasId: run.canvas_id,
+          actorId: run.requested_by,
+          commands,
+        });
+      if (conversationDocument)
+        reviewStage = {
+          ...reviewStage,
+          tentativeUpdate: conversationDocument.update,
+        };
       assertReviewChangesWithinScope({
         scope: reviewScope,
         changes: reviewStage.objectChanges,
@@ -1388,7 +1508,13 @@ export async function completeAiRun(
           ) as Json,
           target_scope_kind: reviewScope.kind,
           target_scope_object_ids: reviewScope.objectIds,
-          target_visual_feedback_metadata: visualFeedbackMetadata,
+          target_visual_feedback_metadata: conversationDocument
+            ? {
+                ...visualFeedbackMetadata,
+                documentCreationContentHash: conversationDocument.contentHash,
+                documentCreationObjectId: conversationDocument.objectId,
+              }
+            : visualFeedbackMetadata,
         },
       );
       if (finalizationResult.error || !finalizationResult.data?.[0]) {

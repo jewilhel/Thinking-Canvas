@@ -1,3 +1,4 @@
+import { setAiAuthorityFixture } from "./ai-authority-fixture";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
@@ -159,7 +160,7 @@ async function configurePrimaryAi(
     | "trusted_editor" = "comment_only",
 ) {
   const panel = await openCommentHistory(page);
-  await panel.getByLabel("AI authority").selectOption(authority);
+  await setAiAuthorityFixture(page, authority);
   const enabled = panel.getByRole("checkbox", { name: "Enabled" });
   if (!(await enabled.isChecked())) await enabled.click();
   await panel.getByRole("button", { name: "Close Comments" }).click();

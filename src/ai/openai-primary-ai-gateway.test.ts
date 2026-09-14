@@ -192,12 +192,7 @@ describe("OpenAiPrimaryAiGateway", () => {
       const schemas = JSON.parse(
         description.split("Exact schemas by tool name: ")[1]!,
       );
-      const schema =
-        schemas[
-          authority === "trusted_editor"
-            ? "execute_canvas_commands"
-            : "stage_canvas_changes"
-        ];
+      const schema = schemas.stage_canvas_changes;
       let referenceCount = 0;
       const checkReferences = (value: unknown): void => {
         if (!value || typeof value !== "object") return;

@@ -209,9 +209,9 @@ export const executeArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
 });
 export const conversationDocumentArgumentsSchema = z.strictObject({
-  kind: z.enum(["summary", "design_brief"]),
+  kind: z.enum(["summary", "design_brief", "document", "transcript"]),
   title: z.string().trim().min(1).max(200),
-  text: z.string().trim().min(1).max(12000),
+  text: z.string().trim().max(12000),
 });
 
 const documentTextFormatSchema = z.enum([
@@ -447,11 +447,36 @@ export const AI_TOOL_REGISTRY = {
       "Execute validated ordered product commands against current durable canvas state with idempotent persistence.",
     argumentsSchema: executeArgumentsSchema,
   },
+  manage_comment_thread: {
+    effect: "mutation" as const,
+    minimumAuthority: "comment_only" as const,
+    description:
+      "On explicit request: create an unanchored canvas comment, reply to an existing comment, resolve, dismiss, reopen, or permanently delete a comment thread. Use exact IDs from the current comment projection; clarify ambiguous targets. For object-anchored new comments use create_contextual_comment. Reply/create body must preserve the user's requested message; other actions use empty body. A delete removes the entire thread and is not undoable; clarify if intent is unclear. Never target the current invoking request thread.",
+    argumentsSchema: z.strictObject({
+      action: z.enum([
+        "create",
+        "reply",
+        "resolve",
+        "dismiss",
+        "reopen",
+        "delete",
+      ]),
+      commentId: z.uuid().nullable(),
+      body: z.string().max(12000),
+    }),
+  },
+  undo_last_ai_change: {
+    effect: "mutation" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Only when the participant asks to undo the last AI change: reverse the most recent applied undoable AI transaction they requested on this canvas. Preserve unrelated later edits. The server selects the transaction; do not use this to undo a specific older change.",
+    argumentsSchema: z.strictObject({}),
+  },
   create_conversation_document: {
     effect: "mutation" as const,
     minimumAuthority: "trusted_editor" as const,
     description:
-      "Only on an explicit request to save a conversation summary or design brief: create one new ordinary canvas document from available conversation context. Separate agreed decisions from open questions. Plain text with headings and paragraphs. Never use for a verbatim or full transcript, never invent missing discussion, and never save automatically. The server adds an available-context coverage notice and assigns identity and placement.",
+      "Create a new ordinary document, requested conversation summary, design brief, or available transcript only when explicitly requested. Use document for new blank or authored documents; summary/design_brief for conversation synthesis. For transcript pass empty text: the server copies available conversation wording without model rewriting and discloses limited coverage. Never invent missing discussion or save automatically.",
     argumentsSchema: conversationDocumentArgumentsSchema,
   },
   execute_document_changes: {
@@ -487,6 +512,8 @@ export function allowedAiToolNames(authority: AiAuthorityLevel) {
     (name) =>
       name !== "execute_story_scene" &&
       name !== "create_conversation_document" &&
+      name !== "undo_last_ai_change" &&
+      name !== "manage_comment_thread" &&
       isAiToolAllowedByAuthority(authority, name),
   );
 }
@@ -496,12 +523,20 @@ export function allowedVoiceAiToolNames(authority: AiAuthorityLevel) {
   const names = allowedAiToolNames(authority).filter(
     (name) =>
       name === "create_contextual_comment" ||
-      (authority === "edit_with_review"
-        ? name === "stage_canvas_changes"
-        : name === "execute_canvas_commands"),
+      [
+        "stage_canvas_changes",
+        "stage_document_changes",
+        "stage_layout_changes",
+        "stage_new_shapes",
+        "stage_new_connectors",
+        "stage_new_annotations",
+      ].includes(name),
   );
+  names.push("manage_comment_thread");
   if (authority === "trusted_editor")
     names.push("create_conversation_document");
+  if (authority === "trusted_editor" || authority === "edit_with_review")
+    names.push("undo_last_ai_change");
   return names;
 }
 

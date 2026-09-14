@@ -152,7 +152,7 @@ async function enableTrustedPrimaryAi(page: Page) {
     .getByRole("button", { name: "Open comment history and AI settings" })
     .click();
   const panel = page.getByRole("dialog", { name: "Comments" });
-  await panel.getByLabel("AI authority").selectOption("trusted_editor");
+  await expect(panel.getByLabel("AI authority")).toHaveCount(0);
   const enabled = panel.getByRole("checkbox", { name: "Enabled" });
   if (!(await enabled.isChecked())) await enabled.click();
   await panel.getByRole("button", { name: "Close Comments" }).click();

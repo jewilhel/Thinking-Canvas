@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildConversationDocumentUpdate,
   CONVERSATION_DOCUMENT_COVERAGE,
+  documentContentHash,
 } from "./conversation-document";
 import {
   createProductCanvasDocument,
@@ -10,6 +11,7 @@ import {
   listCanvasObjectsV2,
 } from "@/canvas/canvas-document";
 import { getProductDocumentContentRoot } from "@/documents/product-document";
+import { buildUndoAiChangeSetUpdate } from "@/ai/review-state";
 import { executeProductCanvasCommand } from "@/domain/canvas-command";
 const canvasId = "20000000-0000-4000-8000-000000000001";
 const actorId = "10000000-0000-4000-8000-000000000001";
@@ -81,6 +83,47 @@ describe("requested conversation document", () => {
         payload: { objectId: result.objectId },
       });
       expect(readCanvasObjectV2(reloaded, result.objectId)).toBeUndefined();
+    },
+  );
+  it.each(["document", "transcript"])(
+    "creates undoable %s with server-owned content",
+    async (kind) => {
+      const document = createProductCanvasDocument(canvasId);
+      const result = await buildConversationDocumentUpdate({
+        document,
+        canvasId,
+        actorId,
+        runId,
+        callKey: kind,
+        arguments: {
+          kind,
+          title: "Requested document",
+          text: kind === "transcript" ? "Invented words" : "",
+        },
+        conversation: JSON.stringify({
+          fragments: [{ speaker: "user", text: "We agreed to use green." }],
+        }),
+      });
+      Y.applyUpdate(document, result.update);
+      expect(await documentContentHash(document, result.objectId)).toBe(
+        result.contentHash,
+      );
+      const body = JSON.stringify(
+        getProductDocumentContentRoot(document, result.objectId).toJSON(),
+      );
+      if (kind === "transcript") {
+        expect(body).toContain("We agreed to use green.");
+        expect(body).not.toContain("Invented words");
+        expect(body).toContain("not a complete session");
+      }
+      const undo = buildUndoAiChangeSetUpdate({
+        document,
+        objectChanges: result.reviewStage.objectChanges.map(
+          (change, index) => ({ ...change, id: `change-${index}` }),
+        ),
+      });
+      Y.applyUpdate(document, undo.update);
+      expect(readCanvasObjectV2(document, result.objectId)).toBeUndefined();
     },
   );
   it("rejects transcript masquerading as generated content", async () => {

@@ -1809,7 +1809,7 @@ export function CanvasComments({
                       onChange={(event) =>
                         void setAiSettings(
                           event.target.checked,
-                          collaboration.aiAccess.configuredAuthority,
+                          "trusted_editor",
                         )
                       }
                     />
@@ -1821,29 +1821,10 @@ export function CanvasComments({
                   </span>
                 )}
               </div>
-              {collaboration.aiAccess.canManage ? (
-                <label className="mt-3 block text-xs font-medium text-zinc-600">
-                  Authority
-                  <select
-                    aria-label="AI authority"
-                    value={collaboration.aiAccess.configuredAuthority}
-                    disabled={pending}
-                    className="mt-1 h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-800"
-                    onChange={(event) =>
-                      void setAiSettings(
-                        collaboration.aiAccess.enabled,
-                        event.target
-                          .value as typeof collaboration.aiAccess.configuredAuthority,
-                      )
-                    }
-                  >
-                    <option value="comment_only">Comment only</option>
-                    <option value="propose_changes">Propose changes</option>
-                    <option value="edit_with_review">Edit with undo</option>
-                    <option value="trusted_editor">Trusted editor</option>
-                  </select>
-                </label>
-              ) : null}
+              <p className="mt-3 text-xs text-zinc-500">
+                AI can create and edit canvas content. Ask it to undo its last
+                change.
+              </p>
             </div>
           ) : null}
           {error ? (

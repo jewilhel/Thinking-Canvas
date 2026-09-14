@@ -588,3 +588,5 @@ These boxes are checked when the release is verified to exclude or avoid implyin
 - [perfect-freehand](https://github.com/steveruizok/perfect-freehand)
 - [Phosphor Icons](https://phosphoricons.com/)
 - [Phosphor Core catalog and raw SVG assets](https://github.com/phosphor-icons/core)
+
+2026-09-14 approved Milestone 10 usability revision to FR-022 / PD-006 / PD-012: the owner requested full everyday AI editing without selecting authority modes. Existing preview settings are normalized to Trusted Editor and the authority picker is removed from the normal UI; AI enablement and membership roles remain enforced. Voice uses immediate undoable transactions for creation and edits, and supports asking to undo the last AI change without opening Comments. Requested comment creation, replies and lifecycle actions are included. This supersedes the visible multi-mode requirement for the current product iteration, not the historical verification of its enforcement. Implementation and pending acceptance remain in the Milestone 10 plan.
