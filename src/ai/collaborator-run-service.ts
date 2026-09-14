@@ -1,4 +1,8 @@
 import "server-only";
+import {
+  validateCanvasNavigation,
+  type CanvasNavigation,
+} from "./canvas-navigation";
 import { buildConversationDocumentUpdate } from "./conversation-document";
 import { voiceConversationInstruction } from "@/voice/live-delegation-contract";
 import { prepareCanvasNarration } from "@/stories/narration-audio-service";
@@ -695,6 +699,7 @@ export async function completeAiRun(
     sceneId: string;
     created: boolean;
   }> = [];
+  const navigationTools: CanvasNavigation[] = [];
   const replySections = [plainLanguageAiReply(gatewayResult.reply.body)];
   for (const toolCall of toolCalls) {
     let validatedTool: ReturnType<typeof validateAiToolRequest>;
@@ -706,6 +711,12 @@ export async function completeAiRun(
       });
     } catch {
       throw new AiProviderOutputError();
+    }
+    if (validatedTool.toolName === "navigate_canvas") {
+      navigationTools.push(
+        validateCanvasNavigation(validatedTool.arguments, sourceObjects),
+      );
+      continue;
     }
     if (validatedTool.toolName === "ask_voice_clarification") {
       if (!voiceTask.data)
@@ -1710,6 +1721,7 @@ export async function completeAiRun(
       reviewStageTools: reviewStageToolResults,
       trustedExecutionTools: trustedExecutionResults,
       storyTools: storyToolResults,
+      navigationTools,
       objectDetailPageSize: objectInspection.items.length,
       objectDetailNextCursor: objectInspection.nextCursor,
       threadDetailPageSize: threadInspection.items.length,

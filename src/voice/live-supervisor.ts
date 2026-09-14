@@ -155,7 +155,7 @@ export async function superviseLiveVoice(
         event_id: probeId,
         delegation_id: null,
         content:
-          "The application supervisor is connected. Canvas questions and explicit contextual comment requests are available through client delegation. Requested canvas object edits are available under current Edit with undo or Trusted Editor authority.",
+          "The application supervisor is connected. Canvas AI is available through client delegation for canvas questions, requested object and document creation and editing, selection, opening and closing documents, comments, and undo. Use the participant’s natural wording.",
       }),
     ),
   );

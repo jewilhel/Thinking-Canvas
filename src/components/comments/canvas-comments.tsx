@@ -1,4 +1,8 @@
 "use client";
+import {
+  navigationForParticipant,
+  type CanvasNavigation,
+} from "@/ai/canvas-navigation";
 
 import {
   ArrowUp,
@@ -78,6 +82,7 @@ type Props = {
   onSelectTargets: (targetIds: string[]) => void;
   onAiTransactionApplied: (changeSetId: string) => void;
   onStoryChanged?: () => void;
+  onAiNavigation?: (actions: CanvasNavigation[]) => boolean;
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
   overlayVisible: boolean;
   onOverlayVisibilityChange: (visible: boolean) => void;
@@ -1212,6 +1217,7 @@ export function CanvasComments({
   onSelectTargets,
   onAiTransactionApplied,
   onStoryChanged,
+  onAiNavigation,
   onUndoAiTransaction,
   overlayVisible,
   onOverlayVisibilityChange,
@@ -1235,6 +1241,22 @@ export function CanvasComments({
     onAiTransactionApplied,
     onStoryChanged,
   );
+  const navigationSince = useRef(Date.now());
+  const handledNavigation = useRef(new Set<string>());
+  useEffect(() => {
+    for (const run of threads
+      .flatMap((thread) => thread.aiRuns)
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))) {
+      if (handledNavigation.current.has(run.id)) continue;
+      const actions = navigationForParticipant(
+        run,
+        userId,
+        navigationSince.current,
+      );
+      if (actions.length && onAiNavigation?.(actions))
+        handledNavigation.current.add(run.id);
+    }
+  }, [threads, userId, onAiNavigation]);
   const selectedThreadId =
     workspace.active === "thread" ? workspace.threadId : null;
   const setSelectedThreadId = (id: string | null) =>

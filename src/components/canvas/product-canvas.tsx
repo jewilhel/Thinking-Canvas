@@ -1166,7 +1166,8 @@ function ProductCanvasWorkspace({
   }
 
   function openDocument(object: Extract<CanvasObjectV2, { type: "document" }>) {
-    previousDocumentViewportRef.current = viewport;
+    if (!previousDocumentViewportRef.current)
+      previousDocumentViewportRef.current = viewport;
     const focus = focusedDocumentViewport({
       canvasWidth: size.width,
       canvasHeight: size.height,
@@ -5266,6 +5267,37 @@ function ProductCanvasWorkspace({
         onPlacementModeChange={setCommentPlacementActive}
         onAiTransactionApplied={registerAiTransaction}
         onStoryChanged={reloadStoryAfterAi}
+        onAiNavigation={(actions) => {
+          const currentObjects = listCanvasObjectsV2(document);
+          if (
+            actions.some((action) =>
+              action.objectIds.some(
+                (id) => !currentObjects.some((object) => object.id === id),
+              ),
+            )
+          )
+            return false;
+          for (const action of actions) {
+            if (action.action === "open_document") {
+              const target = currentObjects.find(
+                (object) => object.id === action.objectIds[0],
+              );
+              if (target?.type === "document") openDocument(target);
+            } else if (action.action === "close_document") {
+              if (
+                !action.objectIds.length ||
+                action.objectIds.includes(focusedDocumentId ?? "")
+              )
+                exitDocument();
+            } else {
+              setSelectedIds(action.objectIds);
+              setTool("select");
+              setContextPanel(null);
+              setObjectContextMenu(null);
+            }
+          }
+          return true;
+        }}
         onUndoAiTransaction={undoAiTransaction}
         overlayVisible={temporaryOverlayVisible}
         onOverlayVisibilityChange={changeTemporaryOverlayVisibility}

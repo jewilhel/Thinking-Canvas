@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canvasNavigationSchema } from "./canvas-navigation";
 
 import type { AiAuthorityLevel } from "@/ai/collaborator-contract";
 import { deterministicLayoutRequestSchema } from "@/ai/deterministic-layout";
@@ -446,6 +447,13 @@ export const AI_TOOL_REGISTRY = {
     description:
       "Execute validated ordered product commands against current durable canvas state with idempotent persistence.",
     argumentsSchema: executeArgumentsSchema,
+  },
+  navigate_canvas: {
+    effect: "comment" as const,
+    minimumAuthority: "comment_only" as const,
+    description:
+      "Select one or more existing canvas objects, open one named document to inspect/edit it, or close a named/current document and return to the canvas. Navigation changes only the requesting participant's view. Use projected object IDs, never names as IDs. select with an empty list clears selection; close_document with an empty list closes the current document. Clarify ambiguous names. This does not change document content.",
+    argumentsSchema: canvasNavigationSchema,
   },
   ask_voice_clarification: {
     effect: "comment" as const,

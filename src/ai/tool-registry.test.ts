@@ -73,6 +73,7 @@ describe("AI authority tool registry", () => {
       "inspect_canvas_objects",
       "inspect_comment_threads",
       "create_contextual_comment",
+      "navigate_canvas",
     ]);
     expect(allowedAiToolNames("propose_changes")).toContain(
       "propose_canvas_commands",
@@ -108,6 +109,7 @@ describe("AI authority tool registry", () => {
       "stage_new_connectors",
       "stage_new_annotations",
       "execute_canvas_commands",
+      "navigate_canvas",
       "execute_document_changes",
     ]);
   });
