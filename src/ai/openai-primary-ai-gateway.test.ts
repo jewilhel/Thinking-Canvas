@@ -604,3 +604,27 @@ it("offers no product action in the read-only delegation schema", () => {
   expect(tool.parameters.properties.toolCalls.maxItems).toBe(0);
   expect(JSON.stringify(tool)).not.toContain('"enum":[]');
 });
+
+it("exposes body edits without pretending a canvas conversation has a document text range", () => {
+  const tools = allowedVoiceAiToolNames("trusted_editor");
+  const bodyTool = buildSubmitTurnTool(tools, false);
+  const properties = bodyTool.parameters.properties.toolCalls.items.properties;
+  if (!("argumentsJson" in properties))
+    throw new Error("Expected canvas schema");
+  const schemas = JSON.parse(
+    properties.argumentsJson.description.split(
+      "Exact schemas by tool name: ",
+    )[1]!,
+  );
+  expect(JSON.stringify(schemas.stage_document_changes)).not.toContain(
+    "replace_selection",
+  );
+  expect(JSON.stringify(schemas.stage_document_changes)).toContain(
+    "replace_document",
+  );
+  expect(JSON.stringify(schemas.stage_document_changes)).toContain(
+    "append_block",
+  );
+  const rangeTool = buildSubmitTurnTool(["execute_document_changes"], true);
+  expect(JSON.stringify(rangeTool.parameters)).toContain("replace_selection");
+});
