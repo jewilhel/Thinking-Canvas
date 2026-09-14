@@ -1241,9 +1241,10 @@ export function CanvasComments({
     onAiTransactionApplied,
     onStoryChanged,
   );
-  const navigationSince = useRef(Date.now());
+  const navigationSince = useRef<number | null>(null);
   const handledNavigation = useRef(new Set<string>());
   useEffect(() => {
+    navigationSince.current ??= Date.now();
     for (const run of threads
       .flatMap((thread) => thread.aiRuns)
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))) {
