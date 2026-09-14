@@ -5277,19 +5277,41 @@ function ProductCanvasWorkspace({
             )
           )
             return false;
+          let navigationDocumentId = focusedDocumentId;
           for (const action of actions) {
             if (action.action === "open_document") {
               const target = currentObjects.find(
                 (object) => object.id === action.objectIds[0],
               );
-              if (target?.type === "document") openDocument(target);
+              if (target?.type === "document") {
+                openDocument(target);
+                navigationDocumentId = target.id;
+              }
             } else if (action.action === "close_document") {
               if (
                 !action.objectIds.length ||
-                action.objectIds.includes(focusedDocumentId ?? "")
-              )
+                action.objectIds.includes(navigationDocumentId ?? "")
+              ) {
                 exitDocument();
+                navigationDocumentId = null;
+              }
             } else {
+              if (
+                navigationDocumentId &&
+                action.objectIds.some((id) => {
+                  const target = currentObjects.find(
+                    (object) => object.id === id,
+                  );
+                  return (
+                    target?.id !== navigationDocumentId &&
+                    (target?.type === "document" ||
+                      target?.documentOwnerId !== navigationDocumentId)
+                  );
+                })
+              ) {
+                exitDocument();
+                navigationDocumentId = null;
+              }
               setSelectedIds(action.objectIds);
               setTool("select");
               setContextPanel(null);
