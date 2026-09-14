@@ -143,17 +143,6 @@ export class LiveDelegationOwner {
       this.fragments = this.fragments.slice(-100);
       if (f.data.type !== "session.input_transcript.delta") return;
       this.lastInputAt = now;
-      if (
-        this.active &&
-        !this.active.controller.signal.aborted &&
-        f.data.end_ms > this.consumedThrough
-      ) {
-        // A later utterance can change the pending request. Stop the old write
-        // path; a queued/new provider delegation will receive the latest context.
-        this.hooks.diagnostic?.("superseded", this.active.id);
-        this.active.controller.abort();
-        void this.hooks.cancel().catch(() => undefined);
-      }
       const recent = this.fragments
         .filter(
           (x) =>
@@ -164,6 +153,17 @@ export class LiveDelegationOwner {
         .map((x) => x.delta)
         .join("");
       if (cancelsVoiceTask(recent)) void this.cancel();
+      else if (
+        this.active &&
+        !this.active.controller.signal.aborted &&
+        /^\s*(?:(?:no|actually)[,\s]+(?:use|make|change|wait|i meant|don\x27t|do not)\b|instead\b|i meant\b|change that to\b)/i.test(
+          recent,
+        )
+      ) {
+        this.hooks.diagnostic?.("superseded", this.active.id);
+        this.active.controller.abort();
+        void this.hooks.cancel().catch(() => undefined);
+      }
       return;
     }
     const d = delegation.safeParse(value);

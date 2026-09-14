@@ -3,6 +3,8 @@ import type * as Y from "yjs";
 
 import {
   canvasObjectV2Schema,
+  isIntrinsicShapeLabel,
+  isShapeLabelStylePath,
   deleteCanvasGroupV2,
   deleteCanvasObjectV2,
   listCanvasGroupsV2,
@@ -2403,8 +2405,21 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           "Freeform annotations require a visible stroke thickness.",
         );
       }
+      const label =
+        object.type === "shape"
+          ? listCanvasObjectsV2(document).find(
+              (candidate) =>
+                isIntrinsicShapeLabel(candidate) &&
+                candidate.parentId === object.id,
+            )
+          : undefined;
       for (const [field, value] of Object.entries(command.payload.style)) {
-        setCanvasObjectField(document, object.id, ["style", field], value);
+        const targetId =
+          label && isShapeLabelStylePath(["style", field])
+            ? label.id
+            : object.id;
+        setCanvasObjectField(document, targetId, ["style", field], value);
+        affectedObjectIds.add(targetId);
       }
     } else if (command.type === "annotation.promote") {
       if (object.type !== "annotation") {

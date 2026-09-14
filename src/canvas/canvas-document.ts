@@ -361,6 +361,23 @@ export function isIntrinsicShapeLabel(
   return object.type === "text" && object.childRole === "shape-label";
 }
 
+export const SHAPE_LABEL_STYLE_FIELDS = [
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "textAlign",
+  "listStyle",
+  "textColor",
+  "linkUrl",
+] as const;
+export function isShapeLabelStylePath(path: string[]) {
+  return (
+    path.length === 2 &&
+    path[0] === "style" &&
+    SHAPE_LABEL_STYLE_FIELDS.some((field) => field === path[1])
+  );
+}
+
 export function projectCanvasCompositions(objects: CanvasObjectV2[]) {
   const labelsByParentId = new Map(
     objects.flatMap((object) =>
@@ -369,11 +386,27 @@ export function projectCanvasCompositions(objects: CanvasObjectV2[]) {
         : [],
     ),
   );
-  return objects.flatMap((object) => {
+  return objects.flatMap<CanvasObjectV2>((object) => {
     if (isIntrinsicShapeLabel(object)) return [];
-    if (object.type !== "shape" || object.text) return [object];
+    if (object.type !== "shape") return [object];
     const label = labelsByParentId.get(object.id);
-    return label ? [{ ...object, text: label.text }] : [object];
+    return label
+      ? [
+          {
+            ...object,
+            text: label.text,
+            style: {
+              ...object.style,
+              ...Object.fromEntries(
+                SHAPE_LABEL_STYLE_FIELDS.map((field) => [
+                  field,
+                  label.style[field],
+                ]),
+              ),
+            },
+          },
+        ]
+      : [object];
   });
 }
 

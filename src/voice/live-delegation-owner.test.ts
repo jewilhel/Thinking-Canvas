@@ -112,6 +112,26 @@ describe("bounded voice delegation", () => {
       { id: "task1", text: "Verified canvas description" },
     ]);
   });
+  it.each([
+    "Okay",
+    "Yes, go ahead",
+    "Are you still working?",
+    "Thanks",
+    "No problem",
+    "Actually, thanks",
+  ])(
+    "keeps pending canvas work alive during conversational speech: %s",
+    (text) => {
+      const { owner, hooks } = setup();
+      hooks.run.mockImplementation(() => new Promise(() => {}));
+      owner.receive(speech("Tell me what is on the canvas."), 0);
+      owner.receive(delegated, 0);
+      owner.tick(2000);
+      owner.receive(speech(text, "followup", 10000), 2500);
+      expect(hooks.run.mock.calls[0][1].aborted).toBe(false);
+      expect(hooks.cancel).not.toHaveBeenCalled();
+    },
+  );
   it("aborts pending execution when later speech changes its context", async () => {
     const { owner, hooks } = setup();
     hooks.run.mockImplementation(() => new Promise(() => {}));
