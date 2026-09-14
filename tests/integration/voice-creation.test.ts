@@ -265,87 +265,103 @@ it
                         objectExplanations: [],
                       },
                     }
-                  : organization
+                  : kind === "typed-organization"
                     ? {
                         callKey: "group",
-                        toolName: "organize_canvas",
+                        toolName: "execute_canvas_commands",
                         arguments: {
-                          action: "group",
-                          objectIds: [existingId, secondId],
-                          parentId: null,
-                          summary: "Group the pair",
+                          commands: [
+                            {
+                              type: "selection.group",
+                              payload: {
+                                objectIds: [existingId, secondId],
+                                groupId: crypto.randomUUID(),
+                              },
+                            },
+                          ],
                         },
                       }
-                    : kind === "clarification"
+                    : organization
                       ? {
-                          callKey: "clarify",
-                          toolName: "ask_voice_clarification",
+                          callKey: "group",
+                          toolName: "organize_canvas",
                           arguments: {
-                            question: "Which shape should I change?",
+                            action: "group",
+                            objectIds: [existingId, secondId],
+                            parentId: null,
+                            summary: "Group the pair",
                           },
                         }
-                      : kind === "direct-edit"
+                      : kind === "clarification"
                         ? {
-                            callKey: "direct-edit",
-                            toolName: "execute_canvas_commands",
+                            callKey: "clarify",
+                            toolName: "ask_voice_clarification",
                             arguments: {
-                              commands: [
-                                {
-                                  type: "object.style",
-                                  payload: {
-                                    objectId: existingId,
-                                    style: {
-                                      fill: "#fefefe",
-                                      textColor: "#ffffff",
-                                    },
-                                  },
-                                },
-                              ],
+                              question: "Which shape should I change?",
                             },
                           }
-                        : kind === "transcript"
+                        : kind === "direct-edit"
                           ? {
-                              callKey: "create-doc",
-                              toolName: "create_conversation_document",
+                              callKey: "direct-edit",
+                              toolName: "execute_canvas_commands",
                               arguments: {
-                                kind: "transcript",
-                                title: "Test transcript",
-                                text: "",
+                                commands: [
+                                  {
+                                    type: "object.style",
+                                    payload: {
+                                      objectId: existingId,
+                                      style: {
+                                        fill: "#fefefe",
+                                        textColor: "#ffffff",
+                                      },
+                                    },
+                                  },
+                                ],
                               },
                             }
-                          : {
-                              callKey: "create-shape",
-                              toolName: "stage_new_shapes",
-                              arguments: {
-                                summary: "Create a labeled sticky.",
-                                shapes: [
-                                  {
-                                    key: "sticky",
-                                    shape: "rectangle",
-                                    text: "Voice creation test",
-                                    x: 0,
-                                    y: 0,
-                                    width: 100,
-                                    height: 24,
-                                    fill: "#ffffff",
-                                    outline: "#18181b",
-                                    outlineWidth: 1,
-                                    fontFamily: "Inter",
-                                    fontSize: 16,
-                                    fontWeight: "normal",
-                                    textAlign: "center",
-                                    textColor: "#ffffff",
-                                  },
-                                ],
-                                explanations: [
-                                  {
-                                    key: "sticky",
-                                    whatChanged: "Created a labeled sticky.",
-                                    why: "Requested by the user.",
-                                  },
-                                ],
+                          : kind === "transcript"
+                            ? {
+                                callKey: "create-doc",
+                                toolName: "create_conversation_document",
+                                arguments: {
+                                  kind: "transcript",
+                                  title: "Test transcript",
+                                  text: "",
+                                },
+                              }
+                            : {
+                                callKey: "create-shape",
+                                toolName: "stage_new_shapes",
+                                arguments: {
+                                  summary: "Create a labeled sticky.",
+                                  shapes: [
+                                    {
+                                      key: "sticky",
+                                      shape: "rectangle",
+                                      text: "Voice creation test",
+                                      x: 0,
+                                      y: 0,
+                                      width: 100,
+                                      height: 24,
+                                      fill: "#ffffff",
+                                      outline: "#18181b",
+                                      outlineWidth: 1,
+                                      fontFamily: "Inter",
+                                      fontSize: 16,
+                                      fontWeight: "normal",
+                                      textAlign: "center",
+                                      textColor: "#ffffff",
+                                    },
+                                  ],
+                                  explanations: [
+                                    {
+                                      key: "sticky",
+                                      whatChanged: "Created a labeled sticky.",
+                                      why: "Requested by the user.",
+                                    },
+                                  ],
+                                },
                               },
-                            },
                 ...(kind === "clarification"
                   ? [
                       {

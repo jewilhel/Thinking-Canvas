@@ -755,9 +755,25 @@ export async function completeAiRun(
         },
       });
     }
+    const directOrganization =
+      validatedTool.toolName === "execute_canvas_commands" &&
+      executeArgumentsSchema
+        .parse(validatedTool.arguments)
+        .commands.some(
+          (command) =>
+            command.type.startsWith("group.") ||
+            [
+              "selection.group",
+              "selection.ungroup",
+              "object.nest",
+              "object.detach",
+              "icon.nest",
+              "icon.detach",
+            ].includes(command.type),
+        );
     // Share the ordinary action vocabulary while preserving voice-accessible undo.
     if (
-      voiceTask.data &&
+      (voiceTask.data || directOrganization) &&
       validatedTool.toolName === "execute_canvas_commands"
     ) {
       const args = executeArgumentsSchema.parse(validatedTool.arguments);
@@ -776,7 +792,7 @@ export async function completeAiRun(
           explanations: stage.objectChanges.map((change) => ({
             objectId: change.objectId,
             whatChanged: "Updated this object as requested.",
-            why: "Requested in the live conversation.",
+            why: "Requested by the participant.",
           })),
         },
       });
@@ -1414,7 +1430,9 @@ export async function completeAiRun(
       };
       // Requested relationships use canonical constraints, not visual redesign.
       const advisoryVisuals =
-        !!voiceTask.data || toolCall.toolName === "organize_canvas";
+        !!voiceTask.data ||
+        directOrganization ||
+        toolCall.toolName === "organize_canvas";
       const visualIssues = advisoryVisuals
         ? deterministicVisualIssueKeys({
             objects: visualCheck.afterObjects,
