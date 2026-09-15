@@ -509,3 +509,30 @@ it("keeps the beginning of a long session independently of the recent command wi
   expect(context.sessionTranscript.text).toContain("Save the full transcript.");
   expect(context.sessionTranscript.gaps.join(" ")).not.toContain("exceeded");
 });
+
+it("arms an ending only after confirmed report delivery and cancels stale intent", async () => {
+  for (const resumed of [false, true]) {
+    const { hooks } = setup();
+    const endSession = vi.fn();
+    const owner = new LiveDelegationOwner({ ...hooks, endSession });
+    hooks.run.mockResolvedValue({
+      text: "Transcript saved.",
+      endSession: true,
+    });
+    owner.receive(speech("Save our transcript and let's call it a day"), 0);
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    await vi.waitFor(() => expect(owner.busy).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (resumed)
+      owner.receive(speech("Actually I have another idea", "s2", 6000), 2500);
+    expect(endSession).not.toHaveBeenCalled();
+    owner.tick(4000);
+    await vi.waitFor(() => expect(hooks.append).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(endSession).toHaveBeenCalledTimes(resumed ? 0 : 1);
+    expect(hooks.append.mock.calls.at(-1)?.[2]).toContain(
+      "one short final goodbye",
+    );
+  }
+});

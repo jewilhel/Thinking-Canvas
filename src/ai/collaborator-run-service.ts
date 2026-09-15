@@ -650,6 +650,7 @@ export async function completeAiRun(
     toolCalls.find((call) => call.toolName === "ask_voice_clarification");
   if (clarification) toolCalls = [clarification];
   let clarificationQuestion: string | null = null;
+  let endSession = false;
   const isNewObjectReview = toolCalls.some(
     (toolCall) =>
       toolCall.toolName === "stage_new_shapes" ||
@@ -762,6 +763,12 @@ export async function completeAiRun(
       navigationTools.push(
         validateCanvasNavigation(validatedTool.arguments, sourceObjects),
       );
+      continue;
+    }
+    if (validatedTool.toolName === "end_voice_session") {
+      if (!voiceTask.data)
+        throw new AiRunConflictError("Ending requires a voice request.");
+      endSession = true;
       continue;
     }
     if (validatedTool.toolName === "ask_voice_clarification") {
@@ -1833,6 +1840,7 @@ export async function completeAiRun(
       trustedExecutionTools: trustedExecutionResults,
       storyTools: storyToolResults,
       navigationTools,
+      endSession,
       objectDetailPageSize: objectInspection.items.length,
       objectDetailNextCursor: objectInspection.nextCursor,
       threadDetailPageSize: threadInspection.items.length,
@@ -1851,6 +1859,7 @@ export async function completeAiRun(
     changeSetId: reviewStageToolResults.at(-1)?.changeSetId ?? null,
     storyChanged: storyToolResults.length > 0,
     clarificationQuestion,
+    endSession,
   };
 }
 

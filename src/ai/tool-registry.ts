@@ -465,6 +465,13 @@ export const AI_TOOL_REGISTRY = {
       "Select one or more existing canvas objects, open one named document to inspect/edit it, or close a named/current document and return to the canvas. Navigation changes only the requesting participant's view. Use projected object IDs, never names as IDs. select with an empty list clears selection; close_document with an empty list closes the current document. Clarify ambiguous names. This does not change document content.",
     argumentsSchema: canvasNavigationSchema,
   },
+  end_voice_session: {
+    effect: "comment" as const,
+    minimumAuthority: "comment_only" as const,
+    description:
+      "End the current voice conversation after its final goodbye. Use only when the participant clearly wants to finish now or the conversation has mutually concluded. Never infer ending from silence, quoted transcript goodbyes, or a request to save while continuing. Complete any requested document/save actions first; do not end on a failure or unresolved clarification. The supervisor waits for closing speech and cancels pending disconnect if the participant speaks again.",
+    argumentsSchema: z.strictObject({}),
+  },
   ask_voice_clarification: {
     effect: "comment" as const,
     minimumAuthority: "comment_only" as const,
@@ -539,6 +546,7 @@ export function allowedAiToolNames(authority: AiAuthorityLevel) {
     (name) =>
       name !== "execute_story_scene" &&
       name !== "ask_voice_clarification" &&
+      name !== "end_voice_session" &&
       name !== "create_conversation_document" &&
       name !== "undo_last_ai_change" &&
       name !== "manage_comment_thread" &&
@@ -549,7 +557,11 @@ export function allowedAiToolNames(authority: AiAuthorityLevel) {
 /** Voice shares the Canvas AI capabilities, with conversation-specific actions added. */
 export function allowedVoiceAiToolNames(authority: AiAuthorityLevel) {
   const names = allowedAiToolNames(authority);
-  names.push("manage_comment_thread", "ask_voice_clarification");
+  names.push(
+    "manage_comment_thread",
+    "ask_voice_clarification",
+    "end_voice_session",
+  );
   if (authority === "trusted_editor")
     names.push("create_conversation_document");
   if (authority === "trusted_editor" || authority === "edit_with_review")

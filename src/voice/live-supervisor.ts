@@ -1,5 +1,6 @@
 import type { PreviousConversation } from "./previous-conversation";
 import OpenAI from "openai";
+import { ConversationEnd } from "./conversation-end";
 import { scheduleVoiceGoodbye } from "./voice-goodbye";
 import { retryVoiceCheck } from "./retry-voice-check";
 import { controlRequestIsCurrent } from "./live-delegation-contract";
@@ -63,7 +64,11 @@ export async function superviseLiveVoice(
     string,
     { resolve: () => void; reject: () => void }
   >();
+  const conversationEnd = new ConversationEnd(() =>
+    stop("conversation_finished"),
+  );
   const owner = new LiveDelegationOwner({
+    endSession: () => conversationEnd.request(),
     previousConversation: app.previousConversation,
     diagnostic: (stage, delegationId) =>
       console.info("Live handoff stage", {
@@ -135,6 +140,11 @@ export async function superviseLiveVoice(
       const result = await response.json();
       if (!response.ok || !result.completed || typeof result.text !== "string")
         throw new Error("Task failed");
+      if (
+        result.endSession === true &&
+        typeof result.clarificationQuestion !== "string"
+      )
+        return { text: result.text, endSession: true };
       return typeof result.clarificationQuestion === "string"
         ? {
             text: result.text,
@@ -143,7 +153,10 @@ export async function superviseLiveVoice(
         : result.text;
     },
   });
-  const taskTimer = setInterval(() => owner.tick(), 250);
+  const taskTimer = setInterval(() => {
+    owner.tick();
+    conversationEnd.tick(owner.busy, Date.now() - lastAudio >= 4000);
+  }, 250);
   const probeId = crypto.randomUUID();
   const stop = (why: string) => {
     if (stopping) return;
@@ -208,6 +221,16 @@ export async function superviseLiveVoice(
       typeof event.client_event_id === "string"
     )
       appendAcks.get(event.client_event_id)?.resolve();
+    if (
+      event.type === "session.input_transcript.delta" ||
+      event.type === "session.delegation.created"
+    )
+      conversationEnd.cancel();
+    if (
+      event.type === "session.output_audio.delta" ||
+      event.type === "session.output_transcript.delta"
+    )
+      conversationEnd.output();
     if (!stopping) owner.receive(event);
     if (event.type === "session.input_audio.muted") muted = true;
     if (event.type === "session.input_audio.unmuted") {

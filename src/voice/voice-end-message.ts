@@ -1,6 +1,9 @@
 export function voiceEndMessage(reason: string) {
   if (["session_limit", "Session time limit"].includes(reason))
     return "The voice session has ended. You can pick up in a new session.";
+  if (reason === "Session ended") return "The voice session has ended.";
+  if (reason === "conversation_finished")
+    return "Conversation finished. You can start another session whenever you are ready.";
   if (reason === "idle_limit")
     return "Voice ended after a period without speech.";
   if (reason === "access_changed")

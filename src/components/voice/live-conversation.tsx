@@ -386,7 +386,11 @@ export function LiveVoice({
           if (event.type === "session.closed") {
             if (typeof event.usage?.seconds === "number")
               updateRun({ seconds: event.usage.seconds });
-            finishRef.current("Provider session closed");
+            finishRef.current(
+              event.reason === "close_requested"
+                ? "Session ended"
+                : "Provider session closed",
+            );
           }
           if (event.type === "error")
             setError(
@@ -620,7 +624,7 @@ export function LiveVoice({
                   className={styles.shortInstructions}
                   rows={3}
                   maxLength={1000}
-                  placeholder="How should the AI wind down and say goodbye?"
+                  placeholder="For example: End the session when our conversation has finished, after a warm goodbye."
                   value={draft.goodbye}
                   onChange={(e) =>
                     setDraft({ ...draft, goodbye: e.target.value })
