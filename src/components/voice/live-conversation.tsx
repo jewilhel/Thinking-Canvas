@@ -364,6 +364,7 @@ export function LiveVoice({
             return;
           const event = value as {
             type: string;
+            reason?: string;
             session?: {
               model?: string;
               audio?: { output?: { voice?: string } };
