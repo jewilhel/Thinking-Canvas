@@ -1153,6 +1153,12 @@ export type Database = {
           },
         ]
       }
+      voice_user_preferences: {
+        Row: { user_id: string; preferred_name: string }
+        Insert: { user_id: string; preferred_name: string }
+        Update: { user_id?: string; preferred_name?: string }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string

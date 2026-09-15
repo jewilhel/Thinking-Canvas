@@ -1,3 +1,4 @@
+import { validateVoiceName } from "@/voice/preferred-name";
 import { organizeCanvasCommands } from "@/ai/organize-canvas";
 import "server-only";
 import {
@@ -762,6 +763,31 @@ export async function completeAiRun(
     if (validatedTool.toolName === "navigate_canvas") {
       navigationTools.push(
         validateCanvasNavigation(validatedTool.arguments, sourceObjects),
+      );
+      continue;
+    }
+    if (validatedTool.toolName === "remember_voice_name") {
+      if (!voiceTask.data || !options.voiceConversation)
+        throw new AiRunConflictError("Name memory requires a voice request.");
+      const preference = validateVoiceName(
+        validatedTool.arguments,
+        options.voiceConversation,
+      );
+      const result =
+        preference.action === "forget"
+          ? await supabase
+              .from("voice_user_preferences")
+              .delete()
+              .eq("user_id", user.id)
+          : await supabase
+              .from("voice_user_preferences")
+              .upsert({ user_id: user.id, preferred_name: preference.name });
+      if (result.error)
+        throw new AiRunConflictError("The name preference could not be saved.");
+      replySections.push(
+        preference.action === "forget"
+          ? "Your remembered first name has been removed. Future voice sessions will use a neutral greeting."
+          : `Your preferred first name, ${preference.name}, is saved privately for future voice sessions on your account.`,
       );
       continue;
     }

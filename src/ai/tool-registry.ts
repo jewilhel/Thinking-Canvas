@@ -1,3 +1,4 @@
+import { voiceNameArguments } from "@/voice/preferred-name";
 import { organizeCanvasSchema } from "@/ai/canvas-organization-schema";
 import { z } from "zod";
 import { canvasNavigationSchema } from "./canvas-navigation";
@@ -465,6 +466,13 @@ export const AI_TOOL_REGISTRY = {
       "Select one or more existing canvas objects, open one named document to inspect/edit it, or close a named/current document and return to the canvas. Navigation changes only the requesting participant's view. Use projected object IDs, never names as IDs. select with an empty list clears selection; close_document with an empty list closes the current document. Clarify ambiguous names. This does not change document content.",
     argumentsSchema: canvasNavigationSchema,
   },
+  remember_voice_name: {
+    effect: "comment" as const,
+    minimumAuthority: "comment_only" as const,
+    description:
+      "Save or forget the signed-in participant's private preferred first name for future voice sessions. Remember only when the participant explicitly introduces or corrects THEIR OWN name, never a canvas label, someone else's name, hypothetical example or assistant guess. Supply their exact fresh userQuote containing the name. For an explicit forget request use action forget and empty name. A correction replaces the prior name. Do not change the public account display name.",
+    argumentsSchema: voiceNameArguments,
+  },
   end_voice_session: {
     effect: "comment" as const,
     minimumAuthority: "comment_only" as const,
@@ -547,6 +555,7 @@ export function allowedAiToolNames(authority: AiAuthorityLevel) {
       name !== "execute_story_scene" &&
       name !== "ask_voice_clarification" &&
       name !== "end_voice_session" &&
+      name !== "remember_voice_name" &&
       name !== "create_conversation_document" &&
       name !== "undo_last_ai_change" &&
       name !== "manage_comment_thread" &&
@@ -561,6 +570,7 @@ export function allowedVoiceAiToolNames(authority: AiAuthorityLevel) {
     "manage_comment_thread",
     "ask_voice_clarification",
     "end_voice_session",
+    "remember_voice_name",
   );
   if (authority === "trusted_editor")
     names.push("create_conversation_document");

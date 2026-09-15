@@ -235,7 +235,15 @@ export async function POST(request: Request, context: Context) {
   let stage = "configuration";
   let supervisorStatus: number | undefined;
   try {
-    const session = buildLiveSession(parsed.data.settings);
+    const { data: preference } = await db
+      .from("voice_user_preferences")
+      .select("preferred_name")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const session = buildLiveSession(
+      parsed.data.settings,
+      preference?.preferred_name,
+    );
     if (parsed.data.restartOf && parsed.data.restartContext)
       session.input = [
         {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { voiceIdentityInstructions } from "./preferred-name";
 import type { MediaSessionConfig } from "openai/resources/live/live";
 
 export const LIVE_MODEL = "gpt-live-1";
@@ -37,7 +38,10 @@ export const DEFAULT_LIVE_SETTINGS: LiveSettings = {
 };
 
 /** Only trusted server code can append context, change instructions, or delegate work. */
-export function buildLiveSession(settings: LiveSettings): MediaSessionConfig {
+export function buildLiveSession(
+  settings: LiveSettings,
+  preferredName?: string | null,
+): MediaSessionConfig {
   const s = liveSettingsSchema.parse(settings);
   return {
     model: LIVE_MODEL,
@@ -53,6 +57,7 @@ export function buildLiveSession(settings: LiveSettings): MediaSessionConfig {
         .filter(Boolean)
         .join("\n\n") +
       `
+${voiceIdentityInstructions(preferredName)}
 Delegate ordinary color, text and line styling requests directly. Canvas AI knows the available palette and style options; do not ask for a precise color code or permission to interpret a familiar color or style name.
 Delegation policy:
 - Ending the conversation: follow Goodbye preferences. When the participant clearly finishes or you have mutually concluded, delegate ending this voice session to the backend, including any final requested save. Finish requested work before saying goodbye. Once the backend confirms ending is scheduled, give one short final goodbye and stop speaking. Do not tell the user to click the voice button. Never end merely because of silence or a quoted goodbye; if they resume with another thought, continue and delegate new work normally.
