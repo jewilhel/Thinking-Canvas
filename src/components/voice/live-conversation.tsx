@@ -1,4 +1,5 @@
 "use client";
+import styles from "./voice-settings.module.css";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
@@ -484,355 +485,372 @@ export function LiveVoice({
           invoker={invoker}
           onDismiss={() => setPanel(false)}
         >
-          <div className="space-y-4 text-sm">
-            <p role="status">
-              {status}
-              {active
-                ? ` · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}${muted ? " · Microphone muted" : " · Listening"}`
-                : ""}
-            </p>
-            <p>
-              {availability.enabled
-                ? `Shared daily allowance: $${((availability.spentCents ?? 0) / 100).toFixed(2)} conservatively charged; $${((availability.reservedCents ?? 0) / 100).toFixed(2)} reserved. $20 limit, resets at midnight Pacific.`
-                : availability.reason}
-            </p>
-            <p>
-              GPT-Live bills session time, including silence and mute. Settings
-              below apply when starting a new session. Closing this panel keeps
-              voice connected.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {active && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    connection.current?.mute(!muted);
-                    setMuted(!muted);
-                  }}
-                >
-                  {muted ? "Unmute microphone" : "Mute microphone"}
-                </Button>
-              )}
-              {active && (
-                <>
-                  <Button
-                    variant="outline"
-                    disabled={backendPending}
-                    onClick={async () => {
-                      const response = await fetch(
-                        `/api/canvases/${canvasId}/voice`,
-                        {
-                          method: "PATCH",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            id: sessionId.current,
-                            describeThisCanvas: true,
-                          }),
-                        },
-                      );
-                      setTaskNotice(
-                        response.ok
-                          ? "Canvas description requested. Its request and result appear in Comments."
-                          : "The canvas description could not be requested.",
-                      );
-                    }}
-                  >
-                    Describe this canvas
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={async () => {
-                      const response = await fetch(
-                        `/api/canvases/${canvasId}/voice`,
-                        {
-                          method: "PATCH",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            id: sessionId.current,
-                            cancelTask: true,
-                          }),
-                        },
-                      );
-                      setTaskNotice(
-                        response.ok
-                          ? "Task cancellation requested."
-                          : "Task cancellation failed; end the session to stop work.",
-                      );
-                    }}
-                  >
-                    Cancel voice task
-                  </Button>
-                </>
-              )}
-              {(active || connecting) && (
-                <Button variant="outline" onClick={() => finish()}>
-                  End session
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                aria-expanded={captions}
-                onClick={() => setCaptions(!captions)}
-              >
-                {captions ? "Hide captions" : "View captions"}
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!text || documentText === saved || !canSaveTranscript}
-                onClick={() => setPreview(documentText)}
-              >
-                Save selected conversation
-              </Button>
-            </div>
-            {active && (
-              <p role="status">
-                {backendPending ? "Reading the canvas…" : taskNotice}
+          <div className={styles.panel}>
+            <section className={styles.card} aria-label="Session">
+              <h3>Session</h3>
+              <p role="status" className={styles.status}>
+                {status}
+                {active
+                  ? ` · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}${muted ? " · Microphone muted" : " · Listening"}`
+                  : ""}
               </p>
-            )}
-            {captionSessions.length > 0 && (
+              {!availability.enabled && availability.reason && (
+                <p className={styles.notice}>{availability.reason}</p>
+              )}
+              {active && (
+                <p className={styles.help}>
+                  Closing settings keeps the conversation connected.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {active && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      connection.current?.mute(!muted);
+                      setMuted(!muted);
+                    }}
+                  >
+                    {muted ? "Unmute microphone" : "Mute microphone"}
+                  </Button>
+                )}
+                {active && backendPending && (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        const response = await fetch(
+                          `/api/canvases/${canvasId}/voice`,
+                          {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              id: sessionId.current,
+                              cancelTask: true,
+                            }),
+                          },
+                        );
+                        setTaskNotice(
+                          response.ok
+                            ? "Task cancellation requested."
+                            : "Task cancellation failed; end the session to stop work.",
+                        );
+                      }}
+                    >
+                      Cancel voice task
+                    </Button>
+                  </>
+                )}
+                {(active || connecting) && (
+                  <Button variant="outline" onClick={() => finish()}>
+                    End session
+                  </Button>
+                )}
+              </div>
+              {active && (backendPending || taskNotice) && (
+                <p role="status" className={styles.help}>
+                  {backendPending ? "Reading the canvas…" : taskNotice}
+                </p>
+              )}
+            </section>
+            <section className={styles.card} aria-label="Voice and behavior">
+              <h3>Voice and behavior</h3>
+              <p className={styles.help}>
+                Changes apply to your next session
+                {active ? " or when you restart below" : ""}.
+              </p>
               <label className="block">
-                Conversation
+                AI voice
                 <select
-                  aria-label="Transcript conversation"
+                  aria-label="AI voice"
                   className="mt-1 block w-full rounded border p-2"
-                  value={selectedSession}
-                  onChange={(event) => {
-                    const id = event.target.value;
-                    selectedSessionRef.current = id;
-                    setSelectedSession(id);
-                    setTranscript(accumulator.current.snapshot(id));
-                  }}
+                  value={draft.voice}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      voice: e.target.value as LiveSettings["voice"],
+                    })
+                  }
                 >
-                  {captionSessions.map((session, index) => (
-                    <option key={session.id} value={session.id}>
-                      {index === 0 ? "Latest — " : ""}
-                      {new Date(session.startedAt).toLocaleString()}
-                      {session.id === generation.current && active
-                        ? " · In progress"
-                        : ""}
-                    </option>
+                  {liveSettingsSchema.shape.voice.options.map((v) => (
+                    <option key={v}>{v}</option>
                   ))}
                 </select>
-                <span className="text-sm">
-                  Only this conversation is shown and saved. Captions remain in
-                  this tab until it closes or reloads.
-                </span>
               </label>
-            )}
-            {captions && (
-              <section
-                aria-label="Temporary voice captions"
-                className="max-h-52 overflow-auto rounded-lg border p-3"
-              >
-                <pre className="whitespace-pre-wrap">
-                  {text || "No captions yet."}
-                </pre>
-              </section>
-            )}
-            <label className="block">
-              AI voice
-              <select
-                aria-label="AI voice"
-                className="mt-1 block w-full rounded border p-2"
-                value={draft.voice}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    voice: e.target.value as LiveSettings["voice"],
-                  })
-                }
-              >
-                {liveSettingsSchema.shape.voice.options.map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              Conversation instructions
-              <textarea
-                aria-label="Conversation instructions"
-                className="mt-1 min-h-32 w-full rounded border p-2"
-                maxLength={4000}
-                value={draft.instructions}
-                onChange={(e) =>
-                  setDraft({ ...draft, instructions: e.target.value })
-                }
-              />
-            </label>
-            <p>
-              Initiative and interruption preferences are conversational
-              guidance, not API permissions. This version can answer canvas
-              questions, leave requested comments, and edit canvas objects with
-              your canvas permissions. Create or change objects, manage
-              comments, request documents, or say “undo that” to reverse your
-              last AI edit. Transcript saves include only available conversation
-              text.
-            </p>
-            <label className="block">
-              Idle timeout (seconds)
-              <input
-                aria-label="Idle timeout (seconds)"
-                type="number"
-                min={30}
-                max={300}
-                value={draft.idleSeconds}
-                onChange={(e) =>
-                  setDraft({ ...draft, idleSeconds: Number(e.target.value) })
-                }
-              />
-            </label>
-            <label className="block">
-              Idle warning (seconds)
-              <input
-                aria-label="Idle warning (seconds)"
-                type="number"
-                min={5}
-                max={30}
-                value={draft.idleWarningSeconds}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    idleWarningSeconds: Number(e.target.value),
-                  })
-                }
-              />
-            </label>
-            <Button
-              variant="outline"
-              onClick={() => setDraft({ ...DEFAULT_LIVE_SETTINGS })}
-            >
-              Reset to baseline
-            </Button>
-            <p>
-              Changing voice or replacing instructions requires an explicit
-              restart. The original ten-minute deadline still applies. A restart
-              carries a partial text excerpt from this tab; no recording is
-              stored.
-            </p>
-            {active && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  const previous = sessionId.current;
-                  finish("Restart requested");
-                  if (previous) void start(previous);
-                }}
-              >
-                Restart with these settings
-              </Button>
-            )}
-            <label className="block">
-              Preset name
-              <input
-                aria-label="Preset name"
-                maxLength={80}
-                value={presetName}
-                onChange={(e) => setPresetName(e.target.value)}
-              />
-            </label>
-            <Button
-              disabled={
-                !presetName.trim() ||
-                !liveSettingsSchema.safeParse(draft).success
-              }
-              onClick={() => {
-                const next = [
-                  {
-                    name: presetName.trim(),
-                    version: 2 as const,
-                    settings: { ...draft },
-                  },
-                  ...presets.filter((p) => p.name !== presetName.trim()),
-                ].slice(0, 20);
-                setPresets(next);
-                localStorage.setItem(presetsKey, JSON.stringify(next));
-              }}
-            >
-              Save preset
-            </Button>
-            {presets.map((p) => (
-              <Button
-                key={p.name}
-                variant="outline"
-                onClick={() => setDraft({ ...p.settings })}
-              >
-                Load {p.name}
-              </Button>
-            ))}
-            <Button
-              variant="outline"
-              onClick={() => exportJson("live-voice-presets.json", presets)}
-            >
-              Export presets
-            </Button>
-            <details>
-              <summary>Historical Realtime presets and records</summary>
-              <p>
-                Read-only export; unsupported Realtime controls are not sent to
-                GPT-Live.
-              </p>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  exportJson("realtime-voice-history.json", {
-                    presets: parseVoicePresets(
-                      localStorage.getItem(legacyKeys.presets) ?? "[]",
-                    ),
-                    records: readVoiceRecords(localStorage, legacyKeys.records),
-                  })
-                }
-              >
-                Export Realtime history
-              </Button>
-            </details>
-            <h3>Test records</h3>
-            <p>
-              Settings and notes only, saved locally for this account and
-              canvas. No audio or transcript is stored in these records.
-            </p>
-            {records.map((r) => (
-              <details key={r.id}>
-                <summary>
-                  {r.startedAt} · {r.endedAt ? "Ended" : "Started"}
-                  {r.chargedCents !== undefined
-                    ? ` · $${(r.chargedCents / 100).toFixed(2)}${r.finalUsage ? "" : " (unconfirmed estimate)"}`
-                    : " · Accounting pending"}
-                </summary>
-                <pre className="max-h-64 overflow-auto text-xs whitespace-pre-wrap">
-                  {JSON.stringify(r, null, 2)}
-                </pre>
+              <label className="block">
+                Conversation instructions
                 <textarea
-                  aria-label={`Notes for ${r.id}`}
+                  aria-label="Conversation instructions"
+                  className="mt-1 min-h-32 w-full rounded border p-2"
                   maxLength={4000}
-                  value={r.notes}
+                  value={draft.instructions}
                   onChange={(e) =>
-                    persist(
-                      recordsRef.current.map((item) =>
-                        item.id === r.id
-                          ? { ...item, notes: e.target.value }
-                          : item,
-                      ),
-                    )
+                    setDraft({ ...draft, instructions: e.target.value })
                   }
                 />
+              </label>
+              <div className={styles.idleFields}>
+                <label className="block">
+                  Idle timeout (seconds)
+                  <input
+                    aria-label="Idle timeout (seconds)"
+                    type="number"
+                    min={30}
+                    max={300}
+                    value={draft.idleSeconds}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        idleSeconds: Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label className="block">
+                  Idle warning (seconds)
+                  <input
+                    aria-label="Idle warning (seconds)"
+                    type="number"
+                    min={5}
+                    max={30}
+                    value={draft.idleWarningSeconds}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        idleWarningSeconds: Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <p className={styles.help}>
+                After this much silence, a warning gives you time to resume
+                before voice ends.
+              </p>
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => exportJson(`live-voice-${r.id}.json`, r)}
+                  onClick={() => setDraft({ ...DEFAULT_LIVE_SETTINGS })}
                 >
-                  Export record
+                  Reset to baseline
+                </Button>
+                {active && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const previous = sessionId.current;
+                      finish("Restart requested");
+                      if (previous) void start(previous);
+                    }}
+                  >
+                    Restart with these settings
+                  </Button>
+                )}
+              </div>
+              {active && (
+                <p className={styles.help}>
+                  Restarting keeps the original ten-minute deadline.
+                </p>
+              )}
+            </section>
+            <section
+              className={styles.card}
+              aria-label="Conversation transcript"
+            >
+              <h3>Conversation transcript</h3>
+              <p className={styles.help}>
+                {captionSessions.length
+                  ? "Save a conversation before closing or reloading this tab."
+                  : "Your session captions will appear here. Save them to a document when you want to keep them."}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  aria-expanded={captions}
+                  onClick={() => setCaptions(!captions)}
+                >
+                  {captions ? "Hide captions" : "View captions"}
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() =>
-                    persist(
-                      recordsRef.current.filter((item) => item.id !== r.id),
-                    )
+                  disabled={
+                    !text || documentText === saved || !canSaveTranscript
                   }
+                  onClick={() => setPreview(documentText)}
                 >
-                  Delete record
+                  Save selected conversation
                 </Button>
-              </details>
-            ))}
+              </div>
+              {captionSessions.length > 0 && (
+                <label className="block">
+                  Conversation
+                  <select
+                    aria-label="Transcript conversation"
+                    className="mt-1 block w-full rounded border p-2"
+                    value={selectedSession}
+                    onChange={(event) => {
+                      const id = event.target.value;
+                      selectedSessionRef.current = id;
+                      setSelectedSession(id);
+                      setTranscript(accumulator.current.snapshot(id));
+                    }}
+                  >
+                    {captionSessions.map((session, index) => (
+                      <option key={session.id} value={session.id}>
+                        {index === 0 ? "Latest — " : ""}
+                        {new Date(session.startedAt).toLocaleString()}
+                        {session.id === generation.current && active
+                          ? " · In progress"
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {captions && (
+                <section
+                  aria-label="Temporary voice captions"
+                  className="max-h-52 overflow-auto rounded-lg border p-3"
+                >
+                  <pre className="whitespace-pre-wrap">
+                    {text || "No captions yet."}
+                  </pre>
+                </section>
+              )}
+            </section>
+            <details className={styles.card}>
+              <summary>Presets</summary>
+              <div className={styles.detailsBody}>
+                <label className="block">
+                  Preset name
+                  <input
+                    aria-label="Preset name"
+                    maxLength={80}
+                    value={presetName}
+                    onChange={(e) => setPresetName(e.target.value)}
+                  />
+                </label>
+                <Button
+                  disabled={
+                    !presetName.trim() ||
+                    !liveSettingsSchema.safeParse(draft).success
+                  }
+                  onClick={() => {
+                    const next = [
+                      {
+                        name: presetName.trim(),
+                        version: 2 as const,
+                        settings: { ...draft },
+                      },
+                      ...presets.filter((p) => p.name !== presetName.trim()),
+                    ].slice(0, 20);
+                    setPresets(next);
+                    localStorage.setItem(presetsKey, JSON.stringify(next));
+                  }}
+                >
+                  Save preset
+                </Button>
+                {presets.map((p) => (
+                  <Button
+                    key={p.name}
+                    variant="outline"
+                    onClick={() => setDraft({ ...p.settings })}
+                  >
+                    Load {p.name}
+                  </Button>
+                ))}
+                <Button
+                  variant="outline"
+                  onClick={() => exportJson("live-voice-presets.json", presets)}
+                >
+                  Export presets
+                </Button>
+              </div>
+            </details>
+            <details className={styles.card}>
+              <summary>Usage and test records</summary>
+              <div className={styles.detailsBody}>
+                <p className={styles.help}>
+                  {availability.enabled
+                    ? `Daily test budget: $${((availability.spentCents ?? 0) / 100).toFixed(2)} charged · $${((availability.reservedCents ?? 0) / 100).toFixed(2)} reserved · $20 limit.`
+                    : "Usage is available when voice access is connected."}
+                </p>
+                <p className={styles.help}>
+                  Ten-minute sessions. Budget resets at midnight Pacific.
+                  Silence and mute count toward voice usage.
+                </p>
+                <details>
+                  <summary>Historical Realtime presets and records</summary>
+                  <p>
+                    Read-only export; unsupported Realtime controls are not sent
+                    to GPT-Live.
+                  </p>
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      exportJson("realtime-voice-history.json", {
+                        presets: parseVoicePresets(
+                          localStorage.getItem(legacyKeys.presets) ?? "[]",
+                        ),
+                        records: readVoiceRecords(
+                          localStorage,
+                          legacyKeys.records,
+                        ),
+                      })
+                    }
+                  >
+                    Export Realtime history
+                  </Button>
+                </details>
+                <p className={styles.help}>
+                  Recorded settings, costs and notes for troubleshooting. No
+                  audio or transcript text.
+                </p>
+                {records.map((r) => (
+                  <details key={r.id}>
+                    <summary>
+                      {r.startedAt} · {r.endedAt ? "Ended" : "Started"}
+                      {r.chargedCents !== undefined
+                        ? ` · $${(r.chargedCents / 100).toFixed(2)}${r.finalUsage ? "" : " (unconfirmed estimate)"}`
+                        : " · Accounting pending"}
+                    </summary>
+                    <pre className="max-h-64 overflow-auto text-xs whitespace-pre-wrap">
+                      {JSON.stringify(r, null, 2)}
+                    </pre>
+                    <textarea
+                      aria-label={`Notes for ${r.id}`}
+                      maxLength={4000}
+                      value={r.notes}
+                      onChange={(e) =>
+                        persist(
+                          recordsRef.current.map((item) =>
+                            item.id === r.id
+                              ? { ...item, notes: e.target.value }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => exportJson(`live-voice-${r.id}.json`, r)}
+                    >
+                      Export record
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        persist(
+                          recordsRef.current.filter((item) => item.id !== r.id),
+                        )
+                      }
+                    >
+                      Delete record
+                    </Button>
+                  </details>
+                ))}
+              </div>
+            </details>
           </div>
         </WorkspacePanel>
       )}

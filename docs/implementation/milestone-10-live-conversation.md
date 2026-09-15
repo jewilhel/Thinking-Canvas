@@ -839,7 +839,6 @@ Broader local checkpoint: TypeScript and affected ESLint pass; 520 ordinary test
 
 Hosted checkpoint: ready deploy `6aa87d5cfddd040009db136c` matches runtime commit `e17c0cd62ab28c576791bf276957d9d6dcf2aabb`. Codex in-app browser created isolated canvas `7dbf5e0c-2c48-445e-8618-f5077be30bfb` (Voice session boundaries QA Sep 14). Two short live sessions connected and ended; each settled at $0.02. The latest session's export preview contained its date and one AI greeting only, excluding the earlier session's captions. Saved that selected source as Conversation transcript, opened the document, and verified body and durable sequence 2. Selecting the earlier date exposed its different captions without modifying the saved document. No earlier/background conversation text was saved. Original user tabs were not refreshed. A separate React interaction regression verifies latest-default export, older-session export, prior-source handoff, and ignoring an old transport closure; it passes, with TypeScript and lint. Natural spoken previous-session selection, the one-minute spoken warning, and real transient-supervisor failure recovery still require live acceptance; no claim of reproduced service-failure repair or milestone closure.
 
-
 ### Deferred thirty-minute sessions and Render hosting
 
 Status: Deferred by the product owner on 2026-09-15. Originally proposed 2026-09-14; the request to extend sessions to thirty minutes is superseded for current work by retaining ten minutes. Complete existing milestones before revisiting this experience refinement. No runtime cap, database, hosted configuration, or service purchase changed. The following proposal is retained for future planning, not as an active implementation dependency or exit gate.
@@ -864,5 +863,10 @@ Deferred implementation slices, to review when this effort is explicitly resumed
 
 Future acceptance (not a current milestone exit gate): tests of 30-minute reservation and restart bounds, day/budget limits, shutdown and worker-loss recovery; controlled browser QA that stays connected beyond minute 15, receives the near-minute-29 warning, and ends at minute 30; separate current/previous transcript export with first and last wording preserved; natural spoken prior-discussion follow-up without re-executing old commands; reload behavior with explicitly saved source. Keep the deployed 10-minute limit until the full path is verified. Owner listening acceptance and milestone closure remain separate.
 
-
 Deferral boundary — 2026-09-15: retain the already implemented session picker, selected-session export, and previous-session source handoff. The additional continuity refinement proposed above remains future work; this deferral does not remove existing transcript functionality or waive existing correctness/acceptance checks. Resume the current milestone completion work without a dependency on Render or sessions longer than ten minutes. No milestone was closed by this decision.
+
+### Voice settings layout refinement — 2026-09-15
+
+Owner requested clear editable fields, bold headings, grouped controls, and less instructional clutter. Grouped the panel into Session, Voice and behavior, Conversation transcript, collapsed Presets, and collapsed Usage and test records. Scoped styles provide visible white input surfaces, field borders/focus rings, bold section headings, compact helper copy, and side-by-side labeled idle timing inputs. Removed repetitive capability explanations and the duplicate canvas-description test button; cancellation appears while work is pending. Retained transcript selection/export, presets, effective-setting records and notes, and legacy export under diagnostics. No voice protocol, duration, budget, or transcript-retention change.
+
+Local validation: TypeScript and the existing two-session selection/export interaction regression pass. Affected lint and hosted layout QA checkpoint follow.
