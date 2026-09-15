@@ -589,6 +589,9 @@ export function LiveVoice({
                   }
                 />
               </label>
+              <p className={styles.help}>
+                You can include your preferred greeting here.
+              </p>
               <div className={styles.idleFields}>
                 <label className="block">
                   Idle timeout (seconds)

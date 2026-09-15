@@ -225,7 +225,7 @@ export async function superviseLiveVoice(
             event_id: crypto.randomUUID(),
             delegation_id: null,
             content:
-              "The participant's audio connection is now ready. Greet them briefly once, for example: Hi, I'm here. What would you like to work on? Then listen. If they are already speaking, let them finish and respond to their request instead of interrupting with a greeting. Do not inspect or change the canvas for this greeting.",
+              "The participant's audio connection is now ready. Follow any startup or greeting preferences in their conversation instructions, including preferred wording, tone, or a request for no greeting. Those preferences take precedence over the fallback below. If they did not specify a greeting preference, offer one short, warm, naturally varied greeting and then let them lead; avoid a repetitive generic offer to help. If they are already speaking, let them finish and respond to their request instead of interrupting with a greeting. Do not claim to remember a previous conversation unless that context is actually available. Do not inspect or change the canvas for this greeting.",
           }),
         );
       }
