@@ -658,6 +658,7 @@ export async function completeAiRun(
       toolCall.toolName === "stage_new_connectors" ||
       toolCall.toolName === "stage_new_annotations",
   );
+  options.onCheckpoint?.("validate_reply_references");
   const groundedEvidence = gatewayResult.reply.evidence.filter((reference) =>
     objectIds.has(reference.objectId),
   );
@@ -723,6 +724,7 @@ export async function completeAiRun(
     } catch {
       throw new AiProviderOutputError();
     }
+    options.onCheckpoint?.(`apply_${validatedTool.toolName}`);
     if (validatedTool.toolName === "create_conversation_document") {
       const args = validatedTool.arguments as {
         kind: string;
@@ -1840,6 +1842,7 @@ export async function completeAiRun(
   }
   await options.beforeComplete?.();
   throwIfAiRunAborted(options.signal);
+  options.onCheckpoint?.("save_verified_reply");
   const completionResult = await supabase.rpc("complete_ai_run", {
     target_run_id: run.id,
     target_body: replySections.join("\n\n"),

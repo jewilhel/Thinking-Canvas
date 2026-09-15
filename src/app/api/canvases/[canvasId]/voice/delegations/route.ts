@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { delegationDiagnostic } from "@/voice/delegation-diagnostic";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
@@ -237,6 +238,7 @@ export async function POST(
     console.warn("Voice delegation ended without a result", {
       taskId,
       stage,
+      ...delegationDiagnostic(error),
       errorName: error instanceof Error ? error.name : "UnknownError",
       visualIssues:
         error instanceof Error && error.name === "AiVisualQualityError"
