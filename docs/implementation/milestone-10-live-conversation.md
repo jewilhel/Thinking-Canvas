@@ -6,7 +6,9 @@ Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-im
 
 Plan owner: Product owner
 
-Last updated: 2026-09-11
+Last updated: 2026-09-15
+
+Current scope decision — 2026-09-15: keep ten-minute voice sessions and the existing Netlify supervisor. Longer sessions and the Render migration are deferred until after the existing milestones; they are not required to complete Milestone 10. Existing feature verification and owner acceptance remain in scope.
 
 ## GPT-Live migration plan — 2026-09-11
 
@@ -836,3 +838,31 @@ Focused validation: 95 voice/conversation-document tests passed, including conse
 Broader local checkpoint: TypeScript and affected ESLint pass; 520 ordinary tests pass, eight explicit database tests skipped. A test-only generic annotation was corrected before the successful type check. Hosted verification pending.
 
 Hosted checkpoint: ready deploy `6aa87d5cfddd040009db136c` matches runtime commit `e17c0cd62ab28c576791bf276957d9d6dcf2aabb`. Codex in-app browser created isolated canvas `7dbf5e0c-2c48-445e-8618-f5077be30bfb` (Voice session boundaries QA Sep 14). Two short live sessions connected and ended; each settled at $0.02. The latest session's export preview contained its date and one AI greeting only, excluding the earlier session's captions. Saved that selected source as Conversation transcript, opened the document, and verified body and durable sequence 2. Selecting the earlier date exposed its different captions without modifying the saved document. No earlier/background conversation text was saved. Original user tabs were not refreshed. A separate React interaction regression verifies latest-default export, older-session export, prior-source handoff, and ignoring an old transport closure; it passes, with TypeScript and lint. Natural spoken previous-session selection, the one-minute spoken warning, and real transient-supervisor failure recovery still require live acceptance; no claim of reproduced service-failure repair or milestone closure.
+
+
+### Deferred thirty-minute sessions and Render hosting
+
+Status: Deferred by the product owner on 2026-09-15. Originally proposed 2026-09-14; the request to extend sessions to thirty minutes is superseded for current work by retaining ten minutes. Complete existing milestones before revisiting this experience refinement. No runtime cap, database, hosted configuration, or service purchase changed. The following proposal is retained for future planning, not as an active implementation dependency or exit gate.
+
+Verified constraints:
+
+- The current Live supervisor is invoked by `netlify/functions/voice-supervisor-background.ts` and maintains its provider WebSocket and volatile transcript for the whole session. Netlify background functions terminate after at most 15 minutes: https://docs.netlify.com/build/functions/background-functions/ and https://docs.netlify.com/build/functions/configuration/ (checked 2026-09-14). Merely changing the reservation deadline to 30 minutes would outlive supervision.
+- `reserve_live_voice_test` and `voice_session_duration` enforce ten minutes. Client copy, countdown defaults, and the supervisor warning also reflect ten minutes. The shared allowance remains $20; no increase requested.
+- The most recent nonempty prior in-tab session is sent separately to Canvas AI through the HMAC-bound supervisor payload. Voice delegates previous-conversation document requests, but ordinary new voice sessions do not seed the full prior transcript into the Voice model. Only settings restarts currently seed a 1,500-character excerpt. Broad discussion continuity should explicitly delegate prior-conversation recall to Canvas AI before answering instead of guessing.
+- Unsaved transcripts remain volatile. The source is bounded at 100,000 characters and the combined Canvas AI envelope at 90,000 characters, so extending duration also requires testing source capacity and explicit gap behavior. Reload and tab closure still discard unsaved captions. Requested saved canvas documents are the durable continuity source. No automatic transcript-history policy change is implied.
+
+Future hosting recommendation: use a paid Render service for only the voice supervisor. The canvas frontend and ordinary API routes remain on Netlify, the existing database remains in Supabase, and OpenAI continues to provide voice AI. Render supports persistent WebSocket connections without a fixed duration limit, but deployments, maintenance, and network failures still require graceful shutdown and recovery. References checked during the 2026-09-14 discussion: https://render.com/docs/websocket and https://render.com/pricing. The entry compute estimate discussed was approximately $7/month, separate from OpenAI usage; verify current pricing, capacity, and account requirements before any future approval or purchase. Render has not been selected for provisioning or deployed.
+
+Proposed future architecture: extract the current Node/WebSocket supervisor into a continuously running service with support for sessions exceeding 30 minutes. Keep the canvas frontend, ordinary API routes, and deployment previews on Netlify. Avoid stitching together repeated background-function owners for this request: doing so would require atomic ownership transfer, in-flight action/result transfer, full volatile transcript transfer, and duplicate prevention at each handoff. A longer-running supervisor preserves the existing single-owner behavior. Hosting provider, cost, deployment credentials, and operator recovery must be selected and reviewed before provisioning; this proposal does not purchase or provision anything.
+
+Deferred implementation slices, to review when this effort is explicitly resumed:
+
+1. Package the existing supervisor as an authenticated worker service with health checks, idempotent session claims, start-payload signature verification, bounded admission, orderly shutdown, and confirmed provider termination/accounting. Preserve caption confidentiality, same-user/canvas authorization, cancellation, and current action deduplication. Deploy to a selected long-running host without migrating the canvas app.
+2. Add a forward database migration widening only supported Live sessions to 30 minutes and changing new-session reservation deadlines. Preserve Pacific-day boundaries, usage headroom, original deadline for a settings restart, and the $20 allowance. Update Live UI defaults, consent copy, end reasons, and one-minute warning together. Do not imply existing running sessions were extended.
+3. Support natural prior-conversation continuation: tell Voice which previous session source is available; delegate historical questions and contextual follow-ups to Canvas AI using the full separately identified source. Treat quoted old requests as history rather than execution authority. Ask a concise clarification when a user could mean either current or previous discussion. Continue using explicitly saved transcript/brief documents after reload; do not silently add durable transcript retention.
+4. Validate 30-minute transcript capacity and two-session combined context before release. Preserve exact source or report missing/oversized source explicitly; do not silently replace a requested full transcript with a summary.
+
+Future acceptance (not a current milestone exit gate): tests of 30-minute reservation and restart bounds, day/budget limits, shutdown and worker-loss recovery; controlled browser QA that stays connected beyond minute 15, receives the near-minute-29 warning, and ends at minute 30; separate current/previous transcript export with first and last wording preserved; natural spoken prior-discussion follow-up without re-executing old commands; reload behavior with explicitly saved source. Keep the deployed 10-minute limit until the full path is verified. Owner listening acceptance and milestone closure remain separate.
+
+
+Deferral boundary — 2026-09-15: retain the already implemented session picker, selected-session export, and previous-session source handoff. The additional continuity refinement proposed above remains future work; this deferral does not remove existing transcript functionality or waive existing correctness/acceptance checks. Resume the current milestone completion work without a dependency on Render or sessions longer than ten minutes. No milestone was closed by this decision.
