@@ -1,5 +1,6 @@
 import type { PreviousConversation } from "./previous-conversation";
 import OpenAI from "openai";
+import { scheduleVoiceGoodbye } from "./voice-goodbye";
 import { retryVoiceCheck } from "./retry-voice-check";
 import { controlRequestIsCurrent } from "./live-delegation-contract";
 import { LiveDelegationOwner } from "./live-delegation-owner";
@@ -14,6 +15,7 @@ type Session = {
   call_id: string;
   canvas_id: string;
   expires_at: string;
+  wrap_up_at?: string | null;
   reserved_cents: number;
   idle_seconds: number;
   idle_warning_seconds: number;
@@ -275,25 +277,22 @@ export async function superviseLiveVoice(
     stop("connection_lost");
     finish();
   });
-  const deadline = setTimeout(
-    () => stop("session_limit"),
-    Math.max(0, Date.parse(session.expires_at) - Date.now()),
-  );
-  const limitWarning = setTimeout(
-    () => {
+  const clearGoodbye = scheduleVoiceGoodbye({
+    expiresAt: Date.parse(session.expires_at),
+    wrapUpAt: session.wrap_up_at ? Date.parse(session.wrap_up_at) : undefined,
+    say: (content) => {
       if (!stopping && ready && socket.readyState === WebSocket.OPEN)
         socket.send(
           JSON.stringify({
             type: "session.commentary.append",
             event_id: crypto.randomUUID(),
             delegation_id: null,
-            content:
-              "Briefly let the participant know this voice session has about one minute left before the ten-minute test limit. They can ask to save this conversation to a document, or save it from Voice settings afterward. Do not save without a request. Then continue the conversation naturally.",
+            content,
           }),
         );
     },
-    Math.max(0, Date.parse(session.expires_at) - Date.now() - 60_000),
-  );
+    end: () => stop("session_limit"),
+  });
   const readyTimeout = setTimeout(() => {
     if (!ready) stop("supervisor_timeout");
   }, 10000);
@@ -360,8 +359,11 @@ export async function superviseLiveVoice(
       const idleDeadline =
         lastActivity +
         (session.idle_seconds + session.idle_warning_seconds) * 1000;
+      const windingDown = Boolean(
+        session.wrap_up_at && Date.now() >= Date.parse(session.wrap_up_at),
+      );
       const warning =
-        Date.now() >= lastActivity + session.idle_seconds * 1000
+        !windingDown && Date.now() >= lastActivity + session.idle_seconds * 1000
           ? new Date(idleDeadline).toISOString()
           : null;
       const checkpoint = await db
@@ -375,8 +377,9 @@ export async function superviseLiveVoice(
           target_units: units,
         });
       if (
+        !windingDown &&
         Date.now() - lastActivity >
-        (session.idle_seconds + session.idle_warning_seconds) * 1000
+          (session.idle_seconds + session.idle_warning_seconds) * 1000
       )
         stop("idle_limit");
     } catch (error) {
@@ -399,8 +402,7 @@ export async function superviseLiveVoice(
     if (started.error) stop("accounting_unavailable");
     await completed;
   } finally {
-    clearTimeout(deadline);
-    clearTimeout(limitWarning);
+    clearGoodbye();
     clearTimeout(readyTimeout);
     clearTimeout(drain);
     clearInterval(heartbeat);

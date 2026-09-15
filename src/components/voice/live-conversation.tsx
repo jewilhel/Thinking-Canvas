@@ -97,6 +97,8 @@ export function LiveVoice({
     setAccessError,
   } = useVoiceAvailability(canvasId);
   const startingCheck = useRef(false);
+  const [windingDown, setWindingDown] = useState(false);
+  const wrapUp = useRef<number | null>(null);
   const [remaining, setRemaining] = useState(600),
     [captions, setCaptions] = useState(false);
   const [transcript, setTranscript] =
@@ -201,7 +203,13 @@ export function LiveVoice({
         0,
         Math.ceil((limit.current - Date.now()) / 1000),
       );
-      setRemaining(seconds);
+      const goodbye = wrapUp.current !== null && Date.now() >= wrapUp.current;
+      setWindingDown(goodbye);
+      setRemaining(
+        goodbye || wrapUp.current === null
+          ? seconds
+          : Math.max(0, Math.ceil((wrapUp.current - Date.now()) / 1000)),
+      );
       if (!seconds) finishRef.current("Session time limit");
     }, 1000);
     return () => clearInterval(timer);
@@ -298,6 +306,7 @@ export function LiveVoice({
     setEndNotice("");
     sessionId.current = null;
     setStatus("Connecting");
+    setWindingDown(false);
     setMuted(false);
     setBackendPending(false);
     setTaskNotice("");
@@ -409,6 +418,7 @@ export function LiveVoice({
       sessionId.current = result.id;
       updateRun({ sessionId: result.id });
       limit.current = Date.parse(result.expiresAt);
+      wrapUp.current = result.wrapUpAt ? Date.parse(result.wrapUpAt) : null;
       setStatus("Connected");
     } catch (failure) {
       const failed = z
@@ -489,7 +499,7 @@ export function LiveVoice({
             <section className={styles.card} aria-label="Session">
               <h3>Session</h3>
               <p role="status" className={styles.status}>
-                {status}
+                {windingDown && active ? "Wrapping up" : status}
                 {active
                   ? ` · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}${muted ? " · Microphone muted" : " · Listening"}`
                   : ""}
@@ -590,7 +600,7 @@ export function LiveVoice({
                 />
               </label>
               <p className={styles.help}>
-                You can include your preferred greeting here.
+                Set your preferred greeting and goodbye style here.
               </p>
               <div className={styles.idleFields}>
                 <label className="block">
@@ -652,7 +662,8 @@ export function LiveVoice({
               </div>
               {active && (
                 <p className={styles.help}>
-                  Restarting keeps the original ten-minute deadline.
+                  Restarting keeps the original conversation and goodbye
+                  deadlines.
                 </p>
               )}
             </section>
@@ -779,8 +790,9 @@ export function LiveVoice({
                     : "Usage is available when voice access is connected."}
                 </p>
                 <p className={styles.help}>
-                  Ten-minute sessions. Budget resets at midnight Pacific.
-                  Silence and mute count toward voice usage.
+                  Ten-minute conversations with up to two minutes to wrap up.
+                  Budget resets at midnight Pacific. Silence and mute count
+                  toward voice usage.
                 </p>
                 <details>
                   <summary>Historical Realtime presets and records</summary>
@@ -871,9 +883,9 @@ export function LiveVoice({
               storage is disabled.
             </p>
             <p>
-              Up to ten minutes. GPT-Live voice costs $0.05 per minute,
-              including silence and mute. The shared testing limit is $20 daily.
-              Idle voice ends after a warning.
+              Ten minutes, plus up to two minutes to say goodbye. GPT-Live voice
+              costs $0.05 per minute, including silence and mute. The shared
+              testing limit is $20 daily. Idle voice ends after a warning.
             </p>
             <p>
               Captions remain temporarily in this tab. Save a transcript only
@@ -980,12 +992,13 @@ export function LiveVoice({
           </Button>
         </div>
       )}
-      {active && remaining <= 60 && (
+      {active && (windingDown || remaining <= 60) && (
         <p
           role="status"
           className="absolute top-24 right-4 z-40 rounded-lg bg-amber-50 p-3"
         >
-          Voice ends in {remaining} seconds.
+          {windingDown ? "Wrapping up — voice ends" : "Wrapping up starts"} in{" "}
+          {remaining} seconds.
         </p>
       )}
     </>

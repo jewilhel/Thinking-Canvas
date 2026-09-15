@@ -6,12 +6,14 @@ const sessionSchema = z.object({
   id: z.uuid(),
   sdp: z.string(),
   expiresAt: z.string().datetime({ offset: true }),
+  wrapUpAt: z.string().datetime({ offset: true }).nullable().optional(),
   model: z.string(),
   reservedCents: z.number(),
 });
 export type SupervisedVoice = {
   id: string;
   expiresAt: string;
+  wrapUpAt?: string | null;
   model: string;
   send(event: Record<string, unknown>): void;
   mute(muted: boolean): void;
@@ -215,6 +217,7 @@ export async function connectLiveVoice(
     return {
       id,
       expiresAt: session.expiresAt,
+      wrapUpAt: session.wrapUpAt,
       model: session.model,
       close,
       mute(muted) {

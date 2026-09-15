@@ -1,6 +1,6 @@
 export function voiceEndMessage(reason: string) {
   if (["session_limit", "Session time limit"].includes(reason))
-    return "Voice ended at the ten-minute session limit.";
+    return "The voice session has ended. You can pick up in a new session.";
   if (reason === "idle_limit")
     return "Voice ended after a period without speech.";
   if (reason === "access_changed")

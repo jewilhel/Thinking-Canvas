@@ -323,6 +323,7 @@ export async function POST(request: Request, context: Context) {
             id,
             sdp,
             expiresAt: reserved.expires_at,
+            wrapUpAt: reserved.wrap_up_at,
             model: VOICE_MODEL,
             reservedCents: reserved.reserved_cents,
           },
