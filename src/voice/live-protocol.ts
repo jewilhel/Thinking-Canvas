@@ -19,13 +19,17 @@ export const liveSettingsSchema = z.strictObject({
     "shimmer",
     "verse",
   ]),
+  greeting: z.string().max(1000).default(""),
   instructions: z.string().max(4000),
+  goodbye: z.string().max(1000).default(""),
   idleSeconds: z.number().int().min(30).max(300),
   idleWarningSeconds: z.number().int().min(5).max(30),
 });
 export type LiveSettings = z.infer<typeof liveSettingsSchema>;
 export const DEFAULT_LIVE_SETTINGS: LiveSettings = {
   voice: "marin",
+  greeting: "",
+  goodbye: "",
   instructions:
     "Have a natural, thoughtful conversation. Let the participant finish their thought. Be concise and take initiative on clear requests within your available capabilities. Ask for clarification only when needed.",
   idleSeconds: 120,
@@ -41,7 +45,13 @@ export function buildLiveSession(settings: LiveSettings): MediaSessionConfig {
     audio: { output: { voice: s.voice } },
     delegation: { type: "client" },
     instructions:
-      s.instructions +
+      [
+        s.greeting.trim() ? `Greeting:\n${s.greeting}` : "",
+        s.instructions,
+        s.goodbye.trim() ? `Goodbye:\n${s.goodbye}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n") +
       `
 Delegate ordinary color, text and line styling requests directly. Canvas AI knows the available palette and style options; do not ask for a precise color code or permission to interpret a familiar color or style name.
 Delegation policy:

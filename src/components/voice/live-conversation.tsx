@@ -588,6 +588,20 @@ export function LiveVoice({
                 </select>
               </label>
               <label className="block">
+                Greeting
+                <textarea
+                  aria-label="Greeting"
+                  className={styles.shortInstructions}
+                  rows={3}
+                  maxLength={1000}
+                  placeholder="How should the AI greet you?"
+                  value={draft.greeting}
+                  onChange={(e) =>
+                    setDraft({ ...draft, greeting: e.target.value })
+                  }
+                />
+              </label>
+              <label className="block">
                 Conversation instructions
                 <textarea
                   aria-label="Conversation instructions"
@@ -599,9 +613,20 @@ export function LiveVoice({
                   }
                 />
               </label>
-              <p className={styles.help}>
-                Set your preferred greeting and goodbye style here.
-              </p>
+              <label className="block">
+                Goodbye
+                <textarea
+                  aria-label="Goodbye"
+                  className={styles.shortInstructions}
+                  rows={3}
+                  maxLength={1000}
+                  placeholder="How should the AI wind down and say goodbye?"
+                  value={draft.goodbye}
+                  onChange={(e) =>
+                    setDraft({ ...draft, goodbye: e.target.value })
+                  }
+                />
+              </label>
               <div className={styles.idleFields}>
                 <label className="block">
                   Idle timeout (seconds)

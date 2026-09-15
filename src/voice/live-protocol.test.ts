@@ -3,10 +3,36 @@ import {
   buildLiveSession,
   DEFAULT_LIVE_SETTINGS,
   liveUsageUnits,
+  liveSettingsSchema,
   liveUnitsToCents,
 } from "./live-protocol";
 
 describe("Live contract and accounting", () => {
+  it("combines greeting, conversation and goodbye while preserving old presets", () => {
+    const legacy = {
+      voice: "marin",
+      instructions: "Existing wording",
+      idleSeconds: 120,
+      idleWarningSeconds: 15,
+    };
+    expect(liveSettingsSchema.parse(legacy)).toMatchObject({
+      greeting: "",
+      goodbye: "",
+      instructions: "Existing wording",
+    });
+    const session = buildLiveSession({
+      ...DEFAULT_LIVE_SETTINGS,
+      greeting: "Welcome back.",
+      instructions: "Let me finish.",
+      goodbye: "End warmly.",
+    });
+    expect(session.instructions).toContain(
+      "Greeting:\nWelcome back.\n\nLet me finish.\n\nGoodbye:\nEnd warmly.",
+    );
+    expect(
+      buildLiveSession(liveSettingsSchema.parse(legacy)).instructions,
+    ).toMatch(/^Existing wording/);
+  });
   it("pins privacy, delegation, and browser permissions independently of tuning", () => {
     const session = buildLiveSession(DEFAULT_LIVE_SETTINGS);
     expect(session.store).toBe(false);

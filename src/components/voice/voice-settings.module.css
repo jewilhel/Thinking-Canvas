@@ -69,6 +69,9 @@
   min-height: 130px;
   resize: vertical;
 }
+.panel textarea.shortInstructions {
+  min-height: 80px;
+}
 .panel :is(input, textarea, select):focus-visible {
   outline: 2px solid #8b5cf6;
   outline-offset: 2px;
