@@ -400,6 +400,8 @@ Panel dismissal refinement approved 2026-09-08: clicking the canvas outside Scen
 
 ## Milestone 10 — Live conversation
 
+Approved persistent voice tuning — 2026-09-15: automatically save active Greeting, Conversation instructions, Goodbye, voice and idle settings privately to the signed-in account; restore them across sessions and canvases, with visible save/retry state. Presets remain optional.
+
 Approved account voice-name preference — 2026-09-15: remember an explicitly introduced/corrected preferred first name for the signed-in account across future voice sessions. Store it privately, separately from shared profile display names; support correction and explicit forgetting. Neutral greetings when no confirmed name is available; never infer identity from canvas content, email, or assistant speech. This is a narrow account preference, not general persistent conversation memory or automatic transcript storage.
 
 Approved natural session completion — 2026-09-15: provide a voice-only end-session action based on clear current conversational completion and Goodbye preferences. Finish requested saves before closing; wait for final speech and a quiet gap, cancel pending disconnect when the participant resumes or new work arrives, and retain the fixed supervisor deadline. No keyword-triggered hangup or automatic transcript saving.

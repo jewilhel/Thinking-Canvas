@@ -1153,6 +1153,12 @@ export type Database = {
           },
         ]
       }
+      voice_user_settings: {
+        Row: { user_id: string; settings: Json }
+        Insert: { user_id: string; settings: Json }
+        Update: { user_id?: string; settings?: Json }
+        Relationships: []
+      }
       voice_user_preferences: {
         Row: { user_id: string; preferred_name: string }
         Insert: { user_id: string; preferred_name: string }

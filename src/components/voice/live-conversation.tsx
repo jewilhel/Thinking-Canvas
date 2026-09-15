@@ -1,6 +1,7 @@
 "use client";
 import styles from "./voice-settings.module.css";
 import { useEffect, useRef, useState } from "react";
+import { useSavedVoiceSettings } from "@/voice/use-saved-voice-settings";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { WorkspacePanel } from "@/components/canvas/workspace-panel";
@@ -80,9 +81,13 @@ export function LiveVoice({
   const legacyKeys = voiceStorageKeys(userId, canvasId),
     recordsKey = `${legacyKeys.records}:live:v2`,
     presetsKey = `${legacyKeys.presets}:live:v2`;
-  const [draft, setDraft] = useState<LiveSettings>({
-    ...DEFAULT_LIVE_SETTINGS,
-  });
+  const {
+    draft,
+    setDraft,
+    ready: settingsReady,
+    notice: settingsNotice,
+    retry: retrySettings,
+  } = useSavedVoiceSettings(userId);
   const [panel, setPanel] = useState(false),
     [consent, setConsent] = useState(false),
     [invoker, setInvoker] = useState<HTMLButtonElement | null>(null);
@@ -296,6 +301,10 @@ export function LiveVoice({
   }, [canvasId, recordsKey, status, records.length]);
   const start = async (restartOf?: string) => {
     if (abort.current) return;
+    if (!settingsReady) {
+      setError("Wait for saved voice settings to load before starting.");
+      return;
+    }
     const settings = liveSettingsSchema.safeParse(draft);
     if (!settings.success) {
       setError("Check the voice settings before starting.");
@@ -568,10 +577,21 @@ export function LiveVoice({
                 </p>
               )}
             </section>
-            <section className={styles.card} aria-label="Voice and behavior">
+            <p className={styles.help} role="status">
+              {settingsNotice}
+            </p>
+            {settingsNotice.includes("could not") ||
+            settingsNotice.includes("Could not") ? (
+              <Button onClick={retrySettings}>Retry saving settings</Button>
+            ) : null}
+            <fieldset
+              disabled={!settingsReady}
+              className={styles.card}
+              aria-label="Voice and behavior"
+            >
               <h3>Voice and behavior</h3>
               <p className={styles.help}>
-                Changes apply to your next session
+                Changes save automatically and apply to your next session
                 {active ? " or when you restart below" : ""}.
               </p>
               <label className="block">
@@ -696,7 +716,7 @@ export function LiveVoice({
                   deadlines.
                 </p>
               )}
-            </section>
+            </fieldset>
             <section
               className={styles.card}
               aria-label="Conversation transcript"
