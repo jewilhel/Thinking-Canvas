@@ -3,7 +3,7 @@ import { z } from "zod";
 export const LIVE_CONVERSATION_MAX_CHARACTERS = 90_000;
 
 export const liveCanvasRequestSchema = z.strictObject({
-  kind: z.enum(["question", "comment", "conversation"]),
+  kind: z.enum(["question", "comment", "conversation", "ending_check"]),
   text: z.string().trim().min(1).max(LIVE_CONVERSATION_MAX_CHARACTERS),
 });
 export type LiveCanvasRequest = z.infer<typeof liveCanvasRequestSchema>;

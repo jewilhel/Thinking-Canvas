@@ -119,6 +119,17 @@ it("defaults to the latest session, exports only the selected session, and ignor
   );
   expect(save.mock.calls[1][0]).toContain("First conversation only");
   expect(save.mock.calls[1][0]).not.toContain("Second conversation only");
+  act(() =>
+    vi
+      .mocked(connectLiveVoice)
+      .mock.calls[1][2]({
+        type: "session.closed",
+        reason: "close_requested",
+        usage: { seconds: 30 },
+      }),
+  );
+  await screen.findByText("Start test voice");
+  expect(screen.queryByText("Stop test voice")).toBeNull();
   view.unmount();
   controls.remove();
 });

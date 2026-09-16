@@ -1,6 +1,7 @@
 import type { PreviousConversation } from "./previous-conversation";
 import OpenAI from "openai";
 import { liveAudioActivity } from "./live-audio-activity";
+import { LiveEndingObserver } from "./live-ending-observer";
 import { ConversationEnd } from "./conversation-end";
 import { scheduleVoiceGoodbye } from "./voice-goodbye";
 import { retryVoiceCheck } from "./retry-voice-check";
@@ -83,7 +84,7 @@ export async function superviseLiveVoice(
         delegationId,
         stage,
       }),
-    quiet: () => Date.now() - lastAudio >= 2000,
+    quiet: () => !endingObserver?.busy && Date.now() - lastAudio >= 2000,
     append: (type, id, content) => {
       if (stopping || socket.readyState !== WebSocket.OPEN)
         return Promise.reject(new Error("Live connection unavailable"));
@@ -164,14 +165,56 @@ export async function superviseLiveVoice(
         : result.text;
     },
   });
+  const endingObserver = new LiveEndingObserver(
+    async (text) => {
+      const id = `control:ending-observer:${crypto.randomUUID()}`;
+      const request = { kind: "ending_check" as const, text };
+      const response = await fetch(
+        `${app.origin}/api/canvases/${session.canvas_id}/voice/delegations`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            cookie: app.cookie,
+            "x-live-delegation": liveDelegationSignature(
+              key,
+              session.id,
+              id,
+              request,
+            ),
+          },
+          body: JSON.stringify({
+            sessionId: session.id,
+            delegationId: id,
+            request,
+          }),
+          signal: AbortSignal.timeout(50000),
+        },
+      );
+      if (!response.ok) return false;
+      const result = await response.json();
+      return result.completed === true && result.endSession === true;
+    },
+    () => {
+      if (!stopping && !owner.busy) {
+        console.info("Live ending observed", { sessionId: session.id });
+        conversationEnd.request();
+      }
+    },
+  );
   const taskTimer = setInterval(() => {
     owner.tick();
+    endingObserver?.tick(
+      owner.busy || conversationEnd.armed,
+      Date.now() - lastAudio >= 1500,
+    );
     conversationEnd.tick(owner.busy, Date.now() - lastAudio >= 2500);
   }, 250);
   const probeId = crypto.randomUUID();
   const stop = (why: string) => {
     if (stopping) return;
     stopping = true;
+    endingObserver?.close();
     for (const ack of appendAcks.values()) ack.reject();
     reason = why;
     clearInterval(taskTimer);
@@ -245,7 +288,10 @@ export async function superviseLiveVoice(
       event.delta.trim().length > 0
     )
       conversationEnd.output();
-    if (!stopping) owner.receive(event);
+    if (!stopping) {
+      owner.receive(event);
+      endingObserver?.receive(event);
+    }
     if (event.type === "session.input_audio.muted") muted = true;
     if (event.type === "session.input_audio.unmuted") {
       muted = false;

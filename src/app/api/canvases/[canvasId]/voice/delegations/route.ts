@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { ENDING_CHECK_INSTRUCTIONS } from "@/voice/live-ending-observer";
 import { delegationDiagnostic } from "@/voice/delegation-diagnostic";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
@@ -124,6 +125,61 @@ export async function POST(
   }, 750);
   try {
     await stillAllowed();
+    if (body.data.request.kind === "ending_check") {
+      if (body.data.request.text.length > 6500)
+        throw new Error("Ending context exceeds its bound");
+      stage = "ending_check";
+      attempted = true;
+      units = null;
+      const result = await voiceProvider().responses.create(
+        {
+          model: config.OPENAI_RESPONSES_MODEL,
+          instructions: ENDING_CHECK_INSTRUCTIONS,
+          input: body.data.request.text,
+          store: false,
+          max_output_tokens: 512,
+          reasoning: { effort: "low" },
+          text: {
+            format: {
+              type: "json_schema",
+              name: "voice_ending",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: { end: { type: "boolean" } },
+                required: ["end"],
+                additionalProperties: false,
+              },
+            },
+          },
+        },
+        { signal },
+      );
+      if (result.usage) {
+        units = voiceBackendUnits(
+          config.OPENAI_RESPONSES_MODEL,
+          result.usage.input_tokens,
+          result.usage.output_tokens,
+        );
+        await db
+          .from("voice_delegations")
+          .update({
+            model: config.OPENAI_RESPONSES_MODEL,
+            input_tokens: result.usage.input_tokens,
+            output_tokens: result.usage.output_tokens,
+          })
+          .eq("id", taskId);
+      }
+      await stillAllowed();
+      const decision = z
+        .strictObject({ end: z.boolean() })
+        .parse(JSON.parse(result.output_text));
+      taskStatus = "completed";
+      return Response.json(
+        { completed: true, endSession: decision.end, text: "", taskId },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
     const auth = await createClient();
     stage = "create_comment";
     const comment = await auth.rpc("create_comment_thread", {

@@ -7,6 +7,9 @@ export class ConversationEnd {
     this.requestedAt = now;
     if (waitForNewOutput) this.lastOutput = null;
   }
+  get armed() {
+    return this.requestedAt !== null;
+  }
   pause() {
     this.requestedAt = null;
   }
