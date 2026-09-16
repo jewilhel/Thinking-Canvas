@@ -191,7 +191,13 @@ export async function superviseLiveVoice(
           signal: AbortSignal.timeout(50000),
         },
       );
-      if (!response.ok) return false;
+      if (!response.ok) {
+        console.warn("Live ending check failed", {
+          sessionId: session.id,
+          status: response.status,
+        });
+        return false;
+      }
       const result = await response.json();
       return result.completed === true && result.endSession === true;
     },
@@ -201,6 +207,12 @@ export async function superviseLiveVoice(
         conversationEnd.confirmCompletedExchange();
       }
     },
+    (decision) =>
+      console.info("Live ending decision", {
+        sessionId: session.id,
+        ...decision,
+        canvasBusy: owner.busy,
+      }),
   );
   const taskTimer = setInterval(() => {
     owner.tick();

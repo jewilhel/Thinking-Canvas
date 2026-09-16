@@ -1,11 +1,19 @@
 import { expect, it, vi } from "vitest";
 import { LiveEndingObserver } from "./live-ending-observer";
 import { ConversationEnd } from "./conversation-end";
+let fragmentId = 0;
+const timing = () => ({
+  event_id: `fragment-${++fragmentId}`,
+  start_ms: fragmentId * 10,
+  end_ms: fragmentId * 10 + 10,
+});
 const input = (delta: string) => ({
+  ...timing(),
   type: "session.input_transcript.delta",
   delta,
 });
 const output = (delta: string) => ({
+  ...timing(),
   type: "session.output_transcript.delta",
   delta,
 });
@@ -104,4 +112,36 @@ it("checks a final user turn but leaves the call open for a new request", async 
   await vi.waitFor(() => expect(observer.busy).toBe(false));
   expect(check).toHaveBeenCalledOnce();
   expect(end).not.toHaveBeenCalled();
+});
+
+it("retains ending intent across overlapping fragments, whitespace and delayed delivery", async () => {
+  const end = vi.fn();
+  const check = vi.fn(async (text: string) => {
+    const turns = JSON.parse(text) as { speaker: string; text: string }[];
+    // Verify the evidence supplied to the semantic evaluator, rather than
+    // assuming it receives the complete sentence from a real stream.
+    expect(turns[0]).toEqual({
+      speaker: "user",
+      text: "Great. We can end it here.",
+    });
+    expect(turns.at(-1)).toEqual({ speaker: "user", text: "Bye" });
+    expect(turns.map((p) => p.text).join("")).toContain("Talk with you later.");
+    return true;
+  });
+  const observer = new LiveEndingObserver(check, end);
+  const events = [input("Great."), input(" "), input("We can end it here.")];
+  // The live provider can deliver overlapping transcript fragments separately.
+  for (let i = 0; i < 6; i++) {
+    events.push(
+      output(i === 0 ? "No problem." : "."),
+      input(i === 0 ? "Thank" : "."),
+    );
+  }
+  events.push(output("Talk with you later."), input("Bye"));
+  // Arrival order is not transcript time order. Duplicate delivery is harmless.
+  for (const event of [...events].reverse()) observer.receive(event, 1000);
+  observer.receive(events.at(-1)!, 1000);
+  observer.tick(false, true, 3000);
+  await vi.waitFor(() => expect(end).toHaveBeenCalledOnce());
+  expect(check).toHaveBeenCalledOnce();
 });

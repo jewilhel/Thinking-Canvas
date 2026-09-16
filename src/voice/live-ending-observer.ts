@@ -1,6 +1,9 @@
+import { LiveTranscript } from "./live-transcript";
+
 /** Volatile, bounded closing-intent checks; never performs canvas actions. */
 export class LiveEndingObserver {
-  private parts: { speaker: string; text: string }[] = [];
+  private transcript = new LiveTranscript();
+  private context = "";
   private version = 0;
   private checked = 0;
   private lastActivity = 0;
@@ -9,29 +12,34 @@ export class LiveEndingObserver {
   constructor(
     private check: (text: string) => Promise<boolean>,
     private end: () => void,
+    private diagnostic?: (decision: { end: boolean; current: boolean }) => void,
   ) {}
-  receive(event: { type?: string; delta?: unknown }, now = Date.now()) {
-    const speaker =
-      event.type === "session.input_transcript.delta"
-        ? "user"
-        : event.type === "session.output_transcript.delta"
-          ? "assistant"
-          : null;
+  receive(event: unknown, now = Date.now()) {
     if (
-      !speaker ||
-      typeof event.delta !== "string" ||
-      !event.delta.trim() ||
-      this.closed
+      this.closed ||
+      !event ||
+      typeof event !== "object" ||
+      !("type" in event) ||
+      ![
+        "session.input_transcript.delta",
+        "session.output_transcript.delta",
+      ].includes(String(event.type))
     )
       return;
-    const last = this.parts.at(-1);
-    if (last?.speaker === speaker) last.text += event.delta;
-    else this.parts.push({ speaker, text: event.delta });
-    while (this.parts.length > 8) this.parts.shift();
-    while (JSON.stringify(this.parts).length > 6000 && this.parts.length > 1)
-      this.parts.shift();
-    if (this.parts[0]?.text.length > 5000)
-      this.parts[0].text = this.parts[0].text.slice(-5000);
+    this.transcript.append(event, "current", 0);
+    // Preserve chronological wording across interleaved speaker fragments. A
+    // speaker switch is not a complete turn and must not evict ending intent.
+    const parts = this.transcript.snapshot().turns.map(({ speaker, text }) => ({
+      speaker: speaker === "You" ? "user" : "assistant",
+      text,
+    }));
+    while (JSON.stringify(parts).length > 6000 && parts.length > 1)
+      parts.shift();
+    if (parts[0]?.text.length > 5000)
+      parts[0].text = parts[0].text.slice(-5000);
+    const context = JSON.stringify(parts);
+    if (!parts.length || context === this.context) return;
+    this.context = context;
     this.version++;
     this.lastActivity = now;
   }
@@ -46,16 +54,18 @@ export class LiveEndingObserver {
       !quiet ||
       this.version === this.checked ||
       now - this.lastActivity < 1500 ||
-      !this.parts.some((p) => p.speaker === "assistant") ||
-      !this.parts.some((p) => p.speaker === "user")
+      !this.transcript.snapshot().turns.some((p) => p.speaker === "AI") ||
+      !this.transcript.snapshot().turns.some((p) => p.speaker === "You")
     )
       return;
     const version = this.version;
     this.checked = version;
     this.pending = true;
-    void this.check(JSON.stringify(this.parts))
+    void this.check(this.context)
       .then((end) => {
-        if (end && !this.closed && version === this.version) this.end();
+        const current = !this.closed && version === this.version;
+        this.diagnostic?.({ end, current });
+        if (end && current) this.end();
       })
       .catch(() => undefined)
       .finally(() => {
@@ -64,7 +74,8 @@ export class LiveEndingObserver {
   }
   close() {
     this.closed = true;
-    this.parts = [];
+    this.transcript = new LiveTranscript();
+    this.context = "";
   }
 }
 
