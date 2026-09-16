@@ -593,3 +593,55 @@ it.each([true, false])(
       );
   },
 );
+
+it.each([true, false])(
+  "reviews a request arriving during document creation without another handoff (ending=%s)",
+  async (ending) => {
+    const { hooks } = setup();
+    const endSession = vi.fn();
+    const owner = new LiveDelegationOwner({ ...hooks, endSession });
+    let resolveDocument!: (text: string) => void;
+    hooks.run.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveDocument = resolve;
+        }),
+    );
+    hooks.run.mockResolvedValueOnce(
+      ending
+        ? {
+            text: "Document saved. Talk later.",
+            endSession: true,
+            reportBeforeEnding: true,
+          }
+        : "The document is saved. Let's discuss your next idea.",
+    );
+    owner.receive(
+      speech("Create a document with our discussion.", "document", 0),
+      0,
+    );
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    const latest = ending
+      ? "I'm ready to stop talking for now."
+      : "When that is saved, let's discuss another idea.";
+    owner.receive(speech(latest, "later", 6000), 3000);
+    resolveDocument("Created the discussion document successfully.");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let i = 0; i < 6; i++) {
+      owner.tick(6000 + i * 250);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(hooks.run).toHaveBeenCalledTimes(2);
+    const review = JSON.parse(hooks.run.mock.calls[1][2].text);
+    expect(review.fragments.at(-1).text).toBe(latest);
+    expect(review.previouslyHandledThroughMs).toBe(500);
+    expect(review.completedTasks).toEqual([
+      { id: "task1", text: "Created the discussion document successfully." },
+    ]);
+    expect(hooks.append.mock.calls[0][0]).toBe("session.thinking.append");
+    expect(hooks.append.mock.calls[0][2]).toContain("context only");
+    expect(endSession).toHaveBeenCalledTimes(ending ? 1 : 0);
+    if (ending) expect(endSession).toHaveBeenCalledWith(true);
+  },
+);
