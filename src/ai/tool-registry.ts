@@ -407,7 +407,7 @@ export const AI_TOOL_REGISTRY = {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
     description:
-      "Group or ungroup existing objects, or nest/detach objects and groups in a parent shape. Identify targets by their existing object IDs, including members of an existing group. For nest supply the existing parentId; otherwise parentId is null. The server creates new group identities. Nesting moves the requested object or complete group inside the parent when necessary and proportionally reduces it only when needed to fit; existing placement is preserved when already contained. Applies as one undoable edit. Ask for clarification if the intended parent or targets are ambiguous.",
+      "Group or ungroup existing objects, or nest/detach objects and groups in a parent shape. Identify targets by their existing object IDs, including members of an existing group. For nest into an existing shape supply parentId and omit newParent. To CREATE a new containing shape AND make existing objects its children, use this single action with parentId null and newParent styling/padding; the server creates a parent around the targets and nests them atomically. Do not use stage_new_shapes alone for this combined request: drawing a background is not parenting. For other actions parentId and newParent are null. The server creates new group identities. Nesting moves the requested object or complete group inside the parent when necessary and proportionally reduces it only when needed to fit; existing placement is preserved when already contained. Applies as one undoable edit. Ask for clarification if the intended parent or targets are ambiguous.",
     argumentsSchema: organizeCanvasSchema,
   },
   stage_canvas_changes: {

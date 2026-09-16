@@ -1,6 +1,7 @@
 import { organizeCanvasSchema } from "./canvas-organization-schema";
 import {
   fullyContains,
+  geometryCorners,
   isObjectParent,
   worldPoint,
   type ObjectParent,
@@ -60,6 +61,8 @@ export async function organizeCanvasCommands(input: {
   groups?: CanvasGroupV2[];
   runId: string;
   callKey: string;
+  canvasId: string;
+  actorId: string;
 }) {
   const args = organizeCanvasSchema.parse(input.arguments);
   if (new Set(args.objectIds).size !== args.objectIds.length)
@@ -70,6 +73,62 @@ export async function organizeCanvasCommands(input: {
   if (targets.some((object) => !object))
     throw new Error("An organization target no longer exists.");
   const commands: ProductCanvasMutation[] = [];
+  const objects = [...input.objects];
+  if (args.newParent) {
+    if (args.action !== "nest" || args.parentId)
+      throw new Error("A new parent requires nest with no existing parentId.");
+    const corners = targets.flatMap((object) => {
+      const group = input.groups?.find((group) => group.id === object!.groupId);
+      return geometryCorners(group?.geometry ?? object!.geometry);
+    });
+    const x =
+      Math.min(...corners.map((point) => point.x)) - args.newParent.padding;
+    const y =
+      Math.min(...corners.map((point) => point.y)) - args.newParent.padding;
+    const id = await stableAiToolCommandId({
+      runId: input.runId,
+      callKey: `${input.callKey}:parent`,
+    });
+    const now = new Date().toISOString();
+    const parent: ObjectParent = {
+      schemaVersion: 2,
+      id,
+      canvasId: input.canvasId,
+      createdBy: input.actorId,
+      createdAt: now,
+      updatedAt: now,
+      type: "shape",
+      shape: args.newParent.shape,
+      text: "",
+      geometry: {
+        x,
+        y,
+        width:
+          Math.max(...corners.map((point) => point.x)) +
+          args.newParent.padding -
+          x,
+        height:
+          Math.max(...corners.map((point) => point.y)) +
+          args.newParent.padding -
+          y,
+        rotation: 0,
+      },
+      style: {
+        fill: args.newParent.fill,
+        outline: args.newParent.outline,
+        outlineWidth: args.newParent.outlineWidth,
+        fontFamily: "Inter",
+        fontSize: 16,
+        textColor: "#18181b",
+      },
+    };
+    commands.push(
+      { type: "object.create", payload: { object: parent } },
+      { type: "object.reorder", payload: { objectId: id, direction: "back" } },
+    );
+    objects.push(parent);
+    args.parentId = id;
+  }
   if (args.action === "group") {
     commands.push({
       type: "selection.group",
@@ -93,11 +152,10 @@ export async function organizeCanvasCommands(input: {
   } else {
     if (
       args.action === "nest" &&
-      (!args.parentId ||
-        !input.objects.some((object) => object.id === args.parentId))
+      (!args.parentId || !objects.some((object) => object.id === args.parentId))
     )
       throw new Error("Nesting requires an existing parent.");
-    const parent = input.objects.find((object) => object.id === args.parentId);
+    const parent = objects.find((object) => object.id === args.parentId);
     if (args.action === "nest" && (!parent || !isObjectParent(parent)))
       throw new Error("Choose a top-level shape as the parent.");
     const handledGroups = new Set<string>();

@@ -14,6 +14,7 @@ import {
   liveCanvasRequestSchema,
   voiceBackendUnits,
   VOICE_REQUEST_MAX_BYTES,
+  VOICE_CANVAS_TIMEOUT_MS,
   VOICE_RESPONSE_MAX_TOKENS,
   VOICE_CONVERSATION_MARKER,
 } from "@/voice/live-delegation-contract";
@@ -205,7 +206,7 @@ export async function POST(
     const gateway = new OpenAiPrimaryAiGateway({
       model: config.OPENAI_RESPONSES_MODEL,
       maxOutputTokens: VOICE_RESPONSE_MAX_TOKENS,
-      timeoutMs: 35000,
+      timeoutMs: VOICE_CANVAS_TIMEOUT_MS,
       client: {
         async create(input, options) {
           if (
@@ -220,7 +221,10 @@ export async function POST(
           attempted = true;
           units = null;
           const result = await voiceProvider()
-            .responses.create(input, { ...options, timeout: 35_000 })
+            .responses.create(input, {
+              ...options,
+              timeout: VOICE_CANVAS_TIMEOUT_MS,
+            })
             .catch((error) => {
               if (
                 error instanceof OpenAI.APIError &&

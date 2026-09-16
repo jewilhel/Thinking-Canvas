@@ -154,7 +154,9 @@ export async function POST(
     {
       model: parsePrimaryAiProviderEnvironment(process.env)
         .OPENAI_RESPONSES_MODEL,
-      instructions: ENDING_CHECK_INSTRUCTIONS,
+      instructions:
+        ENDING_CHECK_INSTRUCTIONS +
+        " First explain the decisive evidence in reason, then choose end.",
       input: JSON.stringify(
         fixture.turns.map(([speaker, text]) => ({ speaker, text })),
       ),
@@ -168,8 +170,11 @@ export async function POST(
           strict: true,
           schema: {
             type: "object",
-            properties: { end: { type: "boolean" } },
-            required: ["end"],
+            properties: {
+              reason: { type: "string" },
+              end: { type: "boolean" },
+            },
+            required: ["reason", "end"],
             additionalProperties: false,
           },
         },
@@ -177,12 +182,13 @@ export async function POST(
     },
     { timeout: 35000 },
   );
-  const end = JSON.parse(result.output_text).end;
+  const { end, reason } = JSON.parse(result.output_text);
   return new Response(
     JSON.stringify({
       test: fixture.name,
       expected: fixture.expected,
       actual: end,
+      reason,
       passed: end === fixture.expected,
       inputTokens: result.usage?.input_tokens,
       outputTokens: result.usage?.output_tokens,

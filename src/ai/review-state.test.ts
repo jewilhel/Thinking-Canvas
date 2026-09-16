@@ -213,6 +213,8 @@ describe("AI organization persistence and undo", () => {
       arguments: args,
       objects: listCanvasObjectsV2(document),
       runId: canvasId,
+      canvasId,
+      actorId: canvasId,
       callKey: "group",
     };
     const grouped = await organizeCanvasCommands(input);
@@ -280,6 +282,8 @@ describe("AI organization persistence and undo", () => {
       },
       objects: listCanvasObjectsV2(document),
       runId: canvasId,
+      canvasId,
+      actorId: canvasId,
       callKey: "group",
     });
     const stage = validateCanvasReviewStage({
@@ -325,6 +329,8 @@ it("nests and detaches a child using canonical commands and restores its parent 
       },
       objects: listCanvasObjectsV2(document),
       runId: canvasId,
+      canvasId,
+      actorId: canvasId,
       callKey: action,
     });
     const stage = validateCanvasReviewStage({
@@ -383,6 +389,8 @@ it("places an outside child inside a rotated parent and undoes placement with th
     },
     objects: listCanvasObjectsV2(document),
     runId: canvasId,
+    canvasId,
+    actorId: canvasId,
     callKey: "nest-outside",
   });
   const stage = validateCanvasReviewStage({
@@ -428,6 +436,8 @@ it("moves a complete group into a parent and reverses its frame and member place
       objects: listCanvasObjectsV2(document),
       groups: listCanvasGroupsV2(document),
       runId: canvasId,
+      canvasId,
+      actorId: canvasId,
       callKey: action,
     });
     const stage = validateCanvasReviewStage({
@@ -452,4 +462,67 @@ it("moves a complete group into a parent and reverses its frame and member place
   Y.applyUpdate(document, undo.update);
   expect(listCanvasGroupsV2(document)).toEqual(before);
   expect(readCanvasObjectV2(document, objectId)!.geometry.x).toBe(800);
+});
+
+it("creates a new parent, nests both existing shapes, and undoes the entire operation", async () => {
+  const document = createProductCanvasDocument(canvasId);
+  const secondId = "61000000-0000-4000-8000-000000000002";
+  putCanvasObjectV2(document, object(0, "Alpha"));
+  putCanvasObjectV2(document, { ...object(220, "Beta"), id: secondId });
+  const original = listCanvasObjectsV2(document);
+  const result = await organizeCanvasCommands({
+    arguments: {
+      action: "nest",
+      objectIds: [objectId, secondId],
+      parentId: null,
+      newParent: {
+        shape: "rounded-rectangle",
+        fill: "#d4d4d8",
+        outline: "#18181b",
+        outlineWidth: 2,
+        padding: 64,
+      },
+      summary: "Create grey parent and nest Alpha and Beta",
+    },
+    objects: original,
+    runId: canvasId,
+    canvasId,
+    actorId: canvasId,
+    callKey: "new-parent",
+  });
+  const stage = validateCanvasReviewStage({
+    document,
+    canvasId,
+    actorId: canvasId,
+    commands: result.commands,
+  });
+  Y.applyUpdate(document, stage.tentativeUpdate);
+  const parent = listCanvasObjectsV2(document).find(
+    (o) => o.id !== objectId && o.id !== secondId,
+  )!;
+  expect(parent).toMatchObject({
+    type: "shape",
+    shape: "rounded-rectangle",
+    style: { fill: "#d4d4d8" },
+  });
+  for (const id of [objectId, secondId])
+    expect(readCanvasObjectV2(document, id)).toMatchObject({
+      parentId: parent.id,
+    });
+  const undo = buildUndoAiChangeSetUpdate({
+    document,
+    organizationHistory: stage.organizationHistory,
+    objectChanges: stage.objectChanges.map((c, i) => ({ ...c, id: String(i) })),
+  });
+  expect(undo.conflicts).toEqual([]);
+  Y.applyUpdate(document, undo.update);
+  expect(
+    listCanvasObjectsV2(document).map((o) => ({
+      id: o.id,
+      geometry: o.geometry,
+      parentId: "parentId" in o ? (o.parentId ?? null) : null,
+    })),
+  ).toEqual(
+    original.map((o) => ({ id: o.id, geometry: o.geometry, parentId: null })),
+  );
 });

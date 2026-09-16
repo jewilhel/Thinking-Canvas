@@ -809,6 +809,8 @@ export async function completeAiRun(
     }
     if (validatedTool.toolName === "organize_canvas") {
       const organized = await organizeCanvasCommands({
+        canvasId: run.canvas_id,
+        actorId: run.requested_by,
         arguments: validatedTool.arguments,
         objects: sourceObjects,
         groups: listCanvasGroupsV2(compacted.document),
