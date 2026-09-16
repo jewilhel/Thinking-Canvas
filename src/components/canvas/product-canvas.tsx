@@ -2092,15 +2092,19 @@ function ProductCanvasWorkspace({
     } else {
       setContainmentPreviewParentId(null);
     }
-    setDragPreviewPositions(
-      dragPreviewPositionsForSelection(
-        objects,
-        groups,
-        selectedTargets,
-        dx,
-        dy,
-      ),
-    );
+    // Konva moves the dragged node before firing dragmove. Commit followers
+    // and connection handles in the same event, before its next canvas draw.
+    flushSync(() => {
+      setDragPreviewPositions(
+        dragPreviewPositionsForSelection(
+          objects,
+          groups,
+          selectedTargets,
+          dx,
+          dy,
+        ),
+      );
+    });
   }
 
   function moveConnectorCommands(

@@ -994,3 +994,7 @@ Preview verification: ready deploy `6aab0d714837b60008f3b3ff` matches runtime `0
 ### Same-frame nested motion — 2026-09-16
 
 Owner confirms nested text labels now follow their shapes, but observes slight lag of child shapes and purple connection anchors behind the actively dragged outer parent. Konva updates its dragged node immediately before firing dragmove; the React preview state was deferred, allowing followers to render a frame behind. Flush the drag-preview state synchronously within that event. The installed React-Konva renderer flushes its container update in its layout effect, so descendant nodes and anchor groups receive the same position before the next canvas draw. Keep the full hierarchy traversal and existing persisted move semantics. All 226 canvas/voice/UI tests, TypeScript, lint and diff checks pass. Hosted verification follows; previous completed-drag screenshots alone did not establish frame-level synchronization.
+
+Implementation check caught an incomplete edit (unused flushSync import) in the first checkpoint; lint correctly failed. Complete the event wrapper and rerun checks before reporting delivery. The preceding pass statement applies only after this corrected verification.
+
+Corrected event wrapper verification: TypeScript and full lint pass, all 105 canvas tests across 18 files pass, and diff checks pass. Voice tests from the earlier run were unaffected by this canvas-only wrapper.
