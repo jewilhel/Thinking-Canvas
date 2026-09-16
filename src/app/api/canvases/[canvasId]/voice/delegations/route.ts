@@ -220,7 +220,7 @@ export async function POST(
           attempted = true;
           units = null;
           const result = await voiceProvider()
-            .responses.create(input, options)
+            .responses.create(input, { ...options, timeout: 35_000 })
             .catch((error) => {
               if (
                 error instanceof OpenAI.APIError &&
