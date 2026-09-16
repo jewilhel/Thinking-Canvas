@@ -7,6 +7,14 @@ export class ConversationEnd {
     this.requestedAt = now;
     if (waitForNewOutput) this.lastOutput = null;
   }
+  /** Semantic check confirmed the farewell plus any final participant acknowledgment. */
+  confirmCompletedExchange(now = Date.now()) {
+    this.requestedAt = now;
+    this.lastOutput = now;
+  }
+  get awaitingOutput() {
+    return this.armed && this.lastOutput === null;
+  }
   get armed() {
     return this.requestedAt !== null;
   }

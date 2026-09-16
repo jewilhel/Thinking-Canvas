@@ -198,14 +198,14 @@ export async function superviseLiveVoice(
     () => {
       if (!stopping && !owner.busy) {
         console.info("Live ending observed", { sessionId: session.id });
-        conversationEnd.request();
+        conversationEnd.confirmCompletedExchange();
       }
     },
   );
   const taskTimer = setInterval(() => {
     owner.tick();
     endingObserver?.tick(
-      owner.busy || conversationEnd.armed,
+      owner.busy || (conversationEnd.armed && !conversationEnd.awaitingOutput),
       Date.now() - lastAudio >= 1500,
     );
     conversationEnd.tick(owner.busy, Date.now() - lastAudio >= 2500);
