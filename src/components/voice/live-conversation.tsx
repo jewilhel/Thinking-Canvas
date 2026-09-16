@@ -14,7 +14,6 @@ import {
 } from "@/voice/live-protocol";
 import { connectLiveVoice } from "@/voice/live-webrtc";
 import type { SupervisedVoice } from "@/voice/supervised-webrtc";
-import { voiceEndMessage } from "@/voice/voice-end-message";
 import { LiveTranscript } from "@/voice/live-transcript";
 import {
   availableTranscriptText,
@@ -115,9 +114,7 @@ export function LiveVoice({
   >([]);
   const [selectedSession, setSelectedSession] = useState("");
   const selectedSessionRef = useRef("");
-  const [endNotice, setEndNotice] = useState("");
   const endedGeneration = useRef("");
-  const reportedEndReason = useRef("");
   const [records, setRecords] = useState<Run[]>(() => {
     try {
       return z
@@ -173,14 +170,6 @@ export function LiveVoice({
   const finish = (reason = "User ended session") => {
     if (endedGeneration.current === generation.current) return;
     endedGeneration.current = generation.current;
-    if (
-      ![
-        "User ended session",
-        "Restart requested",
-        "Connection failed",
-      ].includes(reason)
-    )
-      setEndNotice(voiceEndMessage(reason));
     connection.current?.close();
     connection.current = null;
     abort.current?.abort();
@@ -250,17 +239,6 @@ export function LiveVoice({
               setTaskNotice("Voice task cancelled.");
             if (data.ended && connection.current)
               finishRef.current(data.reason ?? "Provider session ended");
-            else if (
-              data.ended &&
-              data.reason &&
-              reportedEndReason.current !==
-                `${record.sessionId}:${data.reason}` &&
-              record.reason !== "User ended session" &&
-              record.reason !== "Restart requested"
-            ) {
-              reportedEndReason.current = `${record.sessionId}:${data.reason}`;
-              setEndNotice(voiceEndMessage(data.reason));
-            }
           }
           if (
             data.settled &&
@@ -312,7 +290,6 @@ export function LiveVoice({
     }
     setConsent(false);
     setError("");
-    setEndNotice("");
     sessionId.current = null;
     setStatus("Connecting");
     setWindingDown(false);
@@ -978,26 +955,6 @@ export function LiveVoice({
             </Button>
           </div>
         </WorkspacePanel>
-      )}
-      {endNotice && !active && !connecting && (
-        <div
-          role="status"
-          className="absolute top-24 right-4 z-40 w-[min(28rem,calc(100%-2rem))] rounded-lg border bg-white p-3 text-sm"
-        >
-          {endNotice} Your captured conversation is still in Voice settings.
-          <Button
-            variant="outline"
-            onClick={() => {
-              setPanel(true);
-              setCaptions(true);
-            }}
-          >
-            View conversation
-          </Button>
-          <Button variant="outline" onClick={() => setEndNotice("")}>
-            Dismiss
-          </Button>
-        </div>
       )}
       {(error || accessError) && (
         <div

@@ -1,5 +1,7 @@
 "use client";
 
+import { dragPreviewPositionsForSelection } from "@/canvas/drag-preview";
+
 import { LiveVoice } from "@/components/voice/live-conversation";
 import type Konva from "konva";
 import {
@@ -2089,68 +2091,13 @@ function ProductCanvasWorkspace({
     } else {
       setContainmentPreviewParentId(null);
     }
-    const movingTargetIds = new Set(
-      selectedTargets
-        .filter((candidate) => candidate.type !== "annotation")
-        .map((candidate) => candidate.id),
-    );
-    const familyTargets = objects.filter(
-      (candidate) =>
-        isContainableObject(candidate) &&
-        typeof candidate.parentId === "string" &&
-        movingTargetIds.has(candidate.parentId),
-    );
-    for (const child of familyTargets) movingTargetIds.add(child.id);
-    const nestedGroupIds = new Set(
-      groups
-        .filter(
-          (group) =>
-            typeof group.parentId === "string" &&
-            movingTargetIds.has(group.parentId),
-        )
-        .map((group) => group.id),
-    );
-    const nestedGroupMembers = objects.filter(
-      (candidate) =>
-        typeof candidate.groupId === "string" &&
-        nestedGroupIds.has(candidate.groupId),
-    );
-    for (const member of nestedGroupMembers) movingTargetIds.add(member.id);
-    const targetsById = new Map(
-      [...selectedTargets, ...familyTargets, ...nestedGroupMembers].map(
-        (target) => [target.id, target],
-      ),
-    );
-    for (const annotation of objects.filter(
-      (candidate) =>
-        candidate.type === "annotation" &&
-        candidate.attachedObjectId !== null &&
-        movingTargetIds.has(candidate.attachedObjectId),
-    )) {
-      targetsById.set(annotation.id, annotation);
-    }
-    const targets = [
-      ...selectedTargets,
-      ...[...targetsById.values()].filter(
-        (target) =>
-          !selectedTargets.some((selected) => selected.id === target.id),
-      ),
-    ];
     setDragPreviewPositions(
-      Object.fromEntries(
-        targets.flatMap((target) =>
-          target.type === "connector"
-            ? []
-            : [
-                [
-                  target.id,
-                  {
-                    x: target.geometry.x + dx,
-                    y: target.geometry.y + dy,
-                  },
-                ],
-              ],
-        ),
+      dragPreviewPositionsForSelection(
+        objects,
+        groups,
+        selectedTargets,
+        dx,
+        dy,
       ),
     );
   }
