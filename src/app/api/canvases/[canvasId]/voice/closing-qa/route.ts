@@ -6,7 +6,7 @@ import {
   voiceProvider,
   voiceService,
 } from "@/voice/voice-server";
-import { ENDING_CHECK_INSTRUCTIONS } from "@/voice/live-ending-observer";
+import { voiceEndingRequest } from "@/voice/live-ending-observer";
 import { parsePrimaryAiProviderEnvironment } from "@/ai/primary-ai-gateway-factory";
 export const maxDuration = 60;
 const fixtures = [
@@ -151,35 +151,12 @@ export async function POST(
     return new Response(null, { status: 400 });
   const fixture = fixtures[index];
   const result = await voiceProvider().responses.create(
-    {
-      model: parsePrimaryAiProviderEnvironment(process.env)
-        .OPENAI_RESPONSES_MODEL,
-      instructions:
-        ENDING_CHECK_INSTRUCTIONS +
-        " First explain the decisive evidence in reason, then choose end.",
-      input: JSON.stringify(
+    voiceEndingRequest(
+      parsePrimaryAiProviderEnvironment(process.env).OPENAI_RESPONSES_MODEL,
+      JSON.stringify(
         fixture.turns.map(([speaker, text]) => ({ speaker, text })),
       ),
-      store: false,
-      max_output_tokens: 512,
-      reasoning: { effort: "low" },
-      text: {
-        format: {
-          type: "json_schema",
-          name: "voice_ending",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              reason: { type: "string" },
-              end: { type: "boolean" },
-            },
-            required: ["reason", "end"],
-            additionalProperties: false,
-          },
-        },
-      },
-    },
+    ),
     { timeout: 35000 },
   );
   const { end, reason } = JSON.parse(result.output_text);

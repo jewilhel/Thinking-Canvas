@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { ENDING_CHECK_INSTRUCTIONS } from "@/voice/live-ending-observer";
+import { voiceEndingRequest } from "@/voice/live-ending-observer";
 import { delegationDiagnostic } from "@/voice/delegation-diagnostic";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
@@ -133,27 +133,10 @@ export async function POST(
       attempted = true;
       units = null;
       const result = await voiceProvider().responses.create(
-        {
-          model: config.OPENAI_RESPONSES_MODEL,
-          instructions: ENDING_CHECK_INSTRUCTIONS,
-          input: body.data.request.text,
-          store: false,
-          max_output_tokens: 512,
-          reasoning: { effort: "low" },
-          text: {
-            format: {
-              type: "json_schema",
-              name: "voice_ending",
-              strict: true,
-              schema: {
-                type: "object",
-                properties: { end: { type: "boolean" } },
-                required: ["end"],
-                additionalProperties: false,
-              },
-            },
-          },
-        },
+        voiceEndingRequest(
+          config.OPENAI_RESPONSES_MODEL,
+          body.data.request.text,
+        ),
         { signal },
       );
       if (result.usage) {
@@ -173,7 +156,7 @@ export async function POST(
       }
       await stillAllowed();
       const decision = z
-        .strictObject({ end: z.boolean() })
+        .strictObject({ reason: z.string(), end: z.boolean() })
         .parse(JSON.parse(result.output_text));
       taskStatus = "completed";
       return Response.json(
