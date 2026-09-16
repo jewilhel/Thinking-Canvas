@@ -1,5 +1,9 @@
 "use client";
 import styles from "./voice-settings.module.css";
+import {
+  hasVoiceConsent,
+  rememberVoiceConsent,
+} from "@/voice/microphone-consent";
 import { useEffect, useRef, useState } from "react";
 import { useSavedVoiceSettings } from "@/voice/use-saved-voice-settings";
 import { createPortal } from "react-dom";
@@ -468,7 +472,8 @@ export function LiveVoice({
                 if (!mounted.current) return;
                 if (current.enabled) {
                   setPanel(false);
-                  setConsent(true);
+                  if (hasVoiceConsent(userId)) await start();
+                  else setConsent(true);
                 } else {
                   setAccessError(current.reason ?? "Voice unavailable.");
                 }
@@ -918,7 +923,16 @@ export function LiveVoice({
               Captions remain temporarily in this tab. Save a transcript only
               when you explicitly choose to. Reloading clears unsaved text.
             </p>
-            <Button onClick={() => void start()}>
+            <p>
+              Your choice is remembered for this account in this browser, across
+              canvases. Voice starts only when you press the voice button.
+            </p>
+            <Button
+              onClick={() => {
+                rememberVoiceConsent(userId);
+                void start();
+              }}
+            >
               Allow microphone and start
             </Button>
           </div>

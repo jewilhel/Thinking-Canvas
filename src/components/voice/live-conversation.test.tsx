@@ -76,9 +76,10 @@ it("defaults to the latest session, exports only the selected session, and ignor
       onSaveTranscript={save}
     />,
   );
-  const start = async () => {
+  const start = async (first = false) => {
     fireEvent.click(screen.getByText("Start test voice"));
-    fireEvent.click(await screen.findByText("Allow microphone and start"));
+    if (first)
+      fireEvent.click(await screen.findByText("Allow microphone and start"));
     await screen.findByText("Stop test voice");
   };
   const emit = (call: number, text: string) =>
@@ -91,7 +92,7 @@ it("defaults to the latest session, exports only the selected session, and ignor
         end_ms: 100,
       }),
     );
-  await start();
+  await start(true);
   emit(0, "First conversation only");
   fireEvent.click(screen.getByText("Stop test voice"));
   await start();
@@ -120,16 +121,60 @@ it("defaults to the latest session, exports only the selected session, and ignor
   expect(save.mock.calls[1][0]).toContain("First conversation only");
   expect(save.mock.calls[1][0]).not.toContain("Second conversation only");
   act(() =>
-    vi
-      .mocked(connectLiveVoice)
-      .mock.calls[1][2]({
-        type: "session.closed",
-        reason: "close_requested",
-        usage: { seconds: 30 },
-      }),
+    vi.mocked(connectLiveVoice).mock.calls[1][2]({
+      type: "session.closed",
+      reason: "close_requested",
+      usage: { seconds: 30 },
+    }),
   );
   await screen.findByText("Start test voice");
   expect(screen.queryByText("Stop test voice")).toBeNull();
+  view.unmount();
+  controls.remove();
+});
+
+it("remembers consent across canvases and remounts, but not across accounts or without a start click", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({})),
+  );
+  vi.mocked(connectLiveVoice).mockImplementation(async () => ({
+    id: crypto.randomUUID(),
+    expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    model: "gpt-live-1",
+    send: vi.fn(),
+    mute: vi.fn(),
+    close: vi.fn(),
+  }));
+  const controls = document.createElement("div");
+  document.body.append(controls);
+  const mount = (canvasId: string, userId = "first-account") =>
+    render(
+      <LiveVoice
+        canvasId={canvasId}
+        userId={userId}
+        controlTarget={controls}
+        canSaveTranscript
+        onSaveTranscript={vi.fn()}
+      />,
+    );
+  let view = mount("first-canvas");
+  fireEvent.click(screen.getByText("Start test voice"));
+  fireEvent.click(await screen.findByText("Allow microphone and start"));
+  await screen.findByText("Stop test voice");
+  view.unmount();
+  view = mount("second-canvas");
+  await act(async () => {});
+  expect(connectLiveVoice).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByText("Start test voice"));
+  await screen.findByText("Stop test voice");
+  expect(screen.queryByText("Allow microphone and start")).toBeNull();
+  expect(connectLiveVoice).toHaveBeenCalledTimes(2);
+  view.unmount();
+  view = mount("second-canvas", "different-account");
+  fireEvent.click(screen.getByText("Start test voice"));
+  await screen.findByText("Allow microphone and start");
+  expect(connectLiveVoice).toHaveBeenCalledTimes(2);
   view.unmount();
   controls.remove();
 });
