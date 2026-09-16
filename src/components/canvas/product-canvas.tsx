@@ -4,6 +4,7 @@ import { dragPreviewPositionsForSelection } from "@/canvas/drag-preview";
 
 import { LiveVoice } from "@/components/voice/live-conversation";
 import type Konva from "konva";
+import { flushSync } from "react-dom";
 import {
   ArrowLeft,
   Check,
