@@ -67,12 +67,22 @@ async function allowed(context: { params: Promise<{ canvasId: string }> }) {
   );
 }
 export async function GET(
-  _: Request,
+  request: Request,
   context: { params: Promise<{ canvasId: string }> },
 ) {
   if (!(await allowed(context))) return new Response(null, { status: 404 });
+  if (new URL(request.url).searchParams.has("script"))
+    return new Response(
+      `document.querySelectorAll('form').forEach(form => form.addEventListener('submit', async event => { event.preventDefault(); const output=document.querySelector('pre'); output.textContent='Running real provider check...'; try { const response=await fetch(location.pathname,{method:'POST',body:new FormData(form)}); output.textContent=await response.text(); } catch(error) { output.textContent=String(error); } }));`,
+      {
+        headers: {
+          "Content-Type": "application/javascript",
+          "Cache-Control": "no-store",
+        },
+      },
+    );
   return new Response(
-    `<h1>Temporary closing regression checks</h1>${fixtures.map((f, i) => `<form method="post"><input type="hidden" name="case" value="${i}"><button>${f.name}</button></form>`).join("")}<form method="post"><input type="hidden" name="case" value="creation"><button>Run creation through active voice session (QA canvas only)</button></form>`,
+    `<h1>Temporary closing regression checks</h1><pre aria-live="polite">Ready</pre><script src="${new URL(request.url).pathname}?script=1" defer></script>${fixtures.map((f, i) => `<form method="post"><input type="hidden" name="case" value="${i}"><button>${f.name}</button></form>`).join("")}<form method="post"><input type="hidden" name="case" value="creation"><button>Run creation through active voice session (QA canvas only)</button></form>`,
     { headers: { "Content-Type": "text/html", "Cache-Control": "no-store" } },
   );
 }
