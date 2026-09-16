@@ -1889,6 +1889,12 @@ export async function completeAiRun(
     storyChanged: storyToolResults.length > 0,
     clarificationQuestion,
     endSession,
+    reportBeforeEnding:
+      endSession &&
+      toolCalls.some(
+        (call) =>
+          !["end_voice_session", "remember_voice_name"].includes(call.toolName),
+      ),
   };
 }
 

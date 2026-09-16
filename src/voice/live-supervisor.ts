@@ -1,5 +1,6 @@
 import type { PreviousConversation } from "./previous-conversation";
 import OpenAI from "openai";
+import { liveAudioActivity } from "./live-audio-activity";
 import { ConversationEnd } from "./conversation-end";
 import { scheduleVoiceGoodbye } from "./voice-goodbye";
 import { retryVoiceCheck } from "./retry-voice-check";
@@ -68,7 +69,13 @@ export async function superviseLiveVoice(
     stop("conversation_finished"),
   );
   const owner = new LiveDelegationOwner({
-    endSession: () => conversationEnd.request(),
+    endSession: (waitForNewOutput) => {
+      console.info("Live ending scheduled", {
+        sessionId: session.id,
+        waitForNewOutput,
+      });
+      conversationEnd.request(Date.now(), waitForNewOutput);
+    },
     previousConversation: app.previousConversation,
     diagnostic: (stage, delegationId) =>
       console.info("Live handoff stage", {
@@ -144,7 +151,11 @@ export async function superviseLiveVoice(
         result.endSession === true &&
         typeof result.clarificationQuestion !== "string"
       )
-        return { text: result.text, endSession: true };
+        return {
+          text: result.text,
+          endSession: true,
+          reportBeforeEnding: result.reportBeforeEnding === true,
+        };
       return typeof result.clarificationQuestion === "string"
         ? {
             text: result.text,
@@ -155,7 +166,7 @@ export async function superviseLiveVoice(
   });
   const taskTimer = setInterval(() => {
     owner.tick();
-    conversationEnd.tick(owner.busy, Date.now() - lastAudio >= 4000);
+    conversationEnd.tick(owner.busy, Date.now() - lastAudio >= 2500);
   }, 250);
   const probeId = crypto.randomUUID();
   const stop = (why: string) => {
@@ -222,13 +233,16 @@ export async function superviseLiveVoice(
     )
       appendAcks.get(event.client_event_id)?.resolve();
     if (
-      event.type === "session.input_transcript.delta" ||
-      event.type === "session.delegation.created"
+      event.type === "session.input_transcript.delta" &&
+      typeof event.delta === "string" &&
+      event.delta.trim()
     )
       conversationEnd.cancel();
+    if (event.type === "session.delegation.created") conversationEnd.pause();
     if (
-      event.type === "session.output_audio.delta" ||
-      event.type === "session.output_transcript.delta"
+      event.type === "session.output_transcript.delta" &&
+      typeof event.delta === "string" &&
+      event.delta.trim().length > 0
     )
       conversationEnd.output();
     if (!stopping) owner.receive(event);
@@ -259,21 +273,13 @@ export async function superviseLiveVoice(
       event.type === "session.input_audio.append" ||
       event.type === "session.output_audio.delta"
     ) {
-      if (
-        stopping ||
-        (muted && event.type === "session.input_audio.append") ||
-        typeof event.audio !== "string"
-      )
+      if (stopping || (muted && event.type === "session.input_audio.append"))
         return;
-      // Inspect amplitude only; never retain or log the PCM payload.
-      const pcm = Buffer.from(event.audio, "base64");
-      let sum = 0;
-      for (let i = 0; i + 1 < pcm.length; i += 2) {
-        const sample = pcm.readInt16LE(i) / 32768;
-        sum += sample * sample;
-      }
-      if (pcm.length >= 2 && Math.sqrt(sum / Math.floor(pcm.length / 2)) > 0.02)
+      if (liveAudioActivity(event)) {
         lastActivity = lastAudio = Date.now();
+        if (event.type === "session.output_audio.delta")
+          conversationEnd.output();
+      }
       return;
     }
     if (

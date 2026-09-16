@@ -518,6 +518,7 @@ it("arms an ending only after confirmed report delivery and cancels stale intent
     hooks.run.mockResolvedValue({
       text: "Transcript saved.",
       endSession: true,
+      reportBeforeEnding: true,
     });
     owner.receive(speech("Save our transcript and let's call it a day"), 0);
     owner.receive(delegated, 0);
@@ -586,5 +587,9 @@ it.each([true, false])(
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(endSession).toHaveBeenCalledTimes(stillEnding ? 2 : 1);
     expect(hooks.append.mock.calls.at(-1)?.[1]).toBeNull();
+    if (stillEnding)
+      expect(hooks.append.mock.calls.at(-1)?.[0]).toBe(
+        "session.thinking.append",
+      );
   },
 );

@@ -30,3 +30,46 @@ describe("conversation ending", () => {
     }
   });
 });
+
+it("retains the farewell spoken before approval and closes after a short gap", () => {
+  const end = vi.fn();
+  const closing = new ConversationEnd(end);
+  closing.output(1000);
+  closing.request(2000);
+  closing.tick(false, true, 3499);
+  expect(end).not.toHaveBeenCalled();
+  closing.tick(false, true, 3500);
+  expect(end).toHaveBeenCalledOnce();
+});
+
+it("does not reuse a farewell from before the participant resumed", () => {
+  const end = vi.fn();
+  const closing = new ConversationEnd(end);
+  closing.output(1000);
+  closing.cancel();
+  closing.request(5000);
+  closing.tick(false, true, 8000);
+  expect(end).not.toHaveBeenCalled();
+});
+
+it("waits for the new spoken result when a final save was requested", () => {
+  const end = vi.fn();
+  const closing = new ConversationEnd(end);
+  closing.output(1000);
+  closing.request(5000, true);
+  closing.tick(false, true, 9000);
+  expect(end).not.toHaveBeenCalled();
+  closing.output(9500);
+  closing.tick(false, true, 12000);
+  expect(end).toHaveBeenCalledOnce();
+});
+
+it("retains a natural farewell even when the handoff event follows it", () => {
+  const end = vi.fn();
+  const closing = new ConversationEnd(end);
+  closing.output(1000);
+  closing.pause();
+  closing.request(5000);
+  closing.tick(false, true, 5100);
+  expect(end).toHaveBeenCalledOnce();
+});

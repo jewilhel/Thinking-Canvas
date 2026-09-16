@@ -227,6 +227,9 @@ export async function POST(
         text: reply.data.body,
         taskId,
         endSession: "endSession" in completed && completed.endSession === true,
+        reportBeforeEnding:
+          "reportBeforeEnding" in completed &&
+          completed.reportBeforeEnding === true,
         clarificationQuestion:
           "clarificationQuestion" in completed
             ? completed.clarificationQuestion

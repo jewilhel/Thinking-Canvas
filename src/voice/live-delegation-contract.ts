@@ -67,4 +67,4 @@ export const VOICE_RESPONSE_MAX_TOKENS = 4096;
 export type LiveCanvasResult =
   | string
   | { text: string; clarificationQuestion: string }
-  | { text: string; endSession: true };
+  | { text: string; endSession: true; reportBeforeEnding?: boolean };

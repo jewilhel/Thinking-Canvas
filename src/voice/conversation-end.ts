@@ -3,15 +3,18 @@ export class ConversationEnd {
   private requestedAt: number | null = null;
   private lastOutput: number | null = null;
   constructor(private end: () => void) {}
-  request(now = Date.now()) {
+  request(now = Date.now(), waitForNewOutput = false) {
     this.requestedAt = now;
-    this.lastOutput = null;
+    if (waitForNewOutput) this.lastOutput = null;
+  }
+  pause() {
+    this.requestedAt = null;
   }
   cancel() {
     this.requestedAt = this.lastOutput = null;
   }
   output(now = Date.now()) {
-    if (this.requestedAt !== null) this.lastOutput = now;
+    this.lastOutput = now;
   }
   tick(busy: boolean, quiet: boolean, now = Date.now()) {
     if (this.requestedAt === null) return;
@@ -20,13 +23,8 @@ export class ConversationEnd {
       return;
     }
     // An append acknowledgement isn't playback. Require observed closing output,
-    // allow startup latency, then drain the output and leave room for a reply.
-    if (
-      this.lastOutput !== null &&
-      now - this.requestedAt >= 12000 &&
-      now - this.lastOutput >= 4000 &&
-      quiet
-    ) {
+    // including a farewell already spoken while approval was in flight.
+    if (this.lastOutput !== null && now - this.lastOutput >= 2500 && quiet) {
       this.cancel();
       this.end();
     }
