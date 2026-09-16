@@ -528,11 +528,63 @@ it("arms an ending only after confirmed report delivery and cancels stale intent
       owner.receive(speech("Actually I have another idea", "s2", 6000), 2500);
     expect(endSession).not.toHaveBeenCalled();
     owner.tick(4000);
-    await vi.waitFor(() => expect(hooks.append).toHaveBeenCalled());
+    if (!resumed) {
+      await vi.waitFor(() => expect(hooks.append).toHaveBeenCalled());
+      expect(hooks.append.mock.calls.at(-1)?.[2]).toContain(
+        "one short final goodbye",
+      );
+    } else {
+      expect(hooks.append).not.toHaveBeenCalled();
+    }
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(endSession).toHaveBeenCalledTimes(resumed ? 0 : 1);
-    expect(hooks.append.mock.calls.at(-1)?.[2]).toContain(
-      "one short final goodbye",
-    );
   }
 });
+
+it.each([true, false])(
+  "reassesses speech after a goodbye without requiring another provider delegation (end=%s)",
+  async (stillEnding) => {
+    const { hooks } = setup();
+    const endSession = vi.fn();
+    const owner = new LiveDelegationOwner({ ...hooks, endSession });
+    hooks.run.mockResolvedValueOnce({
+      text: "Goodbye, Jason.",
+      endSession: true,
+    });
+    owner.receive(speech("We can end here."), 0);
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    owner.tick(2200);
+    await vi.waitFor(() => expect(endSession).toHaveBeenCalledOnce());
+    hooks.run.mockResolvedValueOnce(
+      stillEnding
+        ? { text: "Take care.", endSession: true }
+        : "Let's keep discussing your idea.",
+    );
+    owner.receive(
+      speech(
+        stillEnding ? "Okay" : "Actually, I have another question",
+        "final-reply",
+        8000,
+      ),
+      3000,
+    );
+    owner.receive(speech(".", "punctuation", 8500), 3100);
+    owner.tick(4500);
+    expect(hooks.run).toHaveBeenCalledOnce();
+    owner.tick(5200);
+    await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledTimes(2));
+    const context = JSON.parse(hooks.run.mock.calls[1][2].text);
+    expect(context.pendingSessionEnding).toBe(true);
+    expect(context.fragments.at(-2).text).toBe(
+      stillEnding ? "Okay" : "Actually, I have another question",
+    );
+    expect(context.completedTasks[0].text).toBe("Goodbye, Jason.");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    owner.tick(5400);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(endSession).toHaveBeenCalledTimes(stillEnding ? 2 : 1);
+    expect(hooks.append.mock.calls.at(-1)?.[1]).toBeNull();
+  },
+);
