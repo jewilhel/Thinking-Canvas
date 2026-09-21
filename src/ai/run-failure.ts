@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { providerFailureCode } from "@/ai/provider-failure";
+
 import { ConnectedPathError } from "@/ai/grounding";
 import {
   AiProviderOutputError,
@@ -31,5 +34,6 @@ export function privacySafeAiRunErrorCode(error: unknown) {
   if (error instanceof AiProviderOutputError) return "provider_output_invalid";
   if (error instanceof AiVisualQualityError) return "visual_quality_blocked";
   if (error instanceof AiRunConflictError) return "review_stage_failed";
-  return "provider_run_failed";
+  if (error instanceof z.ZodError) return "run_validation_failed";
+  return providerFailureCode(error) ?? "provider_run_failed";
 }

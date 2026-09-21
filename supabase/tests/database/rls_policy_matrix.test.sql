@@ -3,6 +3,18 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
 
+-- Test-owned canvas: local browser/integration activity must not alter this fixture.
+-- The surrounding transaction rolls back the complete fixture after the suite.
+insert into public.canvases (id, owner_id, title)
+values ('20000000-0000-4000-8000-000000000501', '10000000-0000-4000-8000-000000000001', 'rls_policy_matrix fixture');
+insert into public.canvas_members (canvas_id, user_id, role) values
+  ('20000000-0000-4000-8000-000000000501', '10000000-0000-4000-8000-000000000002', 'editor'),
+  ('20000000-0000-4000-8000-000000000501', '10000000-0000-4000-8000-000000000003', 'commenter'),
+  ('20000000-0000-4000-8000-000000000501', '10000000-0000-4000-8000-000000000004', 'viewer');
+insert into public.comments (id, canvas_id, author_id, body)
+values ('30000000-0000-4000-8000-000000000501', '20000000-0000-4000-8000-000000000501',
+  '10000000-0000-4000-8000-000000000003', 'RLS test comment');
+
 select is(
   (
     select count(*)::integer
@@ -28,7 +40,7 @@ insert into public.canvas_invitations (
 )
 values (
   '50000000-0000-4000-8000-000000000001',
-  '20000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000501',
   'invitee@thinking-canvas.local',
   'viewer',
   '10000000-0000-4000-8000-000000000001',
@@ -37,7 +49,7 @@ values (
 
 insert into public.canvas_updates (canvas_id, sequence, update_data, actor_id)
 values (
-  '20000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000501',
   1,
   decode('01', 'hex'),
   '10000000-0000-4000-8000-000000000001'
@@ -48,7 +60,7 @@ insert into public.canvas_snapshots (
 )
 values (
   '50000000-0000-4000-8000-000000000002',
-  '20000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000501',
   1,
   1,
   decode('01', 'hex'),
@@ -59,7 +71,7 @@ values (
 insert into public.comment_targets (id, comment_id, target_object_id, target_order)
 values (
   '50000000-0000-4000-8000-000000000003',
-  '30000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000501',
   '60000000-0000-4000-8000-000000000001',
   0
 );
@@ -68,7 +80,7 @@ insert into public.comment_document_targets (
   comment_id, document_object_id, relative_anchor, relative_head, quoted_text
 )
 values (
-  '30000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000501',
   '60000000-0000-4000-8000-000000000002',
   'AAECAw==',
   'BAUGBw==',
@@ -78,7 +90,7 @@ values (
 insert into public.comment_replies (id, comment_id, author_id, body)
 values (
   '50000000-0000-4000-8000-000000000004',
-  '30000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000501',
   '10000000-0000-4000-8000-000000000002',
   'Synthetic reply.'
 );
@@ -94,7 +106,7 @@ values (
 insert into public.ai_change_sets (id, canvas_id, requested_by, status)
 values (
   '50000000-0000-4000-8000-000000000006',
-  '20000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000501',
   '10000000-0000-4000-8000-000000000001',
   'applied'
 );
@@ -124,7 +136,7 @@ values (
 insert into public.stories (id, canvas_id, author_id, title)
 values (
   '50000000-0000-4000-8000-000000000009',
-  '20000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000501',
   '10000000-0000-4000-8000-000000000001',
   'Synthetic story'
 );
@@ -230,14 +242,14 @@ from policy_matrix;
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
 select lives_ok(
   $$select * from public.append_canvas_update(
-    '20000000-0000-4000-8000-000000000001', decode('02', 'hex'))$$,
+    '20000000-0000-4000-8000-000000000501', decode('02', 'hex'))$$,
   'editor may append a canvas update'
 );
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
 select throws_ok(
   $$select * from public.append_canvas_update(
-    '20000000-0000-4000-8000-000000000001', decode('03', 'hex'))$$,
+    '20000000-0000-4000-8000-000000000501', decode('03', 'hex'))$$,
   '42501',
   'canvas update is not permitted',
   'commenter may not append a canvas update'
@@ -245,7 +257,7 @@ select throws_ok(
 
 select lives_ok(
   $$select * from public.create_comment_thread(
-    '20000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000501',
     '70000000-0000-4000-8000-000000000001',
     'Allowed commenter mutation',
     array['60000000-0000-4000-8000-000000000001']::uuid[]
@@ -256,7 +268,7 @@ select lives_ok(
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000004', true);
 select throws_ok(
   $$select * from public.create_comment_thread(
-    '20000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000501',
     '70000000-0000-4000-8000-000000000002',
     'Denied viewer mutation',
     array['60000000-0000-4000-8000-000000000001']::uuid[]
@@ -269,14 +281,14 @@ select throws_ok(
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
 select lives_ok(
   $$insert into public.canvas_invitations (canvas_id, email, role, invited_by, expires_at)
-    values ('20000000-0000-4000-8000-000000000001', 'owner-invite@thinking-canvas.local', 'viewer', '10000000-0000-4000-8000-000000000001', now() + interval '1 day')$$,
+    values ('20000000-0000-4000-8000-000000000501', 'owner-invite@thinking-canvas.local', 'viewer', '10000000-0000-4000-8000-000000000001', now() + interval '1 day')$$,
   'owner may create an invitation'
 );
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
 select throws_ok(
   $$insert into public.canvas_invitations (canvas_id, email, role, invited_by, expires_at)
-    values ('20000000-0000-4000-8000-000000000001', 'editor-invite@thinking-canvas.local', 'viewer', '10000000-0000-4000-8000-000000000002', now() + interval '1 day')$$,
+    values ('20000000-0000-4000-8000-000000000501', 'editor-invite@thinking-canvas.local', 'viewer', '10000000-0000-4000-8000-000000000002', now() + interval '1 day')$$,
   '42501',
   'new row violates row-level security policy for table "canvas_invitations"',
   'editor may not create an invitation'
@@ -285,7 +297,7 @@ select throws_ok(
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000005', true);
 select throws_ok(
   $$select * from public.create_comment_thread(
-    '20000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000501',
     '70000000-0000-4000-8000-000000000003',
     'Denied non-member mutation',
     array['60000000-0000-4000-8000-000000000001']::uuid[]
@@ -297,14 +309,14 @@ select throws_ok(
 
 reset role;
 delete from public.canvas_members
-where canvas_id = '20000000-0000-4000-8000-000000000001'
+where canvas_id = '20000000-0000-4000-8000-000000000501'
   and user_id = '10000000-0000-4000-8000-000000000003';
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
 select throws_ok(
   $$select * from public.create_comment_reply(
-    '30000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000501',
     '70000000-0000-4000-8000-000000000004',
     'Denied former-member reply'
   )$$,
@@ -326,7 +338,7 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
 select lives_ok(
-  $$delete from public.canvases where id = '20000000-0000-4000-8000-000000000001'$$,
+  $$delete from public.canvases where id = '20000000-0000-4000-8000-000000000501'$$,
   'owner may delete a canvas and cascade its protected owner membership'
 );
 

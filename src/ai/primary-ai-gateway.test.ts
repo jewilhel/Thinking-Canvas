@@ -1,3 +1,4 @@
+import { APIError } from "openai";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -97,5 +98,60 @@ describe("requestPrimaryAiWithRetry", () => {
       requestPrimaryAiWithRetry({ request }, requestInput, 3),
     ).resolves.toEqual({ result: completed, attemptCount: 3 });
     expect(request).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("provider backoff cancellation", () => {
+  it("cancels a pending retry without sending another request", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const request = vi
+        .fn<PrimaryAiGateway["request"]>()
+        .mockRejectedValue(new Error("temporary failure"));
+      const pending = requestPrimaryAiWithRetry(
+        { request },
+        { ...requestInput, signal: controller.signal },
+      );
+      const assertion = expect(pending).rejects.toThrow("Stopped");
+      await vi.advanceTimersByTimeAsync(100);
+      expect(request).toHaveBeenCalledTimes(1);
+      controller.abort(new Error("Stopped"));
+      await assertion;
+      await vi.runAllTimersAsync();
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not send the first request if already cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("Stopped"));
+    const request = vi.fn<PrimaryAiGateway["request"]>();
+    await expect(
+      requestPrimaryAiWithRetry(
+        { request },
+        { ...requestInput, signal: controller.signal },
+      ),
+    ).rejects.toThrow("Stopped");
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("fails immediately for invalid API requests instead of retrying them", async () => {
+    const error = new APIError(
+      400,
+      { message: "Invalid request" },
+      undefined,
+      new Headers(),
+    );
+    const request = vi
+      .fn<PrimaryAiGateway["request"]>()
+      .mockRejectedValue(error);
+    await expect(
+      requestPrimaryAiWithRetry({ request }, requestInput),
+    ).rejects.toBe(error);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 });

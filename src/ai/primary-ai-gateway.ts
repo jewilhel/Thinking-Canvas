@@ -1,3 +1,6 @@
+import { providerRetryDelay } from "@/ai/provider-failure";
+import { throwIfAiRunAborted } from "@/ai/run-deadline";
+
 import type {
   AiInvocation,
   AiProjectionEnvelope,
@@ -79,6 +82,8 @@ export async function requestPrimaryAiWithRetry(
   let lastError: unknown;
 
   for (let attemptCount = 1; attemptCount <= attemptLimit; attemptCount += 1) {
+    throwIfAiRunAborted(input.signal);
+    let retryError: unknown;
     try {
       result = await gateway.request(input);
       if (result.status !== "failed" || attemptCount === attemptLimit) {
@@ -89,10 +94,30 @@ export async function requestPrimaryAiWithRetry(
         throw error;
       }
       lastError = error;
+      retryError = error;
     }
+    const delay = providerRetryDelay(retryError, attemptCount);
+    if (delay === null) throw retryError;
+    await waitForProviderRetry(delay, input.signal);
   }
 
   if (lastError) throw lastError;
   if (!result) throw new Error("The AI provider did not return a result.");
   return { result, attemptCount: attemptLimit };
+}
+
+function waitForProviderRetry(delay: number, signal?: AbortSignal) {
+  throwIfAiRunAborted(signal);
+  return new Promise<void>((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      reject(signal?.reason ?? new DOMException("Interrupted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, delay);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
