@@ -58,3 +58,9 @@ Raw command logs are local temporary files under `/tmp/m10-final-*.log`; this do
 ## Conclusion
 
 565 unit/integration cases passed in total. All static/build checks passed. Core hosted lifecycle, transcript persistence and typed canvas editing/undo with voice passed. Do not close the milestone: investigate the observed provider failure, reconcile the three failing database fixtures, and complete the remaining real spoken/recovery/accessibility/role acceptance evidence. No claim of complete milestone acceptance, merge or production readiness. This report is saved locally; no commit or push was performed because Git could not run with the installed toolchain.
+
+## Repair follow-up
+
+The earlier database failure is resolved: all 18 suites / 499 assertions now pass with test-owned fixtures, including a repeat after database integration tests. Final unit suite: 574 passed; separately enabled integration: 8 passed. Static checks/build passed. Runtime `b45fa7a` adds abortable provider retry backoff, stops retrying permanent API errors, and records precise privacy-safe error categories. Ready deploy `6ab1c3ff979f2b0008515b55` matches that runtime.
+
+Codex browser verified real-provider creation (run `e2fda400-19c0-49ea-8a11-844967b76221`), undo and manual voice end on the isolated QA canvas. See the milestone record for details. The original generic provider failure could not be attributed from retained records/logs; do not claim its exact cause is fixed. No hosted fault injection, spoken farewell acceptance, exact-head CI, milestone closure or production release is claimed. Git was recovered by using the installed arm64 executable directly; fixes and these evidence records are committed/pushed separately from production.
