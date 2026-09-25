@@ -384,10 +384,12 @@ export function LiveVoice({
                 : "Provider session closed",
             );
           }
-          if (event.type === "error")
+          if (event.type === "error") {
             setError(
-              "The voice provider reported an error. End and retry the session.",
+              "Voice disconnected unexpectedly. Start a new session to continue; this session's captions remain in Voice settings.",
             );
+            finishRef.current("Voice provider error");
+          }
           if (event.type === "playback.blocked")
             setError(
               "Audio playback was blocked by the browser. End and restart voice.",

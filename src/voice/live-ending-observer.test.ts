@@ -86,6 +86,12 @@ it("routes an explicit unhanded canvas request without accepting the assistant's
   observer.receive(output("Saved. The transcript is on the canvas."), 100);
   observer.tick(false, true, 2000);
   await vi.waitFor(() => expect(requestCanvas).toHaveBeenCalledOnce());
+  expect(requestCanvas.mock.calls[0][0]).toMatchObject({
+    userVersion: 1,
+  });
+  expect(requestCanvas.mock.calls[0][0].context).toContain(
+    "Create a new document with this transcript.",
+  );
   expect(end).not.toHaveBeenCalled();
   observer.tick(false, true, 2300);
   expect(requestCanvas).toHaveBeenCalledOnce();

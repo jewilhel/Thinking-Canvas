@@ -7,6 +7,7 @@ export class LiveEndingObserver {
   private transcript = new LiveTranscript();
   private context = "";
   private version = 0;
+  private userVersion = 0;
   private checked = 0;
   private lastActivity = 0;
   private pending = false;
@@ -20,7 +21,10 @@ export class LiveEndingObserver {
       canvasAction: boolean;
       current: boolean;
     }) => void,
-    private requestCanvas?: () => void,
+    private requestCanvas?: (request: {
+      userVersion: number;
+      context: string;
+    }) => void,
   ) {}
   receive(event: unknown, now = Date.now()) {
     if (
@@ -49,6 +53,7 @@ export class LiveEndingObserver {
     if (!parts.length || context === this.context) return;
     this.context = context;
     this.version++;
+    if (event.type === "session.input_transcript.delta") this.userVersion++;
     this.lastActivity = now;
   }
   get busy() {
@@ -76,9 +81,11 @@ export class LiveEndingObserver {
     )
       return;
     const version = this.version;
+    const userVersion = this.userVersion;
+    const context = this.context;
     this.checked = version;
     this.pending = true;
-    void this.check(this.context)
+    void this.check(context)
       .then((value) => {
         const decision =
           typeof value === "boolean"
@@ -86,7 +93,8 @@ export class LiveEndingObserver {
             : value;
         const current = !this.closed && version === this.version;
         this.diagnostic?.({ ...decision, current });
-        if (current && decision.canvasAction) this.requestCanvas?.();
+        if (current && decision.canvasAction)
+          this.requestCanvas?.({ userVersion, context });
         if (decision.end && !decision.canvasAction && current) {
           this.approvedVersion = version;
           if (!busy) {

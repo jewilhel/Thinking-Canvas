@@ -26,6 +26,9 @@ export function delegationDiagnostic(error: unknown) {
     "AI reply could not be saved.": "reply_save_failed",
     "The invoking comment is no longer open.": "invoking_comment_closed",
     "AI run is not available for completion.": "run_not_completable",
+    "Voice request exceeds its reserved bound": "voice_request_size_limit",
+    "This canvas is too large for a grounded AI response.":
+      "canvas_projection_size_limit",
   };
   return {
     errorType: knownTypes.has(type) ? type : "OtherError",

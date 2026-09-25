@@ -86,7 +86,8 @@ export async function POST(
   let attempted = false,
     units: number | null = 0,
     runId: string | undefined,
-    taskStatus = "failed";
+    taskStatus = "failed",
+    requestBytes: number | undefined;
   let stage = "authorization";
   const stillAllowed = async () => {
     signal.throwIfAborted();
@@ -202,10 +203,11 @@ export async function POST(
       timeoutMs: VOICE_CANVAS_TIMEOUT_MS,
       client: {
         async create(input, options) {
+          stage = "provider_request_preflight";
+          requestBytes = new TextEncoder().encode(JSON.stringify(input)).length;
           if (
             attempted ||
-            new TextEncoder().encode(JSON.stringify(input)).length >
-              VOICE_REQUEST_MAX_BYTES ||
+            requestBytes > VOICE_REQUEST_MAX_BYTES ||
             (input.max_output_tokens ?? Infinity) > VOICE_RESPONSE_MAX_TOKENS
           )
             throw new Error("Voice request exceeds its reserved bound");
@@ -294,6 +296,7 @@ export async function POST(
     console.warn("Voice delegation ended without a result", {
       taskId,
       stage,
+      requestBytes,
       ...delegationDiagnostic(error),
       errorName: error instanceof Error ? error.name : "UnknownError",
       visualIssues:

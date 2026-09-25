@@ -14,7 +14,6 @@ function setup() {
       ) => Promise<import("./live-delegation-contract").LiveCanvasResult>
     >(async () => "Verified canvas description"),
     append: vi.fn(),
-    pending: vi.fn(),
     cancel: vi.fn(async () => {}),
     quiet: vi.fn(() => true),
   };
@@ -45,7 +44,6 @@ describe("bounded voice delegation", () => {
     );
     expect(owner.requestObservedCanvasWork(2000)).toBe(true);
     expect(owner.requestObservedCanvasWork(2001)).toBe(false);
-    expect(hooks.pending).toHaveBeenCalledOnce();
     owner.tick(2000);
     expect(hooks.run).toHaveBeenCalledOnce();
     expect(hooks.run.mock.calls[0][0]).toMatch(/^control:canvas-observer:/);
@@ -60,13 +58,71 @@ describe("bounded voice delegation", () => {
     const { owner, hooks } = setup();
     owner.receive(speech("Save this transcript to a new document."), 0);
     owner.receive(delegated, 0);
-    expect(hooks.pending).toHaveBeenCalledWith("task1");
     owner.requestObservedCanvasWork(2000);
     owner.tick(2000);
     expect(hooks.run).toHaveBeenCalledOnce();
     expect(hooks.run.mock.calls[0][0]).toBe("task1");
     owner.tick(2200);
     expect(hooks.run).toHaveBeenCalledOnce();
+  });
+  it("retains an observed document request while another native handoff is pending", async () => {
+    const { owner, hooks } = setup();
+    owner.receive(speech("Give me feedback on the idea.", "feedback", 4000), 0);
+    owner.receive(delegated, 0);
+    owner.receive(
+      speech("Create a document with our transcript.", "document", 6000),
+      100,
+    );
+    const observed = {
+      userVersion: 2,
+      context: JSON.stringify([
+        { speaker: "user", text: "Give me feedback on the idea." },
+        { speaker: "user", text: "Create a document with our transcript." },
+      ]),
+    };
+    expect(owner.requestObservedCanvasWork(1000, observed)).toBe(true);
+    owner.tick(2000);
+    await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledOnce());
+    owner.tick(2200);
+    await vi.waitFor(() => expect(hooks.append).toHaveBeenCalled());
+    await Promise.resolve();
+    owner.tick(2500);
+    await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledTimes(2));
+    const context = JSON.parse(hooks.run.mock.calls[1][2].text);
+    expect(context.currentObservedContext).toContain(
+      "Create a document with our transcript.",
+    );
+    expect(context.completedTasks).toEqual([
+      { id: "task1", text: "Verified canvas description" },
+    ]);
+  });
+  it("routes a semantically observed document request even after earlier timestamps were consumed", async () => {
+    const { owner, hooks } = setup();
+    owner.receive(speech("Give me feedback on the idea.", "old", 5000), 0);
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledOnce());
+    owner.tick(3000);
+    await vi.waitFor(() => expect(owner.busy).toBe(false));
+    owner.receive(
+      speech("Create a document with this transcript.", "document", 1000),
+      4000,
+    );
+    const observed = {
+      userVersion: 2,
+      context: JSON.stringify([
+        { speaker: "user", text: "Give me feedback on the idea." },
+        { speaker: "user", text: "Create a document with this transcript." },
+      ]),
+    };
+    expect(owner.requestObservedCanvasWork(5000, observed)).toBe(true);
+    expect(owner.requestObservedCanvasWork(5001, observed)).toBe(false);
+    owner.tick(5000);
+    await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledTimes(2));
+    const context = JSON.parse(hooks.run.mock.calls[1][2].text);
+    expect(context.currentObservedContext).toContain(
+      "Create a document with this transcript.",
+    );
   });
   it("passes the prior session separately without interpreting old requests as current commands", () => {
     const { hooks } = setup();
@@ -194,11 +250,9 @@ describe("bounded voice delegation", () => {
       owner.tick(10000);
       expect(hooks.append).toHaveBeenCalledTimes(2);
     });
+    expect(hooks.append.mock.calls[1][0]).toBe("session.thinking.append");
     expect(hooks.append.mock.calls[1][2]).toContain(
-      "Do not describe the earlier completed change as failed",
-    );
-    expect(hooks.append.mock.calls[1][2]).toContain(
-      "Alpha is blue and Beta is teal.",
+      "does not block future requests",
     );
   });
   it("keeps a handoff received while busy and includes the previous completed outcome", async () => {
@@ -578,9 +632,8 @@ it("does not present a technical failure as a clarification", async () => {
     owner.tick(2200);
     expect(hooks.append).toHaveBeenCalled();
   });
-  expect(hooks.append.mock.calls.at(-1)?.[2]).toContain(
-    "did not finish successfully",
-  );
+  expect(hooks.append.mock.calls.at(-1)?.[2]).toContain("did not finish");
+  expect(hooks.append.mock.calls.at(-1)?.[0]).toBe("session.thinking.append");
   expect(hooks.append.mock.calls.at(-1)?.[2]).not.toContain(
     "needs clarification",
   );

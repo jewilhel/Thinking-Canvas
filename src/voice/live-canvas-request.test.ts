@@ -3,7 +3,10 @@ import {
   liveCanvasRequestSchema,
   voiceConversationInstruction,
   VOICE_CONVERSATION_MARKER,
+  LIVE_CONVERSATION_MAX_CHARACTERS,
+  VOICE_REQUEST_MAX_BYTES,
 } from "./live-delegation-contract";
+import { AI_PROJECTION_MAX_SERIALIZED_BYTES } from "@/ai/collaborator-contract";
 import { liveDelegationSignature } from "./live-delegation-signature";
 
 describe("bounded spoken canvas requests", () => {
@@ -28,6 +31,13 @@ describe("bounded spoken canvas requests", () => {
     expect(voiceConversationInstruction(text)).toContain(text);
     expect(voiceConversationInstruction(text)).toContain("explicitly requests");
     expect(VOICE_CONVERSATION_MARKER).not.toContain(text);
+  });
+  it("leaves room for the allowed canvas projection and conversation in one provider request", () => {
+    expect(VOICE_REQUEST_MAX_BYTES).toBeGreaterThan(
+      AI_PROJECTION_MAX_SERIALIZED_BYTES +
+        LIVE_CONVERSATION_MAX_CHARACTERS * 4 +
+        64 * 1024,
+    );
   });
   it("binds request text and kind to the authenticated signature", () => {
     const question = {
