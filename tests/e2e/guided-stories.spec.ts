@@ -253,10 +253,10 @@ test("manages and reloads live canvas viewport scenes", async ({
       .getByRole("button", { name: "Previous scene" })
       .evaluate((button) =>
         [...(button.parentElement?.querySelectorAll("button") ?? [])]
-          .slice(0, 3)
+          .slice(0, 4)
           .map((item) => item.getAttribute("aria-label")),
       ),
-  ).toEqual(["Previous scene", "Open scenes", "Next scene"]);
+  ).toEqual(["Previous scene", "Start AI voice", "Open scenes", "Next scene"]);
 
   await page.getByRole("button", { name: "Scene 1", exact: true }).click();
   await page.getByRole("button", { name: "Previous scene" }).click();
@@ -437,7 +437,12 @@ test("manages and reloads live canvas viewport scenes", async ({
   const previousBounds = await page
     .getByRole("button", { name: "Previous scene" })
     .boundingBox();
-  expect(dockBounds!.x + dockBounds!.width).toBeLessThan(previousBounds!.x);
+  expect(
+    dockBounds!.x + dockBounds!.width <= previousBounds!.x ||
+      previousBounds!.x + previousBounds!.width <= dockBounds!.x ||
+      dockBounds!.y + dockBounds!.height <= previousBounds!.y ||
+      previousBounds!.y + previousBounds!.height <= dockBounds!.y,
+  ).toBe(true);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.getByRole("button", { name: "Next scene" }).click();
   await expect(

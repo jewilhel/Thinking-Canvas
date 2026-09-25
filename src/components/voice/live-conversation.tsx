@@ -58,6 +58,24 @@ const presetSchema = z.strictObject({
   settings: liveSettingsSchema,
 });
 type Preset = z.infer<typeof presetSchema>;
+function connectionFailureMessage(failure: unknown): string {
+  const name =
+    failure && typeof failure === "object" && "name" in failure
+      ? failure.name
+      : undefined;
+  switch (name) {
+    case "NotAllowedError":
+      return "Microphone access was denied. Allow it in your browser and try again, or keep using typed comments.";
+    case "NotFoundError":
+      return "No microphone is available. Connect one and try again, or keep using typed comments.";
+    case "NotReadableError":
+      return "The microphone is unavailable or in use. Try again after checking it, or keep using typed comments.";
+    default:
+      return failure instanceof Error
+        ? failure.message
+        : "Voice connection failed. You can keep using typed comments.";
+  }
+}
 function exportJson(name: string, value: unknown) {
   const url = URL.createObjectURL(
     new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }),
@@ -429,11 +447,7 @@ export function LiveVoice({
         updateRun({ sessionId: failed.data.sessionId });
       }
       if (!controller.signal.aborted)
-        setError(
-          failure instanceof Error
-            ? failure.message
-            : "Voice connection failed.",
-        );
+        setError(connectionFailureMessage(failure));
       finishRef.current("Connection failed");
     }
   };

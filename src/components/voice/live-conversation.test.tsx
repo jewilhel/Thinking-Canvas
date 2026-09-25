@@ -99,6 +99,49 @@ it("shows reconnecting during a short outage and keeps the same call available t
   controls.remove();
 });
 
+it("recovers from denied microphone access and points to typed comments", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({})),
+  );
+  const close = vi.fn();
+  vi.mocked(connectLiveVoice)
+    .mockRejectedValueOnce(
+      new DOMException("Permission denied", "NotAllowedError"),
+    )
+    .mockResolvedValueOnce({
+      id: crypto.randomUUID(),
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      model: "gpt-live-1",
+      send: vi.fn(),
+      mute: vi.fn(),
+      close,
+    });
+  const controls = document.createElement("div");
+  document.body.append(controls);
+  const view = render(
+    <LiveVoice
+      canvasId="test"
+      userId="test"
+      controlTarget={controls}
+      canSaveTranscript
+      onSaveTranscript={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByText("Start test voice"));
+  fireEvent.click(await screen.findByText("Allow microphone and start"));
+  await screen.findByText(/Microphone access was denied.*typed comments/);
+  expect(screen.getByTestId("voice-control-state").textContent).toBe("Ended");
+  fireEvent.click(screen.getByText("Start test voice"));
+  await screen.findByText("Stop test voice");
+  expect(connectLiveVoice).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText(/Microphone access was denied/)).toBeNull();
+  fireEvent.click(screen.getByText("Stop test voice"));
+  expect(close).toHaveBeenCalledOnce();
+  view.unmount();
+  controls.remove();
+});
+
 it("defaults to the latest session, exports only the selected session, and ignores an old transport closure", async () => {
   vi.stubGlobal(
     "fetch",

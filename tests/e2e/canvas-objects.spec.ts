@@ -116,6 +116,14 @@ async function selectShapeByLabel(
   await page.getByTestId(`object-list-item-${parentId}`).click({ modifiers });
 }
 
+async function selectChildTextByLabel(page: Page, label: string) {
+  await page
+    .locator('[data-testid^="object-list-item-"][data-parent-id]')
+    .filter({ hasText: label })
+    .first()
+    .click();
+}
+
 async function editSelectedText(page: Page, text: string) {
   await openInlineEditorForSelection(page);
   const editor = page.getByLabel("Edit object text on canvas");
@@ -234,11 +242,13 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await expect(page.getByTestId("selected-stroke-pattern")).toHaveText(
     "dashed",
   );
+  await selectChildTextByLabel(page, "Styled planning idea");
   await openContextPanel(page, "Text style");
   await page.getByLabel("Typeface").selectOption({ label: "Bookish" });
   await page.getByLabel("Custom text size").fill("22");
   await page.getByLabel("Custom text size").press("Enter");
   await page.getByRole("button", { name: "Text style", exact: true }).click();
+  await selectShapeByLabel(page, "Styled planning idea");
 
   const xBeforeKeyboard = await selectedNumber(page, "selected-position-x");
   const widthBeforeKeyboard = await selectedNumber(page, "selected-width");
@@ -326,6 +336,7 @@ test("creates, selects, moves, resizes, styles, edits, persists, and deletes ess
   await expect(
     page.getByRole("button", { name: "dashed", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
+  await selectChildTextByLabel(page, "Styled planning idea");
   await openContextPanel(page, "Text style");
   await expect(page.getByLabel("Typeface")).toHaveValue(
     "Georgia, ui-serif, serif",
@@ -412,15 +423,16 @@ test("clamps contextual controls, exposes mixed values, and restores focus on Es
   );
   expect(toolbarBox.y).toBeGreaterThanOrEqual(surfaceBox.y);
 
-  const [fillBox, strokeBox, textBox] = await Promise.all([
+  const [fillBox, strokeBox] = await Promise.all([
     page.getByRole("button", { name: "Fill", exact: true }).boundingBox(),
     page.getByRole("button", { name: "Stroke", exact: true }).boundingBox(),
-    page.getByRole("button", { name: "Text style", exact: true }).boundingBox(),
   ]);
-  if (!fillBox || !strokeBox || !textBox)
+  if (!fillBox || !strokeBox)
     throw new Error("Contextual style controls are unavailable.");
   expect(fillBox.x).toBeLessThan(strokeBox.x);
-  expect(strokeBox.x).toBeLessThan(textBox.x);
+  await expect(
+    page.getByRole("button", { name: "Text style", exact: true }),
+  ).toHaveCount(0);
 
   const fillTrigger = page.getByRole("button", { name: "Fill", exact: true });
   await fillTrigger.click();

@@ -1,10 +1,10 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–7 closed; Milestone 8 product accepted and closure approved, engineering exit verification pending; later milestones remain draft
+Status: Milestones 0–7 and 9 closed; Milestone 8 product accepted and closure approved with engineering exit verification pending; Milestone 10 under verification; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-09-09
+Last updated: 2026-09-25
 
 ## Purpose
 
@@ -30,15 +30,15 @@ This document is the build and completion ledger for the first version of Thinki
 | Web framework | Next.js + TypeScript | App Router application, server-only AI routes, and typed domain code |
 | UI | Tailwind CSS + shadcn/ui | Application shell, dialogs, menus, panels, toolbars, forms, and accessible controls |
 | AI reasoning and actions | OpenAI Responses API | Multimodal canvas interpretation, grounded responses, validated tool calls, starter structures, document work, review explanations, and targeted visual feedback |
-| Live AI voice | OpenAI GPT-Live API (`gpt-live-1`) — transition approved 2026-09-11 | Continuous voice with a separate Responses reasoning/action backend; migration precedes further Milestone 10 feature work. Existing preview remains on Realtime until verified cutover. |
+| Live AI voice | OpenAI GPT-Live API (`gpt-live-1`) — transition approved 2026-09-11 | Continuous voice with a separate Responses reasoning/action backend. GPT-Live is implemented on the Milestone 10 branch preview; final acceptance and release verification remain open. |
 | Source control | GitHub | Repository, pull requests, protected main branch, and CI |
 | Domain | Any registrar | DNS points to Netlify; registrar choice remains independent of the application |
 
 ### Required voice clarification
 
-**2026-09-11 direction:** The product owner selected GPT-Live 1 without comparative testing, prioritizing voice as the primary canvas-AI interaction. The [Milestone 10 migration plan](docs/implementation/milestone-10-live-conversation.md#gpt-live-migration-plan--2026-09-11) is drafted for review before implementation and further feature work. The existing Responses executor, permissions, privacy policy, $20 daily testing allowance, and 10-minute cap remain. Native Live conversation is separate from application-owned actions and background announcements. Functional/acceptance testing is required; an A/B comparison is not. The following Realtime approvals are historical and do not describe the migration as implemented.
+**2026-09-11 direction, updated 2026-09-25:** The product owner selected GPT-Live 1 without comparative testing, prioritizing voice as the primary canvas-AI interaction. The [Milestone 10 migration plan](docs/implementation/milestone-10-live-conversation.md#gpt-live-migration-plan--2026-09-11) was approved and implemented on the milestone branch preview; its remaining acceptance checks are recorded there. The existing Responses executor, permissions, privacy policy, $20 daily testing allowance, and ten-minute conversation limit with the approved goodbye period remain. Native Live conversation is separate from application-owned actions and background announcements. An A/B comparison is not required. The following Realtime approvals are historical.
 
-The Responses API can stream generated results, but the first-version requirements call for a continuous, low-latency voice conversation. OpenAI documents the Realtime API as the interface for interactive voice over WebRTC. Therefore:
+The Responses API can stream generated results, but the first-version requirements call for a continuous, low-latency voice conversation over WebRTC. The initial Realtime approval below is historical; the Milestone 10 branch preview now uses GPT-Live for voice. Therefore:
 
 - [x] Approve using the OpenAI Realtime API alongside the Responses API for `FR-008` through `FR-014` and `FR-060`. Approved by the product owner on 2026-08-10; implementation and preview evidence remain Milestone 0 work.
 - [x] Keep the OpenAI API key server-side and mint short-lived Realtime client credentials from an authenticated server route.
@@ -383,7 +383,7 @@ The [2026-09-07 AI reliability audit](docs/implementation/milestone-08-ai-reliab
 - [x] **FR-057 — Explore while paused.** A viewer can pan and inspect freely while playback is paused at a scene.
 - [x] **FR-058 — Return to scene target.** Next or previous navigation smoothly returns from an explored viewport to the selected scene target.
 - [x] **FR-059 — Relevant scene comments.** Scene-specific comments appear at the correct point in playback and do not leak into unrelated scenes.
-- [x] **FR-060 — AI narration.** The primary AI can narrate a story with captions or equivalent text available. Per the 2026-09-08 product-owner revision, scene scripts generate reusable audio in private storage when created or changed. One story-wide audio toggle beside Loop enables automatic playback during scene navigation; preload cached audio before presentation, do not regenerate unchanged scripts, and delete invalidated audio when narration is removed. Live conversational voice remains Milestone 10's Realtime path.
+- [x] **FR-060 — AI narration.** The primary AI can narrate a story with captions or equivalent text available. Per the 2026-09-08 product-owner revision, scene scripts generate reusable audio in private storage when created or changed. One story-wide audio toggle beside Loop enables automatic playback during scene navigation; preload cached audio before presentation, do not regenerate unchanged scripts, and delete invalidated audio when narration is removed. Live conversational voice uses Milestone 10's GPT-Live path.
 - [x] **FR-061 — Live-linked story.** Story order, framing, and narration persist while rendered canvas content reflects current board state.
 - [x] **FR-062 — Linear-only first version.** Creation and playback expose one ordered path and do not imply unsupported branching.
 - [x] **FR-092 — Viewport-captured scene management.** A participant can position and zoom the canvas, add the current view as a scene, see the scene in a simplified ordered list, drag scenes into a new order, rename a scene, replace its captured view from the current viewport, delete it, and move to the previous or next scene through dedicated controls. The scene-editor control sits between previous and next. Scene rows expose no repeated visible reorder controls; focused rows retain keyboard reordering through `Alt+ArrowUp` / `Alt+ArrowDown`. A persistent per-user, per-canvas **Loop** toggle enables or disables wrapping from either sequence end. The scene panel can be moved by a thin top handle and resized from its left edge between a nominal 320 px minimum and 640 px maximum while remaining clamped to the viewport. Scene management does not expose print or PDF export actions.

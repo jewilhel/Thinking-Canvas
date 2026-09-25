@@ -497,8 +497,11 @@ test("removes document range highlights after dismissal and deletion", async ({
   await expect.poll(highlightCount).toBe(0);
 
   await createComment("Delete this document comment.");
-  page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page
+    .getByRole("group", { name: "Confirm comment deletion" })
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
   await expect.poll(highlightCount).toBe(0);
 });
 

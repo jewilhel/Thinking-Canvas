@@ -2380,12 +2380,24 @@ export function executeProductCanvasCommand(document: Y.Doc, input: unknown) {
           command.payload.cells,
         );
       } else {
+        const label =
+          object.type === "shape"
+            ? listCanvasObjectsV2(document).find(
+                (candidate) =>
+                  isIntrinsicShapeLabel(candidate) &&
+                  candidate.parentId === object.id,
+              )
+            : undefined;
         setCanvasObjectField(
           document,
-          object.id,
+          label?.id ?? object.id,
           ["text"],
           command.payload.text,
         );
+        if (label) {
+          touch(document, label.id, command.issuedAt);
+          affectedObjectIds.add(label.id);
+        }
       }
     } else if (command.type === "object.style") {
       if (

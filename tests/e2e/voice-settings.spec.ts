@@ -20,6 +20,7 @@ test("tuning panel preserves presets and distinguishes drafts from confirmed set
   await expect(panel).toBeVisible();
   await expect(panel.getByLabel("Detect a finished turn")).toHaveCount(0);
   await panel.getByLabel("Idle timeout (seconds)").fill("90");
+  await panel.getByText("Presets", { exact: true }).click();
   await panel.getByLabel("Preset name", { exact: true }).fill("QA pause");
   await panel.getByRole("button", { name: "Save preset", exact: true }).click();
   await panel.getByRole("button", { name: "Reset to baseline" }).click();
@@ -44,6 +45,10 @@ test("tuning panel preserves presets and distinguishes drafts from confirmed set
   await page
     .getByRole("button", { name: "Start AI voice", exact: true })
     .click({ modifiers: ["Control"] });
+  await page
+    .getByRole("dialog", { name: "Voice settings", exact: true })
+    .getByText("Presets", { exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Load QA pause", exact: true })
     .click();
@@ -72,3 +77,20 @@ test("unauthenticated callers cannot open supervised sessions", async ({
   });
   expect(response.status()).toBe(403);
 });
+
+for (const [email, expectedStatus] of [
+  ["commenter@thinking-canvas.local", 200],
+  ["viewer@thinking-canvas.local", 403],
+] as const) {
+  test(`live voice availability respects ${email}'s canvas role`, async ({
+    page,
+  }) => {
+    await page.goto("/auth/sign-in");
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password").fill("LocalPassword1!");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(/\/app$/);
+    const response = await page.request.get(`/api/canvases/${canvasId}/voice`);
+    expect(response.status()).toBe(expectedStatus);
+  });
+}
