@@ -14,6 +14,7 @@ function setup() {
       ) => Promise<import("./live-delegation-contract").LiveCanvasResult>
     >(async () => "Verified canvas description"),
     append: vi.fn(),
+    diagnostic: vi.fn(),
     cancel: vi.fn(async () => {}),
     quiet: vi.fn(() => true),
   };
@@ -95,6 +96,37 @@ describe("bounded voice delegation", () => {
     expect(context.completedTasks).toEqual([
       { id: "task1", text: "Verified canvas description" },
     ]);
+  });
+  it("runs a later document request while an earlier failed-task notice is waiting for quiet", async () => {
+    const { owner, hooks } = setup();
+    hooks.quiet.mockReturnValue(false);
+    hooks.run.mockRejectedValueOnce(new Error("earlier request failed"));
+    owner.receive(speech("Give me feedback on the idea.", "feedback"), 0);
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    await vi.waitFor(() =>
+      expect(hooks.diagnostic).toHaveBeenCalledWith("result_queued", "task1"),
+    );
+    owner.receive(
+      speech("Create a document with our transcript.", "document", 6000),
+      3000,
+    );
+    expect(
+      owner.requestObservedCanvasWork(4000, {
+        userVersion: 2,
+        context: JSON.stringify([
+          { speaker: "user", text: "Create a document with our transcript." },
+        ]),
+      }),
+    ).toBe(true);
+    owner.tick(4000);
+    await vi.waitFor(() => expect(hooks.run).toHaveBeenCalledTimes(2));
+    const context = JSON.parse(hooks.run.mock.calls[1][2].text);
+    expect(context.currentObservedContext).toContain("Create a document");
+    expect(context.unconfirmedTasks).toEqual([
+      expect.objectContaining({ id: "task1" }),
+    ]);
+    expect(hooks.append).not.toHaveBeenCalled();
   });
   it("routes a semantically observed document request even after earlier timestamps were consumed", async () => {
     const { owner, hooks } = setup();

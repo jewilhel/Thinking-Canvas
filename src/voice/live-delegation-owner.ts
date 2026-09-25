@@ -106,6 +106,9 @@ export class LiveDelegationOwner {
           ))
     )
       return false;
+    // The failed task remains in unconfirmedTasks. Its unsent status must not
+    // hold a later explicit request hostage while the participant is speaking.
+    if (this.queued?.silent) this.queued = undefined;
     const id = `control:canvas-observer:${crypto.randomUUID()}`;
     if (observed) {
       this.lastObservedUserVersion = observed.userVersion;
@@ -317,6 +320,7 @@ export class LiveDelegationOwner {
     }
     this.seen.add(id);
     this.hooks.diagnostic?.("received", id);
+    if (this.queued?.silent) this.queued = undefined;
     if (this.pending.size >= 4) {
       void Promise.resolve(
         this.hooks.append(
