@@ -199,7 +199,10 @@ export async function superviseLiveVoice(
         return false;
       }
       const result = await response.json();
-      return result.completed === true && result.endSession === true;
+      return {
+        end: result.completed === true && result.endSession === true,
+        canvasAction: result.completed === true && result.canvasAction === true,
+      };
     },
     () => {
       if (!stopping && !owner.busy) {
@@ -213,6 +216,9 @@ export async function superviseLiveVoice(
         ...decision,
         canvasBusy: owner.busy,
       }),
+    () => {
+      owner.requestObservedCanvasWork();
+    },
   );
   const taskTimer = setInterval(() => {
     owner.tick();

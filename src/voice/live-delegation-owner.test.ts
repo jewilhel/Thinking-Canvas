@@ -32,6 +32,39 @@ const speech = (delta: string, event_id = "speech1", start_ms = 4000) => ({
   end_ms: start_ms + 500,
 });
 describe("bounded voice delegation", () => {
+  it("hands the original document request to Canvas AI when Live omitted delegation", () => {
+    const { owner, hooks } = setup();
+    owner.receive(speech("Create a new document with our transcript."), 0);
+    owner.receive(
+      {
+        ...speech("Saved. It's on the canvas.", "false-save", 5000),
+        type: "session.output_transcript.delta",
+      },
+      100,
+    );
+    expect(owner.requestObservedCanvasWork(2000)).toBe(true);
+    expect(owner.requestObservedCanvasWork(2001)).toBe(false);
+    owner.tick(2000);
+    expect(hooks.run).toHaveBeenCalledOnce();
+    expect(hooks.run.mock.calls[0][0]).toMatch(/^control:canvas-observer:/);
+    const context = JSON.parse(hooks.run.mock.calls[0][2].text);
+    expect(context.fragments[0].text).toBe(
+      "Create a new document with our transcript.",
+    );
+    expect(context.fragments[1].text).toBe("Saved. It's on the canvas.");
+    expect(context.completedTasks).toEqual([]);
+  });
+  it("does not duplicate work when Live also delegates the same request", () => {
+    const { owner, hooks } = setup();
+    owner.receive(speech("Save this transcript to a new document."), 0);
+    owner.receive(delegated, 0);
+    owner.requestObservedCanvasWork(2000);
+    owner.tick(2000);
+    expect(hooks.run).toHaveBeenCalledOnce();
+    expect(hooks.run.mock.calls[0][0]).toBe("task1");
+    owner.tick(2200);
+    expect(hooks.run).toHaveBeenCalledOnce();
+  });
   it("passes the prior session separately without interpreting old requests as current commands", () => {
     const { hooks } = setup();
     const previousConversation = {

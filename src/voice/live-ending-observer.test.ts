@@ -73,6 +73,42 @@ it("checks while canvas work is pending, rejects a non-ending, and stops after c
   expect(check).toHaveBeenCalledOnce();
 });
 
+it("routes an explicit unhanded canvas request without accepting the assistant's save claim", async () => {
+  const requestCanvas = vi.fn();
+  const end = vi.fn();
+  const observer = new LiveEndingObserver(
+    async () => ({ end: false, canvasAction: true }),
+    end,
+    undefined,
+    requestCanvas,
+  );
+  observer.receive(input("Create a new document with this transcript."), 0);
+  observer.receive(output("Saved. The transcript is on the canvas."), 100);
+  observer.tick(false, true, 2000);
+  await vi.waitFor(() => expect(requestCanvas).toHaveBeenCalledOnce());
+  expect(end).not.toHaveBeenCalled();
+  observer.tick(false, true, 2300);
+  expect(requestCanvas).toHaveBeenCalledOnce();
+});
+
+it("discards a canvas routing decision when newer speech supersedes it", async () => {
+  let resolve!: (decision: { end: boolean; canvasAction: boolean }) => void;
+  const requestCanvas = vi.fn();
+  const observer = new LiveEndingObserver(
+    () => new Promise((r) => (resolve = r)),
+    vi.fn(),
+    undefined,
+    requestCanvas,
+  );
+  observer.receive(input("Create a document."), 0);
+  observer.receive(output("I'll do that."), 100);
+  observer.tick(false, true, 2000);
+  observer.receive(input("Actually, never mind."), 2100);
+  resolve({ end: false, canvasAction: true });
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(requestCanvas).not.toHaveBeenCalled();
+});
+
 it("retains a confirmed farewell until pending canvas work finishes", async () => {
   const end = vi.fn();
   const check = vi.fn(async () => true);

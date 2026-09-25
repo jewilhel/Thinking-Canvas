@@ -82,6 +82,29 @@ export class LiveDelegationOwner {
   get busy() {
     return !!this.active || this.pending.size > 0 || !!this.queued;
   }
+  /** Recover an explicit request when Live spoke without handing it off. */
+  requestObservedCanvasWork(now = Date.now()) {
+    if (
+      this.closed ||
+      [...this.pending.keys()].some((id) =>
+        id.startsWith("control:canvas-observer:"),
+      ) ||
+      !this.fragments.some(
+        (part) =>
+          part.type === "session.input_transcript.delta" &&
+          part.end_ms > this.consumedThrough,
+      )
+    )
+      return false;
+    const id = `control:canvas-observer:${crypto.randomUUID()}`;
+    this.pending.set(id, now);
+    this.offsets.set(
+      id,
+      Math.max(0, ...this.fragments.map((part) => part.end_ms)),
+    );
+    this.hooks.diagnostic?.("observed_canvas_request", id);
+    return true;
+  }
   requestDescription(requestId: string) {
     if (this.closed || this.busy || this.seen.has(requestId)) return;
     this.seen.add(requestId);

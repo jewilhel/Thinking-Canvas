@@ -156,11 +156,21 @@ export async function POST(
       }
       await stillAllowed();
       const decision = z
-        .strictObject({ reason: z.string(), end: z.boolean() })
+        .strictObject({
+          reason: z.string(),
+          end: z.boolean(),
+          canvasAction: z.boolean(),
+        })
         .parse(JSON.parse(result.output_text));
       taskStatus = "completed";
       return Response.json(
-        { completed: true, endSession: decision.end, text: "", taskId },
+        {
+          completed: true,
+          endSession: decision.end,
+          canvasAction: decision.canvasAction,
+          text: "",
+          taskId,
+        },
         { headers: { "Cache-Control": "no-store" } },
       );
     }
