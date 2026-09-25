@@ -77,7 +77,7 @@ export class LiveDelegationOwner {
   private lastInputAt = -Infinity;
   private endingRequested = false;
   private endingReviewId?: string;
-  private reports: { id: string; text: string }[] = [];
+  private reports: { id: string; text: string; confirmed: boolean }[] = [];
   constructor(private hooks: Hooks) {}
   get busy() {
     return !!this.active || this.pending.size > 0 || !!this.queued;
@@ -137,7 +137,7 @@ export class LiveDelegationOwner {
             return;
           }
           this.clarification = undefined;
-          this.reports.push({ id, text });
+          this.reports.push({ id, text, confirmed: true });
           this.reports = this.reports.slice(-3);
           while (
             this.reports.length > 1 &&
@@ -145,9 +145,6 @@ export class LiveDelegationOwner {
           )
             this.reports.shift();
           this.queueReport(id, text);
-          if (this.queued && inputAt !== this.lastInputAt) {
-            this.queued.contextOnly = true;
-          }
           if (
             this.queued &&
             typeof result !== "string" &&
@@ -156,22 +153,30 @@ export class LiveDelegationOwner {
             this.queued.endSession = true;
             this.queued.reportBeforeEnding = result.reportBeforeEnding === true;
             this.queued.inputAt = inputAt;
-            if (inputAt !== this.lastInputAt)
+            if (inputAt !== this.lastInputAt) {
+              this.queued.contextOnly = true;
               this.scheduleEndingReview(this.lastInputAt);
+            }
           }
         }
       })
       .catch(() => {
         this.endingRequested = false;
+        const lastConfirmed = this.reports.findLast(
+          (report) => report.confirmed,
+        );
         this.reports.push({
           id,
-          text: "This task ended without a confirmed result. Inspect existing comments before any repeat write; a comment may already have been saved.",
+          text: "This task ended without a confirmed result. Earlier completed tasks remain confirmed; inspect the canvas or Comments before repeating a write.",
+          confirmed: false,
         });
         this.reports = this.reports.slice(-3);
         if (!this.closed && !controller.signal.aborted)
           this.queueReport(
             id,
-            "The canvas request did not finish successfully. Check Comments for any recorded result before retrying.",
+            lastConfirmed
+              ? `A later canvas request did not finish successfully. Do not describe the earlier completed change as failed. Its confirmed result was: ${lastConfirmed.text} Check the canvas or Comments before retrying the later request.`
+              : "The canvas request did not finish successfully. Check the canvas or Comments for any recorded result before retrying.",
           );
       })
       .finally(() => {
@@ -224,11 +229,10 @@ export class LiveDelegationOwner {
         return;
       this.lastInputAt = now;
       if (this.endingRequested) this.scheduleEndingReview(now);
-      else if (this.active || this.queued) {
-        // A participant can finish (or change their request) while work is in
-        // flight. Reassess that fresh wording with the result even if Voice AI
-        // does not emit another delegation. Do not speak a stale report first.
-        if (this.queued) this.queued.contextOnly = true;
+      else if (this.active) {
+        // Review wording that arrives while a task is running, even if Live
+        // emits no second delegation. Keep the first verified result audible;
+        // a later review cannot retroactively turn its success into failure.
         this.scheduleEndingReview(now);
       }
       const recent = this.fragments
@@ -342,7 +346,12 @@ export class LiveDelegationOwner {
             endMs: x.end_ms,
             text: x.delta,
           })),
-          completedTasks: this.reports,
+          completedTasks: this.reports
+            .filter((report) => report.confirmed)
+            .map(({ id, text }) => ({ id, text })),
+          unconfirmedTasks: this.reports
+            .filter((report) => !report.confirmed)
+            .map(({ id, text }) => ({ id, text })),
           pendingClarification: this.clarification,
         });
       // Drop whole old fragments, never truncate the participant's latest request.

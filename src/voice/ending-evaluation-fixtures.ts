@@ -51,6 +51,17 @@ export const voiceEndingFixtures = [
     ],
   },
   {
+    name: "Ordinary parting after a later reporting failure",
+    expected: true,
+    turns: [
+      ["user", "Change Alpha to blue and Beta to teal."],
+      ["assistant", "The canvas change is complete."],
+      ["assistant", "I couldn't complete a later canvas check."],
+      ["user", "Okay, see you later."],
+      ["assistant", "Talk soon, Jason."],
+    ],
+  },
+  {
     name: "New work after farewell",
     expected: false,
     turns: [

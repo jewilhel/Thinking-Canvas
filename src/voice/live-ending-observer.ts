@@ -8,6 +8,7 @@ export class LiveEndingObserver {
   private checked = 0;
   private lastActivity = 0;
   private pending = false;
+  private approvedVersion = -1;
   private closed = false;
   constructor(
     private check: (text: string) => Promise<boolean>,
@@ -48,9 +49,18 @@ export class LiveEndingObserver {
   }
   tick(busy: boolean, quiet: boolean, now = Date.now()) {
     if (
+      !this.closed &&
+      !busy &&
+      quiet &&
+      this.approvedVersion === this.version
+    ) {
+      this.approvedVersion = -1;
+      this.end();
+      return;
+    }
+    if (
       this.closed ||
       this.pending ||
-      busy ||
       !quiet ||
       this.version === this.checked ||
       now - this.lastActivity < 1500 ||
@@ -65,7 +75,13 @@ export class LiveEndingObserver {
       .then((end) => {
         const current = !this.closed && version === this.version;
         this.diagnostic?.({ end, current });
-        if (end && current) this.end();
+        if (end && current) {
+          this.approvedVersion = version;
+          if (!busy) {
+            this.approvedVersion = -1;
+            this.end();
+          }
+        }
       })
       .catch(() => undefined)
       .finally(() => {

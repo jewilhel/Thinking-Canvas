@@ -124,6 +124,47 @@ describe("bounded voice delegation", () => {
     owner.tick(4000);
     await vi.waitFor(() => expect(hooks.append).toHaveBeenCalledOnce());
   });
+  it("preserves the completed edit when speech continues and a later handoff fails", async () => {
+    const { owner, hooks } = setup();
+    hooks.quiet.mockReturnValue(false);
+    let completeEdit!: (result: string) => void;
+    hooks.run
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            completeEdit = resolve;
+          }),
+      )
+      .mockRejectedValueOnce(new Error("Later request failed"));
+    owner.receive(speech("Change Alpha to blue and Beta to teal.", "edit"), 0);
+    owner.receive(delegated, 0);
+    owner.tick(2000);
+    owner.receive(speech("I'm still talking.", "chat", 6000), 2500);
+    completeEdit("Alpha is blue and Beta is teal.");
+    await vi.waitFor(() => expect(owner.busy).toBe(true));
+    owner.tick(5000);
+    expect(hooks.run).toHaveBeenCalledOnce();
+    hooks.quiet.mockReturnValue(true);
+    owner.tick(6000);
+    await vi.waitFor(() => expect(hooks.append).toHaveBeenCalledOnce());
+    expect(hooks.append.mock.calls[0][2]).toContain(
+      "Alpha is blue and Beta is teal.",
+    );
+    await vi.waitFor(() => {
+      owner.tick(7000);
+      expect(hooks.run).toHaveBeenCalledTimes(2);
+    });
+    await vi.waitFor(() => {
+      owner.tick(10000);
+      expect(hooks.append).toHaveBeenCalledTimes(2);
+    });
+    expect(hooks.append.mock.calls[1][2]).toContain(
+      "Do not describe the earlier completed change as failed",
+    );
+    expect(hooks.append.mock.calls[1][2]).toContain(
+      "Alpha is blue and Beta is teal.",
+    );
+  });
   it("keeps a handoff received while busy and includes the previous completed outcome", async () => {
     const { owner, hooks } = setup();
     owner.receive(speech("Leave a comment on Jason saying test."), 0);
@@ -663,8 +704,10 @@ it.each([true, false])(
     expect(review.completedTasks).toEqual([
       { id: "task1", text: "Created the discussion document successfully." },
     ]);
-    expect(hooks.append.mock.calls[0][0]).toBe("session.thinking.append");
-    expect(hooks.append.mock.calls[0][2]).toContain("context only");
+    expect(hooks.append.mock.calls[0][0]).toBe("session.commentary.append");
+    expect(hooks.append.mock.calls[0][2]).toContain(
+      "Created the discussion document successfully.",
+    );
     expect(endSession).toHaveBeenCalledTimes(ending ? 1 : 0);
     if (ending) expect(endSession).toHaveBeenCalledWith(true);
   },

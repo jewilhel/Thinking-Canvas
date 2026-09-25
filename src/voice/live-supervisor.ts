@@ -357,7 +357,14 @@ export async function superviseLiveVoice(
       stop("provider_closed");
       finish();
     }
-    if (event.type === "error") stop("provider_error");
+    if (event.type === "error") {
+      const code = event.error?.code;
+      console.warn("Live provider error", {
+        sessionId: session.id,
+        code: typeof code === "string" ? code.slice(0, 100) : null,
+      });
+      stop("provider_error");
+    }
   });
   socket.on("error", () => stop("supervisor_error"));
   socket.on("close", () => {

@@ -55,14 +55,14 @@ it("discards approval when the participant resumes during the check", async () =
   await vi.waitFor(() => expect(observer.busy).toBe(false));
   expect(end).not.toHaveBeenCalled();
 });
-it("waits for canvas work, rejects a non-ending, and stops after closure", async () => {
+it("checks while canvas work is pending, rejects a non-ending, and stops after closure", async () => {
   const check = vi.fn(async () => false),
     end = vi.fn();
   const observer = new LiveEndingObserver(check, end);
   observer.receive(input("Change the color."), 0);
   observer.receive(output("I'll do that."), 100);
   observer.tick(true, true, 2000);
-  expect(check).not.toHaveBeenCalled();
+  await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
   observer.tick(false, true, 2100);
   await vi.waitFor(() => expect(observer.busy).toBe(false));
   expect(end).not.toHaveBeenCalled();
@@ -71,6 +71,36 @@ it("waits for canvas work, rejects a non-ending, and stops after closure", async
   observer.receive(output("Bye"), 3100);
   observer.tick(false, true, 5000);
   expect(check).toHaveBeenCalledOnce();
+});
+
+it("retains a confirmed farewell until pending canvas work finishes", async () => {
+  const end = vi.fn();
+  const check = vi.fn(async () => true);
+  const observer = new LiveEndingObserver(check, end);
+  observer.receive(input("See you later."), 0);
+  observer.receive(output("Talk soon, Jason."), 100);
+  observer.tick(true, true, 2000);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(check).toHaveBeenCalledOnce();
+  expect(end).not.toHaveBeenCalled();
+  observer.tick(true, true, 2300);
+  expect(end).not.toHaveBeenCalled();
+  observer.tick(false, true, 2600);
+  expect(end).toHaveBeenCalledOnce();
+  observer.tick(false, true, 2900);
+  expect(end).toHaveBeenCalledOnce();
+});
+
+it("invalidates a farewell approval when a new request arrives during work", async () => {
+  const end = vi.fn();
+  const observer = new LiveEndingObserver(async () => true, end);
+  observer.receive(input("See you later."), 0);
+  observer.receive(output("Talk soon."), 100);
+  observer.tick(true, true, 2000);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  observer.receive(input("Wait, save the summary first."), 2100);
+  observer.tick(false, false, 2200);
+  expect(end).not.toHaveBeenCalled();
 });
 
 it("lets the participant have the last word after the AI farewell", async () => {
