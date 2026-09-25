@@ -34,7 +34,10 @@ vi.mock("@/ai/render-capture", () => ({
   },
 }));
 import * as Y from "yjs";
-import { getProductDocumentContentRoot } from "../../src/documents/product-document";
+import {
+  createProductDocumentObject,
+  getProductDocumentContentRoot,
+} from "../../src/documents/product-document";
 import {
   createProductCanvasDocument,
   listCanvasObjectsV2,
@@ -48,6 +51,7 @@ it
   .skipIf(process.env.RUN_VOICE_DB_TESTS !== "1")
   .each([
     "transcript",
+    "brief",
     "shape",
     "direct-edit",
     "clarification",
@@ -138,6 +142,7 @@ it
         },
       });
     const secondId = crypto.randomUUID();
+    const createdDocumentId = crypto.randomUUID();
     if (organization)
       putCanvasObjectV2(initialDocument, {
         ...listCanvasObjectsV2(initialDocument)[0],
@@ -254,7 +259,7 @@ it
               status: "completed",
               requestId: "fixture",
               reply: {
-                body: "Creating the document.",
+                body: "I'll create the document and then let you know.",
                 evidence: [],
                 contextualTargetObjectIds: [],
               },
@@ -270,128 +275,164 @@ it
                         destinationDocumentId: existingId,
                       },
                     }
-                  : documentEdit
+                  : kind === "brief"
                     ? {
-                        callKey: "edit-doc",
-                        toolName: "execute_document_changes",
+                        callKey: "create-brief",
+                        toolName: "stage_canvas_changes",
                         arguments: {
-                          summary: "Replace the paragraph",
-                          documentObjectId: existingId,
-                          operations: [
+                          summary: "Created the requested design brief.",
+                          commands: [
                             {
-                              kind: "replace_document",
-                              blocks: [
+                              type: "object.create",
+                              payload: {
+                                object: createProductDocumentObject({
+                                  canvasId: c.data.id,
+                                  objectId: createdDocumentId,
+                                  actorId: h.user.id,
+                                  issuedAt: new Date().toISOString(),
+                                  title: "Health app design brief",
+                                  geometry: {
+                                    x: 0,
+                                    y: 0,
+                                    width: 440,
+                                    height: 560,
+                                    rotation: 0,
+                                  },
+                                }),
+                              },
+                            },
+                          ],
+                          explanations: [
+                            {
+                              objectId: createdDocumentId,
+                              whatChanged: "Created the design brief.",
+                              why: "Requested during the voice conversation.",
+                            },
+                          ],
+                        },
+                      }
+                    : documentEdit
+                      ? {
+                          callKey: "edit-doc",
+                          toolName: "execute_document_changes",
+                          arguments: {
+                            summary: "Replace the paragraph",
+                            documentObjectId: existingId,
+                            operations: [
+                              {
+                                kind: "replace_document",
+                                blocks: [
+                                  {
+                                    kind: "paragraph",
+                                    text: "The document can be edited through Canvas AI.",
+                                  },
+                                ],
+                              },
+                            ],
+                            whatChanged: "Updated paragraph",
+                            why: "Requested",
+                            objectCommands: [],
+                            objectExplanations: [],
+                          },
+                        }
+                      : kind === "typed-organization"
+                        ? {
+                            callKey: "group",
+                            toolName: "execute_canvas_commands",
+                            arguments: {
+                              commands: [
                                 {
-                                  kind: "paragraph",
-                                  text: "The document can be edited through Canvas AI.",
+                                  type: "selection.group",
+                                  payload: {
+                                    objectIds: [existingId, secondId],
+                                    groupId: crypto.randomUUID(),
+                                  },
                                 },
                               ],
                             },
-                          ],
-                          whatChanged: "Updated paragraph",
-                          why: "Requested",
-                          objectCommands: [],
-                          objectExplanations: [],
-                        },
-                      }
-                    : kind === "typed-organization"
-                      ? {
-                          callKey: "group",
-                          toolName: "execute_canvas_commands",
-                          arguments: {
-                            commands: [
-                              {
-                                type: "selection.group",
-                                payload: {
-                                  objectIds: [existingId, secondId],
-                                  groupId: crypto.randomUUID(),
-                                },
-                              },
-                            ],
-                          },
-                        }
-                      : organization
-                        ? {
-                            callKey: "group",
-                            toolName: "organize_canvas",
-                            arguments: {
-                              action: "group",
-                              objectIds: [existingId, secondId],
-                              parentId: null,
-                              summary: "Group the pair",
-                            },
                           }
-                        : kind === "clarification"
+                        : organization
                           ? {
-                              callKey: "clarify",
-                              toolName: "ask_voice_clarification",
+                              callKey: "group",
+                              toolName: "organize_canvas",
                               arguments: {
-                                question: "Which shape should I change?",
+                                action: "group",
+                                objectIds: [existingId, secondId],
+                                parentId: null,
+                                summary: "Group the pair",
                               },
                             }
-                          : kind === "direct-edit"
+                          : kind === "clarification"
                             ? {
-                                callKey: "direct-edit",
-                                toolName: "execute_canvas_commands",
+                                callKey: "clarify",
+                                toolName: "ask_voice_clarification",
                                 arguments: {
-                                  commands: [
-                                    {
-                                      type: "object.style",
-                                      payload: {
-                                        objectId: existingId,
-                                        style: {
-                                          fill: "#fefefe",
-                                          textColor: "#ffffff",
-                                        },
-                                      },
-                                    },
-                                  ],
+                                  question: "Which shape should I change?",
                                 },
                               }
-                            : kind === "transcript"
+                            : kind === "direct-edit"
                               ? {
-                                  callKey: "create-doc",
-                                  toolName: "create_conversation_document",
+                                  callKey: "direct-edit",
+                                  toolName: "execute_canvas_commands",
                                   arguments: {
-                                    kind: "transcript",
-                                    title: "Test transcript",
-                                    text: "",
+                                    commands: [
+                                      {
+                                        type: "object.style",
+                                        payload: {
+                                          objectId: existingId,
+                                          style: {
+                                            fill: "#fefefe",
+                                            textColor: "#ffffff",
+                                          },
+                                        },
+                                      },
+                                    ],
                                   },
                                 }
-                              : {
-                                  callKey: "create-shape",
-                                  toolName: "stage_new_shapes",
-                                  arguments: {
-                                    summary: "Create a labeled sticky.",
-                                    shapes: [
-                                      {
-                                        key: "sticky",
-                                        shape: "rectangle",
-                                        text: "Voice creation test",
-                                        x: 0,
-                                        y: 0,
-                                        width: 100,
-                                        height: 24,
-                                        fill: "#ffffff",
-                                        outline: "#18181b",
-                                        outlineWidth: 1,
-                                        fontFamily: "Inter",
-                                        fontSize: 16,
-                                        fontWeight: "normal",
-                                        textAlign: "center",
-                                        textColor: "#ffffff",
-                                      },
-                                    ],
-                                    explanations: [
-                                      {
-                                        key: "sticky",
-                                        whatChanged:
-                                          "Created a labeled sticky.",
-                                        why: "Requested by the user.",
-                                      },
-                                    ],
+                              : kind === "transcript"
+                                ? {
+                                    callKey: "create-doc",
+                                    toolName: "create_conversation_document",
+                                    arguments: {
+                                      kind: "transcript",
+                                      title: "Test transcript",
+                                      text: "",
+                                    },
+                                  }
+                                : {
+                                    callKey: "create-shape",
+                                    toolName: "stage_new_shapes",
+                                    arguments: {
+                                      summary: "Create a labeled sticky.",
+                                      shapes: [
+                                        {
+                                          key: "sticky",
+                                          shape: "rectangle",
+                                          text: "Voice creation test",
+                                          x: 0,
+                                          y: 0,
+                                          width: 100,
+                                          height: 24,
+                                          fill: "#ffffff",
+                                          outline: "#18181b",
+                                          outlineWidth: 1,
+                                          fontFamily: "Inter",
+                                          fontSize: 16,
+                                          fontWeight: "normal",
+                                          textAlign: "center",
+                                          textColor: "#ffffff",
+                                        },
+                                      ],
+                                      explanations: [
+                                        {
+                                          key: "sticky",
+                                          whatChanged:
+                                            "Created a labeled sticky.",
+                                          why: "Requested by the user.",
+                                        },
+                                      ],
+                                    },
                                   },
-                                },
                 ...(kind === "clarification"
                   ? [
                       {
@@ -448,6 +489,20 @@ it
         return;
       }
       expect(result.changeSetId).toBeTruthy();
+      if (kind === "transcript" || kind === "brief") {
+        const savedReply = await h.client
+          .from("comment_replies")
+          .select("body")
+          .eq("id", result.replyId)
+          .single();
+        expect(savedReply.error).toBeNull();
+        expect(savedReply.data.body).toContain(
+          kind === "brief"
+            ? "Created the document “Health app design brief” on the canvas."
+            : "Created the document “Test transcript” on the canvas.",
+        );
+        expect(savedReply.data.body).not.toContain("I'll create");
+      }
       if (kind === "direct-edit") {
         const saved = await h.client
           .from("ai_change_sets")
@@ -477,7 +532,9 @@ it
       const objects = projectCanvasCompositions(listCanvasObjectsV2(restored));
       expect(objects).toHaveLength(kind === "shape" || organization ? 2 : 1);
       expect(objects[0].type).toBe(
-        kind === "transcript" || documentEdit ? "document" : "shape",
+        kind === "transcript" || kind === "brief" || documentEdit
+          ? "document"
+          : "shape",
       );
       if (kind === "transcript")
         expect(
@@ -485,7 +542,7 @@ it
             getProductDocumentContentRoot(restored, objects[0].id).toJSON(),
           ),
         ).toContain("Early health app idea.");
-      else if (!organization && !documentEdit) {
+      else if (!organization && !documentEdit && kind !== "brief") {
         if (objects[0].type !== "shape") throw new Error("Expected a shape");
         expect(objects[0].text).toBe("Voice creation test");
         expect(objects[0].style.textColor).toBe("#ffffff");

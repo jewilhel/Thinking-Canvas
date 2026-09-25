@@ -1844,6 +1844,31 @@ export async function completeAiRun(
   }
   await options.beforeComplete?.();
   throwIfAiRunAborted(options.signal);
+  // The gateway writes its reply before tools run. For a voice request that only
+  // created documents, report the applied objects instead of relaying a stale
+  // future-tense plan after the documents are already on the canvas.
+  if (voiceTask.data && reviewStageToolResults.length > 0) {
+    const createdDocuments = reviewStageToolResults.map((result) => {
+      if (
+        result.commandTypes.some((type) => type !== "object.create") ||
+        result.affectedObjectIds.length === 0
+      )
+        return null;
+      const documents = result.affectedObjectIds.map((id) =>
+        sourceObjects.find((object) => object.id === id),
+      );
+      return documents.every((object) => object?.type === "document")
+        ? documents.map((object) => object!.title)
+        : null;
+    });
+    if (createdDocuments.every((titles) => titles !== null)) {
+      const titles = createdDocuments.flatMap((value) => value ?? []);
+      replySections[0] =
+        titles.length === 1
+          ? `Created the document “${titles[0]}” on the canvas.`
+          : `Created these documents on the canvas: ${titles.map((title) => `“${title}”`).join(", ")}.`;
+    }
+  }
   options.onCheckpoint?.("save_verified_reply");
   const completionResult = await supabase.rpc("complete_ai_run", {
     target_run_id: run.id,
