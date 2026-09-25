@@ -48,6 +48,29 @@ describe("single voice control", () => {
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onSettings).not.toHaveBeenCalled();
   });
+  it("signals reconnection without making the user start another call", () => {
+    const onAction = vi.fn();
+    render(
+      <VoiceControlButton
+        active
+        connecting={false}
+        reconnecting
+        muted={false}
+        status="Reconnecting"
+        settingsOpen={false}
+        onAction={onAction}
+        onSettings={vi.fn()}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "End AI voice" });
+    expect(button.getAttribute("data-voice-state")).toBe("reconnecting");
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("status").textContent).toBe(
+      "Voice reconnecting. Please wait.",
+    );
+    fireEvent.click(button);
+    expect(onAction).toHaveBeenCalledOnce();
+  });
   it("suppresses the click following a touch long press", () => {
     vi.useFakeTimers();
     const { button, onAction, onSettings } = setup();

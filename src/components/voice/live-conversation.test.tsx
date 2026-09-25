@@ -27,14 +27,17 @@ vi.mock("@/components/canvas/workspace-panel", () => ({
 vi.mock("./voice-control-button", () => ({
   VoiceControlButton: ({
     active,
+    status,
     onAction,
     onSettings,
   }: {
     active: boolean;
+    status: string;
     onAction: (button: HTMLButtonElement) => void;
     onSettings: (button: HTMLButtonElement) => void;
   }) => (
     <>
+      <span data-testid="voice-control-state">{status}</span>
       <button onClick={(e) => onAction(e.currentTarget)}>
         {active ? "Stop test voice" : "Start test voice"}
       </button>
@@ -49,6 +52,51 @@ afterEach(() => {
   localStorage.clear();
   vi.resetAllMocks();
   vi.unstubAllGlobals();
+});
+
+it("shows reconnecting during a short outage and keeps the same call available to end", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({})),
+  );
+  const close = vi.fn();
+  vi.mocked(connectLiveVoice).mockResolvedValue({
+    id: crypto.randomUUID(),
+    expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    model: "gpt-live-1",
+    send: vi.fn(),
+    mute: vi.fn(),
+    close,
+  });
+  const controls = document.createElement("div");
+  document.body.append(controls);
+  const view = render(
+    <LiveVoice
+      canvasId="test"
+      userId="test"
+      controlTarget={controls}
+      canSaveTranscript
+      onSaveTranscript={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByText("Start test voice"));
+  fireEvent.click(await screen.findByText("Allow microphone and start"));
+  await screen.findByText("Stop test voice");
+  const state = vi.mocked(connectLiveVoice).mock.calls[0][3];
+  act(() => state("disconnected"));
+  expect(screen.getByTestId("voice-control-state").textContent).toBe(
+    "Reconnecting",
+  );
+  expect(screen.getByText("Stop test voice")).toBeTruthy();
+  act(() => state("connected"));
+  expect(screen.getByTestId("voice-control-state").textContent).toBe(
+    "Connected",
+  );
+  expect(connectLiveVoice).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByText("Stop test voice"));
+  expect(close).toHaveBeenCalledOnce();
+  view.unmount();
+  controls.remove();
 });
 
 it("defaults to the latest session, exports only the selected session, and ignores an old transport closure", async () => {

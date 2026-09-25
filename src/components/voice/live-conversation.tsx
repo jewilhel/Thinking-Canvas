@@ -153,7 +153,8 @@ export function LiveVoice({
     offset = useRef(0),
     limit = useRef(0),
     mounted = useRef(true);
-  const active = status === "Connected",
+  const reconnecting = status === "Reconnecting",
+    active = status === "Connected" || reconnecting,
     connecting = status === "Connecting";
   const persist = (next: Run[]) => {
     const safe = z.array(recordSchema).max(20).parse(next.slice(0, 20));
@@ -393,10 +394,12 @@ export function LiveVoice({
             );
         },
         (state) => {
-          if (
-            generation.current === id &&
-            (state === "failed" || state === "closed")
-          )
+          if (generation.current !== id) return;
+          if (state === "disconnected" && connection.current)
+            setStatus("Reconnecting");
+          if (state === "connected" && connection.current)
+            setStatus("Connected");
+          if (state === "failed" || state === "closed")
             finishRef.current("Voice connection ended");
         },
         controller.signal,
@@ -449,6 +452,7 @@ export function LiveVoice({
           <VoiceControlButton
             active={active}
             connecting={connecting}
+            reconnecting={reconnecting}
             muted={muted}
             status={status}
             settingsOpen={panel}
@@ -497,7 +501,7 @@ export function LiveVoice({
               <p role="status" className={styles.status}>
                 {windingDown && active ? "Wrapping up" : status}
                 {active
-                  ? ` · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}${muted ? " · Microphone muted" : " · Listening"}`
+                  ? ` · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}${reconnecting ? " · Waiting for connection" : muted ? " · Microphone muted" : " · Listening"}`
                   : ""}
               </p>
               {!availability.enabled && availability.reason && (

@@ -16,6 +16,7 @@ function harness() {
     send: vi.fn(),
   }) as unknown as RTCDataChannel;
   const peer = {
+    connectionState: "connected",
     close: vi.fn(),
     addTrack: vi.fn(),
     createDataChannel: () => channel,
@@ -176,5 +177,31 @@ describe("Live supervised lifecycle", () => {
     expect(() => active.send({ type: "response.create" })).toThrow(
       "disconnected",
     );
+  });
+  it("reports a brief browser outage and recovery without ending the supervised call", async () => {
+    const h = harness();
+    const onState = vi.fn();
+    const active = await connectLiveVoice(
+      canvasId,
+      DEFAULT_LIVE_SETTINGS,
+      vi.fn(),
+      onState,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      h.dependencies,
+    );
+    onState.mockClear();
+    window.dispatchEvent(new Event("offline"));
+    expect(onState).toHaveBeenCalledWith("disconnected");
+    expect(h.track.stop).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event("online"));
+    expect(onState).toHaveBeenLastCalledWith("connected");
+    expect(h.fetch).toHaveBeenCalledTimes(2);
+    active.close();
+    onState.mockClear();
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("online"));
+    expect(onState).not.toHaveBeenCalled();
   });
 });

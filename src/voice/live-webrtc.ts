@@ -46,6 +46,20 @@ export async function connectLiveVoice(
   let activated = false;
   let started = false;
   let drain: ReturnType<typeof setTimeout> | undefined;
+  const offline = () => {
+    if (activated && !closed) onState("disconnected");
+  };
+  const online = () => {
+    if (
+      activated &&
+      !closed &&
+      peer.connectionState === "connected" &&
+      channel?.readyState === "open"
+    )
+      onState("connected");
+  };
+  window.addEventListener("offline", offline);
+  window.addEventListener("online", online);
   const dispose = () => {
     clearTimeout(drain);
     channel?.close();
@@ -54,6 +68,8 @@ export async function connectLiveVoice(
   const close = () => {
     if (closed) return;
     closed = true;
+    window.removeEventListener("offline", offline);
+    window.removeEventListener("online", online);
     signal.removeEventListener("abort", close);
     peer.ontrack = null;
     peer.onconnectionstatechange = null;

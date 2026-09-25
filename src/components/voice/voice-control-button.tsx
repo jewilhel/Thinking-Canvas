@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 type Props = {
   active: boolean;
   connecting: boolean;
+  reconnecting?: boolean;
   muted: boolean;
   status: string;
   settingsOpen: boolean;
@@ -15,6 +16,7 @@ type Props = {
 export function VoiceControlButton({
   active,
   connecting,
+  reconnecting = false,
   muted,
   status,
   settingsOpen,
@@ -50,15 +52,17 @@ export function VoiceControlButton({
       aria-description={`${status}. Command-click or Control-click, right-click, or long-press for Voice settings.`}
       aria-expanded={settingsOpen}
       aria-controls="voice-settings-panel"
-      title={`${connecting ? "Connecting…" : active ? "Voice ready — you can speak" : label} · ⌘/Ctrl-click for Voice settings`}
+      title={`${reconnecting ? "Reconnecting voice…" : connecting ? "Connecting…" : active ? "Voice ready — you can speak" : label} · ⌘/Ctrl-click for Voice settings`}
       data-voice-state={
-        connecting
-          ? "connecting"
-          : active
-            ? muted
-              ? "muted"
-              : "listening"
-            : "off"
+        reconnecting
+          ? "reconnecting"
+          : connecting
+            ? "connecting"
+            : active
+              ? muted
+                ? "muted"
+                : "listening"
+              : "off"
       }
       className={
         active
@@ -116,7 +120,7 @@ export function VoiceControlButton({
         clear();
       }}
     >
-      {connecting ? (
+      {connecting || reconnecting ? (
         <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" />
       ) : (
         <AudioLines
@@ -125,21 +129,23 @@ export function VoiceControlButton({
         />
       )}
       <span role="status" className="sr-only">
-        {connecting
-          ? "Connecting voice"
-          : active
-            ? muted
-              ? "Voice microphone muted"
-              : "Voice ready. You can start talking."
-            : "Voice off"}
+        {reconnecting
+          ? "Voice reconnecting. Please wait."
+          : connecting
+            ? "Connecting voice"
+            : active
+              ? muted
+                ? "Voice microphone muted"
+                : "Voice ready. You can start talking."
+              : "Voice off"}
       </span>
-      {active && muted && (
+      {active && !reconnecting && muted && (
         <MicOff
           aria-hidden="true"
           className="absolute right-0.5 bottom-0.5 size-2.5 rounded-full bg-white"
         />
       )}
-      {active && !muted && (
+      {active && !reconnecting && !muted && (
         <span
           aria-hidden="true"
           className="absolute bottom-1 size-1 rounded-full bg-current"
