@@ -93,12 +93,36 @@ describe("bounded voice delegation", () => {
     );
     owner.receive(delegated, 0);
     owner.receive(speech(" saying voice comment test", "s2", 18000), 1900);
-    owner.tick(2200);
+    owner.tick(1999);
     expect(hooks.run).not.toHaveBeenCalled();
-    owner.tick(3500);
+    owner.tick(2200);
     expect(
       JSON.parse(hooks.run.mock.calls[0][2].text).fragments.at(-1).text,
     ).toBe(" saying voice comment test");
+  });
+  it("starts a delegated canvas edit while speech continues but waits to report it aloud", async () => {
+    const { owner, hooks } = setup();
+    hooks.quiet.mockReturnValue(false);
+    owner.receive(
+      speech("Change Alpha to red and Beta to orange", "request"),
+      0,
+    );
+    owner.receive(delegated, 0);
+    owner.receive(
+      speech("Go ahead while I keep talking", "ongoing", 5000),
+      1900,
+    );
+    owner.tick(2200);
+    expect(hooks.run).toHaveBeenCalledOnce();
+    expect(
+      JSON.parse(hooks.run.mock.calls[0][2].text).fragments.at(-1).text,
+    ).toBe("Go ahead while I keep talking");
+    await vi.waitFor(() => expect(owner.busy).toBe(true));
+    owner.tick(3000);
+    expect(hooks.append).not.toHaveBeenCalled();
+    hooks.quiet.mockReturnValue(true);
+    owner.tick(4000);
+    await vi.waitFor(() => expect(hooks.append).toHaveBeenCalledOnce());
   });
   it("keeps a handoff received while busy and includes the previous completed outcome", async () => {
     const { owner, hooks } = setup();

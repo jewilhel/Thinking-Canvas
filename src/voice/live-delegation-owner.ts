@@ -288,12 +288,15 @@ export class LiveDelegationOwner {
   tick(now = Date.now()) {
     if (this.closed) return;
     for (const [id, due] of this.pending) {
+      // A provider delegation already identifies work for Canvas AI. Start it
+      // after the short transcript buffer even if the participant keeps talking;
+      // only application-owned ending reviews need a conversational quiet gap.
+      const endingReview = id === this.endingReviewId;
       if (
         this.active ||
         this.queued ||
         now < due ||
-        !this.hooks.quiet() ||
-        now - this.lastInputAt < 1500
+        (endingReview && (!this.hooks.quiet() || now - this.lastInputAt < 1500))
       )
         continue;
       this.pending.delete(id);

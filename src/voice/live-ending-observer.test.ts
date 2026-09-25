@@ -101,6 +101,32 @@ it("lets the participant have the last word after the AI farewell", async () => 
   expect(end).toHaveBeenCalledOnce();
 });
 
+it("rechecks a parting after extra assistant reassurance without requiring another user command", async () => {
+  let resolveFirst!: (end: boolean) => void;
+  const check = vi
+    .fn<(text: string) => Promise<boolean>>()
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+    )
+    .mockResolvedValue(true);
+  const end = vi.fn();
+  const observer = new LiveEndingObserver(check, end);
+  observer.receive(input("Thanks, talk later."), 0);
+  observer.receive(output("Sure, talk soon."), 100);
+  observer.tick(false, true, 1700);
+  expect(check).toHaveBeenCalledOnce();
+  observer.receive(output("I'll be here when you want to pick this up."), 1800);
+  resolveFirst(true);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(end).not.toHaveBeenCalled();
+  observer.tick(false, true, 3400);
+  await vi.waitFor(() => expect(end).toHaveBeenCalledOnce());
+  expect(check).toHaveBeenCalledTimes(2);
+});
+
 it("checks a final user turn but leaves the call open for a new request", async () => {
   const end = vi.fn(),
     check = vi.fn(async () => false);

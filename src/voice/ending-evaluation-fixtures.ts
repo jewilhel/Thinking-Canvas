@@ -40,6 +40,17 @@ export const voiceEndingFixtures = [
     ],
   },
   {
+    name: "Ordinary parting after completed canvas edit",
+    expected: true,
+    turns: [
+      ["user", "Make the two colors different."],
+      ["assistant", "Both colors are changed."],
+      ["user", "Thanks, talk to you later."],
+      ["assistant", "Sure, talk soon."],
+      ["assistant", "I'll be here when you want to pick this up."],
+    ],
+  },
+  {
     name: "New work after farewell",
     expected: false,
     turns: [
