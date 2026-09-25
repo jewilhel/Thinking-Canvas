@@ -84,6 +84,20 @@ export async function superviseLiveVoice(
         delegationId,
         stage,
       }),
+    pending: () => {
+      if (stopping || socket.readyState !== WebSocket.OPEN) return;
+      // The live model sometimes invents a saved document while Canvas AI is
+      // still working. Give it the current, unverified state at handoff time.
+      socket.send(
+        JSON.stringify({
+          type: "session.instructions.append",
+          event_id: crypto.randomUUID(),
+          delegation_id: null,
+          content:
+            "A canvas request is now pending. Nothing from this request has been confirmed or saved yet. You may say you are working on it, but do not announce completion, invent a document title, or say it is visible. Wait for the application's verified Canvas AI result before reporting success or failure.",
+        }),
+      );
+    },
     quiet: () => !endingObserver?.busy && Date.now() - lastAudio >= 2000,
     append: (type, id, content) => {
       if (stopping || socket.readyState !== WebSocket.OPEN)

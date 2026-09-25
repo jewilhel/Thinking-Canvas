@@ -14,6 +14,7 @@ function setup() {
       ) => Promise<import("./live-delegation-contract").LiveCanvasResult>
     >(async () => "Verified canvas description"),
     append: vi.fn(),
+    pending: vi.fn(),
     cancel: vi.fn(async () => {}),
     quiet: vi.fn(() => true),
   };
@@ -44,6 +45,7 @@ describe("bounded voice delegation", () => {
     );
     expect(owner.requestObservedCanvasWork(2000)).toBe(true);
     expect(owner.requestObservedCanvasWork(2001)).toBe(false);
+    expect(hooks.pending).toHaveBeenCalledOnce();
     owner.tick(2000);
     expect(hooks.run).toHaveBeenCalledOnce();
     expect(hooks.run.mock.calls[0][0]).toMatch(/^control:canvas-observer:/);
@@ -58,6 +60,7 @@ describe("bounded voice delegation", () => {
     const { owner, hooks } = setup();
     owner.receive(speech("Save this transcript to a new document."), 0);
     owner.receive(delegated, 0);
+    expect(hooks.pending).toHaveBeenCalledWith("task1");
     owner.requestObservedCanvasWork(2000);
     owner.tick(2000);
     expect(hooks.run).toHaveBeenCalledOnce();

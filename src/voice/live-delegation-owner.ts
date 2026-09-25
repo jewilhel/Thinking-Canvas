@@ -47,6 +47,7 @@ type Hooks = {
   ) => void | Promise<void>;
   cancel: () => Promise<void>;
   quiet: () => boolean;
+  pending?: (id: string) => void;
   diagnostic?: (stage: string, id: string) => void;
 };
 /** Volatile speech correlation only. No fragment is itself authority to execute. */
@@ -86,8 +87,8 @@ export class LiveDelegationOwner {
   requestObservedCanvasWork(now = Date.now()) {
     if (
       this.closed ||
-      [...this.pending.keys()].some((id) =>
-        id.startsWith("control:canvas-observer:"),
+      [...this.pending.keys()].some(
+        (id) => !id.startsWith("control:ending:"),
       ) ||
       !this.fragments.some(
         (part) =>
@@ -103,6 +104,7 @@ export class LiveDelegationOwner {
       Math.max(0, ...this.fragments.map((part) => part.end_ms)),
     );
     this.hooks.diagnostic?.("observed_canvas_request", id);
+    this.hooks.pending?.(id);
     return true;
   }
   requestDescription(requestId: string) {
@@ -308,6 +310,7 @@ export class LiveDelegationOwner {
       return;
     }
     this.pending.set(id, now + 2000);
+    this.hooks.pending?.(id);
     // Capture the relevant timeline, allowing late fragments up to the deadline.
     this.offsets.set(id, d.data.offset_ms);
   }
