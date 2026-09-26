@@ -1,0 +1,156 @@
+"use client";
+import { AudioLines, LoaderCircle, MicOff } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Button } from "@/components/ui/button";
+
+type Props = {
+  active: boolean;
+  connecting: boolean;
+  reconnecting?: boolean;
+  muted: boolean;
+  status: string;
+  settingsOpen: boolean;
+  onAction: (button: HTMLButtonElement) => void;
+  onSettings: (button: HTMLButtonElement) => void;
+};
+export function VoiceControlButton({
+  active,
+  connecting,
+  reconnecting = false,
+  muted,
+  status,
+  settingsOpen,
+  onAction,
+  onSettings,
+}: Props) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const origin = useRef<{ x: number; y: number } | null>(null);
+  const suppressClick = useRef(false);
+  const clear = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    origin.current = null;
+  };
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  const label = connecting
+    ? "Cancel voice connection"
+    : active
+      ? "End AI voice"
+      : "Start AI voice";
+  return (
+    <Button
+      type="button"
+      size="icon-sm"
+      variant="outline"
+      aria-label={label}
+      aria-pressed={active}
+      aria-description={`${status}. Command-click or Control-click, right-click, or long-press for Voice settings.`}
+      aria-expanded={settingsOpen}
+      aria-controls="voice-settings-panel"
+      title={`${reconnecting ? "Reconnecting voice…" : connecting ? "Connecting…" : active ? "Voice ready — you can speak" : label} · ⌘/Ctrl-click for Voice settings`}
+      data-voice-state={
+        reconnecting
+          ? "reconnecting"
+          : connecting
+            ? "connecting"
+            : active
+              ? muted
+                ? "muted"
+                : "listening"
+              : "off"
+      }
+      className={
+        active
+          ? "relative border-violet-600 bg-violet-600! text-white! ring-2 ring-violet-300 ring-offset-2 hover:bg-violet-700!"
+          : connecting
+            ? "relative border-violet-500 text-violet-700!"
+            : "relative"
+      }
+      onClick={(event) => {
+        clear();
+        if (suppressClick.current) {
+          suppressClick.current = false;
+          return;
+        }
+        if (event.metaKey || event.ctrlKey) onSettings(event.currentTarget);
+        else onAction(event.currentTarget);
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        clear();
+        onSettings(event.currentTarget);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "F10" && event.shiftKey) {
+          event.preventDefault();
+          onSettings(event.currentTarget);
+        }
+      }}
+      onPointerDown={(event) => {
+        suppressClick.current = false;
+        if (event.pointerType !== "touch") return;
+        const button = event.currentTarget;
+        origin.current = { x: event.clientX, y: event.clientY };
+        timer.current = setTimeout(() => {
+          suppressClick.current = true;
+          clear();
+          onSettings(button);
+        }, 550);
+      }}
+      onPointerMove={(event) => {
+        if (
+          origin.current &&
+          Math.hypot(
+            event.clientX - origin.current.x,
+            event.clientY - origin.current.y,
+          ) > 10
+        ) {
+          suppressClick.current = true;
+          clear();
+        }
+      }}
+      onPointerUp={clear}
+      onPointerCancel={() => {
+        suppressClick.current = true;
+        clear();
+      }}
+    >
+      {connecting || reconnecting ? (
+        <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" />
+      ) : (
+        <AudioLines
+          aria-hidden="true"
+          className={active && !muted ? "motion-safe:animate-pulse" : ""}
+        />
+      )}
+      <span role="status" className="sr-only">
+        {reconnecting
+          ? "Voice reconnecting. Please wait."
+          : connecting
+            ? "Connecting voice"
+            : active
+              ? muted
+                ? "Voice microphone muted"
+                : "Voice ready. You can start talking."
+              : "Voice off"}
+      </span>
+      {active && !reconnecting && muted && (
+        <MicOff
+          aria-hidden="true"
+          className="absolute right-0.5 bottom-0.5 size-2.5 rounded-full bg-white"
+        />
+      )}
+      {active && !reconnecting && !muted && (
+        <span
+          aria-hidden="true"
+          className="absolute bottom-1 size-1 rounded-full bg-current"
+        />
+      )}
+    </Button>
+  );
+}

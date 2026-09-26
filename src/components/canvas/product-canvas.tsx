@@ -1,6 +1,10 @@
 "use client";
 
+import { dragPreviewPositionsForSelection } from "@/canvas/drag-preview";
+
+import { LiveVoice } from "@/components/voice/live-conversation";
 import type Konva from "konva";
+import { flushSync } from "react-dom";
 import {
   ArrowLeft,
   Check,
@@ -181,7 +185,10 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import type { CanvasRole } from "@/domain/command";
 import { focusedDocumentViewport } from "@/documents/document-presentation";
 import { documentFullyContainsGeometry } from "@/documents/document-containment";
-import { createProductDocumentObject } from "@/documents/product-document";
+import {
+  createProductDocumentObject,
+  initializePlainTextDocument,
+} from "@/documents/product-document";
 import { ScenePanel } from "@/components/stories/scene-panel";
 import {
   captureStoryFraming,
@@ -540,6 +547,12 @@ function ProductCanvasWorkspace({
   }, [viewport]);
   useEffect(() => () => cancelSceneTransition(), [cancelSceneTransition]);
   const [scenePanelOpen, setScenePanelOpen] = useState(false);
+  const [voiceControlTarget, setVoiceControlTarget] =
+    useState<HTMLSpanElement | null>(null);
+  const voiceAvailable =
+    canvasRole !== "viewer" &&
+    (process.env.NEXT_PUBLIC_APP_ENV === "preview" ||
+      process.env.NODE_ENV !== "production");
   const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
   const [sceneLoopEnabled, setSceneLoopEnabled] = useState(
     () => window.localStorage.getItem(sceneLoopStorageKey) !== "false",
@@ -798,10 +811,7 @@ function ProductCanvasWorkspace({
     (object) => object.type !== "text" && object.type !== "document",
   );
   const textStyleObjects = selectedObjects.filter(
-    (object) =>
-      object.type === "shape" ||
-      object.type === "text" ||
-      object.type === "table",
+    (object) => object.type === "text" || object.type === "table",
   );
 
   useEffect(() => {
@@ -978,6 +988,34 @@ function ProductCanvasWorkspace({
     }
   }
 
+  function saveVoiceTranscript(text: string) {
+    if (!canMutateCanvas || saveStatus !== "Saved") {
+      throw new Error(
+        "Wait for the canvas to reconnect and finish saving. Editing access is required.",
+      );
+    }
+    const id = crypto.randomUUID();
+    const object = createProductDocumentObject({
+      canvasId,
+      objectId: id,
+      actorId: userId,
+      issuedAt: new Date().toISOString(),
+      title: "Conversation transcript",
+      geometry: {
+        x: (size.width / 2 - viewport.x) / viewport.scale - 220,
+        y: (size.height / 2 - viewport.y) / viewport.scale - 280,
+        width: 440,
+        height: 560,
+        rotation: 0,
+      },
+    });
+    document.transact(() => {
+      runCommand("object.create", { object });
+      initializePlainTextDocument(document, id, text);
+    }, `canvas.transcript.${id}`);
+    openDocument(object);
+  }
+
   function createObject(
     activeTool: Exclude<
       CanvasTool,
@@ -1131,7 +1169,8 @@ function ProductCanvasWorkspace({
   }
 
   function openDocument(object: Extract<CanvasObjectV2, { type: "document" }>) {
-    previousDocumentViewportRef.current = viewport;
+    if (!previousDocumentViewportRef.current)
+      previousDocumentViewportRef.current = viewport;
     const focus = focusedDocumentViewport({
       canvasWidth: size.width,
       canvasHeight: size.height,
@@ -2053,70 +2092,19 @@ function ProductCanvasWorkspace({
     } else {
       setContainmentPreviewParentId(null);
     }
-    const movingTargetIds = new Set(
-      selectedTargets
-        .filter((candidate) => candidate.type !== "annotation")
-        .map((candidate) => candidate.id),
-    );
-    const familyTargets = objects.filter(
-      (candidate) =>
-        isContainableObject(candidate) &&
-        typeof candidate.parentId === "string" &&
-        movingTargetIds.has(candidate.parentId),
-    );
-    for (const child of familyTargets) movingTargetIds.add(child.id);
-    const nestedGroupIds = new Set(
-      groups
-        .filter(
-          (group) =>
-            typeof group.parentId === "string" &&
-            movingTargetIds.has(group.parentId),
-        )
-        .map((group) => group.id),
-    );
-    const nestedGroupMembers = objects.filter(
-      (candidate) =>
-        typeof candidate.groupId === "string" &&
-        nestedGroupIds.has(candidate.groupId),
-    );
-    for (const member of nestedGroupMembers) movingTargetIds.add(member.id);
-    const targetsById = new Map(
-      [...selectedTargets, ...familyTargets, ...nestedGroupMembers].map(
-        (target) => [target.id, target],
-      ),
-    );
-    for (const annotation of objects.filter(
-      (candidate) =>
-        candidate.type === "annotation" &&
-        candidate.attachedObjectId !== null &&
-        movingTargetIds.has(candidate.attachedObjectId),
-    )) {
-      targetsById.set(annotation.id, annotation);
-    }
-    const targets = [
-      ...selectedTargets,
-      ...[...targetsById.values()].filter(
-        (target) =>
-          !selectedTargets.some((selected) => selected.id === target.id),
-      ),
-    ];
-    setDragPreviewPositions(
-      Object.fromEntries(
-        targets.flatMap((target) =>
-          target.type === "connector"
-            ? []
-            : [
-                [
-                  target.id,
-                  {
-                    x: target.geometry.x + dx,
-                    y: target.geometry.y + dy,
-                  },
-                ],
-              ],
+    // Konva moves the dragged node before firing dragmove. Commit followers
+    // and connection handles in the same event, before its next canvas draw.
+    flushSync(() => {
+      setDragPreviewPositions(
+        dragPreviewPositionsForSelection(
+          objects,
+          groups,
+          selectedTargets,
+          dx,
+          dy,
         ),
-      ),
-    );
+      );
+    });
   }
 
   function moveConnectorCommands(
@@ -5073,7 +5061,7 @@ function ProductCanvasWorkspace({
         ) : null}
       </AnimatePresence>
 
-      <div className="absolute right-4 bottom-4 z-30 flex items-center gap-1 rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl [&_button]:size-11 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
+      <div className="absolute right-4 bottom-4 z-30 flex max-w-[calc(100%-2rem)] items-center gap-1 overflow-x-auto rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome)] p-1.5 text-zinc-700 shadow-[var(--workspace-shadow)] backdrop-blur-xl max-lg:bottom-20 [&_button]:size-11 [&_button]:shrink-0 [&_button]:border-zinc-200 [&_button]:bg-white [&_button]:text-zinc-700 dark:[&_button]:border-zinc-200 dark:[&_button]:bg-white dark:[&_button]:text-zinc-700 [&_button:hover]:bg-violet-50 dark:[&_button:hover]:bg-violet-50">
         {storyScenes.length >= 2 ? (
           <Button
             type="button"
@@ -5090,6 +5078,10 @@ function ProductCanvasWorkspace({
             <ChevronLeft aria-hidden="true" />
           </Button>
         ) : null}
+        {voiceAvailable && (
+          <span className="contents" ref={setVoiceControlTarget} />
+        )}
+
         <Button
           type="button"
           size="icon-sm"
@@ -5199,6 +5191,16 @@ function ProductCanvasWorkspace({
         </WorkspacePanel>
       ) : null}
 
+      {voiceAvailable ? (
+        <LiveVoice
+          canvasId={canvasId}
+          userId={userId}
+          controlTarget={voiceControlTarget}
+          canSaveTranscript={canMutateCanvas && saveStatus === "Saved"}
+          onSaveTranscript={saveVoiceTranscript}
+        />
+      ) : null}
+
       <CanvasComments
         canvasId={canvasId}
         userId={userId}
@@ -5217,6 +5219,59 @@ function ProductCanvasWorkspace({
         onPlacementModeChange={setCommentPlacementActive}
         onAiTransactionApplied={registerAiTransaction}
         onStoryChanged={reloadStoryAfterAi}
+        onAiNavigation={(actions) => {
+          const currentObjects = listCanvasObjectsV2(document);
+          if (
+            actions.some((action) =>
+              action.objectIds.some(
+                (id) => !currentObjects.some((object) => object.id === id),
+              ),
+            )
+          )
+            return false;
+          let navigationDocumentId = focusedDocumentId;
+          for (const action of actions) {
+            if (action.action === "open_document") {
+              const target = currentObjects.find(
+                (object) => object.id === action.objectIds[0],
+              );
+              if (target?.type === "document") {
+                openDocument(target);
+                navigationDocumentId = target.id;
+              }
+            } else if (action.action === "close_document") {
+              if (
+                !action.objectIds.length ||
+                action.objectIds.includes(navigationDocumentId ?? "")
+              ) {
+                exitDocument();
+                navigationDocumentId = null;
+              }
+            } else {
+              if (
+                navigationDocumentId &&
+                action.objectIds.some((id) => {
+                  const target = currentObjects.find(
+                    (object) => object.id === id,
+                  );
+                  return (
+                    target?.id !== navigationDocumentId &&
+                    (target?.type === "document" ||
+                      target?.documentOwnerId !== navigationDocumentId)
+                  );
+                })
+              ) {
+                exitDocument();
+                navigationDocumentId = null;
+              }
+              setSelectedIds(action.objectIds);
+              setTool("select");
+              setContextPanel(null);
+              setObjectContextMenu(null);
+            }
+          }
+          return true;
+        }}
         onUndoAiTransaction={undoAiTransaction}
         overlayVisible={temporaryOverlayVisible}
         onOverlayVisibilityChange={changeTemporaryOverlayVisibility}
@@ -5503,13 +5558,11 @@ function ProductCanvasWorkspace({
                     linkUrl={commonStyleValue(textStyleObjects, "linkUrl")}
                     textColor={commonStyleValue(textStyleObjects, "textColor")}
                     allowLists={textStyleObjects.every(
-                      (object) =>
-                        object.type === "shape" || object.type === "text",
+                      (object) => object.type === "text",
                     )}
                     allowLink={
                       textStyleObjects.length === 1 &&
-                      (textStyleObjects[0]?.type === "shape" ||
-                        textStyleObjects[0]?.type === "text")
+                      textStyleObjects[0]?.type === "text"
                     }
                     onApply={(style) =>
                       applyStyleToObjects(textStyleObjects, style)

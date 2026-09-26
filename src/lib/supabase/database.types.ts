@@ -46,6 +46,7 @@ export type Database = {
           document_undo_update: string | null
           finalization_fingerprint: string | null
           id: string
+          organization_undo: Json | null
           request_id: string | null
           requested_by: string
           scope_kind: string | null
@@ -74,6 +75,7 @@ export type Database = {
           document_undo_update?: string | null
           finalization_fingerprint?: string | null
           id?: string
+          organization_undo?: Json | null
           request_id?: string | null
           requested_by: string
           scope_kind?: string | null
@@ -102,6 +104,7 @@ export type Database = {
           document_undo_update?: string | null
           finalization_fingerprint?: string | null
           id?: string
+          organization_undo?: Json | null
           request_id?: string | null
           requested_by?: string
           scope_kind?: string | null
@@ -1150,6 +1153,18 @@ export type Database = {
           },
         ]
       }
+      voice_user_settings: {
+        Row: { user_id: string; settings: Json }
+        Insert: { user_id: string; settings: Json }
+        Update: { user_id?: string; settings?: Json }
+        Relationships: []
+      }
+      voice_user_preferences: {
+        Row: { user_id: string; preferred_name: string }
+        Insert: { user_id: string; preferred_name: string }
+        Update: { user_id?: string; preferred_name?: string }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -1448,6 +1463,201 @@ export type Database = {
           },
         ]
       }
+      voice_delegations: {
+        Row: {
+          ai_run_id: string | null
+          charged_units: number | null
+          created_at: string
+          delegation_id: string
+          finished_at: string | null
+          id: string
+          input_tokens: number | null
+          model: string | null
+          output_tokens: number | null
+          reserved_units: number
+          session_id: string
+          status: string
+          usage_final: boolean
+        }
+        Insert: {
+          ai_run_id?: string | null
+          charged_units?: number | null
+          created_at?: string
+          delegation_id: string
+          finished_at?: string | null
+          id?: string
+          input_tokens?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          reserved_units?: number
+          session_id: string
+          status?: string
+          usage_final?: boolean
+        }
+        Update: {
+          ai_run_id?: string | null
+          charged_units?: number | null
+          created_at?: string
+          delegation_id?: string
+          finished_at?: string | null
+          id?: string
+          input_tokens?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          reserved_units?: number
+          session_id?: string
+          status?: string
+          usage_final?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_delegations_ai_run_id_fkey"
+            columns: ["ai_run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_delegations_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "voice_test_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      voice_test_days: {
+        Row: {
+          day: string
+          reserved_cents: number
+          spent_cents: number
+        }
+        Insert: {
+          day: string
+          reserved_cents?: number
+          spent_cents?: number
+        }
+        Update: {
+          day?: string
+          reserved_cents?: number
+          spent_cents?: number
+        }
+        Relationships: []
+      }
+      voice_test_sessions: {
+        Row: {
+          accounting_version: number
+          api_kind: string
+          backend_cancel_at: string | null
+          backend_charged_units: number
+          backend_reserved_units: number
+          backend_usage_final: boolean
+          call_id: string | null
+          canvas_id: string
+          charged_cents: number
+          close_requested_at: string | null
+          day: string
+          describe_requested_at: string | null
+          end_reason: string | null
+          ended_at: string | null
+          expires_at: string
+          heartbeat_at: string | null
+          id: string
+          idle_keepalive_at: string | null
+          idle_seconds: number
+          idle_warning_at: string | null
+          idle_warning_seconds: number
+          provider_closed_at: string | null
+          reserved_cents: number
+          started_at: string
+          supervisor_ready: boolean
+          units_per_cent: number
+          user_id: string
+          voice_usage_final: boolean
+          voice_usage_units: number
+          worker_started_at: string | null
+        }
+        Insert: {
+          accounting_version?: number
+          api_kind?: string
+          backend_cancel_at?: string | null
+          backend_charged_units?: number
+          backend_reserved_units?: number
+          backend_usage_final?: boolean
+          call_id?: string | null
+          canvas_id: string
+          charged_cents?: number
+          close_requested_at?: string | null
+          day: string
+          describe_requested_at?: string | null
+          end_reason?: string | null
+          ended_at?: string | null
+          expires_at: string
+          heartbeat_at?: string | null
+          id: string
+          idle_keepalive_at?: string | null
+          idle_seconds?: number
+          idle_warning_at?: string | null
+          idle_warning_seconds?: number
+          provider_closed_at?: string | null
+          reserved_cents: number
+          started_at?: string
+          supervisor_ready?: boolean
+          units_per_cent?: number
+          user_id: string
+          voice_usage_final?: boolean
+          voice_usage_units?: number
+          worker_started_at?: string | null
+        }
+        Update: {
+          accounting_version?: number
+          api_kind?: string
+          backend_cancel_at?: string | null
+          backend_charged_units?: number
+          backend_reserved_units?: number
+          backend_usage_final?: boolean
+          call_id?: string | null
+          canvas_id?: string
+          charged_cents?: number
+          close_requested_at?: string | null
+          day?: string
+          describe_requested_at?: string | null
+          end_reason?: string | null
+          ended_at?: string | null
+          expires_at?: string
+          heartbeat_at?: string | null
+          id?: string
+          idle_keepalive_at?: string | null
+          idle_seconds?: number
+          idle_warning_at?: string | null
+          idle_warning_seconds?: number
+          provider_closed_at?: string | null
+          reserved_cents?: number
+          started_at?: string
+          supervisor_ready?: boolean
+          units_per_cent?: number
+          user_id?: string
+          voice_usage_final?: boolean
+          voice_usage_units?: number
+          worker_started_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_test_sessions_canvas_id_fkey"
+            columns: ["canvas_id"]
+            isOneToOne: false
+            referencedRelation: "canvases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_test_sessions_day_fkey"
+            columns: ["day"]
+            isOneToOne: false
+            referencedRelation: "voice_test_days"
+            referencedColumns: ["day"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1495,6 +1705,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      attach_ai_organization_undo: {
+        Args: {
+          target_change_set_id: string
+          target_history: Json
+          target_requester_id: string
+          target_run_id: string
+        }
+        Returns: boolean
+      }
       cancel_ai_run: {
         Args: { target_run_id: string }
         Returns: {
@@ -1523,6 +1742,14 @@ export type Database = {
           story_id: string
           story_revision: number
         }[]
+      }
+      checkpoint_live_voice_usage: {
+        Args: {
+          target_final?: boolean
+          target_id: string
+          target_units: number
+        }
+        Returns: undefined
       }
       complete_ai_run: {
         Args: {
@@ -1757,6 +1984,26 @@ export type Database = {
           object_change_count: number
         }[]
       }
+      finish_live_voice_test: {
+        Args: {
+          target_id: string
+          target_reason: string
+          target_rejected?: boolean
+        }
+        Returns: undefined
+      }
+      finish_voice_delegation: {
+        Args: {
+          target_id: string
+          target_status: string
+          target_units?: number
+        }
+        Returns: undefined
+      }
+      finish_voice_test: {
+        Args: { target_cents: number; target_id: string; target_reason: string }
+        Returns: undefined
+      }
       get_ai_canvas_execution_retry: {
         Args: {
           target_call_key: string
@@ -1836,6 +2083,122 @@ export type Database = {
           user_request_count: number
           window_ends_at: string
         }[]
+      }
+      reserve_live_voice_test: {
+        Args: {
+          target_canvas: string
+          target_id: string
+          target_previous?: string
+          target_user: string
+        }
+        Returns: {
+          accounting_version: number
+          api_kind: string
+          backend_cancel_at: string | null
+          backend_charged_units: number
+          backend_reserved_units: number
+          backend_usage_final: boolean
+          call_id: string | null
+          canvas_id: string
+          charged_cents: number
+          close_requested_at: string | null
+          day: string
+          describe_requested_at: string | null
+          end_reason: string | null
+          ended_at: string | null
+          expires_at: string
+          heartbeat_at: string | null
+          id: string
+          idle_keepalive_at: string | null
+          idle_seconds: number
+          idle_warning_at: string | null
+          idle_warning_seconds: number
+          provider_closed_at: string | null
+          reserved_cents: number
+          started_at: string
+          supervisor_ready: boolean
+          units_per_cent: number
+          user_id: string
+          voice_usage_final: boolean
+          voice_usage_units: number
+          worker_started_at: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "voice_test_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      reserve_voice_delegation: {
+        Args: { target_delegation: string; target_session: string }
+        Returns: {
+          ai_run_id: string | null
+          charged_units: number | null
+          created_at: string
+          delegation_id: string
+          finished_at: string | null
+          id: string
+          input_tokens: number | null
+          model: string | null
+          output_tokens: number | null
+          reserved_units: number
+          session_id: string
+          status: string
+          usage_final: boolean
+        }
+        SetofOptions: {
+          from: "*"
+          to: "voice_delegations"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      reserve_voice_test: {
+        Args: {
+          target_canvas: string
+          target_id: string
+          target_previous?: string
+          target_user: string
+        }
+        Returns: {
+          accounting_version: number
+          api_kind: string
+          backend_cancel_at: string | null
+          backend_charged_units: number
+          backend_reserved_units: number
+          backend_usage_final: boolean
+          call_id: string | null
+          canvas_id: string
+          charged_cents: number
+          close_requested_at: string | null
+          day: string
+          describe_requested_at: string | null
+          end_reason: string | null
+          ended_at: string | null
+          expires_at: string
+          heartbeat_at: string | null
+          id: string
+          idle_keepalive_at: string | null
+          idle_seconds: number
+          idle_warning_at: string | null
+          idle_warning_seconds: number
+          provider_closed_at: string | null
+          reserved_cents: number
+          started_at: string
+          supervisor_ready: boolean
+          units_per_cent: number
+          user_id: string
+          voice_usage_final: boolean
+          voice_usage_units: number
+          worker_started_at: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "voice_test_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       respond_to_comment_prompt: {
         Args: {
@@ -1933,6 +2296,27 @@ export type Database = {
           result_sequence: number
         }[]
       }
+      undo_voice_ai_change_set: {
+        Args: {
+          target_actor_id: string
+          target_change_set_id: string
+          target_conflicts?: Json
+          target_expected_sequence: number
+          target_idempotency_key: string
+          target_run_id: string
+          target_update_data: string
+        }
+        Returns: {
+          change_set_id: string
+          conflict_count: number
+          created: boolean
+          result_sequence: number
+        }[]
+      }
+      manage_voice_comment: {
+        Args: { target_run_id: string; target_call_key: string; target_command_id: string; target_action: string; target_comment_id: string | null; target_body: string }
+        Returns: string | null
+      }
       update_comment_body: {
         Args: { target_body: string; target_comment_id: string }
         Returns: string
@@ -1966,6 +2350,7 @@ export type Database = {
         }
         Returns: number
       }
+      voice_test_has_access: { Args: { target_id: string }; Returns: boolean }
     }
     Enums: {
       ai_authority_level:

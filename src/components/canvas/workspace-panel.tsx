@@ -4,8 +4,10 @@ import { X } from "lucide-react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import styles from "./workspace-panel.module.css";
 
 type Props = {
+  panelId?: string;
   title: string;
   description?: string;
   invoker: HTMLButtonElement | null;
@@ -23,6 +25,7 @@ const focusableSelector = [
 ].join(",");
 
 export function WorkspacePanel({
+  panelId = "workspace-shared-panel",
   title,
   description,
   invoker,
@@ -31,6 +34,7 @@ export function WorkspacePanel({
 }: Props) {
   const titleId = useId();
   const descriptionId = useId();
+  const voicePanel = panelId.startsWith("voice-");
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -71,14 +75,14 @@ export function WorkspacePanel({
 
   return (
     <div
-      id="workspace-shared-panel"
+      id={panelId}
       ref={panelRef}
       role="dialog"
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
       tabIndex={-1}
-      data-testid="workspace-shared-panel"
-      className="absolute right-4 bottom-20 z-30 flex max-h-[calc(100%-7rem)] w-[min(24rem,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome-solid)] text-zinc-900 shadow-[var(--workspace-shadow-strong)] max-[42rem]:right-4 max-[42rem]:left-4 max-[42rem]:max-h-[min(65vh,34rem)] max-[42rem]:w-auto"
+      data-testid={panelId}
+      className={`absolute right-4 ${voicePanel ? styles.voicePanel : "bottom-20 max-h-[calc(100%-7rem)] max-[42rem]:max-h-[min(65vh,34rem)]"} z-30 flex w-[min(24rem,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-[var(--workspace-border)] bg-[var(--workspace-chrome-solid)] text-zinc-900 shadow-[var(--workspace-shadow-strong)] max-[42rem]:right-4 max-[42rem]:left-4 max-[42rem]:w-auto`}
       onKeyDown={containFocus}
     >
       <div className="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-200 px-4 py-3">

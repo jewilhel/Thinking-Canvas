@@ -48,6 +48,9 @@ export async function POST(
           {
             signal: deadline.signal,
             scenario,
+            onCheckpoint: (checkpoint) => {
+              stage = checkpoint;
+            },
             onStatus: (status) => {
               stage = status;
               send({ status, runId: parsed.data.runId });

@@ -1,7 +1,22 @@
+import { validateVoiceName } from "@/voice/preferred-name";
+import { organizeCanvasCommands } from "@/ai/organize-canvas";
 import "server-only";
+import {
+  validateCanvasNavigation,
+  type CanvasNavigation,
+} from "./canvas-navigation";
+import {
+  buildConversationDocumentUpdate,
+  conversationDocumentBody,
+} from "./conversation-document";
+import {
+  LIVE_CONVERSATION_MAX_CHARACTERS,
+  voiceConversationInstruction,
+} from "@/voice/live-delegation-contract";
 import { prepareCanvasNarration } from "@/stories/narration-audio-service";
 
 import { z } from "zod";
+import * as Y from "yjs";
 
 import {
   AI_PROJECTION_MAX_SERIALIZED_BYTES,
@@ -12,6 +27,7 @@ import {
   AI_CANVAS_DESIGN_TOKENS,
   AiVisualQualityError,
   assertNoNewDeterministicVisualDefects,
+  deterministicVisualIssueKeys,
 } from "@/ai/visual-grounding";
 import type { FakeAiScenario } from "@/ai/fake-collaborator-gateway";
 import { planDeterministicLayout } from "@/ai/deterministic-layout";
@@ -21,6 +37,7 @@ import {
   parsePrimaryAiProviderEnvironment,
 } from "@/ai/primary-ai-gateway-factory";
 import {
+  type PrimaryAiGateway,
   AI_PROVIDER_ATTEMPT_LIMIT,
   AiProviderOutputError,
   requestPrimaryAiWithRetry,
@@ -34,6 +51,7 @@ import {
 import {
   isIntrinsicShapeLabel,
   listCanvasObjectsV2,
+  listCanvasGroupsV2,
   projectCanvasCompositions,
 } from "@/canvas/canvas-document";
 import {
@@ -48,9 +66,6 @@ import {
   deriveAiReviewScope,
 } from "@/ai/review-scope";
 import {
-  allowedAiToolNames,
-  allowedDocumentRangeAiToolNames,
-  allowedSceneAiToolNames,
   contextualCommentArgumentsSchema,
   documentChangesArgumentsSchema,
   executeArgumentsSchema,
@@ -61,6 +76,7 @@ import {
   reviewNewShapesArgumentsSchema,
   reviewStageArgumentsSchema,
   storySceneArgumentsSchema,
+  allowedRunAiToolNames,
   validateAiToolRequest,
 } from "@/ai/tool-registry";
 import { buildValidatedDocumentEdit } from "@/ai/document-semantic-edit";
@@ -95,6 +111,7 @@ import {
 } from "@/documents/document-range";
 import { getAuthenticatedUser } from "@/lib/auth/session";
 import type { Json } from "@/lib/supabase/database.types";
+import { undoAiTransaction } from "@/ai/transaction-service";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 const runRequestSchema = z.strictObject({
@@ -172,6 +189,14 @@ export async function completeAiRun(
     signal?: AbortSignal;
     onStatus?: (status: "projecting" | "thinking" | "applying") => void;
     scenario?: FakeAiScenario;
+    readOnly?: boolean;
+    /** Server-only metered voice owner; uses the shared scope-aware action registry. */
+    voiceTaskId?: string;
+    onCheckpoint?: (checkpoint: string) => void;
+    /** Volatile context; never stored in the invoking comment or run metadata. */
+    voiceConversation?: string;
+    gateway?: PrimaryAiGateway;
+    beforeComplete?: () => Promise<void>;
   } = {},
 ) {
   const { runId, canvasId } = runRequestSchema.parse(input);
@@ -191,6 +216,24 @@ export async function completeAiRun(
   const run = runResult.data;
   if (run.requested_by !== user.id || run.canvas_id !== canvasId) {
     throw new AiRunAccessError("AI run is not accessible.");
+  }
+  // Voice-created requests can only run through their bounded, metered owner.
+  const voiceTask = await createServiceClient()
+    .from("voice_delegations")
+    .select("id,session_id")
+    .eq("id", run.idempotency_key)
+    .maybeSingle();
+  if (
+    voiceTask.error ||
+    (options.voiceConversation !== undefined &&
+      (!voiceTask.data ||
+        options.voiceConversation.length > LIVE_CONVERSATION_MAX_CHARACTERS)) ||
+    (voiceTask.data &&
+      (options.voiceTaskId !== voiceTask.data.id ||
+        !options.gateway ||
+        !options.beforeComplete))
+  ) {
+    throw new AiRunAccessError("Voice requests must use the live task owner.");
   }
   const accessResult = await supabase.rpc("get_canvas_ai_access", {
     target_canvas_id: run.canvas_id,
@@ -293,12 +336,20 @@ export async function completeAiRun(
   const sourceSceneTarget = firstRelatedRow(
     commentResult.data.comment_scene_targets,
   );
-  const instruction = replyResult.data?.body ?? commentResult.data.body;
-  const allowedToolNames = sourceDocumentTarget
-    ? [...allowedDocumentRangeAiToolNames(currentAuthority)]
-    : sourceSceneTarget
-      ? allowedSceneAiToolNames(currentAuthority)
-      : allowedAiToolNames(currentAuthority);
+  const instruction =
+    options.voiceConversation !== undefined
+      ? voiceConversationInstruction(options.voiceConversation)
+      : (replyResult.data?.body ?? commentResult.data.body);
+  const allowedToolNames = allowedRunAiToolNames({
+    authority: currentAuthority,
+    readOnly: Boolean(options.readOnly),
+    voice: Boolean(voiceTask.data),
+    scope: sourceDocumentTarget
+      ? "document"
+      : sourceSceneTarget
+        ? "scene"
+        : "canvas",
+  });
   const sourceDocumentRange = sourceDocumentTarget
     ? currentDocumentRange(compacted.document, {
         documentObjectId: sourceDocumentTarget.document_object_id,
@@ -479,24 +530,31 @@ export async function completeAiRun(
     ...projectionBase,
     serializedBytes,
   });
-  const continuityResult = await repeatedLayoutContinuity({
-    runId: run.id,
-    commentId: run.invoking_comment_id,
-    invokingReplyId: run.invoking_reply_id,
-    instruction,
-    sourceInstruction: commentResult.data.body,
-    sourceObjects,
-  });
+  const continuityResult =
+    options.readOnly || voiceTask.data
+      ? null
+      : await repeatedLayoutContinuity({
+          runId: run.id,
+          commentId: run.invoking_comment_id,
+          invokingReplyId: run.invoking_reply_id,
+          instruction,
+          sourceInstruction: commentResult.data.body,
+          sourceObjects,
+        });
   options.onStatus?.("thinking");
   let gatewayResult = continuityResult;
   let providerAttemptCount = 0;
-  const gateway = createPrimaryAiGateway();
-  const providerAttemptLimit = sourceDocumentTarget
-    ? DOCUMENT_PROVIDER_ATTEMPT_LIMIT
-    : AI_PROVIDER_ATTEMPT_LIMIT;
-  const reviewVisualChange = continuityResult
-    ? undefined
-    : gateway.reviewVisualChange?.bind(gateway);
+  const gateway = options.gateway ?? createPrimaryAiGateway();
+  const providerAttemptLimit =
+    options.readOnly || voiceTask.data
+      ? 1
+      : sourceDocumentTarget
+        ? DOCUMENT_PROVIDER_ATTEMPT_LIMIT
+        : AI_PROVIDER_ATTEMPT_LIMIT;
+  const reviewVisualChange =
+    continuityResult || voiceTask.data
+      ? undefined
+      : gateway.reviewVisualChange?.bind(gateway);
   const gatewayInput = {
     invocation: {
       runId: run.id,
@@ -587,12 +645,20 @@ export async function completeAiRun(
   } catch {
     throw new AiProviderOutputError();
   }
+  if (options.readOnly && toolCalls.length) throw new AiProviderOutputError();
+  const clarification =
+    voiceTask.data &&
+    toolCalls.find((call) => call.toolName === "ask_voice_clarification");
+  if (clarification) toolCalls = [clarification];
+  let clarificationQuestion: string | null = null;
+  let endSession = false;
   const isNewObjectReview = toolCalls.some(
     (toolCall) =>
       toolCall.toolName === "stage_new_shapes" ||
       toolCall.toolName === "stage_new_connectors" ||
       toolCall.toolName === "stage_new_annotations",
   );
+  options.onCheckpoint?.("validate_reply_references");
   const groundedEvidence = gatewayResult.reply.evidence.filter((reference) =>
     objectIds.has(reference.objectId),
   );
@@ -645,6 +711,7 @@ export async function completeAiRun(
     sceneId: string;
     created: boolean;
   }> = [];
+  const navigationTools: CanvasNavigation[] = [];
   const replySections = [plainLanguageAiReply(gatewayResult.reply.body)];
   for (const toolCall of toolCalls) {
     let validatedTool: ReturnType<typeof validateAiToolRequest>;
@@ -656,6 +723,269 @@ export async function completeAiRun(
       });
     } catch {
       throw new AiProviderOutputError();
+    }
+    options.onCheckpoint?.(`apply_${validatedTool.toolName}`);
+    if (validatedTool.toolName === "create_conversation_document") {
+      const args = validatedTool.arguments as {
+        kind: string;
+        text: string;
+        destinationDocumentId?: string | null;
+      };
+      if (args.destinationDocumentId) {
+        if (!voiceTask.data || !options.voiceConversation)
+          throw new AiRunConflictError(
+            "Conversation documents require an active voice request.",
+          );
+        const body = conversationDocumentBody(args, options.voiceConversation);
+        const lines = body.split("\n");
+        const blocks = lines.length <= 250 ? lines : [body];
+        validatedTool = validateAiToolRequest({
+          authority: currentAuthority,
+          toolName: "stage_document_changes",
+          arguments: {
+            documentObjectId: args.destinationDocumentId,
+            summary: "Updated the requested conversation document.",
+            whatChanged:
+              "Replaced its body with the requested conversation content.",
+            why: "Explicitly requested during voice conversation.",
+            operations: [
+              {
+                kind: "replace_document",
+                blocks: blocks.map((text) => ({
+                  kind: "paragraph",
+                  text,
+                  format: "plain",
+                })),
+              },
+            ],
+          },
+        });
+      }
+    }
+    if (validatedTool.toolName === "navigate_canvas") {
+      navigationTools.push(
+        validateCanvasNavigation(validatedTool.arguments, sourceObjects),
+      );
+      continue;
+    }
+    if (validatedTool.toolName === "remember_voice_name") {
+      if (!voiceTask.data || !options.voiceConversation)
+        throw new AiRunConflictError("Name memory requires a voice request.");
+      const preference = validateVoiceName(
+        validatedTool.arguments,
+        options.voiceConversation,
+      );
+      const result =
+        preference.action === "forget"
+          ? await supabase
+              .from("voice_user_preferences")
+              .delete()
+              .eq("user_id", user.id)
+          : await supabase
+              .from("voice_user_preferences")
+              .upsert({ user_id: user.id, preferred_name: preference.name });
+      if (result.error)
+        throw new AiRunConflictError("The name preference could not be saved.");
+      replySections.push(
+        preference.action === "forget"
+          ? "Your remembered first name has been removed. Future voice sessions will use a neutral greeting."
+          : `Your preferred first name, ${preference.name}, is saved privately for future voice sessions on your account.`,
+      );
+      continue;
+    }
+    if (validatedTool.toolName === "end_voice_session") {
+      if (!voiceTask.data)
+        throw new AiRunConflictError("Ending requires a voice request.");
+      endSession = true;
+      continue;
+    }
+    if (validatedTool.toolName === "ask_voice_clarification") {
+      if (!voiceTask.data)
+        throw new AiRunConflictError("Clarification requires a voice request.");
+      clarificationQuestion = (validatedTool.arguments as { question: string })
+        .question;
+      replySections.splice(0, replySections.length, clarificationQuestion);
+      continue;
+    }
+    if (validatedTool.toolName === "organize_canvas") {
+      const organized = await organizeCanvasCommands({
+        canvasId: run.canvas_id,
+        actorId: run.requested_by,
+        arguments: validatedTool.arguments,
+        objects: sourceObjects,
+        groups: listCanvasGroupsV2(compacted.document),
+        runId: run.id,
+        callKey: toolCall.callKey,
+      });
+      const stage = validateCanvasReviewStage({
+        document: compacted.document,
+        canvasId: run.canvas_id,
+        actorId: run.requested_by,
+        commands: organized.commands,
+      });
+      validatedTool = validateAiToolRequest({
+        authority: currentAuthority,
+        toolName: "stage_canvas_changes",
+        arguments: {
+          ...organized,
+          explanations: stage.objectChanges.map((change) => ({
+            objectId: change.objectId,
+            whatChanged: organized.summary,
+            why: "Requested canvas organization.",
+          })),
+        },
+      });
+    }
+    const directOrganization =
+      validatedTool.toolName === "execute_canvas_commands" &&
+      executeArgumentsSchema
+        .parse(validatedTool.arguments)
+        .commands.some(
+          (command) =>
+            command.type.startsWith("group.") ||
+            [
+              "selection.group",
+              "selection.ungroup",
+              "object.nest",
+              "object.detach",
+              "icon.nest",
+              "icon.detach",
+            ].includes(command.type),
+        );
+    // Share the ordinary action vocabulary while preserving voice-accessible undo.
+    if (
+      (voiceTask.data || directOrganization) &&
+      validatedTool.toolName === "execute_canvas_commands"
+    ) {
+      const args = executeArgumentsSchema.parse(validatedTool.arguments);
+      const stage = validateCanvasReviewStage({
+        document: compacted.document,
+        canvasId: run.canvas_id,
+        actorId: run.requested_by,
+        commands: args.commands,
+      });
+      validatedTool = validateAiToolRequest({
+        authority: currentAuthority,
+        toolName: "stage_canvas_changes",
+        arguments: {
+          summary: "Applied the requested canvas changes.",
+          commands: args.commands,
+          explanations: stage.objectChanges.map((change) => ({
+            objectId: change.objectId,
+            whatChanged: "Updated this object as requested.",
+            why: "Requested by the participant.",
+          })),
+        },
+      });
+    } else if (
+      voiceTask.data &&
+      validatedTool.toolName === "execute_document_changes"
+    ) {
+      validatedTool = validateAiToolRequest({
+        authority: currentAuthority,
+        toolName: "stage_document_changes",
+        arguments: validatedTool.arguments,
+      });
+    }
+    if (validatedTool.toolName === "manage_comment_thread") {
+      if (!voiceTask.data || !options.beforeComplete)
+        throw new AiRunConflictError(
+          "Comment actions require a voice request.",
+        );
+      const args = validatedTool.arguments as {
+        action: string;
+        commentId: string | null;
+        body: string;
+      };
+      if (
+        args.action !== "create" &&
+        !threadDetails.some((thread) => thread.id === args.commentId)
+      )
+        throw new AiRunConflictError(
+          "The target comment was not in the current canvas context.",
+        );
+      await options.beforeComplete();
+      options.signal?.throwIfAborted();
+      const result = await supabase.rpc("manage_voice_comment", {
+        target_run_id: run.id,
+        target_call_key: toolCall.callKey,
+        target_command_id: await stableAiToolCommandId({
+          runId: run.id,
+          callKey: toolCall.callKey,
+        }),
+        target_action: args.action,
+        target_comment_id: args.commentId,
+        target_body: args.body,
+      });
+      if (result.error) throw new AiRunConflictError(result.error.message);
+      replySections.push(
+        {
+          create: "Created the canvas comment.",
+          reply: "Added your reply to the comment.",
+          resolve: "Resolved the comment.",
+          dismiss: "Dismissed the comment.",
+          reopen: "Reopened the comment.",
+          delete: "Deleted the comment and its thread.",
+        }[args.action] ?? "Updated the comment.",
+      );
+      continue;
+    }
+    if (validatedTool.toolName === "undo_last_ai_change") {
+      if (!voiceTask.data || !options.beforeComplete)
+        throw new AiRunConflictError(
+          "Voice undo requires an active voice request.",
+        );
+      const idempotencyKey = await stableAiToolCommandId({
+        runId: run.id,
+        callKey: toolCall.callKey,
+      });
+      const retried = await supabase
+        .from("ai_change_sets")
+        .select("id")
+        .eq("canvas_id", run.canvas_id)
+        .eq("transaction_undone_by", run.requested_by)
+        .eq("transaction_undo_idempotency_key", idempotencyKey)
+        .maybeSingle();
+      if (retried.error)
+        throw new AiRunConflictError("The previous undo could not be checked.");
+      const latest = retried.data
+        ? retried
+        : await supabase
+            .from("ai_change_sets")
+            .select("id,ai_runs!inner(requested_by)")
+            .eq("canvas_id", run.canvas_id)
+            .eq("ai_runs.requested_by", run.requested_by)
+            .eq("status", "applied")
+            .is("transaction_undone_at", null)
+            .not("activation_sequence", "is", null)
+            .order("activation_sequence", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+      if (latest.error)
+        throw new AiRunConflictError(
+          "The latest AI change could not be loaded.",
+        );
+      if (!latest.data) {
+        replySections.push(
+          "There is no remaining undoable AI change from you on this canvas.",
+        );
+        continue;
+      }
+      const undo = await undoAiTransaction(
+        run.canvas_id,
+        { changeSetId: latest.data.id, idempotencyKey },
+        {
+          runId: run.id,
+          beforeCommit: options.beforeComplete,
+          signal: options.signal,
+        },
+      );
+      replySections.push(
+        undo.conflicts.length
+          ? "Undid the parts of the last AI change that could be safely reversed. Conflicting later edits were preserved."
+          : "Undid your last AI change. Unrelated later edits were preserved.",
+      );
+      continue;
     }
     if (validatedTool.toolName === "execute_story_scene") {
       if (!sourceSceneTarget) {
@@ -777,6 +1107,8 @@ export async function completeAiRun(
                 affectedObjectIds: edit.affectedObjectIds,
               };
             })();
+        await options.beforeComplete?.();
+        options.signal?.throwIfAborted();
         const toolResult = await service.rpc("execute_ai_canvas_commands", {
           target_run_id: run.id,
           target_requester_id: run.requested_by,
@@ -878,7 +1210,7 @@ export async function completeAiRun(
       continue;
     }
     if (validatedTool.toolName === "stage_document_changes") {
-      if (reviewStageToolResults.length > 0) {
+      if (!voiceTask.data && reviewStageToolResults.length > 0) {
         throw new AiRunConflictError(
           "One AI run may create only one reviewable change set.",
         );
@@ -918,6 +1250,8 @@ export async function completeAiRun(
         );
       }
       const service = createServiceClient();
+      await options.beforeComplete?.();
+      options.signal?.throwIfAborted();
       const toolResult = await service.rpc("stage_ai_canvas_changes", {
         target_run_id: run.id,
         target_requester_id: run.requested_by,
@@ -946,6 +1280,7 @@ export async function completeAiRun(
           "The document undo record could not be saved.",
         );
       }
+      options.onCheckpoint?.("finalize_undo_record");
       const finalizationResult = await service.rpc("finalize_ai_review_stage", {
         target_change_set_id: changeSetId,
         target_requester_id: run.requested_by,
@@ -972,6 +1307,8 @@ export async function completeAiRun(
             "The document edit contract could not be finalized.",
         );
       }
+      await options.beforeComplete?.();
+      options.signal?.throwIfAborted();
       const activationResult = await service.rpc("activate_ai_review_stage", {
         target_change_set_id: changeSetId,
         target_requester_id: run.requested_by,
@@ -989,6 +1326,15 @@ export async function completeAiRun(
         sequence: activationResult.data[0].sequence,
         update: edit.tentativeUpdate,
       });
+      if (voiceTask.data) {
+        Y.applyUpdate(compacted.document, edit.tentativeUpdate);
+        compacted.lastSequence = activationResult.data[0].sequence;
+        sourceObjects.splice(
+          0,
+          sourceObjects.length,
+          ...listCanvasObjectsV2(compacted.document),
+        );
+      }
       reviewStageToolResults.push({
         callKey: toolCall.callKey,
         changeSetId,
@@ -1010,15 +1356,47 @@ export async function completeAiRun(
       validatedTool.toolName === "stage_layout_changes" ||
       validatedTool.toolName === "stage_new_shapes" ||
       validatedTool.toolName === "stage_new_connectors" ||
-      validatedTool.toolName === "stage_new_annotations"
+      validatedTool.toolName === "stage_new_annotations" ||
+      validatedTool.toolName === "create_conversation_document"
     ) {
-      if (reviewStageToolResults.length > 0) {
+      if (!voiceTask.data && reviewStageToolResults.length > 0) {
         throw new AiRunConflictError(
           "One AI run may create only one reviewable change set.",
         );
       }
-      const toolArguments =
-        validatedTool.toolName === "stage_canvas_changes"
+      options.onCheckpoint?.("prepare_canvas_objects");
+      const conversationDocument =
+        validatedTool.toolName === "create_conversation_document"
+          ? await buildConversationDocumentUpdate({
+              document: compacted.document,
+              canvasId: run.canvas_id,
+              actorId: run.requested_by,
+              runId: run.id,
+              callKey: toolCall.callKey,
+              arguments: validatedTool.arguments,
+              conversation: options.voiceConversation,
+            })
+          : null;
+      if (
+        conversationDocument &&
+        (!voiceTask.data || !options.voiceConversation)
+      )
+        throw new AiRunConflictError(
+          "Document creation requires an active voice request.",
+        );
+      const toolArguments = conversationDocument
+        ? {
+            summary: `Created “${conversationDocument.title}”.`,
+            commands: conversationDocument.reviewStage.commands,
+            explanations: [
+              {
+                objectId: conversationDocument.objectId,
+                whatChanged: `Created “${conversationDocument.title}”.`,
+                why: "Requested during voice conversation.",
+              },
+            ],
+          }
+        : validatedTool.toolName === "stage_canvas_changes"
           ? reviewStageArgumentsSchema.parse(validatedTool.arguments)
           : validatedTool.toolName === "stage_layout_changes"
             ? reviewLayoutArgumentsSchema.parse(validatedTool.arguments)
@@ -1073,12 +1451,20 @@ export async function completeAiRun(
             : (newShapeStage?.commands ??
               newConnectorStage?.commands ??
               newAnnotationStage!.commands);
-      let reviewStage = validateCanvasReviewStage({
-        document: compacted.document,
-        canvasId: run.canvas_id,
-        actorId: run.requested_by,
-        commands,
-      });
+      options.onCheckpoint?.("validate_canvas_commands");
+      let reviewStage =
+        conversationDocument?.reviewStage ??
+        validateCanvasReviewStage({
+          document: compacted.document,
+          canvasId: run.canvas_id,
+          actorId: run.requested_by,
+          commands,
+        });
+      if (conversationDocument)
+        reviewStage = {
+          ...reviewStage,
+          tentativeUpdate: conversationDocument.update,
+        };
       assertReviewChangesWithinScope({
         scope: reviewScope,
         changes: reviewStage.objectChanges,
@@ -1105,19 +1491,36 @@ export async function completeAiRun(
             )
           : requestedExplanations.map((explanation) => ({
               ...explanation,
-              objectId:
-                affectedCompositionChildByParentId.get(explanation.objectId) ??
-                explanation.objectId,
+              objectId: reviewStage.objectChanges.some(
+                (change) => change.objectId === explanation.objectId,
+              )
+                ? explanation.objectId
+                : (affectedCompositionChildByParentId.get(
+                    explanation.objectId,
+                  ) ?? explanation.objectId),
             }));
+      options.onCheckpoint?.("validate_change_explanations");
       let explainedChanges = validateReviewExplanations({
         reviewStage,
         explanations,
       });
-      assertNoNewDeterministicVisualDefects({
+      const visualCheck = {
         beforeObjects: projectCanvasCompositions(sourceObjects),
         afterObjects: projectCanvasCompositions(reviewStage.visualObjects),
         targetObjectIds: reviewStage.affectedObjectIds,
-      });
+      };
+      // Requested relationships use canonical constraints, not visual redesign.
+      const advisoryVisuals =
+        !!voiceTask.data ||
+        directOrganization ||
+        toolCall.toolName === "organize_canvas";
+      const visualIssues = advisoryVisuals
+        ? deterministicVisualIssueKeys({
+            objects: visualCheck.afterObjects,
+            targetObjectIds: visualCheck.targetObjectIds,
+          })
+        : [];
+      if (!advisoryVisuals) assertNoNewDeterministicVisualDefects(visualCheck);
       const allFocusObjects = [...sourceObjects, ...reviewStage.visualObjects];
       const allObjectIds = [
         ...new Set(allFocusObjects.map((object) => object.id)),
@@ -1127,10 +1530,12 @@ export async function completeAiRun(
         rendererVersion: TARGETED_CAPTURE_RENDERER_VERSION,
         captureCount: 0,
         feedbackPassCount: 0,
-        feedbackStatus: "unavailable",
-        feedbackIssueCount: 0,
+        feedbackStatus: advisoryVisuals ? "advisory" : "unavailable",
+        feedbackIssueCount: visualIssues.length,
       };
       try {
+        if (advisoryVisuals)
+          throw new Error("Requested action uses advisory visual checks.");
         const { renderTargetedCanvasCapture } =
           await import("@/ai/render-capture");
         const [beforeCapture, afterCapture, beforeOverview, afterOverview] =
@@ -1282,6 +1687,8 @@ export async function completeAiRun(
           throw error;
         }
       }
+      await options.beforeComplete?.();
+      options.signal?.throwIfAborted();
       const toolResult = await createServiceClient().rpc(
         "stage_ai_canvas_changes",
         {
@@ -1301,6 +1708,24 @@ export async function completeAiRun(
             "The review-stage changes could not be saved.",
         );
       }
+      options.onCheckpoint?.("finalize_undo_record");
+      if (reviewStage.organizationHistory) {
+        const historyResult = await createServiceClient().rpc(
+          "attach_ai_organization_undo",
+          {
+            target_change_set_id: toolResult.data[0].change_set_id,
+            target_run_id: run.id,
+            target_requester_id: run.requested_by,
+            target_history: JSON.parse(
+              JSON.stringify(reviewStage.organizationHistory),
+            ) as Json,
+          },
+        );
+        if (historyResult.error || historyResult.data !== true)
+          throw new AiRunConflictError(
+            "The organization undo record could not be saved.",
+          );
+      }
       const finalizationResult = await createServiceClient().rpc(
         "finalize_ai_review_stage",
         {
@@ -1318,7 +1743,13 @@ export async function completeAiRun(
           ) as Json,
           target_scope_kind: reviewScope.kind,
           target_scope_object_ids: reviewScope.objectIds,
-          target_visual_feedback_metadata: visualFeedbackMetadata,
+          target_visual_feedback_metadata: conversationDocument
+            ? {
+                ...visualFeedbackMetadata,
+                documentCreationContentHash: conversationDocument.contentHash,
+                documentCreationObjectId: conversationDocument.objectId,
+              }
+            : visualFeedbackMetadata,
         },
       );
       if (finalizationResult.error || !finalizationResult.data?.[0]) {
@@ -1327,6 +1758,8 @@ export async function completeAiRun(
             "The review-stage contract could not be finalized.",
         );
       }
+      await options.beforeComplete?.();
+      options.signal?.throwIfAborted();
       const activationResult = await createServiceClient().rpc(
         "activate_ai_review_stage",
         {
@@ -1347,6 +1780,15 @@ export async function completeAiRun(
         sequence: activationResult.data[0].sequence,
         update: reviewStage.tentativeUpdate,
       });
+      if (voiceTask.data) {
+        Y.applyUpdate(compacted.document, reviewStage.tentativeUpdate);
+        compacted.lastSequence = activationResult.data[0].sequence;
+        sourceObjects.splice(
+          0,
+          sourceObjects.length,
+          ...listCanvasObjectsV2(compacted.document),
+        );
+      }
       reviewStageToolResults.push({
         callKey: toolCall.callKey,
         changeSetId: toolResult.data[0].change_set_id,
@@ -1374,6 +1816,8 @@ export async function completeAiRun(
         "The AI contextual comment referenced an unavailable object.",
       );
     }
+    await options.beforeComplete?.();
+    throwIfAiRunAborted(options.signal);
     const toolResult = await createServiceClient().rpc(
       "execute_ai_contextual_comment",
       {
@@ -1398,6 +1842,34 @@ export async function completeAiRun(
       targetObjectIds: toolArguments.targetObjectIds,
     });
   }
+  await options.beforeComplete?.();
+  throwIfAiRunAborted(options.signal);
+  // The gateway writes its reply before tools run. For a voice request that only
+  // created documents, report the applied objects instead of relaying a stale
+  // future-tense plan after the documents are already on the canvas.
+  if (voiceTask.data && reviewStageToolResults.length > 0) {
+    const createdDocuments = reviewStageToolResults.map((result) => {
+      if (
+        result.commandTypes.some((type) => type !== "object.create") ||
+        result.affectedObjectIds.length === 0
+      )
+        return null;
+      const documents = result.affectedObjectIds.map((id) =>
+        sourceObjects.find((object) => object.id === id),
+      );
+      return documents.every((object) => object?.type === "document")
+        ? documents.map((object) => object!.title)
+        : null;
+    });
+    if (createdDocuments.every((titles) => titles !== null)) {
+      const titles = createdDocuments.flatMap((value) => value ?? []);
+      replySections[0] =
+        titles.length === 1
+          ? `Created the document “${titles[0]}” on the canvas.`
+          : `Created these documents on the canvas: ${titles.map((title) => `“${title}”`).join(", ")}.`;
+    }
+  }
+  options.onCheckpoint?.("save_verified_reply");
   const completionResult = await supabase.rpc("complete_ai_run", {
     target_run_id: run.id,
     target_body: replySections.join("\n\n"),
@@ -1407,6 +1879,7 @@ export async function completeAiRun(
     target_output_tokens: gatewayResult.telemetry?.outputTokens ?? 0,
     target_latency_ms: gatewayResult.telemetry?.latencyMs ?? 0,
     target_projection_metadata: {
+      ...(voiceTask.data ? { voiceSessionId: voiceTask.data.session_id } : {}),
       version: projection.version,
       objectCount: projection.objects.length,
       commentThreadCount: projection.commentThreads.length,
@@ -1422,6 +1895,8 @@ export async function completeAiRun(
       reviewStageTools: reviewStageToolResults,
       trustedExecutionTools: trustedExecutionResults,
       storyTools: storyToolResults,
+      navigationTools,
+      endSession,
       objectDetailPageSize: objectInspection.items.length,
       objectDetailNextCursor: objectInspection.nextCursor,
       threadDetailPageSize: threadInspection.items.length,
@@ -1439,6 +1914,14 @@ export async function completeAiRun(
     status: completionResult.data[0].status,
     changeSetId: reviewStageToolResults.at(-1)?.changeSetId ?? null,
     storyChanged: storyToolResults.length > 0,
+    clarificationQuestion,
+    endSession,
+    reportBeforeEnding:
+      endSession &&
+      toolCalls.some(
+        (call) =>
+          !["end_voice_session", "remember_voice_name"].includes(call.toolName),
+      ),
   };
 }
 

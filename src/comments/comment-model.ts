@@ -1,3 +1,4 @@
+import type { CanvasNavigation } from "@/ai/canvas-navigation";
 import { z } from "zod";
 
 import type { CanvasObjectV2 } from "@/canvas/canvas-document";
@@ -189,6 +190,7 @@ export type CommentCollaboration = {
 };
 
 export type CommentAiRun = {
+  navigation?: CanvasNavigation[];
   id: string;
   status:
     | "queued"
@@ -225,6 +227,7 @@ export type CommentPrompt = {
 };
 
 export type CommentThread = {
+  voiceSessionId?: string | null;
   id: string;
   canvasId: string;
   authorId: string;

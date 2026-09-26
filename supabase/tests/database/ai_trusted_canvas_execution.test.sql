@@ -3,6 +3,19 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
 
+-- Test-owned canvas: local browser/integration activity must not alter this fixture.
+-- The surrounding transaction rolls back the complete fixture after the suite.
+insert into public.canvases (id, owner_id, title)
+values ('20000000-0000-4000-8000-000000000891', '10000000-0000-4000-8000-000000000001', 'ai_trusted_canvas_execution fixture');
+insert into public.canvas_members (canvas_id, user_id, role) values
+  ('20000000-0000-4000-8000-000000000891', '10000000-0000-4000-8000-000000000002', 'editor'),
+  ('20000000-0000-4000-8000-000000000891', '10000000-0000-4000-8000-000000000003', 'commenter'),
+  ('20000000-0000-4000-8000-000000000891', '10000000-0000-4000-8000-000000000004', 'viewer');
+-- Exercise the explicit authority transition from a known version, independent
+-- of the product's new-canvas default (covered by voice_comments_and_defaults).
+update public.canvas_ai_settings set enabled = false, authority = 'comment_only', version = 1
+where canvas_id = '20000000-0000-4000-8000-000000000891';
+
 set local role authenticated;
 select set_config('request.jwt.claim.role', 'authenticated', true);
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
@@ -28,16 +41,16 @@ select ok(
 select results_eq(
   $$select authority::text, version
     from public.set_canvas_ai_settings(
-      '20000000-0000-4000-8000-000000000001', true, 'trusted_editor', 0
+      '20000000-0000-4000-8000-000000000891', true, 'trusted_editor', 1
     )$$,
-  $$values ('trusted_editor'::text, 1::bigint)$$,
+  $$values ('trusted_editor'::text, 2::bigint)$$,
   'the owner explicitly enables trusted-editor authority'
 );
 
 select results_eq(
   $$select created, ai_run_id is not null
     from public.create_comment_thread(
-      target_canvas_id => '20000000-0000-4000-8000-000000000001',
+      target_canvas_id => '20000000-0000-4000-8000-000000000891',
       target_client_command_id => '89000000-0000-4000-8000-000000000001',
       target_body => 'Apply this validated canvas change.',
       target_anchor_x => 100,
@@ -181,9 +194,9 @@ select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001
 select results_eq(
   $$select authority::text, version
     from public.set_canvas_ai_settings(
-      '20000000-0000-4000-8000-000000000001', true, 'propose_changes', 1
+      '20000000-0000-4000-8000-000000000891', true, 'propose_changes', 2
     )$$,
-  $$values ('propose_changes'::text, 2::bigint)$$,
+  $$values ('propose_changes'::text, 3::bigint)$$,
   'the owner can downgrade authority while a run exists'
 );
 
@@ -211,7 +224,7 @@ select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001
 
 select is(
   (select count(*)::integer from public.canvas_updates
-   where canvas_id = '20000000-0000-4000-8000-000000000001'),
+   where canvas_id = '20000000-0000-4000-8000-000000000891'),
   1,
   'stale, colliding, and downgraded attempts leave no partial updates'
 );

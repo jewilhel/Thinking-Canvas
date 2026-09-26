@@ -1,4 +1,9 @@
 "use client";
+import { groupCommentHistory } from "@/comments/comment-history";
+import {
+  navigationForParticipant,
+  type CanvasNavigation,
+} from "@/ai/canvas-navigation";
 
 import {
   ArrowUp,
@@ -78,6 +83,7 @@ type Props = {
   onSelectTargets: (targetIds: string[]) => void;
   onAiTransactionApplied: (changeSetId: string) => void;
   onStoryChanged?: () => void;
+  onAiNavigation?: (actions: CanvasNavigation[]) => boolean;
   onUndoAiTransaction: (changeSetId: string) => Promise<{ conflicts: number }>;
   overlayVisible: boolean;
   onOverlayVisibilityChange: (visible: boolean) => void;
@@ -166,10 +172,14 @@ function commentMarkerStyle(
 }
 
 export function threadAnchor(
-  thread: Pick<CommentThread, "targetObjectIds" | "canvasAnchor">,
+  thread: Pick<
+    CommentThread,
+    "targetObjectIds" | "canvasAnchor" | "voiceSessionId"
+  >,
   objectsById: Map<string, CanvasObjectV2>,
   viewport: Viewport,
 ) {
+  if (thread.voiceSessionId) return null;
   if (thread.canvasAnchor) {
     return {
       left: viewport.x + thread.canvasAnchor.x * viewport.scale,
@@ -268,7 +278,10 @@ function topmostObjectAtPoint(
 }
 
 function threadTargetBounds(
-  thread: Pick<CommentThread, "targetObjectIds" | "canvasAnchor">,
+  thread: Pick<
+    CommentThread,
+    "targetObjectIds" | "canvasAnchor" | "voiceSessionId"
+  >,
   objectsById: Map<string, CanvasObjectV2>,
   viewport: Viewport,
 ): ScreenBounds | null {
@@ -606,7 +619,7 @@ export function RecipientComposer({
         maxLength={100_000}
         disabled={pending}
         placeholder={placeholder}
-        className="h-10 min-h-10 w-full resize-none bg-transparent px-2 py-1 text-sm transition-[height] outline-none group-focus-within:h-24 placeholder:text-zinc-400"
+        className="h-10 min-h-10 w-full resize-none bg-transparent px-2 py-1 text-sm transition-[height] outline-none group-focus-within/reply-composer:h-24 placeholder:text-zinc-400"
         onChange={(event) => updateValue(event.target.value)}
         onKeyDown={(event) => {
           if (query === null) return;
@@ -738,6 +751,18 @@ export function ThreadBody({
   const [undoingChangeSetId, setUndoingChangeSetId] = useState<string | null>(
     null,
   );
+  const [deleteConfirmation, setDeleteConfirmation] = useState(false);
+  const deleteCancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!deleteConfirmation) return;
+    const frame = window.requestAnimationFrame(() => {
+      deleteCancelRef.current?.focus({ preventScroll: true });
+      deleteCancelRef.current?.parentElement?.parentElement?.scrollIntoView({
+        block: "end",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [deleteConfirmation]);
   const [undoError, setUndoError] = useState("");
   const [undoNotice, setUndoNotice] = useState("");
   const [currentTime, setCurrentTime] = useState(() => Date.now());
@@ -1050,7 +1075,7 @@ export function ThreadBody({
       !thread.prompt &&
       replyReady ? (
         <form
-          className="group mt-4 w-full rounded-2xl bg-zinc-100 p-3"
+          className="group/reply-composer mt-4 w-full rounded-2xl bg-zinc-100 p-3"
           onSubmit={(event) => {
             event.preventDefault();
             const body = reply.trim();
@@ -1130,27 +1155,53 @@ export function ThreadBody({
             Dismiss
           </Button>
         ) : null}
-        {canDelete ? (
+        {canDelete && !deleteConfirmation ? (
           <Button
             type="button"
             size="sm"
             variant="ghost"
             className="text-red-700 hover:bg-red-50 hover:text-red-800"
             disabled={pending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Permanently delete this comment and its entire thread? This cannot be undone.",
-                )
-              ) {
-                void onDelete();
-              }
-            }}
+            onClick={() => setDeleteConfirmation(true)}
           >
             <Trash2 aria-hidden="true" /> Delete
           </Button>
         ) : null}
       </div>
+      {canDelete && deleteConfirmation ? (
+        <div
+          className="sticky bottom-0 z-10 space-y-3 rounded-lg border border-red-200 bg-red-50 p-3"
+          role="group"
+          aria-label="Confirm comment deletion"
+        >
+          <p role="alert" className="text-sm text-red-900">
+            Permanently delete this comment and its entire thread? This cannot
+            be undone.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              ref={deleteCancelRef}
+              onClick={() => setDeleteConfirmation(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="text-red-700"
+              disabled={pending}
+              onClick={() => void onDelete()}
+            >
+              Delete permanently
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -1174,6 +1225,7 @@ export function CanvasComments({
   onSelectTargets,
   onAiTransactionApplied,
   onStoryChanged,
+  onAiNavigation,
   onUndoAiTransaction,
   overlayVisible,
   onOverlayVisibilityChange,
@@ -1197,6 +1249,23 @@ export function CanvasComments({
     onAiTransactionApplied,
     onStoryChanged,
   );
+  const navigationSince = useRef<number | null>(null);
+  const handledNavigation = useRef(new Set<string>());
+  useEffect(() => {
+    navigationSince.current ??= Date.now();
+    for (const run of threads
+      .flatMap((thread) => thread.aiRuns)
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))) {
+      if (handledNavigation.current.has(run.id)) continue;
+      const actions = navigationForParticipant(
+        run,
+        userId,
+        navigationSince.current,
+      );
+      if (actions.length && onAiNavigation?.(actions))
+        handledNavigation.current.add(run.id);
+    }
+  }, [threads, userId, onAiNavigation]);
   const selectedThreadId =
     workspace.active === "thread" ? workspace.threadId : null;
   const setSelectedThreadId = (id: string | null) =>
@@ -1535,7 +1604,9 @@ export function CanvasComments({
 
       {overlayVisible
         ? threads
-            .filter((thread) => thread.status === "open")
+            .filter(
+              (thread) => thread.status === "open" && !thread.voiceSessionId,
+            )
             .map((thread) => {
               const position = threadAnchor(thread, objectsById, viewport);
               if (!position) return null;
@@ -1578,7 +1649,7 @@ export function CanvasComments({
                         {commentRelativeTime(thread.createdAt)}
                       </span>
                     </span>
-                    <span className="mt-1 line-clamp-2 block text-sm leading-5 text-zinc-700">
+                    <span className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-700">
                       {thread.body}
                     </span>
                   </span>
@@ -1771,7 +1842,7 @@ export function CanvasComments({
                       onChange={(event) =>
                         void setAiSettings(
                           event.target.checked,
-                          collaboration.aiAccess.configuredAuthority,
+                          "trusted_editor",
                         )
                       }
                     />
@@ -1783,29 +1854,10 @@ export function CanvasComments({
                   </span>
                 )}
               </div>
-              {collaboration.aiAccess.canManage ? (
-                <label className="mt-3 block text-xs font-medium text-zinc-600">
-                  Authority
-                  <select
-                    aria-label="AI authority"
-                    value={collaboration.aiAccess.configuredAuthority}
-                    disabled={pending}
-                    className="mt-1 h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-800"
-                    onChange={(event) =>
-                      void setAiSettings(
-                        collaboration.aiAccess.enabled,
-                        event.target
-                          .value as typeof collaboration.aiAccess.configuredAuthority,
-                      )
-                    }
-                  >
-                    <option value="comment_only">Comment only</option>
-                    <option value="propose_changes">Propose changes</option>
-                    <option value="edit_with_review">Edit with undo</option>
-                    <option value="trusted_editor">Trusted editor</option>
-                  </select>
-                </label>
-              ) : null}
+              <p className="mt-3 text-xs text-zinc-500">
+                AI can create and edit canvas content. Ask it to undo its last
+                change.
+              </p>
             </div>
           ) : null}
           {error ? (
@@ -1829,57 +1881,82 @@ export function CanvasComments({
             {!loading && !threads.length ? (
               <p className="text-sm text-zinc-500">No comments yet.</p>
             ) : null}
-            {threads.map((thread) => {
-              const targetAvailable =
-                thread.sceneTarget !== null && thread.sceneTarget !== undefined
-                  ? true
-                  : thread.canvasAnchor !== null ||
-                    (thread.documentRange !== null &&
-                      objectsById.has(thread.documentRange.documentObjectId)) ||
-                    thread.targetObjectIds.some((id) => objectsById.has(id));
-              return (
-                <button
-                  key={thread.id}
-                  type="button"
-                  className="flex w-full items-start gap-3 rounded-xl border border-zinc-200 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50"
-                  onClick={() => {
-                    onOverlayVisibilityChange(true);
-                    onPlacementModeChange(false);
-                    focusThread(thread.id);
-                  }}
+            {groupCommentHistory(threads).map((entry) => {
+              const items = entry.threads.map((thread) => {
+                const targetAvailable =
+                  thread.sceneTarget !== null &&
+                  thread.sceneTarget !== undefined
+                    ? true
+                    : thread.canvasAnchor !== null ||
+                      (thread.documentRange !== null &&
+                        objectsById.has(
+                          thread.documentRange.documentObjectId,
+                        )) ||
+                      thread.targetObjectIds.some((id) => objectsById.has(id));
+                return (
+                  <button
+                    key={thread.id}
+                    type="button"
+                    className="flex w-full items-start gap-3 rounded-xl border border-zinc-200 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50"
+                    onClick={() => {
+                      onOverlayVisibilityChange(true);
+                      onPlacementModeChange(false);
+                      focusThread(thread.id);
+                    }}
+                  >
+                    <Avatar
+                      name={thread.authorName}
+                      identityKey={thread.authorKey}
+                      ai={thread.authorKind === "ai"}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-semibold">
+                          {thread.authorName}
+                        </span>
+                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600">
+                          {thread.status}
+                        </span>
+                      </span>
+                      <span className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-600">
+                        {thread.voiceSessionId
+                          ? ([...thread.replies]
+                              .reverse()
+                              .find((reply) => reply.authorKind === "ai")
+                              ?.body ?? "Voice action in progress")
+                          : thread.body}
+                      </span>
+                      {thread.sceneTarget ? (
+                        <span className="mt-1 block text-xs font-medium text-violet-700">
+                          {thread.sceneTarget.deleted
+                            ? "Deleted scene: "
+                            : "Scene: "}
+                          {thread.sceneTarget.title}
+                        </span>
+                      ) : null}
+                      {!targetAvailable ? (
+                        <span className="mt-1 block text-xs text-amber-700">
+                          Target unavailable
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                );
+              });
+              return entry.sessionId ? (
+                <details
+                  key={entry.key}
+                  className="rounded-xl border border-zinc-200 p-3"
                 >
-                  <Avatar
-                    name={thread.authorName}
-                    identityKey={thread.authorKey}
-                    ai={thread.authorKind === "ai"}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-semibold">
-                        {thread.authorName}
-                      </span>
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600">
-                        {thread.status}
-                      </span>
-                    </span>
-                    <span className="mt-1 line-clamp-2 block text-sm leading-5 text-zinc-600">
-                      {thread.body}
-                    </span>
-                    {thread.sceneTarget ? (
-                      <span className="mt-1 block text-xs font-medium text-violet-700">
-                        {thread.sceneTarget.deleted
-                          ? "Deleted scene: "
-                          : "Scene: "}
-                        {thread.sceneTarget.title}
-                      </span>
-                    ) : null}
-                    {!targetAvailable ? (
-                      <span className="mt-1 block text-xs text-amber-700">
-                        Target unavailable
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Voice session ·{" "}
+                    {new Date(entry.threads[0].createdAt).toLocaleString()} ·{" "}
+                    {entry.threads.length} actions
+                  </summary>
+                  <div className="mt-3 space-y-2">{items}</div>
+                </details>
+              ) : (
+                <div key={entry.key}>{items}</div>
               );
             })}
           </div>

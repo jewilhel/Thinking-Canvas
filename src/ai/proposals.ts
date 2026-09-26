@@ -2,10 +2,12 @@ import * as Y from "yjs";
 
 import {
   listCanvasObjectsV2,
+  listCanvasGroupsV2,
   projectCanvasCompositions,
   readCanvasOrderV2,
   type CanvasObjectV2,
 } from "@/canvas/canvas-document";
+import type { CanvasHistoryEntry } from "@/canvas/canvas-history";
 import {
   executeProductCanvasCommand,
   productCanvasMutationSchema,
@@ -33,6 +35,7 @@ export type ValidatedCanvasProposal = {
 
 export type ValidatedCanvasReviewStage = ValidatedCanvasProposal & {
   objectChanges: StagedCanvasObjectChange[];
+  organizationHistory?: CanvasHistoryEntry;
   tentativeUpdate: Uint8Array;
   visualObjects: CanvasObjectV2[];
 };
@@ -92,6 +95,11 @@ function simulateCanvasCommands(input: {
   const beforeObjectsById = new Map(
     listCanvasObjectsV2(input.document).map((object) => [object.id, object]),
   );
+  const beforeGroups = new Map(
+    listCanvasGroupsV2(input.document).map((group) => [group.id, group]),
+  );
+  const beforeOrder = readCanvasOrderV2(input.document);
+  const affectedGroupIds = new Set<string>();
   const beforeById = stateByObjectId(input.document);
   const proposalDocument = new Y.Doc();
   Y.applyUpdate(proposalDocument, Y.encodeStateAsUpdate(input.document));
@@ -109,6 +117,8 @@ function simulateCanvasCommands(input: {
       origin: "ai",
       issuedAt: new Date(index).toISOString(),
     });
+    for (const groupId of result.affectedGroupIds)
+      affectedGroupIds.add(groupId);
     for (const objectId of result.affectedObjectIds) {
       affectedObjectIds.add(objectId);
     }
@@ -148,7 +158,44 @@ function simulateCanvasCommands(input: {
     return { objectId, beforeState, afterState, affectedFields };
   });
 
+  const afterGroups = new Map(
+    listCanvasGroupsV2(proposalDocument).map((group) => [group.id, group]),
+  );
+  const organizationHistory: CanvasHistoryEntry | undefined =
+    affectedGroupIds.size
+      ? {
+          commandId: crypto.randomUUID(),
+          actorId: input.actorId,
+          beforeObjects: Object.fromEntries(
+            [...affectedObjectIds].map((id) => [
+              id,
+              beforeObjectsById.get(id) ?? null,
+            ]),
+          ),
+          afterObjects: Object.fromEntries(
+            [...affectedObjectIds].map((id) => [
+              id,
+              afterObjectsById.get(id) ?? null,
+            ]),
+          ),
+          beforeGroups: Object.fromEntries(
+            [...affectedGroupIds].map((id) => [
+              id,
+              beforeGroups.get(id) ?? null,
+            ]),
+          ),
+          afterGroups: Object.fromEntries(
+            [...affectedGroupIds].map((id) => [
+              id,
+              afterGroups.get(id) ?? null,
+            ]),
+          ),
+          beforeOrder,
+          afterOrder: readCanvasOrderV2(proposalDocument),
+        }
+      : undefined;
   return {
+    organizationHistory,
     commands,
     affectedObjectIds: [...compositionAffectedObjectIds],
     commandTypes: commands.map((command) => command.type),
@@ -187,6 +234,7 @@ export function validateCanvasReviewStage(input: {
     affectedObjectIds: plan.affectedObjectIds,
     commandTypes: plan.commandTypes,
     objectChanges: plan.objectChanges,
+    organizationHistory: plan.organizationHistory,
     tentativeUpdate: plan.tentativeUpdate,
     visualObjects: plan.visualObjects,
     summary: `Prepared for tentative review:\n${plan.lines.join("\n")}\n${plan.objectChanges.length} object change${plan.objectChanges.length === 1 ? "" : "s"} will remain reviewable as one change set.`,

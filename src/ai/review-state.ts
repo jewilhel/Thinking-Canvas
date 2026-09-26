@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { StagedCanvasObjectState } from "@/ai/proposals";
 import {
   canvasObjectV2Schema,
+  canvasGroupV2Schema,
   createProductCanvasDocument,
   readCanvasOrderV2,
 } from "@/canvas/canvas-document";
@@ -115,6 +116,7 @@ export function buildDiscardReviewUpdate(input: {
 
 export function buildUndoAiChangeSetUpdate(input: {
   document: Y.Doc;
+  organizationHistory?: unknown;
   objectChanges: Array<{
     id: string;
     objectId: string;
@@ -142,6 +144,28 @@ export function buildUndoAiChangeSetUpdate(input: {
   );
   Y.applyUpdate(nextDocument, Y.encodeStateAsUpdate(input.document));
   const conflicts: string[] = [];
+  if (input.organizationHistory) {
+    const entry = z
+      .strictObject({
+        commandId: z.string(),
+        actorId: z.string(),
+        beforeObjects: z.record(z.uuid(), canvasObjectV2Schema.nullable()),
+        afterObjects: z.record(z.uuid(), canvasObjectV2Schema.nullable()),
+        beforeGroups: z.record(z.uuid(), canvasGroupV2Schema.nullable()),
+        afterGroups: z.record(z.uuid(), canvasGroupV2Schema.nullable()),
+        beforeOrder: z.array(z.uuid()),
+        afterOrder: z.array(z.uuid()),
+      })
+      .parse(input.organizationHistory);
+    const result = applyCanvasHistoryEntry(nextDocument, entry, "undo");
+    // Group membership and group frames must revert together or remain intact.
+    return {
+      conflicts: result.conflicts,
+      update: result.conflicts.length
+        ? Y.encodeStateAsUpdate(input.document, stateVector)
+        : Y.encodeStateAsUpdate(nextDocument, stateVector),
+    };
+  }
 
   for (const change of [...input.objectChanges].reverse()) {
     const result = buildDiscardReviewUpdate({

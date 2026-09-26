@@ -376,7 +376,7 @@ export function ScenePanel({
       style={
         placement ?? {
           right: 16,
-          bottom: 80,
+          bottom: viewport.width <= 1024 ? 160 : 80,
           width: "min(24rem, calc(100vw - 2rem))",
         }
       }
