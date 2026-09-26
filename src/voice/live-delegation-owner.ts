@@ -69,6 +69,9 @@ export class LiveDelegationOwner {
     inputAt?: number;
     silent?: boolean;
   };
+  private notices: { id: string; text: string }[] = [];
+  private noticeWaiting = false;
+  private noticeRevision = 0;
   private clarification?: {
     question: string;
     request: { speaker: string; text: string }[];
@@ -84,7 +87,13 @@ export class LiveDelegationOwner {
   private lastObservedUserVersion = -1;
   constructor(private hooks: Hooks) {}
   get busy() {
-    return !!this.active || this.pending.size > 0 || !!this.queued;
+    return (
+      !!this.active ||
+      this.pending.size > 0 ||
+      !!this.queued ||
+      this.notices.length > 0 ||
+      this.noticeWaiting
+    );
   }
   /** Recover an explicit request when Live spoke without handing it off. */
   requestObservedCanvasWork(
@@ -241,6 +250,10 @@ export class LiveDelegationOwner {
       silent,
     };
   }
+  private deferNotice(id: string, text: string) {
+    this.hooks.diagnostic?.("notice_deferred", id);
+    this.notices.push({ id, text });
+  }
   async cancel(persist = true) {
     this.clarification = undefined;
     this.endingRequested = false;
@@ -249,6 +262,9 @@ export class LiveDelegationOwner {
     this.offsets.clear();
     this.observedContexts.clear();
     this.queued = undefined;
+    this.notices = [];
+    this.noticeWaiting = false;
+    this.noticeRevision++;
     this.active?.controller.abort();
     if (persist) await this.hooks.cancel();
   }
@@ -322,13 +338,10 @@ export class LiveDelegationOwner {
     this.hooks.diagnostic?.("received", id);
     if (this.queued?.silent) this.queued = undefined;
     if (this.pending.size >= 4) {
-      void Promise.resolve(
-        this.hooks.append(
-          "session.commentary.append",
-          id,
-          "The canvas task queue is full. No new action was started. Please wait for the pending request.",
-        ),
-      ).catch(() => undefined);
+      this.deferNotice(
+        id,
+        "The canvas task queue is full. No new action was started. Please wait for the pending request.",
+      );
       return;
     }
     this.pending.set(id, now + 2000);
@@ -418,13 +431,10 @@ export class LiveDelegationOwner {
       }
       if (text.length > LIVE_CONVERSATION_MAX_CHARACTERS) {
         this.hooks.diagnostic?.("context_limit", id);
-        void Promise.resolve(
-          this.hooks.append(
-            "session.commentary.append",
-            id.startsWith("control:") ? null : id,
-            "The session source exceeds the available context limit. No document or action was created. Explain this limit honestly; do not offer a partial source as a full transcript or complete summary.",
-          ),
-        ).catch(() => undefined);
+        this.deferNotice(
+          id,
+          "The session source exceeds the available context limit. No document or action was created. Explain this limit honestly; do not offer a partial source as a full transcript or complete summary.",
+        );
         continue;
       }
       this.consumedThrough = Math.max(this.consumedThrough, through);
@@ -485,6 +495,29 @@ export class LiveDelegationOwner {
         })
         .catch(() => {
           if (this.queued === result) this.queued = undefined;
+        });
+    }
+    if (
+      !this.queued &&
+      !this.noticeWaiting &&
+      this.notices.length &&
+      this.hooks.quiet()
+    ) {
+      const notice = this.notices.shift()!;
+      this.noticeWaiting = true;
+      const revision = ++this.noticeRevision;
+      void Promise.resolve()
+        .then(() => {
+          if (this.closed || revision !== this.noticeRevision) return;
+          return this.hooks.append(
+            "session.commentary.append",
+            notice.id.startsWith("control:") ? null : notice.id,
+            notice.text,
+          );
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (revision === this.noticeRevision) this.noticeWaiting = false;
         });
     }
   }

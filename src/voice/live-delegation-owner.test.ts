@@ -4,8 +4,11 @@ import {
   voiceBackendUnits,
   controlRequestIsCurrent,
 } from "./live-delegation-contract";
-function setup() {
+function setup(
+  previousConversation?: import("./previous-conversation").PreviousConversation,
+) {
   const hooks = {
+    previousConversation,
     run: vi.fn<
       (
         id: string,
@@ -430,6 +433,68 @@ describe("bounded voice delegation", () => {
     owner.tick(2500);
     expect(hooks.append).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => expect(owner.busy).toBe(false));
+  });
+  it("defers a full-queue warning until speech pauses while existing work continues", async () => {
+    const { owner, hooks } = setup();
+    hooks.quiet.mockReturnValue(false);
+    hooks.run.mockImplementation(() => new Promise(() => {}));
+    owner.receive(speech("Describe the canvas."), 0);
+    for (let index = 1; index <= 6; index++)
+      owner.receive(
+        {
+          ...delegated,
+          delegation: { ...delegated.delegation, id: `task${index}` },
+        },
+        0,
+      );
+    expect(hooks.append).not.toHaveBeenCalled();
+    owner.tick(3000);
+    expect(hooks.run).toHaveBeenCalledOnce();
+    expect(hooks.append).not.toHaveBeenCalled();
+    hooks.quiet.mockReturnValue(true);
+    owner.tick(3001);
+    await vi.waitFor(() => expect(hooks.append).toHaveBeenCalledOnce());
+    expect(hooks.append.mock.calls[0][0]).toBe("session.commentary.append");
+    expect(hooks.append.mock.calls[0][2]).toContain("task queue is full");
+    await vi.waitFor(() => {
+      owner.tick(3002);
+      expect(hooks.append).toHaveBeenCalledTimes(2);
+    });
+  });
+  it("defers an oversized-context warning until speech pauses", async () => {
+    const { owner, hooks } = setup({
+      id: "30d0a731-bd9a-4246-b57b-fac21c0a61d3",
+      startedAt: "2026-09-25T12:00:00.000Z",
+      text: "A".repeat(90_000),
+      gaps: [],
+    });
+    hooks.quiet.mockReturnValue(false);
+    owner.receive(speech("Make a document from our prior conversation."), 0);
+    owner.receive(delegated, 0);
+    owner.tick(3000);
+    expect(hooks.run).not.toHaveBeenCalled();
+    expect(hooks.append).not.toHaveBeenCalled();
+    hooks.quiet.mockReturnValue(true);
+    owner.tick(3001);
+    await vi.waitFor(() => expect(hooks.append).toHaveBeenCalledOnce());
+    expect(hooks.append.mock.calls[0][2]).toContain("context limit");
+  });
+  it("does not send a deferred notice after cancellation", async () => {
+    const { owner, hooks } = setup();
+    hooks.quiet.mockReturnValue(false);
+    for (let index = 1; index <= 5; index++)
+      owner.receive(
+        {
+          ...delegated,
+          delegation: { ...delegated.delegation, id: `task${index}` },
+        },
+        0,
+      );
+    hooks.quiet.mockReturnValue(true);
+    owner.tick(1000);
+    await owner.cancel(false);
+    await Promise.resolve();
+    expect(hooks.append).not.toHaveBeenCalled();
   });
   it("never runs on a fragment alone; delegates interpretation of a request to the existing AI", () => {
     const { owner, hooks } = setup();
