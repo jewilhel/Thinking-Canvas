@@ -45,6 +45,8 @@ const recordSchema = z.strictObject({
     .optional(),
   reason: z.string().optional(),
   seconds: z.number().optional(),
+  connectionMs: z.number().nonnegative().optional(),
+  reconnectMs: z.array(z.number().nonnegative()).max(20).optional(),
   chargedCents: z.number().optional(),
   voiceUnits: z.number().nonnegative().optional(),
   backendUnits: z.number().nonnegative().optional(),
@@ -165,6 +167,10 @@ export function LiveVoice({
     abort = useRef<AbortController | null>(null),
     accumulator = useRef(new LiveTranscript()),
     generation = useRef("");
+  const timing = useRef<{
+    connectingAt: number | null;
+    reconnectingAt: number | null;
+  }>({ connectingAt: null, reconnectingAt: null });
   const recordsRef = useRef(records),
     runId = useRef<string | null>(null),
     sessionId = useRef<string | null>(null),
@@ -339,6 +345,7 @@ export function LiveVoice({
     const id = crypto.randomUUID();
     runId.current = id;
     generation.current = id;
+    timing.current = { connectingAt: null, reconnectingAt: null };
     offset.current = Date.now();
     selectedSessionRef.current = id;
     setSelectedSession(id);
@@ -415,10 +422,25 @@ export function LiveVoice({
         },
         (state) => {
           if (generation.current !== id) return;
-          if (state === "disconnected" && connection.current)
+          if (state === "connecting")
+            timing.current.connectingAt = performance.now();
+          if (state === "disconnected" && connection.current) {
+            timing.current.reconnectingAt ??= performance.now();
             setStatus("Reconnecting");
-          if (state === "connected" && connection.current)
+          }
+          if (state === "connected" && connection.current) {
+            if (timing.current.reconnectingAt !== null) {
+              const previous = recordsRef.current.find((run) => run.id === id);
+              updateRun({
+                reconnectMs: [
+                  ...(previous?.reconnectMs ?? []),
+                  Math.round(performance.now() - timing.current.reconnectingAt),
+                ].slice(-20),
+              });
+              timing.current.reconnectingAt = null;
+            }
             setStatus("Connected");
+          }
           if (state === "failed" || state === "closed")
             finishRef.current("Voice connection ended");
         },
@@ -434,7 +456,16 @@ export function LiveVoice({
       }
       connection.current = result;
       sessionId.current = result.id;
-      updateRun({ sessionId: result.id });
+      updateRun({
+        sessionId: result.id,
+        ...(timing.current.connectingAt === null
+          ? {}
+          : {
+              connectionMs: Math.round(
+                performance.now() - timing.current.connectingAt,
+              ),
+            }),
+      });
       limit.current = Date.parse(result.expiresAt);
       wrapUp.current = result.wrapUpAt ? Date.parse(result.wrapUpAt) : null;
       setStatus("Connected");
@@ -870,8 +901,8 @@ export function LiveVoice({
                   </Button>
                 </details>
                 <p className={styles.help}>
-                  Recorded settings, costs and notes for troubleshooting. No
-                  audio or transcript text.
+                  Recorded settings, connection and reconnect times, costs and
+                  notes for troubleshooting. No audio or transcript text.
                 </p>
                 {records.map((r) => (
                   <details key={r.id}>

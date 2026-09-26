@@ -60,14 +60,19 @@ it("shows reconnecting during a short outage and keeps the same call available t
     vi.fn(async () => Response.json({})),
   );
   const close = vi.fn();
-  vi.mocked(connectLiveVoice).mockResolvedValue({
-    id: crypto.randomUUID(),
-    expiresAt: new Date(Date.now() + 600_000).toISOString(),
-    model: "gpt-live-1",
-    send: vi.fn(),
-    mute: vi.fn(),
-    close,
-  });
+  vi.mocked(connectLiveVoice).mockImplementation(
+    async (_canvas, _settings, _event, state) => {
+      state("connecting");
+      return {
+        id: crypto.randomUUID(),
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        model: "gpt-live-1",
+        send: vi.fn(),
+        mute: vi.fn(),
+        close,
+      };
+    },
+  );
   const controls = document.createElement("div");
   document.body.append(controls);
   const view = render(
@@ -92,6 +97,14 @@ it("shows reconnecting during a short outage and keeps the same call available t
   expect(screen.getByTestId("voice-control-state").textContent).toBe(
     "Connected",
   );
+  const record = JSON.parse(
+    localStorage.getItem(
+      "thinking-canvas:voice:test:test:records:v1:live:v2",
+    ) ?? "[]",
+  )[0];
+  expect(record.connectionMs).toBeGreaterThanOrEqual(0);
+  expect(record.reconnectMs).toHaveLength(1);
+  expect(record.reconnectMs[0]).toBeGreaterThanOrEqual(0);
   expect(connectLiveVoice).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByText("Stop test voice"));
   expect(close).toHaveBeenCalledOnce();

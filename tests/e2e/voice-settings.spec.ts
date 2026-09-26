@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 const canvasId = "20000000-0000-4000-8000-000000000001";
 test("tuning panel preserves presets and distinguishes drafts from confirmed settings", async ({
@@ -76,6 +77,50 @@ test("unauthenticated callers cannot open supervised sessions", async ({
     data: {},
   });
   expect(response.status()).toBe(403);
+});
+
+test("voice settings reflow and remain keyboard accessible in a compact viewport", async ({
+  page,
+}) => {
+  // A 320 CSS-pixel viewport also exercises the reflow width of a 640-pixel
+  // window at 200% browser zoom, without claiming to test the browser zoom UI.
+  await page.setViewportSize({ width: 320, height: 400 });
+  await page.goto("/auth/sign-in");
+  await page.getByLabel("Email").fill("owner@thinking-canvas.local");
+  await page.getByLabel("Password").fill("LocalPassword1!");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\/app$/);
+  await page.goto(`/app/canvases/${canvasId}`);
+
+  const voice = page.getByRole("button", { name: "Start AI voice" });
+  await voice.click({ modifiers: ["Control"] });
+  const panel = page.getByRole("dialog", { name: "Voice settings" });
+  await expect(panel).toBeVisible();
+  await expect(
+    panel.getByRole("button", { name: "Close Voice settings" }),
+  ).toBeFocused();
+
+  const bounds = await panel.boundingBox();
+  if (!bounds) throw new Error("Voice settings panel is missing.");
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(400);
+
+  const goodbye = panel.getByRole("textbox", { name: "Goodbye" });
+  await goodbye.focus();
+  await expect(goodbye).toBeFocused();
+  await expect(goodbye).toBeInViewport();
+  const reset = panel.getByRole("button", { name: "Reset to baseline" });
+  await reset.focus();
+  await expect(reset).toBeFocused();
+  await expect(reset).toBeInViewport();
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(voice).toBeFocused();
 });
 
 for (const [email, expectedStatus] of [
