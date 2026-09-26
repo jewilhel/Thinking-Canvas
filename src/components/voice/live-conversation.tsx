@@ -161,6 +161,8 @@ export function LiveVoice({
   });
   const [backendPending, setBackendPending] = useState(false);
   const [taskNotice, setTaskNotice] = useState("");
+  const [taskFailure, setTaskFailure] = useState("");
+  const seenTaskFailure = useRef("");
   const [idleWarningAt, setIdleWarningAt] = useState<string | null>(null);
   const [presetName, setPresetName] = useState("");
   const connection = useRef<SupervisedVoice | null>(null),
@@ -256,6 +258,15 @@ export function LiveVoice({
           if (record.sessionId === sessionId.current) {
             setIdleWarningAt(data.idleWarningAt ?? null);
             setBackendPending(Boolean(data.backendPending));
+            if (
+              typeof data.failedTaskId === "string" &&
+              data.failedTaskId !== seenTaskFailure.current
+            ) {
+              seenTaskFailure.current = data.failedTaskId;
+              setTaskFailure(
+                "A canvas request did not finish. Earlier completed changes still stand. You can keep talking or retry the request.",
+              );
+            }
             if (data.taskStatus === "completed")
               setTaskNotice(
                 "Canvas request completed. See Comments for the result.",
@@ -325,6 +336,8 @@ export function LiveVoice({
     setMuted(false);
     setBackendPending(false);
     setTaskNotice("");
+    setTaskFailure("");
+    seenTaskFailure.current = "";
     setIdleWarningAt(null);
     const controller = new AbortController();
     abort.current = controller;
@@ -1021,17 +1034,18 @@ export function LiveVoice({
           </div>
         </WorkspacePanel>
       )}
-      {(error || accessError) && (
+      {(error || accessError || (active && taskFailure)) && (
         <div
           role="alert"
           className="absolute top-24 right-4 z-50 w-[min(28rem,calc(100%-2rem))] rounded-lg border border-red-200 bg-white p-3 text-sm text-red-700"
         >
-          {error || accessError}
+          {error || accessError || taskFailure}
           <Button
             variant="outline"
             onClick={() => {
               setError("");
               setAccessError("");
+              setTaskFailure("");
             }}
           >
             Dismiss

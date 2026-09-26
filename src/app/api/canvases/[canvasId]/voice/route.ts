@@ -57,13 +57,26 @@ export async function GET(request: Request, context: Context) {
       .eq("user_id", user.id)
       .maybeSingle();
     if (error || !data) return new Response(null, { status: 404 });
-    const latestTask = await voiceService()
-      .from("voice_delegations")
-      .select("status,created_at")
-      .eq("session_id", sessionId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // A later running/completed task must not hide an earlier failure. Ending
+    // checks are internal conversation control, not requested canvas work.
+    const [latestTask, latestFailure] = await Promise.all([
+      voiceService()
+        .from("voice_delegations")
+        .select("status,created_at")
+        .eq("session_id", sessionId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      voiceService()
+        .from("voice_delegations")
+        .select("id")
+        .eq("session_id", sessionId)
+        .eq("status", "failed")
+        .not("delegation_id", "like", "control:ending%")
+        .order("finished_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
     return Response.json(
       {
         ready: data.supervisor_ready && !data.ended_at,
@@ -72,6 +85,7 @@ export async function GET(request: Request, context: Context) {
         chargedCents: data.charged_cents,
         finalUsage: data.voice_usage_final && data.backend_usage_final,
         backendPending: data.backend_reserved_units > 0,
+        failedTaskId: latestFailure.data?.id ?? null,
         taskStatus:
           data.describe_requested_at &&
           data.backend_cancel_at &&

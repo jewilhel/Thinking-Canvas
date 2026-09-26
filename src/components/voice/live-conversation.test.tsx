@@ -54,6 +54,76 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("shows task failures with settings closed, preserves later success, and does not repeat dismissed failures", async () => {
+  let failedTaskId: string | null = null;
+  let polls = 0;
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.includes("/voice?id=")) {
+      polls++;
+      return Response.json({
+        failedTaskId,
+        // The next request can finish before the status poll sees the failure.
+        taskStatus: "completed",
+        backendPending: false,
+      });
+    }
+    return Response.json({});
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const close = vi.fn();
+  const send = vi.fn();
+  vi.mocked(connectLiveVoice).mockResolvedValue({
+    id: crypto.randomUUID(),
+    expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    model: "gpt-live-1",
+    send,
+    mute: vi.fn(),
+    close,
+  });
+  const controls = document.createElement("div");
+  document.body.append(controls);
+  const view = render(
+    <LiveVoice
+      canvasId="test"
+      userId="test"
+      controlTarget={controls}
+      canSaveTranscript
+      onSaveTranscript={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByText("Start test voice"));
+  fireEvent.click(await screen.findByText("Allow microphone and start"));
+  await screen.findByText("Stop test voice");
+  failedTaskId = "first-failure";
+  await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy(), {
+    timeout: 3000,
+  });
+  expect(screen.getByRole("alert").textContent).toContain(
+    "Earlier completed changes still stand",
+  );
+  expect(screen.queryByText("Voice and behavior")).toBeNull();
+  fireEvent.click(screen.getByText("Dismiss"));
+  const previousPolls = polls;
+  await waitFor(() => expect(polls).toBeGreaterThan(previousPolls), {
+    timeout: 3000,
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+  failedTaskId = "second-failure";
+  await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy(), {
+    timeout: 3000,
+  });
+  expect(screen.getByTestId("voice-control-state").textContent).toBe(
+    "Connected",
+  );
+  // Visual status must not trigger speech or shut down an otherwise good call.
+  expect(send).not.toHaveBeenCalled();
+  expect(close).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText("Stop test voice"));
+  expect(screen.queryByRole("alert")).toBeNull();
+  view.unmount();
+  controls.remove();
+}, 12000);
+
 it("shows reconnecting during a short outage and keeps the same call available to end", async () => {
   vi.stubGlobal(
     "fetch",
