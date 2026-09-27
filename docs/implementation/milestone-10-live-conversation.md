@@ -25,6 +25,12 @@ Keep the approved Voice settings layout and baseline. No further feature work is
 
 The September 27 concurrent-typing check used an existing comment thread on QA canvas `92df160a-e899-403d-8ded-42bcef122c0a`, so it added no canvas marker. Only the test reply and AI answer were persisted through the ordinary comment interface; no objects or account settings changed. Manual end returned the button to Voice off. The reloaded browser had no warning/error console entries. A local screenshot is `/tmp/thinking-canvas-concurrent-typing-qa.png`. This establishes typed interaction alongside a real connected voice session and persisted replies, not spoken delegation, acoustic naturalness or outage recovery. The temporary QA tab was closed and the owner's canvas retained.
 
+### Enforce the voice database regressions in CI — 2026-09-27
+
+Full exact-head [CI run 36334432711](https://github.com/jewilhel/Thinking-Canvas/actions/runs/36334432711) passed at `a74ee729db7cb46340f27d69dd6d38aa752d71b4`, including formatting, lint, types, unit tests, database/RLS, build and authenticated browser/accessibility tests. Auditing that workflow found that the eleven separately gated voice integration cases were not enabled in CI. Add a dedicated step after local Supabase startup/database tests that explicitly enables `RUN_VOICE_DB_TESTS` and runs voice creation, status and private Broadcast cases before the application build. The same combined command passed locally: three files, eleven tests. This enforces existing regressions; it adds no provider call, product behavior, hosted database write or production configuration. Fresh exact-head CI must pass for the workflow change.
+
+The owner requested completing all work toward closure on September 27. That authorizes the remaining verification and fixes, but unrun human-observed checks remain unverified. Native Codex controls are unavailable to Computer Use, so browser permission prompts, actual browser zoom and screen-reader interaction cannot be operated through that surface. Product-owner listening participation remains required for the frozen acoustic evaluation; automated event ordering and earlier accepted owner trials remain separate evidence.
+
 Current scope decision — 2026-09-15: keep ten-minute voice sessions and the existing Netlify supervisor. Longer sessions and the Render migration are deferred until after the existing milestones; they are not required to complete Milestone 10. Existing feature verification and owner acceptance remain in scope.
 
 ## GPT-Live migration plan — 2026-09-11

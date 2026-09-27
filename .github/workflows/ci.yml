@@ -66,6 +66,11 @@ jobs:
       - name: Run database and RLS tests
         run: pnpm db:test
 
+      - name: Run database-backed voice regressions
+        env:
+          RUN_VOICE_DB_TESTS: "1"
+        run: pnpm exec vitest run tests/integration/voice-creation.test.ts tests/integration/voice-status.test.ts tests/integration/voice-failure-broadcast.test.ts
+
       - name: Build application
         run: pnpm build
 
