@@ -1,6 +1,4 @@
-import "server-only";
-import { parseServiceEnvironment } from "@/lib/env";
-import { createServiceClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   voiceTaskFailureSchema,
   type VoiceTaskFailure,
@@ -8,14 +6,11 @@ import {
 
 /** No conversation text or provider errors are sent or stored. */
 export async function broadcastVoiceTaskFailure(
+  db: SupabaseClient,
   canvasId: string,
   notice: VoiceTaskFailure,
 ) {
   const payload = voiceTaskFailureSchema.parse(notice);
-  const db = createServiceClient();
-  await db.realtime.setAuth(
-    parseServiceEnvironment(process.env).SUPABASE_SERVICE_ROLE_KEY,
-  );
   const channel = db.channel(`canvas:${canvasId}`, {
     config: { private: true },
   });

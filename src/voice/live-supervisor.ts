@@ -80,7 +80,7 @@ export async function superviseLiveVoice(
     },
     failure: (id, reason) => {
       if (stopping) return;
-      void broadcastVoiceTaskFailure(session.canvas_id, {
+      void broadcastVoiceTaskFailure(db, session.canvas_id, {
         sessionId: session.id,
         id,
         reason,

@@ -2,7 +2,6 @@
 import { execFileSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { expect, it, vi } from "vitest";
-vi.mock("server-only", () => ({}));
 import { broadcastVoiceTaskFailure } from "../../src/voice/broadcast-task-failure";
 
 it.skipIf(process.env.RUN_VOICE_DB_TESTS !== "1")(
@@ -14,9 +13,6 @@ it.skipIf(process.env.RUN_VOICE_DB_TESTS !== "1")(
         stdio: ["ignore", "pipe", "ignore"],
       }),
     );
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", env.API_URL);
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", env.PUBLISHABLE_KEY);
-    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", env.SERVICE_ROLE_KEY);
     const db = createClient(env.API_URL, env.PUBLISHABLE_KEY, {
       auth: { persistSession: false },
     });
@@ -47,7 +43,10 @@ it.skipIf(process.env.RUN_VOICE_DB_TESTS !== "1")(
         id: "not-admitted",
         reason: "queue_full" as const,
       };
-      await broadcastVoiceTaskFailure(canvasId, notice);
+      const server = createClient(env.API_URL, env.SERVICE_ROLE_KEY, {
+        auth: { persistSession: false },
+      });
+      await broadcastVoiceTaskFailure(server, canvasId, notice);
       await vi.waitFor(() => expect(received).toEqual([notice]), {
         timeout: 5000,
       });
@@ -55,7 +54,6 @@ it.skipIf(process.env.RUN_VOICE_DB_TESTS !== "1")(
       expect(channel.state).toBe("joined");
     } finally {
       await db.removeChannel(channel);
-      vi.unstubAllEnvs();
     }
   },
   20000,
