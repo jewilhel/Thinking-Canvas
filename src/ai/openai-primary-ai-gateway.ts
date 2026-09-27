@@ -169,7 +169,22 @@ function documentRangeActionParameters() {
 export function buildSubmitTurnTool(
   allowedToolNames: AiToolName[],
   hasDocumentRange = true,
+  projectedObjectIds?: readonly string[],
 ) {
+  // Bound reference choices before generation, rather than failing a valid action
+  // because its accompanying prose cites an invented/historical object UUID.
+  // The enum is repeated twice; cap it below the provider's schema limits.
+  const referenceIds = projectedObjectIds
+    ? [...new Set(projectedObjectIds)]
+    : undefined;
+  const referenceSchema = {
+    type: "string",
+    format: "uuid",
+    ...(referenceIds?.length && referenceIds.length <= 250
+      ? { enum: referenceIds }
+      : {}),
+  };
+  const referenceLimit = referenceIds?.length === 0 ? 0 : 100;
   const actionToolNames = executableToolNames(allowedToolNames);
   const directDocumentAction = hasDocumentRange
     ? directDocumentActionName(actionToolNames)
@@ -192,11 +207,11 @@ export function buildSubmitTurnTool(
         body: { type: "string", minLength: 1, maxLength: 100_000 },
         evidence: {
           type: "array",
-          maxItems: 100,
+          maxItems: referenceLimit,
           items: {
             type: "object",
             properties: {
-              objectId: { type: "string", format: "uuid" },
+              objectId: referenceSchema,
               label: { type: "string", minLength: 1, maxLength: 500 },
             },
             required: ["objectId", "label"],
@@ -205,8 +220,8 @@ export function buildSubmitTurnTool(
         },
         contextualTargetObjectIds: {
           type: "array",
-          maxItems: 100,
-          items: { type: "string", format: "uuid" },
+          maxItems: referenceLimit,
+          items: referenceSchema,
         },
         toolCalls: {
           type: "array",
@@ -417,6 +432,7 @@ export class OpenAiPrimaryAiGateway implements PrimaryAiGateway {
               !!thread.documentRange &&
               !thread.documentRange.detached,
           ),
+          projection.objects.map((object) => object.id),
         ),
       ],
     } satisfies ResponseCreateParamsNonStreaming;

@@ -628,3 +628,56 @@ it("exposes body edits without pretending a canvas conversation has a document t
   const rangeTool = buildSubmitTurnTool(["execute_document_changes"], true);
   expect(JSON.stringify(rangeTool.parameters)).toContain("replace_selection");
 });
+
+it("constrains reply references to the current projection in the provider request", async () => {
+  const client = clientReturning(
+    providerResponse({
+      body: "The shape is blue.",
+      evidence: [{ objectId: ids.object, label: "Shape" }],
+      contextualTargetObjectIds: [ids.object],
+      toolCalls: [],
+    }),
+  );
+  const gateway = new OpenAiPrimaryAiGateway({ apiKey: "test-key", client });
+  await gateway.request({
+    invocation,
+    projection,
+    allowedToolNames: [],
+    signal: new AbortController().signal,
+  });
+  const tool = client.create.mock.calls[0]![0].tools![0] as ReturnType<
+    typeof buildSubmitTurnTool
+  >;
+  expect(
+    tool.parameters.properties.evidence.items.properties.objectId,
+  ).toMatchObject({ enum: [ids.object] });
+  expect(
+    tool.parameters.properties.contextualTargetObjectIds.items,
+  ).toMatchObject({ enum: [ids.object] });
+});
+
+it("requires empty references on an empty canvas without emitting an empty enum", () => {
+  const tool = buildSubmitTurnTool([], false, []);
+  expect(tool.parameters.properties.evidence.maxItems).toBe(0);
+  expect(tool.parameters.properties.contextualTargetObjectIds.maxItems).toBe(0);
+  expect(
+    tool.parameters.properties.contextualTargetObjectIds.items,
+  ).not.toHaveProperty("enum");
+});
+
+it("keeps large projections within provider enum limits and retains UUID validation", () => {
+  const objectIds = Array.from(
+    { length: 251 },
+    (_, index) =>
+      `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
+  );
+  const tool = buildSubmitTurnTool([], false, objectIds);
+  expect(tool.parameters.properties.contextualTargetObjectIds.items).toEqual({
+    type: "string",
+    format: "uuid",
+  });
+  expect(
+    buildSubmitTurnTool([], false, [ids.object, ids.object]).parameters
+      .properties.contextualTargetObjectIds.items,
+  ).toMatchObject({ enum: [ids.object] });
+});
