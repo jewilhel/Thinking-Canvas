@@ -1,5 +1,7 @@
 "use client";
 
+import { receiveVoiceTaskFailure } from "@/voice/task-failure-notices";
+
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 
 import {
@@ -165,6 +167,9 @@ export class SupabaseCanvasRepository implements CanvasDurabilityRepository {
     this.channel = channel;
 
     channel
+      .on("broadcast", { event: "voice-task-failed" }, ({ payload }) => {
+        receiveVoiceTaskFailure(canvasId, payload);
+      })
       .on("broadcast", { event: "yjs-update" }, ({ payload }) => {
         const message = payload as
           | BroadcastPayload

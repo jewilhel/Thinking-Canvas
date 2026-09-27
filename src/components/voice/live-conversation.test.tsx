@@ -9,6 +9,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { connectLiveVoice } from "@/voice/live-webrtc";
+import { receiveVoiceTaskFailure } from "@/voice/task-failure-notices";
 import { LiveVoice } from "./live-conversation";
 
 vi.mock("@/voice/live-webrtc", () => ({ connectLiveVoice: vi.fn() }));
@@ -123,6 +124,68 @@ it("shows task failures with settings closed, preserves later success, and does 
   view.unmount();
   controls.remove();
 }, 12000);
+
+it("shows admission failures only for the active canvas and session without speaking", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({})),
+  );
+  const id = crypto.randomUUID();
+  const send = vi.fn();
+  const close = vi.fn();
+  vi.mocked(connectLiveVoice).mockResolvedValue({
+    id,
+    expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    model: "gpt-live-1",
+    send,
+    mute: vi.fn(),
+    close,
+  });
+  const controls = document.createElement("div");
+  document.body.append(controls);
+  const view = render(
+    <LiveVoice
+      canvasId="test"
+      userId="test"
+      controlTarget={controls}
+      canSaveTranscript
+      onSaveTranscript={vi.fn()}
+    />,
+  );
+  const notice = {
+    sessionId: id,
+    id: "rejected-request",
+    reason: "queue_full",
+  };
+  act(() => receiveVoiceTaskFailure("test", notice));
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.click(screen.getByText("Start test voice"));
+  fireEvent.click(await screen.findByText("Allow microphone and start"));
+  await screen.findByText("Stop test voice");
+  act(() => {
+    receiveVoiceTaskFailure("other-canvas", notice);
+    receiveVoiceTaskFailure("test", {
+      ...notice,
+      sessionId: crypto.randomUUID(),
+    });
+    receiveVoiceTaskFailure("test", {
+      ...notice,
+      id: "control:ending:internal",
+    });
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+  act(() => receiveVoiceTaskFailure("test", notice));
+  expect(screen.getByRole("alert").textContent).toContain(
+    "Earlier completed changes still stand",
+  );
+  expect(send).not.toHaveBeenCalled();
+  expect(close).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText("Stop test voice"));
+  act(() => receiveVoiceTaskFailure("test", notice));
+  expect(screen.queryByRole("alert")).toBeNull();
+  view.unmount();
+  controls.remove();
+});
 
 it("shows reconnecting during a short outage and keeps the same call available to end", async () => {
   vi.stubGlobal(

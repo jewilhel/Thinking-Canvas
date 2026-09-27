@@ -18,6 +18,7 @@ function setup(
     >(async () => "Verified canvas description"),
     append: vi.fn(),
     diagnostic: vi.fn(),
+    failure: vi.fn(),
     cancel: vi.fn(async () => {}),
     quiet: vi.fn(() => true),
   };
@@ -448,6 +449,10 @@ describe("bounded voice delegation", () => {
         0,
       );
     expect(hooks.append).not.toHaveBeenCalled();
+    expect(hooks.failure.mock.calls).toEqual([
+      ["task5", "queue_full"],
+      ["task6", "queue_full"],
+    ]);
     owner.tick(3000);
     expect(hooks.run).toHaveBeenCalledOnce();
     expect(hooks.append).not.toHaveBeenCalled();
@@ -474,6 +479,7 @@ describe("bounded voice delegation", () => {
     owner.tick(3000);
     expect(hooks.run).not.toHaveBeenCalled();
     expect(hooks.append).not.toHaveBeenCalled();
+    expect(hooks.failure).toHaveBeenCalledWith("task1", "context_limit");
     hooks.quiet.mockReturnValue(true);
     owner.tick(3001);
     await vi.waitFor(() => expect(hooks.append).toHaveBeenCalledOnce());

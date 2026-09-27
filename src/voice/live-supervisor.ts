@@ -1,3 +1,4 @@
+import { broadcastVoiceTaskFailure } from "./broadcast-task-failure";
 import type { PreviousConversation } from "./previous-conversation";
 import OpenAI from "openai";
 import { liveAudioActivity } from "./live-audio-activity";
@@ -76,6 +77,18 @@ export async function superviseLiveVoice(
         waitForNewOutput,
       });
       conversationEnd.request(Date.now(), waitForNewOutput);
+    },
+    failure: (id, reason) => {
+      if (stopping) return;
+      void broadcastVoiceTaskFailure(session.canvas_id, {
+        sessionId: session.id,
+        id,
+        reason,
+      }).catch(() =>
+        console.warn("Live failure notification unavailable", {
+          sessionId: session.id,
+        }),
+      );
     },
     previousConversation: app.previousConversation,
     diagnostic: (stage, delegationId) =>

@@ -48,6 +48,7 @@ type Hooks = {
   cancel: () => Promise<void>;
   quiet: () => boolean;
   diagnostic?: (stage: string, id: string) => void;
+  failure?: (id: string, reason: "queue_full" | "context_limit") => void;
 };
 type ObservedCanvasRequest = { userVersion: number; context: string };
 /** Volatile speech correlation only. No fragment is itself authority to execute. */
@@ -220,12 +221,13 @@ export class LiveDelegationOwner {
           confirmed: false,
         });
         this.reports = this.reports.slice(-3);
-        if (!this.closed && !controller.signal.aborted)
+        if (!this.closed && !controller.signal.aborted) {
           this.queueReport(
             id,
             "This delegated request did not finish. Earlier confirmed work still stands, and a later explicit canvas request can be attempted independently.",
             true,
           );
+        }
       })
       .finally(() => {
         if (this.active?.id === id) this.active = undefined;
@@ -250,7 +252,12 @@ export class LiveDelegationOwner {
       silent,
     };
   }
-  private deferNotice(id: string, text: string) {
+  private deferNotice(
+    id: string,
+    text: string,
+    reason: "queue_full" | "context_limit",
+  ) {
+    if (!id.startsWith("control:ending")) this.hooks.failure?.(id, reason);
     this.hooks.diagnostic?.("notice_deferred", id);
     this.notices.push({ id, text });
   }
@@ -341,6 +348,7 @@ export class LiveDelegationOwner {
       this.deferNotice(
         id,
         "The canvas task queue is full. No new action was started. Please wait for the pending request.",
+        "queue_full",
       );
       return;
     }
@@ -434,6 +442,7 @@ export class LiveDelegationOwner {
         this.deferNotice(
           id,
           "The session source exceeds the available context limit. No document or action was created. Explain this limit honestly; do not offer a partial source as a full transcript or complete summary.",
+          "context_limit",
         );
         continue;
       }

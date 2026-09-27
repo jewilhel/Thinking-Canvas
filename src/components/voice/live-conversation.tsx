@@ -1,4 +1,8 @@
 "use client";
+import {
+  subscribeVoiceTaskFailures,
+  taskFailureMessage,
+} from "@/voice/task-failure-notices";
 import styles from "./voice-settings.module.css";
 import {
   hasVoiceConsent,
@@ -182,6 +186,19 @@ export function LiveVoice({
   const reconnecting = status === "Reconnecting",
     active = status === "Connected" || reconnecting,
     connecting = status === "Connecting";
+  useEffect(
+    () =>
+      subscribeVoiceTaskFailures((noticeCanvasId, notice) => {
+        if (
+          !active ||
+          noticeCanvasId !== canvasId ||
+          notice.sessionId !== sessionId.current
+        )
+          return;
+        setTaskFailure(taskFailureMessage);
+      }),
+    [active, canvasId],
+  );
   const persist = (next: Run[]) => {
     const safe = z.array(recordSchema).max(20).parse(next.slice(0, 20));
     recordsRef.current = safe;
@@ -263,9 +280,7 @@ export function LiveVoice({
               data.failedTaskId !== seenTaskFailure.current
             ) {
               seenTaskFailure.current = data.failedTaskId;
-              setTaskFailure(
-                "A canvas request did not finish. Earlier completed changes still stand. You can keep talking or retry the request.",
-              );
+              setTaskFailure(taskFailureMessage);
             }
             if (data.taskStatus === "completed")
               setTaskNotice(
