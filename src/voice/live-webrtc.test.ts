@@ -5,7 +5,10 @@ import type { RealtimeDependencies } from "./realtime-webrtc";
 const canvasId = "11111111-1111-4111-8111-111111111111";
 const sessionId = "22222222-2222-4222-8222-222222222222";
 function harness() {
-  const track = { enabled: true, stop: vi.fn() };
+  const track = Object.assign(new EventTarget(), {
+    enabled: true,
+    stop: vi.fn(),
+  });
   const stream = {
     getTracks: () => [track],
     getAudioTracks: () => [track],
@@ -67,6 +70,36 @@ function harness() {
   return { track, stream, channel, peer, fetch, dependencies };
 }
 describe("Live supervised lifecycle", () => {
+  it("ends paid voice and reports device loss when the microphone stops producing audio", async () => {
+    const h = harness();
+    const onEvent = vi.fn();
+    const active = await connectLiveVoice(
+      canvasId,
+      DEFAULT_LIVE_SETTINGS,
+      onEvent,
+      vi.fn(),
+      new AbortController().signal,
+      undefined,
+      undefined,
+      h.dependencies,
+    );
+    onEvent.mockClear();
+    h.track.dispatchEvent(new Event("ended"));
+    expect(onEvent).toHaveBeenCalledWith({ type: "microphone.unavailable" });
+    expect(h.track.stop).toHaveBeenCalledOnce();
+    expect(h.fetch).toHaveBeenLastCalledWith(
+      `/api/canvases/${canvasId}/voice?id=${sessionId}`,
+      expect.objectContaining({ method: "DELETE", keepalive: true }),
+    );
+    expect(() => active.send({ type: "session.input_audio.unmute" })).toThrow(
+      "disconnected",
+    );
+    // Late device notifications after cleanup cannot reopen or re-end a call.
+    h.track.dispatchEvent(new Event("ended"));
+    active.close();
+    expect(onEvent).toHaveBeenCalledOnce();
+    expect(h.track.stop).toHaveBeenCalledOnce();
+  });
   it("stops late-arriving microphone tracks after cancellation without starting paid work", async () => {
     const h = harness();
     const abort = new AbortController();

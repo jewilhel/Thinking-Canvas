@@ -55,6 +55,66 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("returns to ended on microphone loss and preserves captured text for an explicit save", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({})),
+  );
+  const close = vi.fn();
+  const save = vi.fn();
+  vi.mocked(connectLiveVoice).mockResolvedValue({
+    id: crypto.randomUUID(),
+    expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    model: "gpt-live-1",
+    send: vi.fn(),
+    mute: vi.fn(),
+    close,
+  });
+  const controls = document.createElement("div");
+  document.body.append(controls);
+  const view = render(
+    <LiveVoice
+      canvasId="test"
+      userId="test"
+      controlTarget={controls}
+      canSaveTranscript
+      onSaveTranscript={save}
+    />,
+  );
+  fireEvent.click(screen.getByText("Start test voice"));
+  fireEvent.click(await screen.findByText("Allow microphone and start"));
+  await waitFor(() =>
+    expect(screen.getByTestId("voice-control-state").textContent).toBe(
+      "Connected",
+    ),
+  );
+  act(() => {
+    const receive = vi.mocked(connectLiveVoice).mock.calls[0][2];
+    receive({
+      type: "session.input_transcript.delta",
+      event_id: "before-device-loss",
+      delta: "Captured before the microphone disconnected.",
+      start_ms: 0,
+      end_ms: 100,
+    });
+    receive({ type: "microphone.unavailable" });
+  });
+  expect(screen.getByTestId("voice-control-state").textContent).toBe("Ended");
+  expect(screen.getByRole("alert").textContent).toContain("typed comments");
+  expect(close).toHaveBeenCalledOnce();
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText("Test settings"));
+  fireEvent.click(screen.getByText("Save selected conversation"));
+  fireEvent.click(
+    screen.getByText("Save partial transcript as canvas document"),
+  );
+  expect(save.mock.calls[0][0]).toContain(
+    "Captured before the microphone disconnected.",
+  );
+  view.unmount();
+  controls.remove();
+});
+
 it("shows task failures with settings closed, preserves later success, and does not repeat dismissed failures", async () => {
   let failedTaskId: string | null = null;
   let polls = 0;
@@ -162,6 +222,11 @@ it("shows admission failures only for the active canvas and session without spea
   fireEvent.click(screen.getByText("Start test voice"));
   fireEvent.click(await screen.findByText("Allow microphone and start"));
   await screen.findByText("Stop test voice");
+  await waitFor(() =>
+    expect(screen.getByTestId("voice-control-state").textContent).toBe(
+      "Connected",
+    ),
+  );
   act(() => {
     receiveVoiceTaskFailure("other-canvas", notice);
     receiveVoiceTaskFailure("test", {

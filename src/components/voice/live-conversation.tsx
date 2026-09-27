@@ -447,6 +447,12 @@ export function LiveVoice({
             setError(
               "Audio playback was blocked by the browser. End and restart voice.",
             );
+          if (event.type === "microphone.unavailable") {
+            setError(
+              "Your microphone disconnected. You can keep working through typed comments, or reconnect your microphone and start voice again.",
+            );
+            finishRef.current("Microphone disconnected");
+          }
         },
         (state) => {
           if (generation.current !== id) return;

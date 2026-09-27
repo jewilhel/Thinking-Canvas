@@ -73,6 +73,9 @@ export async function connectLiveVoice(
     signal.removeEventListener("abort", close);
     peer.ontrack = null;
     peer.onconnectionstatechange = null;
+    stream?.getAudioTracks().forEach((track) => {
+      track.removeEventListener("ended", microphoneEnded);
+    });
     stream?.getTracks().forEach((track) => track.stop());
     if (started && channel?.readyState === "open")
       channel.send(JSON.stringify({ type: "session.close" }));
@@ -86,6 +89,11 @@ export async function connectLiveVoice(
           keepalive: true,
         })
         .catch(() => undefined);
+  };
+  const microphoneEnded = () => {
+    if (closed) return;
+    close();
+    onEvent({ type: "microphone.unavailable" });
   };
   signal.addEventListener("abort", close, { once: true });
   try {
@@ -101,6 +109,7 @@ export async function connectLiveVoice(
     if (!track) throw new Error("No microphone is available.");
     stream.getAudioTracks().forEach((track) => {
       track.enabled = false;
+      track.addEventListener("ended", microphoneEnded);
     });
     audio.muted = true;
     audio.autoplay = true;
