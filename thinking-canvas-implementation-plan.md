@@ -1,6 +1,6 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–7, 9 and 10 closed; Milestone 8 product accepted and closure approved with engineering exit verification pending; Milestone 10 release CI/merge remain separate; later milestones remain draft
+Status: Milestones 0–7, 9 and 10 closed; Milestone 8 product accepted and closure approved with engineering exit verification pending; Milestone 10 merged with production deployment/entry-point smoke verified; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
@@ -30,7 +30,7 @@ This document is the build and completion ledger for the first version of Thinki
 | Web framework | Next.js + TypeScript | App Router application, server-only AI routes, and typed domain code |
 | UI | Tailwind CSS + shadcn/ui | Application shell, dialogs, menus, panels, toolbars, forms, and accessible controls |
 | AI reasoning and actions | OpenAI Responses API | Multimodal canvas interpretation, grounded responses, validated tool calls, starter structures, document work, review explanations, and targeted visual feedback |
-| Live AI voice | OpenAI GPT-Live API (`gpt-live-1`) — transition approved 2026-09-11 | Continuous voice with a separate Responses reasoning/action backend. GPT-Live is implemented and owner-accepted on the Milestone 10 branch preview; merge and production release verification remain separate. |
+| Live AI voice | OpenAI GPT-Live API (`gpt-live-1`) — transition approved 2026-09-11 | Continuous voice with a separate Responses reasoning/action backend. Milestone 10 is merged and owner-accepted on its authenticated branch preview; voice remains disabled in production pending readiness work. |
 | Source control | GitHub | Repository, pull requests, protected main branch, and CI |
 | Domain | Any registrar | DNS points to Netlify; registrar choice remains independent of the application |
 
@@ -456,6 +456,8 @@ Approved architecture feasibility test — 2026-09-09: hosted pre-peer sideband 
 - [x] Complete the sourced **Live co-thinking** acceptance scenario on the Netlify preview deployment with typed messaging, an AI canvas action, pause behavior, and recovery from a dropped connection.
 
 Closure evidence: [Milestone 10 record](docs/implementation/milestone-10-live-conversation.md), [listening results](docs/implementation/milestone-10-listening-results.md), [PR #16](https://github.com/jewilhel/Thinking-Canvas/pull/16). Owner accepted connected voice, typed/spoken coexistence, canvas edits, requested transcript/brief documents, settings persistence, recovery, accessibility and quiet automatic farewell; final farewell trial accepted on deployed runtime `ba4dfe2` / branch deploy `6ab9fca1c11a33a038096e0c`. All 617 ordinary local tests and production build passed; all 11 separately enabled local database voice tests passed. Final CI status is recorded in the milestone record. Deferred requirements are not checked as passed.
+
+Release evidence — 2026-09-27: all engineering CI stages passed on exact PR head `dcb77622cb215adddad5c6dfbb337ae9d47abc2b` ([run 36384812124](https://github.com/jewilhel/Thinking-Canvas/actions/runs/36384812124)). The owner authorized finishing and merging; PR #16 was squash-merged as `ad669c29b85af552c287e2628388c2ae9815e722`. Netlify automatically published matching production deploy `6aba07b693994c00082aaa31`; Codex-browser smoke verified the live shell, protected `/app` redirect and sign-in form refresh. This does not establish signed-in production canvas/voice behavior. Production `VOICE_TESTING_ENABLED` remains empty; branch-preview voice remains available. No hosted schema/configuration or production data was changed. The milestone record preserves the smoke diagnostic and distinguishes this documentation follow-up from the CI-verified runtime.
 
 ## Milestone 11 — Conversational creation and templates
 

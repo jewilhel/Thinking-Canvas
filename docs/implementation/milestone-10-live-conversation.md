@@ -1,6 +1,6 @@
 # Milestone 10 — Live conversation
 
-Status: Closed — product owner accepted the revised preview scope on 2026-09-27. Final release CI, merge and production verification are separately tracked.
+Status: Closed — product owner accepted the revised preview scope on 2026-09-27. PR #16 merged after successful exact-head CI; merged production deployment and unauthenticated smoke verified.
 
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 
@@ -24,7 +24,17 @@ Milestone closure approves the revised authenticated-preview scope. It does not 
 - [x] Current settings/defaults and ten-minute session policy remain approved; no further interaction redesign is required here.
 - [x] All nine deferred scenarios and formal/performance follow-up are preserved in Milestone 12 with no fabricated passes.
 - [x] Runtime `ba4dfe2` passed 617 ordinary local tests and production build; eleven separately enabled local database voice tests passed.
-- [ ] Release gate: latest-head engineering CI completes before merge/release readiness is reported. Product closure does not report a pending CI run as passed.
+- [x] Release gate: all engineering CI stages passed at `dcb77622cb215adddad5c6dfbb337ae9d47abc2b` ([run 36384812124](https://github.com/jewilhel/Thinking-Canvas/actions/runs/36384812124)) before the owner-authorized merge.
+
+### Merge and release record — 2026-09-27
+
+The owner explicitly authorized finishing and merging. [PR #16](https://github.com/jewilhel/Thinking-Canvas/pull/16) was squash-merged into `main` as `ad669c29b85af552c287e2628388c2ae9815e722` after every stage of exact-head CI passed, including browser/accessibility and database-backed voice regressions. The local checkout was fast-forwarded to the merged `main` with a clean worktree. Earlier failures remain historical evidence; the nine deferred listening scenarios were not rerun or relabeled as passes.
+
+Netlify automatically published production deploy [`6aba07b693994c00082aaa31`](https://app.netlify.com/projects/thinking-canvas/deploys/6aba07b693994c00082aaa31) from the exact merge commit. Codex's in-app browser loaded the live root shell and `/app`, which redirected to `/auth/sign-in?reason=session-required`; the sign-in form also survived refresh. This is an unauthenticated deployment/entry-point smoke, not a production signed-in canvas or voice trial. Screenshots: `/tmp/thinking-canvas-milestone-10-production.png` and `/tmp/thinking-canvas-milestone-10-production-smoke.png`.
+
+Netlify's environment-variable UI confirmed `VOICE_TESTING_ENABLED` is empty for Production and configured only for `codex/milestone-10-live-conversation`. Voice remains limited to the approved branch preview. No environment variables, hosted schema or production data were changed. Public voice enablement remains future readiness work.
+
+The first production navigation captured one unattributed `MutationObserver.observe` non-Node console error; it did not recur on the sign-in refresh and did not prevent rendering. No root cause is claimed. Retain this diagnostic for recurrence during hardening; inspect its script/source and page lifecycle if it returns. The release-evidence follow-up is documentation only and does not change the tested runtime.
 
 ## Historical closeout checklist — superseded by approved closure disposition
 
