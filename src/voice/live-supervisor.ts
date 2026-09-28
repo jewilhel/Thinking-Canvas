@@ -2,7 +2,10 @@ import { broadcastVoiceTaskFailure } from "./broadcast-task-failure";
 import type { PreviousConversation } from "./previous-conversation";
 import OpenAI from "openai";
 import { liveAudioActivity } from "./live-audio-activity";
-import { LiveEndingObserver } from "./live-ending-observer";
+import {
+  EndingCheckDeferred,
+  LiveEndingObserver,
+} from "./live-ending-observer";
 import { ConversationEnd } from "./conversation-end";
 import { scheduleVoiceGoodbye } from "./voice-goodbye";
 import { retryVoiceCheck } from "./retry-voice-check";
@@ -209,6 +212,7 @@ export async function superviseLiveVoice(
           sessionId: session.id,
           status: response.status,
         });
+        if (response.status === 409) throw new EndingCheckDeferred();
         return false;
       }
       const result = await response.json();

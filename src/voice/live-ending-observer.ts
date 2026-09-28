@@ -1,5 +1,8 @@
 import { LiveTranscript } from "./live-transcript";
 
+/** Admission was deferred before a semantic decision could be made. */
+export class EndingCheckDeferred extends Error {}
+
 export type LiveTurnDecision = { end: boolean; canvasAction: boolean };
 
 /** Volatile, bounded turn checks; canvas requests are only routed, never executed here. */
@@ -11,7 +14,11 @@ export class LiveEndingObserver {
   private checked = 0;
   private lastActivity = 0;
   private pending = false;
-  private approvedVersion = -1;
+  private approvedUserVersion = -1;
+  private retryAfter = 0;
+  private retryWhenIdle = false;
+  private tickTime = 0;
+  private ended = false;
   private closed = false;
   constructor(
     private check: (text: string) => Promise<boolean | LiveTurnDecision>,
@@ -53,26 +60,32 @@ export class LiveEndingObserver {
     if (!parts.length || context === this.context) return;
     this.context = context;
     this.version++;
-    if (event.type === "session.input_transcript.delta") this.userVersion++;
+    if (event.type === "session.input_transcript.delta") {
+      this.userVersion++;
+      this.ended = false;
+      this.approvedUserVersion = -1;
+    }
     this.lastActivity = now;
   }
   get busy() {
     return this.pending;
   }
   tick(busy: boolean, quiet: boolean, now = Date.now()) {
-    if (
-      !this.closed &&
-      !busy &&
-      quiet &&
-      this.approvedVersion === this.version
-    ) {
-      this.approvedVersion = -1;
-      this.end();
+    this.tickTime = now;
+    if (this.closed || this.ended) return;
+    if (this.approvedUserVersion === this.userVersion) {
+      // Reassurance or a completion announcement does not revoke the user's
+      // confirmed choice. Read fresh work/audio state before signaling closure.
+      if (!busy && quiet && now - this.lastActivity >= 1500) {
+        this.ended = true;
+        this.end();
+      }
       return;
     }
     if (
-      this.closed ||
       this.pending ||
+      now < this.retryAfter ||
+      (this.retryWhenIdle && busy) ||
       !quiet ||
       this.version === this.checked ||
       now - this.lastActivity < 1500 ||
@@ -83,6 +96,7 @@ export class LiveEndingObserver {
     const version = this.version;
     const userVersion = this.userVersion;
     const context = this.context;
+    this.retryWhenIdle = false;
     this.checked = version;
     this.pending = true;
     void this.check(context)
@@ -95,15 +109,23 @@ export class LiveEndingObserver {
         this.diagnostic?.({ ...decision, current });
         if (current && decision.canvasAction)
           this.requestCanvas?.({ userVersion, context });
-        if (decision.end && !decision.canvasAction && current) {
-          this.approvedVersion = version;
-          if (!busy) {
-            this.approvedVersion = -1;
-            this.end();
-          }
+        if (
+          decision.end &&
+          !decision.canvasAction &&
+          !this.closed &&
+          userVersion === this.userVersion
+        )
+          this.approvedUserVersion = userVersion;
+      })
+      .catch((error: unknown) => {
+        if (error instanceof EndingCheckDeferred && !this.closed) {
+          // Reservation contention is not a negative judgment. Retry once work
+          // clears, with a backoff if shared allowance remains unavailable.
+          this.checked = -1;
+          this.retryWhenIdle = true;
+          this.retryAfter = this.tickTime + 2000;
         }
       })
-      .catch(() => undefined)
       .finally(() => {
         this.pending = false;
       });

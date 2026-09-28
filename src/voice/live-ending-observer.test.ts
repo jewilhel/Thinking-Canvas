@@ -1,5 +1,8 @@
 import { expect, it, vi } from "vitest";
-import { LiveEndingObserver } from "./live-ending-observer";
+import {
+  EndingCheckDeferred,
+  LiveEndingObserver,
+} from "./live-ending-observer";
 import { ConversationEnd } from "./conversation-end";
 let fragmentId = 0;
 const timing = () => ({
@@ -31,7 +34,9 @@ it("closes after a natural farewell even when Voice emits no delegation", async 
   observer.tick(false, true, 2000);
   expect(check).not.toHaveBeenCalled();
   observer.tick(false, true, 2600);
-  await vi.waitFor(() => expect(closing.armed).toBe(true));
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  observer.tick(false, true, 2800);
+  expect(closing.armed).toBe(true);
   closing.tick(false, true, 5100);
   expect(end).toHaveBeenCalledOnce();
   observer.tick(false, true, 6000);
@@ -162,7 +167,9 @@ it("lets the participant have the last word after the AI farewell", async () => 
   expect(closing.awaitingOutput).toBe(true);
   observer.tick(false, true, 3000);
   await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
-  await vi.waitFor(() => expect(closing.awaitingOutput).toBe(false));
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  observer.tick(false, true, 3200);
+  expect(closing.awaitingOutput).toBe(false);
   expect(JSON.parse(check.mock.calls[0][0]).at(-1)).toEqual({
     speaker: "user",
     text: "Bye.",
@@ -173,7 +180,7 @@ it("lets the participant have the last word after the AI farewell", async () => 
   expect(end).toHaveBeenCalledOnce();
 });
 
-it("rechecks a parting after extra assistant reassurance without requiring another user command", async () => {
+it("retains a parting across extra assistant reassurance without requiring another user command", async () => {
   let resolveFirst!: (end: boolean) => void;
   const check = vi
     .fn<(text: string) => Promise<boolean>>()
@@ -196,7 +203,7 @@ it("rechecks a parting after extra assistant reassurance without requiring anoth
   expect(end).not.toHaveBeenCalled();
   observer.tick(false, true, 3400);
   await vi.waitFor(() => expect(end).toHaveBeenCalledOnce());
-  expect(check).toHaveBeenCalledTimes(2);
+  expect(check).toHaveBeenCalledOnce();
 });
 
 it("checks a final user turn but leaves the call open for a new request", async () => {
@@ -240,6 +247,112 @@ it("retains ending intent across overlapping fragments, whitespace and delayed d
   for (const event of [...events].reverse()) observer.receive(event, 1000);
   observer.receive(events.at(-1)!, 1000);
   observer.tick(false, true, 3000);
-  await vi.waitFor(() => expect(end).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  observer.tick(false, true, 3300);
+  expect(end).toHaveBeenCalledOnce();
   expect(check).toHaveBeenCalledOnce();
+});
+
+it("keeps an approved goodbye through assistant task completion speech", async () => {
+  const end = vi.fn();
+  const check = vi.fn(async () => true);
+  const observer = new LiveEndingObserver(check, end);
+  observer.receive(input("That's all, talk later."), 0);
+  observer.receive(output("Talk soon."), 100);
+  observer.tick(true, true, 2000);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  observer.receive(output("The document is saved too."), 2200);
+  observer.tick(false, false, 2300);
+  expect(end).not.toHaveBeenCalled();
+  observer.tick(false, true, 3900);
+  expect(end).toHaveBeenCalledOnce();
+  expect(check).toHaveBeenCalledOnce();
+});
+
+it("uses current work state when a delayed ending check finishes", async () => {
+  let resolve!: (end: boolean) => void;
+  const end = vi.fn();
+  const observer = new LiveEndingObserver(
+    () =>
+      new Promise<boolean>((r) => {
+        resolve = r;
+      }),
+    end,
+  );
+  observer.receive(input("Talk later."), 0);
+  observer.receive(output("Bye."), 100);
+  observer.tick(false, true, 2000);
+  observer.tick(true, true, 2100);
+  resolve(true);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(end).not.toHaveBeenCalled();
+  observer.tick(true, true, 2300);
+  expect(end).not.toHaveBeenCalled();
+  observer.tick(false, true, 2500);
+  expect(end).toHaveBeenCalledOnce();
+});
+
+it("retries a deferred check after pending work clears without new speech", async () => {
+  const end = vi.fn();
+  const check = vi
+    .fn()
+    .mockRejectedValueOnce(new EndingCheckDeferred())
+    .mockResolvedValue(true);
+  const observer = new LiveEndingObserver(check, end);
+  observer.receive(input("See you later."), 0);
+  observer.receive(output("Bye for now."), 100);
+  observer.tick(true, true, 2000);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  observer.tick(true, true, 5000);
+  expect(check).toHaveBeenCalledOnce();
+  observer.tick(false, true, 5100);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(check).toHaveBeenCalledTimes(2);
+  observer.tick(false, true, 5400);
+  expect(end).toHaveBeenCalledOnce();
+});
+
+it("backs off deferred checks and stops retrying after closure", async () => {
+  const check = vi.fn().mockRejectedValue(new EndingCheckDeferred());
+  const observer = new LiveEndingObserver(check, vi.fn());
+  observer.receive(input("Bye."), 0);
+  observer.receive(output("Bye."), 100);
+  observer.tick(false, true, 2000);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  observer.tick(false, true, 3999);
+  expect(check).toHaveBeenCalledOnce();
+  observer.tick(false, true, 4000);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(check).toHaveBeenCalledTimes(2);
+  observer.close();
+  observer.tick(false, true, 9000);
+  expect(check).toHaveBeenCalledTimes(2);
+});
+
+it("can reassess an ending after the participant resumes during the hang-up grace", async () => {
+  const end = vi.fn();
+  const check = vi
+    .fn()
+    .mockResolvedValueOnce(true)
+    .mockResolvedValueOnce(false)
+    .mockResolvedValueOnce(true);
+  const observer = new LiveEndingObserver(check, end);
+  observer.receive(input("Bye."), 0);
+  observer.receive(output("Bye."), 100);
+  observer.tick(false, true, 2000);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  observer.tick(false, true, 2300);
+  expect(end).toHaveBeenCalledOnce();
+  observer.receive(input("Wait, one more question."), 2400);
+  observer.receive(output("Go ahead."), 2500);
+  observer.tick(false, true, 4200);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  observer.tick(false, true, 4500);
+  expect(end).toHaveBeenCalledOnce();
+  observer.receive(input("That's all, bye."), 4600);
+  observer.receive(output("Take care."), 4700);
+  observer.tick(false, true, 6400);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  observer.tick(false, true, 6700);
+  expect(end).toHaveBeenCalledTimes(2);
 });
