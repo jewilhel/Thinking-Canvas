@@ -12,6 +12,8 @@ export class LiveEndingObserver {
   private version = 0;
   private userVersion = 0;
   private checked = 0;
+  private checkedUserVersion = -1;
+  private lastUserActivity = 0;
   private lastActivity = 0;
   private pending = false;
   private approvedUserVersion = -1;
@@ -32,6 +34,7 @@ export class LiveEndingObserver {
       userVersion: number;
       context: string;
     }) => void,
+    private approved?: () => void,
   ) {}
   receive(event: unknown, now = Date.now()) {
     if (
@@ -62,6 +65,7 @@ export class LiveEndingObserver {
     this.version++;
     if (event.type === "session.input_transcript.delta") {
       this.userVersion++;
+      this.lastUserActivity = now;
       this.ended = false;
       this.approvedUserVersion = -1;
     }
@@ -70,7 +74,16 @@ export class LiveEndingObserver {
   get busy() {
     return this.pending;
   }
-  tick(busy: boolean, quiet: boolean, now = Date.now()) {
+  get awaitingReview() {
+    return this.pending || this.retryWhenIdle;
+  }
+  tick(
+    busy: boolean,
+    quiet: boolean,
+    now = Date.now(),
+    userQuiet = quiet,
+    checkBlocked = busy,
+  ) {
     this.tickTime = now;
     if (this.closed || this.ended) return;
     if (this.approvedUserVersion === this.userVersion) {
@@ -85,10 +98,11 @@ export class LiveEndingObserver {
     if (
       this.pending ||
       now < this.retryAfter ||
-      (this.retryWhenIdle && busy) ||
-      !quiet ||
+      (this.retryWhenIdle && checkBlocked) ||
+      !userQuiet ||
+      (!quiet && this.userVersion === this.checkedUserVersion) ||
       this.version === this.checked ||
-      now - this.lastActivity < 1500 ||
+      now - (quiet ? this.lastActivity : this.lastUserActivity) < 1500 ||
       !this.transcript.snapshot().turns.some((p) => p.speaker === "AI") ||
       !this.transcript.snapshot().turns.some((p) => p.speaker === "You")
     )
@@ -98,6 +112,7 @@ export class LiveEndingObserver {
     const context = this.context;
     this.retryWhenIdle = false;
     this.checked = version;
+    this.checkedUserVersion = userVersion;
     this.pending = true;
     void this.check(context)
       .then((value) => {
@@ -114,14 +129,17 @@ export class LiveEndingObserver {
           !decision.canvasAction &&
           !this.closed &&
           userVersion === this.userVersion
-        )
+        ) {
           this.approvedUserVersion = userVersion;
+          this.approved?.();
+        }
       })
       .catch((error: unknown) => {
         if (error instanceof EndingCheckDeferred && !this.closed) {
           // Reservation contention is not a negative judgment. Retry once work
           // clears, with a backoff if shared allowance remains unavailable.
           this.checked = -1;
+          this.checkedUserVersion = -1;
           this.retryWhenIdle = true;
           this.retryAfter = this.tickTime + 2000;
         }

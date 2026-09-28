@@ -356,3 +356,68 @@ it("can reassess an ending after the participant resumes during the hang-up grac
   observer.tick(false, true, 6700);
   expect(end).toHaveBeenCalledTimes(2);
 });
+
+it("confirms a completed farewell even while the assistant adds unwanted speech", async () => {
+  const end = vi.fn(),
+    approved = vi.fn(),
+    check = vi.fn(async () => true);
+  const observer = new LiveEndingObserver(
+    check,
+    end,
+    undefined,
+    undefined,
+    approved,
+  );
+  observer.receive(input("Stop reading now, I'm done for today."), 0);
+  observer.receive(output("No problem, see you later."), 500);
+  observer.receive(output("And another thing about that document..."), 1800);
+  observer.tick(false, false, 2000, true);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(approved).toHaveBeenCalledOnce();
+  expect(end).not.toHaveBeenCalled();
+  observer.tick(false, true, 4000, true);
+  expect(end).toHaveBeenCalledOnce();
+});
+
+it("does not check over continuing participant speech or repeatedly over assistant chunks", async () => {
+  const check = vi.fn(async () => false);
+  const observer = new LiveEndingObserver(check, vi.fn());
+  observer.receive(input("One more thing"), 0);
+  observer.receive(output("Go ahead"), 100);
+  observer.tick(false, false, 2000, false);
+  expect(check).not.toHaveBeenCalled();
+  observer.tick(false, false, 2100, true);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(check).toHaveBeenCalledOnce();
+  observer.receive(output("about that document"), 2300);
+  observer.tick(false, false, 4000, true);
+  expect(check).toHaveBeenCalledOnce();
+});
+
+it("retries ending before a queued report is spoken once backend work releases its reservation", async () => {
+  const approved = vi.fn(),
+    end = vi.fn();
+  const check = vi
+    .fn()
+    .mockRejectedValueOnce(new EndingCheckDeferred())
+    .mockResolvedValue(true);
+  const observer = new LiveEndingObserver(
+    check,
+    end,
+    undefined,
+    undefined,
+    approved,
+  );
+  observer.receive(input("I'm done. Talk later."), 0);
+  observer.receive(output("See you later."), 100);
+  observer.tick(true, true, 2000, true, true);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(observer.awaitingReview).toBe(true);
+  observer.tick(true, true, 4100, true, false); // Report is queued; executor has finished.
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(approved).toHaveBeenCalledOnce();
+  expect(observer.awaitingReview).toBe(false);
+  expect(end).not.toHaveBeenCalled();
+  observer.tick(false, true, 4400, true, false);
+  expect(end).toHaveBeenCalledOnce();
+});

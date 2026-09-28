@@ -96,6 +96,9 @@ export class LiveDelegationOwner {
       this.noticeWaiting
     );
   }
+  get executing() {
+    return !!this.active;
+  }
   /** Recover an explicit request when Live spoke without handing it off. */
   requestObservedCanvasWork(
     now = Date.now(),

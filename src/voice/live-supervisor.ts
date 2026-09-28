@@ -6,6 +6,7 @@ import {
   EndingCheckDeferred,
   LiveEndingObserver,
 } from "./live-ending-observer";
+import { LiveClosingSpeech } from "./live-closing-speech";
 import { ConversationEnd } from "./conversation-end";
 import { scheduleVoiceGoodbye } from "./voice-goodbye";
 import { retryVoiceCheck } from "./retry-voice-check";
@@ -57,6 +58,7 @@ export async function superviseLiveVoice(
   let units = 0,
     lastActivity = Date.now(),
     lastAudio = 0,
+    lastInputAudio = 0,
     muted = false,
     checking = false;
   let finish!: () => void;
@@ -70,6 +72,19 @@ export async function superviseLiveVoice(
     string,
     { resolve: () => void; reject: () => void }
   >();
+  const closingSpeech = new LiveClosingSpeech();
+  const sendClosingInstruction = (content: string | undefined) => {
+    if (!content || stopping || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(
+      JSON.stringify({
+        type: "session.instructions.append",
+        event_id: crypto.randomUUID(),
+        delegation_id: null,
+        content,
+      }),
+    );
+  };
+  const confirmFarewell = () => sendClosingInstruction(closingSpeech.confirm());
   const conversationEnd = new ConversationEnd(() =>
     stop("conversation_finished"),
   );
@@ -100,7 +115,8 @@ export async function superviseLiveVoice(
         delegationId,
         stage,
       }),
-    quiet: () => !endingObserver?.busy && Date.now() - lastAudio >= 2000,
+    quiet: () =>
+      !endingObserver?.awaitingReview && Date.now() - lastAudio >= 2000,
     append: (type, id, content) => {
       if (stopping || socket.readyState !== WebSocket.OPEN)
         return Promise.reject(new Error("Live connection unavailable"));
@@ -122,10 +138,9 @@ export async function superviseLiveVoice(
         });
         socket.send(
           JSON.stringify({
-            type,
+            ...closingSpeech.update(type, content),
             delegation_id: id,
             event_id: eventId,
-            content,
           }),
         );
       });
@@ -236,12 +251,16 @@ export async function superviseLiveVoice(
     (observed) => {
       owner.requestObservedCanvasWork(Date.now(), observed);
     },
+    confirmFarewell,
   );
   const taskTimer = setInterval(() => {
     owner.tick();
     endingObserver?.tick(
       owner.busy || (conversationEnd.armed && !conversationEnd.awaitingOutput),
       Date.now() - lastAudio >= 1500,
+      Date.now(),
+      Date.now() - lastInputAudio >= 1500,
+      owner.executing,
     );
     conversationEnd.tick(owner.busy, Date.now() - lastAudio >= 2500);
   }, 250);
@@ -314,8 +333,10 @@ export async function superviseLiveVoice(
       event.type === "session.input_transcript.delta" &&
       typeof event.delta === "string" &&
       event.delta.trim()
-    )
+    ) {
+      sendClosingInstruction(closingSpeech.resume());
       conversationEnd.cancel();
+    }
     if (event.type === "session.delegation.created") conversationEnd.pause();
     if (
       event.type === "session.output_transcript.delta" &&
@@ -358,6 +379,8 @@ export async function superviseLiveVoice(
         return;
       if (liveAudioActivity(event)) {
         lastActivity = lastAudio = Date.now();
+        if (event.type === "session.input_audio.append")
+          lastInputAudio = lastAudio;
         if (event.type === "session.output_audio.delta")
           conversationEnd.output();
       }
@@ -401,10 +424,9 @@ export async function superviseLiveVoice(
       if (!stopping && ready && socket.readyState === WebSocket.OPEN)
         socket.send(
           JSON.stringify({
-            type: "session.commentary.append",
+            ...closingSpeech.update("session.commentary.append", content),
             event_id: crypto.randomUUID(),
             delegation_id: null,
-            content,
           }),
         );
     },
