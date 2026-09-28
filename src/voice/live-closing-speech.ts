@@ -1,15 +1,18 @@
+import type { LiveTurnDecision } from "./live-ending-observer";
+
 /** A confirmed farewell suppresses background speech until the participant resumes. */
 export class LiveClosingSpeech {
   private quiet = false;
   confirm() {
     if (this.quiet) return;
     this.quiet = true;
-    return "The participant chose to finish and you have already said goodbye. Stop speaking now and stay silent while the supervisor closes the connection. Do not add reassurance, offers, another farewell, or resume an interrupted document reading. Late task results are background context only. Respond again only if the participant says something new; silence and backend updates are not a new request.";
+    return "The participant chose to finish and you have already said goodbye. Stop speaking now and stay silent while the supervisor closes the connection. Do not add reassurance, offers, another farewell, or resume an interrupted document reading. Late task results are background context only. Closing acknowledgments such as a final bye or thank you continue the ending; they do not reopen the conversation. Remain silent while the application reviews new participant words. Respond again only after a new substantive request or topic is confirmed; silence and backend updates are not new requests.";
   }
-  resume() {
-    if (!this.quiet) return;
+  resume(decision?: LiveTurnDecision) {
+    // Raw input and final acknowledgments must not lift the silence latch.
+    if (!this.quiet || !decision || decision.end) return;
     this.quiet = false;
-    return "The participant has spoken again. The earlier instruction to stay silent after the farewell is suspended for their new words. Let them finish and respond to what they actually say. Do not restart the old document reading or report automatically. If this is another closing acknowledgment, keep it brief and stop speaking again.";
+    return "The application reviewed the new words and confirmed the participant has resumed the conversation or requested more work. The earlier instruction to stay silent after the farewell is suspended for this new request. Let them finish and respond to their latest request. Do not restart the old document reading or report automatically.";
   }
   update(
     type:

@@ -228,9 +228,11 @@ export async function superviseLiveVoice(
           status: response.status,
         });
         if (response.status === 409) throw new EndingCheckDeferred();
-        return false;
+        throw new Error("Live ending check unavailable");
       }
       const result = await response.json();
+      if (result.completed !== true)
+        throw new Error("Live ending decision unconfirmed");
       return {
         end: result.completed === true && result.endSession === true,
         canvasAction: result.completed === true && result.canvasAction === true,
@@ -252,6 +254,7 @@ export async function superviseLiveVoice(
       owner.requestObservedCanvasWork(Date.now(), observed);
     },
     confirmFarewell,
+    (decision) => sendClosingInstruction(closingSpeech.resume(decision)),
   );
   const taskTimer = setInterval(() => {
     owner.tick();
@@ -334,7 +337,6 @@ export async function superviseLiveVoice(
       typeof event.delta === "string" &&
       event.delta.trim()
     ) {
-      sendClosingInstruction(closingSpeech.resume());
       conversationEnd.cancel();
     }
     if (event.type === "session.delegation.created") conversationEnd.pause();

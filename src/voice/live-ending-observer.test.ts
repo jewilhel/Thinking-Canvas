@@ -4,6 +4,7 @@ import {
   LiveEndingObserver,
 } from "./live-ending-observer";
 import { ConversationEnd } from "./conversation-end";
+import { LiveClosingSpeech } from "./live-closing-speech";
 let fragmentId = 0;
 const timing = () => ({
   event_id: `fragment-${++fragmentId}`,
@@ -420,4 +421,60 @@ it("retries ending before a queued report is spoken once backend work releases i
   expect(end).not.toHaveBeenCalled();
   observer.tick(false, true, 4400, true, false);
   expect(end).toHaveBeenCalledOnce();
+});
+
+it("does not reopen closing speech from an outdated semantic review", async () => {
+  let resolve!: (decision: { end: boolean; canvasAction: boolean }) => void;
+  const reviewed = vi.fn();
+  const observer = new LiveEndingObserver(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+    vi.fn(),
+    undefined,
+    undefined,
+    undefined,
+    reviewed,
+  );
+  observer.receive(input("Actually one more question."), 0);
+  observer.receive(output("Go ahead."), 100);
+  observer.tick(true, true, 2000);
+  observer.receive(input("Never mind, bye."), 2100);
+  resolve({ end: false, canvasAction: false });
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(reviewed).not.toHaveBeenCalled();
+});
+
+it("holds silence through a final acknowledgment and releases it after a verified new topic", async () => {
+  const speech = new LiveClosingSpeech();
+  speech.confirm();
+  const check = vi
+    .fn()
+    .mockResolvedValueOnce(true)
+    .mockResolvedValueOnce(false);
+  const observer = new LiveEndingObserver(
+    check,
+    vi.fn(),
+    undefined,
+    undefined,
+    () => speech.confirm(),
+    (decision) => speech.resume(decision),
+  );
+  observer.receive(input("Bye."), 0);
+  observer.receive(output("See you later."), 100);
+  observer.tick(true, true, 2000);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(speech.update("session.commentary.append", "Old reading").type).toBe(
+    "session.thinking.append",
+  );
+  observer.receive(input("Wait, can you answer one more question?"), 2300);
+  expect(speech.update("session.commentary.append", "Old reading").type).toBe(
+    "session.thinking.append",
+  );
+  observer.tick(true, true, 4100);
+  await vi.waitFor(() => expect(observer.busy).toBe(false));
+  expect(speech.update("session.commentary.append", "New answer").type).toBe(
+    "session.commentary.append",
+  );
 });

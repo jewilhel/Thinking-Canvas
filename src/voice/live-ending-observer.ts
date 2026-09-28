@@ -35,6 +35,7 @@ export class LiveEndingObserver {
       context: string;
     }) => void,
     private approved?: () => void,
+    private reviewed?: (decision: LiveTurnDecision) => void,
   ) {}
   receive(event: unknown, now = Date.now()) {
     if (
@@ -120,7 +121,10 @@ export class LiveEndingObserver {
           typeof value === "boolean"
             ? { end: value, canvasAction: false }
             : value;
+        const participantCurrent =
+          !this.closed && userVersion === this.userVersion;
         const current = !this.closed && version === this.version;
+        if (participantCurrent) this.reviewed?.(decision);
         this.diagnostic?.({ ...decision, current });
         if (current && decision.canvasAction)
           this.requestCanvas?.({ userVersion, context });
