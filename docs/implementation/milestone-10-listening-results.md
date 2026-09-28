@@ -6,7 +6,7 @@ Source: [frozen evaluation](milestone-10-pause-evaluation.md). This sheet record
 
 ## Run conditions
 
-Use the same refreshed branch preview, Mac/microphone/browser and saved voice settings for all three passes. Runtime to confirm: `1e109c60b9987ddec322de356a684be8b9733010`. Document-only commits do not change this runtime. Record build and run ID from Voice settings; record outcomes and elapsed times, never audio or conversation content. A blank cell means not run. Record the visible final state and any unexpected speech with a short description, not a transcript.
+Use the same refreshed branch preview, Mac/microphone/browser and saved voice settings for all three passes. Runtime for the next ending retest: `1010a7869810d6c6dc5172c9f232333a3cd59e94`. Earlier owner spot checks retain their recorded build; do not pool them into a same-build formal series. Document-only commits do not change this runtime. Record build and run ID from Voice settings; record outcomes and elapsed times, never audio or conversation content. A blank cell means not run. Record the visible final state and any unexpected speech with a short description, not a transcript.
 
 For each eligible report opportunity, count whether the correct result is delivered once at the first qualifying pause. Acceptance requires zero unauthorized actions, zero application-triggered active-speech interruptions and at least 95% correct eligible deliveries. Cases with no report due are excluded from that denominator. Do not infer a percentage from unit-test counts.
 
