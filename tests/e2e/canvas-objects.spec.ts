@@ -837,6 +837,9 @@ test("attaches connectors to anchors, follows geometry, detaches safely, and sup
 test("constructs mind-map, procedure, mood-board, and storyboard arrangements from the same primitives", async ({
   page,
 }, testInfo) => {
+  // Four complete create/connect/style/delete flows exceed the single-flow CI
+  // timeout; retain every assertion and allow the composite scenario to finish.
+  test.slow();
   const surface = await openFreshCanvas(page);
 
   await createLabeledShape(page, "Rectangle", "Core question", {

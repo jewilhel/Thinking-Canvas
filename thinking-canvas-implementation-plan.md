@@ -1,10 +1,10 @@
 # Thinking Canvas — Implementation Plan
 
-Status: Milestones 0–7 and 9 closed; Milestone 8 product accepted and closure approved with engineering exit verification pending; Milestone 10 under verification; later milestones remain draft
+Status: Milestones 0–7, 9 and 10 closed; Milestone 8 product accepted and closure approved with engineering exit verification pending; Milestone 10 release CI/merge remain separate; later milestones remain draft
 
 Source: *Thinking Canvas — Design Brief* and its 66 functional requirements
 
-Last updated: 2026-09-25
+Last updated: 2026-09-27
 
 ## Purpose
 
@@ -30,13 +30,13 @@ This document is the build and completion ledger for the first version of Thinki
 | Web framework | Next.js + TypeScript | App Router application, server-only AI routes, and typed domain code |
 | UI | Tailwind CSS + shadcn/ui | Application shell, dialogs, menus, panels, toolbars, forms, and accessible controls |
 | AI reasoning and actions | OpenAI Responses API | Multimodal canvas interpretation, grounded responses, validated tool calls, starter structures, document work, review explanations, and targeted visual feedback |
-| Live AI voice | OpenAI GPT-Live API (`gpt-live-1`) — transition approved 2026-09-11 | Continuous voice with a separate Responses reasoning/action backend. GPT-Live is implemented on the Milestone 10 branch preview; final acceptance and release verification remain open. |
+| Live AI voice | OpenAI GPT-Live API (`gpt-live-1`) — transition approved 2026-09-11 | Continuous voice with a separate Responses reasoning/action backend. GPT-Live is implemented and owner-accepted on the Milestone 10 branch preview; merge and production release verification remain separate. |
 | Source control | GitHub | Repository, pull requests, protected main branch, and CI |
 | Domain | Any registrar | DNS points to Netlify; registrar choice remains independent of the application |
 
 ### Required voice clarification
 
-**2026-09-11 direction, updated 2026-09-25:** The product owner selected GPT-Live 1 without comparative testing, prioritizing voice as the primary canvas-AI interaction. The [Milestone 10 migration plan](docs/implementation/milestone-10-live-conversation.md#gpt-live-migration-plan--2026-09-11) was approved and implemented on the milestone branch preview; its remaining acceptance checks are recorded there. The existing Responses executor, permissions, privacy policy, $20 daily testing allowance, and ten-minute conversation limit with the approved goodbye period remain. Native Live conversation is separate from application-owned actions and background announcements. An A/B comparison is not required. The following Realtime approvals are historical.
+**2026-09-11 direction, updated 2026-09-25:** The product owner selected GPT-Live 1 without comparative testing, prioritizing voice as the primary canvas-AI interaction. The [Milestone 10 migration plan](docs/implementation/milestone-10-live-conversation.md#gpt-live-migration-plan--2026-09-11) was approved, implemented and accepted on the milestone branch preview; the 2026-09-27 closure revision moves remaining formal hardening checks to Milestone 12. The existing Responses executor, permissions, privacy policy, $20 daily testing allowance, and ten-minute conversation limit with the approved goodbye period remain. Native Live conversation is separate from application-owned actions and background announcements. An A/B comparison is not required. The following Realtime approvals are historical.
 
 The Responses API can stream generated results, but the first-version requirements call for a continuous, low-latency voice conversation over WebRTC. The initial Realtime approval below is historical; the Milestone 10 branch preview now uses GPT-Live for voice. Therefore:
 
@@ -400,6 +400,8 @@ Panel dismissal refinement approved 2026-09-08: clicking the canvas outside Scen
 
 ## Milestone 10 — Live conversation
 
+Closure scope revision approved 2026-09-27: the product owner accepted the current voice experience and requested ending Milestone 10. Defer the nine outstanding scenarios P05/P06/P08/P10/P11/P12/P13/P15/P16, the repeated formal acoustic evaluation, broader timing measurements and hosted failure-path hardening to Milestone 12. The original evaluation thresholds remain historical, not measured passes. `FR-013`/`FR-014` formal validation and production privacy readiness remain unchecked and are no longer active Milestone 10 closure conditions. Current implementation, owner-accepted Live co-thinking, existing settings and all prior evidence remain. See the [deferred voice hardening backlog](docs/implementation/milestone-12-voice-hardening-backlog.md). Closure is product acceptance of the revised preview scope; merge, production publication and public-launch certification remain separate.
+
 Current voice-control disposition — 2026-09-25: the product owner chose to keep the existing single voice button and secondary Voice settings panel as they work today for Milestone 10. Keep the current baseline (`marin`, 120-second idle timeout, 15-second warning, neutral fallback greeting and warm goodbye) and preserve each account's saved overrides. Do not remove or hardwire the tuning fields in this milestone. This is a keep-for-now decision, not acceptance of the remaining interruption, timing, accessibility, recovery, or release gates.
 
 Approved persistent voice tuning — 2026-09-15: automatically save active Greeting, Conversation instructions, Goodbye, voice and idle settings privately to the signed-in account; restore them across sessions and canvases, with visible save/retry state. Presets remain optional.
@@ -431,27 +433,29 @@ Approved architecture feasibility test — 2026-09-09: hosted pre-peer sideband 
 
 ### Product requirements
 
-- [ ] **FR-008 — Prominent live control.** A persistent, keyboard-accessible canvas control starts or joins a live voice conversation and clearly indicates listening, speaking, muted, reconnecting, and ended states.
-- [ ] **FR-009 — AI live voice.** A participant can hold a low-latency voice conversation with the primary AI collaborator.
+- [x] **FR-008 — Prominent live control.** A persistent, keyboard-accessible canvas control starts or joins a live voice conversation and clearly indicates listening, speaking, muted, reconnecting, and ended states.
+- [x] **FR-009 — AI live voice.** A participant can hold a low-latency voice conversation with the primary AI collaborator.
 - [ ] **FR-010 — Remote-human model.** The same conversation surface and participant model supports remote human collaborators; transport may use a standards-based peer or room implementation approved during the voice spike.
-- [ ] **FR-011 — Type during voice.** A participant can send and receive typed messages while voice remains connected.
-- [ ] **FR-012 — AI works while speaking.** The AI can read, comment on, or change the canvas within permission without ending its live session.
-- [ ] **FR-013 — Important interruption judgment.** Approved conversation evaluations show that the AI interrupts active speech only for defined timely and important conditions.
-- [ ] **FR-014 — Natural-pause deferral.** Lower-urgency observations queue and surface at a detected conversational pause.
+- [x] **FR-011 — Type during voice.** A participant can send and receive typed messages while voice remains connected.
+- [x] **FR-012 — AI works while speaking.** The AI can read, comment on, or change the canvas within permission without ending its live session.
+- [ ] **FR-013 — Important interruption judgment.** Approved conversation evaluations show that the AI interrupts active speech only for defined timely and important conditions. **Formal validation deferred to Milestone 12, approved 2026-09-27.**
+- [ ] **FR-014 — Natural-pause deferral.** Lower-urgency observations queue and surface at a detected conversational pause. **Formal validation deferred to Milestone 12, approved 2026-09-27.**
 
 ### Supporting work
 
-- [ ] Define privacy copy, microphone consent, recording/transcript retention, and deletion behavior before enabling voice in production.
-- [ ] Under the approved 2026-09-08 `PD-008` policy, retain no microphone/conversation audio and no automatic transcript or summary archive. Keep ordinary comments; only on an explicit participant request, save the available full transcript, a summary, or requested content such as a design brief into a new ordinary canvas document through current permission and persistence boundaries. Disclose source gaps, prevent duplicate saves, and verify normal document access, reload, and deletion. A design brief is document content, not a specialized document type.
-- [ ] Provide mute, leave, device-error recovery, captions/transcript visibility, and text-only fallback.
+- [ ] Define privacy copy, microphone consent, recording/transcript retention, and deletion behavior before enabling voice in production. **Production-readiness work deferred to Milestone 12; the approved no-audio/save-on-request preview policy remains enforced.**
+- [x] Under the approved 2026-09-08 `PD-008` policy, retain no microphone/conversation audio and no automatic transcript or summary archive. Keep ordinary comments; only on an explicit participant request, save the available full transcript, a summary, or requested content such as a design brief into a new ordinary canvas document through current permission and persistence boundaries. Disclose source gaps, prevent duplicate saves, and verify normal document access, reload, and deletion. A design brief is document content, not a specialized document type.
+- [x] Provide mute, leave, device-error recovery, captions/transcript visibility, and text-only fallback.
 - [ ] Define and test the remote-human voice transport; OpenAI Realtime must not be assumed to provide a general human-to-human room.
-- [ ] Keep high-frequency audio out of PostgreSQL and Supabase Realtime Broadcast.
-- [ ] Measure connection time, response latency, interruption timing, reconnect success, and session failure rate.
-- [ ] Provide a temporary button-opened live conversation settings panel for hands-on experimentation with applicable API controls; distinguish effective settings and live versus restart-required changes, retain repeatable presets, and obtain product-owner approval of defaults and permanent UI disposition after tuning. Approved workflow on 2026-09-08; current control layout and baseline retention approved for Milestone 10 on 2026-09-25, with verification and any later permanent-UI simplification still open. Capture an inspectable/exportable post-run record of API-confirmed effective values and timestamped changes, errors, and restarts for final-feature selection and troubleshooting; exclude audio, transcript content, and secrets from settings logs.
+- [x] Keep high-frequency audio out of PostgreSQL and Supabase Realtime Broadcast.
+- [ ] Measure connection time, response latency, interruption timing, reconnect success, and session failure rate. **Broader measurement deferred to Milestone 12; individual connection samples and qualitative acceptance are recorded.**
+- [x] Provide a temporary button-opened live conversation settings panel for hands-on experimentation with applicable API controls; distinguish effective settings and live versus restart-required changes, retain repeatable presets, and obtain product-owner approval of defaults and permanent UI disposition after tuning. Approved workflow on 2026-09-08; current control layout and baseline retention approved for Milestone 10 on 2026-09-25 and accepted at closure on 2026-09-27. Any later permanent-UI simplification is future work. Capture an inspectable/exportable post-run record of API-confirmed effective values and timestamped changes, errors, and restarts for final-feature selection and troubleshooting; exclude audio, transcript content, and secrets from settings logs.
 
 ### Exit gate
 
-- [ ] Complete the sourced **Live co-thinking** acceptance scenario on the Netlify preview deployment with typed messaging, an AI canvas action, pause behavior, and recovery from a dropped connection.
+- [x] Complete the sourced **Live co-thinking** acceptance scenario on the Netlify preview deployment with typed messaging, an AI canvas action, pause behavior, and recovery from a dropped connection.
+
+Closure evidence: [Milestone 10 record](docs/implementation/milestone-10-live-conversation.md), [listening results](docs/implementation/milestone-10-listening-results.md), [PR #16](https://github.com/jewilhel/Thinking-Canvas/pull/16). Owner accepted connected voice, typed/spoken coexistence, canvas edits, requested transcript/brief documents, settings persistence, recovery, accessibility and quiet automatic farewell; final farewell trial accepted on deployed runtime `ba4dfe2` / branch deploy `6ab9fca1c11a33a038096e0c`. All 617 ordinary local tests and production build passed; all 11 separately enabled local database voice tests passed. Final CI status is recorded in the milestone record. Deferred requirements are not checked as passed.
 
 ## Milestone 11 — Conversational creation and templates
 
@@ -485,6 +489,8 @@ Approved architecture feasibility test — 2026-09-09: hosted pre-peer sideband 
 - [ ] Complete a dependency license and vulnerability review; resolve all release-blocking findings.
 
 ### Reliability and recovery
+
+- [ ] Complete the [deferred Milestone 10 voice hardening](docs/implementation/milestone-12-voice-hardening-backlog.md): nine outstanding scenarios, revised repeated acoustic evaluation for `FR-013`/`FR-014`, hosted admission-failure delivery and broader timing/failure measurements. Approved transfer 2026-09-27; not verified by Milestone 10 closure.
 
 - [ ] Define explicit save-state semantics: saved, saving, offline/unsynced, retrying, and failed.
 - [ ] Automated tests cover browser crash, network loss, reconnect, duplicate delivery, out-of-order delivery, stale snapshots, and two-user conflicts.
@@ -530,7 +536,7 @@ Approved architecture feasibility test — 2026-09-09: hosted pre-peer sideband 
 
 These are retained as cross-feature release tests rather than substitutes for the individual requirement checks.
 
-- [ ] **AS-001 — Live co-thinking.** While a user draws connected ideas in live voice, the AI can leave a relevant contextual comment without ending the conversation and defers non-urgent observations while the user speaks.
+- [x] **AS-001 — Live co-thinking.** While a user draws connected ideas in live voice, the AI can leave a relevant contextual comment without ending the conversation and defers non-urgent observations while the user speaks.
 - [ ] **AS-002 — Reviewable AI edit.** In edit-with-review mode, an AI label change receives an explanation; keep, revise, and discard are available; discard immediately restores the prior label. **Superseded for the first version by `PD-012` and `AS-006`; retained verbatim for source traceability.**
 - [x] **AS-003 — Comment prompt.** A collaborator attaches a yes/no prompt, the recipient answers without typing, and the response appears in the thread.
 - [ ] **AS-004 — Document collaboration.** Rich text, a shape, and an annotation remain inside a document and support comments and AI review without connecting to the parent canvas. The internal shape/annotation portion is superseded by `PD-022`; the active scenario covers collaborative rich text, range comments, and AI review while canvas visuals remain independent.

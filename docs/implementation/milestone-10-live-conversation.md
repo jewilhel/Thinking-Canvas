@@ -1,6 +1,6 @@
 # Milestone 10 — Live conversation
 
-Status: Implementation under closeout verification — GPT-Live branch preview and owner trials are active; milestone closure is not approved.
+Status: Closed — product owner accepted the revised preview scope on 2026-09-27. Final release CI, merge and production verification are separately tracked.
 
 Master plan: [`thinking-canvas-implementation-plan.md`](../../thinking-canvas-implementation-plan.md)
 
@@ -8,7 +8,25 @@ Plan owner: Product owner
 
 Last updated: 2026-09-27
 
-## Current closeout checklist — 2026-09-27
+## Closure disposition — 2026-09-27
+
+The owner explicitly requested ending Milestone 10 and deferring its remaining nine scenarios to later system hardening, accepting the current experience as sufficient and anticipating future interaction redesign. This supersedes earlier statements that formal repetition, wider latency evidence and hosted failure-path trials block this milestone. The release ledger records the scope change; the [Milestone 12 backlog](milestone-12-voice-hardening-backlog.md) preserves P05/P06/P08/P10/P11/P12/P13/P15/P16, `FR-013`/`FR-014` formal validation, the repeated evaluation and wider timing/production-readiness work. None is reported as passed.
+
+Accepted scope: accessible single voice control and saved settings; GPT-Live conversation; original-wording Canvas AI handoff; typed/spoken coexistence; object/document/comment actions and undo; requested full-source transcript/summary/brief documents; temporary session-separated text with no audio archive; supervised usage/time limits, recovery and quiet automatic goodbye. Existing owner evidence, final runtime `ba4dfe2`, exact branch deployment `6ab9fca1c11a33a038096e0c`, 617 passing ordinary local tests, 11 passing local database voice regressions and all prior failures/repairs remain linked below.
+
+Milestone closure approves the revised authenticated-preview scope. It does not approve a production deployment, hosted schema/configuration writes, public launch, longer sessions or remote-human voice. Merge and production verification remain separately recorded release steps. No implementation or saved Voice settings change is part of this closeout.
+
+### Revised closure checklist
+
+- [x] Product owner accepts the existing preview experience and explicitly approves closure of the revised scope.
+- [x] Master ledger records the approved deferral before completion claims; unverified requirements remain unchecked.
+- [x] Existing authenticated-preview and owner evidence supports `FR-008`, `FR-009`, `FR-011`, `FR-012` and the Live co-thinking exit scenario.
+- [x] Current settings/defaults and ten-minute session policy remain approved; no further interaction redesign is required here.
+- [x] All nine deferred scenarios and formal/performance follow-up are preserved in Milestone 12 with no fabricated passes.
+- [x] Runtime `ba4dfe2` passed 617 ordinary local tests and production build; eleven separately enabled local database voice tests passed.
+- [ ] Release gate: latest-head engineering CI completes before merge/release readiness is reported. Product closure does not report a pending CI run as passed.
+
+## Historical closeout checklist — superseded by approved closure disposition
 
 Keep the approved Voice settings layout and baseline. No further feature work is needed merely to simplify those controls. The following is the current verification checklist; earlier checkpoint statements remain historical.
 
@@ -422,7 +440,9 @@ For each hosted result record date, commit, CI URL, immutable Netlify URL/deploy
 | Panel/document switches leak microphones or cancel useful work             | Medium / high       | Workspace-owned controller, generation cleanup, lifecycle tests; engineering                                                  | Open                 |
 | Earlier Milestone 8 gaps are mistaken for completed release evidence       | Medium / high       | Retain open ledger items and include touched document paths in regression; product owner/engineering                          | Open                 |
 
-## Exit criteria
+## Exit criteria — original checklist with approved hardening deferral
+
+The 2026-09-27 closure disposition supersedes the broad repeated-evaluation and quantitative gates below. Unchecked deferred items remain in the linked Milestone 12 backlog; closure does not assert their original rubric passed.
 
 - [ ] The temporary tuning panel exposes the applicable API-setting inventory with accurate constraints, acknowledged updates, reset/presets, and explicit restart behavior; product-owner trials are recorded and final defaults/permanent UI disposition are approved.
 - [ ] After every tuning run, Codex/product owner can inspect or export the actual accepted settings and their change history, including failures/restarts, without audio, transcript, or secret leakage.
@@ -1265,3 +1285,19 @@ Final-acknowledgment deployment evidence: runtime `ba4dfe2123c06eb6bdd9e80cf74f3
 Owner final-acknowledgment acceptance — 2026-09-27: after the updated preview handoff, the owner reported “that finally worked well.” Record the interrupted-reading/farewell/final-bye retest as passed by owner report on runtime `ba4dfe2123c06eb6bdd9e80cf74f3d9afd548b90`. This resolves the latest reported quiet-after-farewell regression for this trial; it is not three formal acoustic repetitions or a measured silence/disconnect latency. Earlier successful checks and failed trials remain recorded.
 
 Closeout checkpoint: exact-head CI at documentation commit `c16cdb81386c549afad029f7cb263b11a2280399` ([36382783466](https://github.com/jewilhel/Thinking-Canvas/actions/runs/36382783466)) was still running when checked. Remaining acceptance includes the frozen repeated acoustic evaluation, broader timing evidence and hosted admission-failure notice checks. PR #16 remains draft; no milestone closure, merge or production verification is claimed.
+
+### Remaining-test count and engineering verification — 2026-09-27
+
+The frozen pause evaluation contains 20 scenarios with three same-build hosted passes (60 runs); no complete three-pass series is recorded. Owner spot checks already cover P01/P02/P03/P04/P07/P09/P14/P17/P18/P19/P20 across their recorded builds and are retained. Nine scenarios lack dedicated hosted outcomes: P05/P06/P08/P10/P11/P12/P13/P15/P16. P08/P12/P13 require controlled duplicate/authorization/budget conditions; local tests do not prove their hosted audible behavior. The other six need actual listening. Broader timing evidence and exact-head CI remain separate checks. No rubric was waived or changed.
+
+At the owner’s request to run the engineering checks, `RUN_VOICE_DB_TESTS=1 pnpm exec vitest run tests/integration/voice-creation.test.ts tests/integration/voice-status.test.ts tests/integration/voice-failure-broadcast.test.ts` passed all 11 tests in three files against the existing local Supabase stack (32.15 seconds). This covers nine guarded creation/edit/clarification/organization/document paths, scoped failure status and private-topic admission metadata delivery. No hosted data or provider audio was changed; no database reset was performed. Exact-head CI at `b1b228b1611cc5fe96294fd6f4a381a933b1682b` ([36383309391](https://github.com/jewilhel/Thinking-Canvas/actions/runs/36383309391)) was running at this checkpoint. Record preserved locally without pushing a documentation update that would cancel that run.
+
+Owner closure approval and scope transfer — 2026-09-27: “I would like to defer the remaining nine scenarios to a later milestone that involves hardening the system. It works well enough for now … I want to end Milestone 10.” Recorded as explicit product acceptance and closure authorization for the revised scope, with final exact-head CI retained as the engineering gate.
+
+### Closure record and final release check
+
+Closed on 2026-09-27 with explicit owner acceptance of the revised preview scope and approved transfer to Milestone 12. No more owner listening tests are required for Milestone 10. The current product runtime remains the accepted `ba4dfe2` branch deployment; this closeout changes documentation and one automated-test timeout only.
+
+CI at `b1b228b` ([36383309391](https://github.com/jewilhel/Thinking-Canvas/actions/runs/36383309391)) passed format, lint, types, ordinary tests, database/RLS, all 11 voice database cases and the production build. Its browser stage passed 85 cases and failed the composite four-arrangement case under the default 30-second test limit: first attempt reached the storyboard count assertion with a closed browser session; retries timed out at different earlier operations. This is evidence for a time-limit problem, not proof that every intermittent runner issue is resolved. The test now uses Playwright's bounded slow-test allowance (three times the default), keeping every construction, styling, connector, delete, count and reload assertion. The focused local Chromium run passed in 13.4 seconds (18.7 seconds total); affected formatting/lint and diff checks passed. No product code or provider setting changed, no hosted data was modified and no test was skipped.
+
+The final closeout commit triggers fresh [PR #16 checks](https://github.com/jewilhel/Thinking-Canvas/pull/16/checks). Merge remains gated on that actual latest-head result, not the earlier 85/86 partial pass or the focused local run. The pending release check is distinct from the owner-approved closure and the deferred acoustic hardening. Production remains main `91b6031`; no production deployment or hosted configuration/schema action is included.

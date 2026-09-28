@@ -1,6 +1,8 @@
 # Milestone 10 — Guided listening results
 
-Status: Prepared; formal hosted passes pending. Date: 2026-09-27.
+Current disposition — 2026-09-27: the owner approved closing Milestone 10 with the current experience and deferring the nine remaining scenarios plus repeated formal evaluation and broader timing/failure hardening to [Milestone 12](milestone-12-voice-hardening-backlog.md). Prior cases and results below are historical evidence; blank outcomes are deferred, not passed.
+
+Status: Owner spot checks retained; remaining formal evaluation deferred to Milestone 12. Date: 2026-09-27.
 
 Source: [frozen evaluation](milestone-10-pause-evaluation.md). This sheet records results; it does not revise the approved cases or thresholds. Preserve the owner's five accepted checks in the [milestone record](milestone-10-live-conversation.md).
 
