@@ -25,6 +25,7 @@ import { AiProviderTimeoutError } from "@/ai/primary-ai-gateway";
 import {
   allowedAiToolNames,
   allowedSceneAiToolNames,
+  allowedVoiceAiToolNames,
 } from "@/ai/tool-registry";
 
 const ids = {
@@ -151,6 +152,64 @@ function clientReturning(response: Response) {
 }
 
 describe("OpenAiPrimaryAiGateway", () => {
+  it.each(["trusted_editor", "edit_with_review"] as const)(
+    "fits the complete %s voice request within its provider bound",
+    async (authority) => {
+      const client = clientReturning(
+        providerResponse({
+          body: "Ready.",
+          evidence: [],
+          contextualTargetObjectIds: [],
+          toolCalls: [],
+        }),
+      );
+      const gateway = new OpenAiPrimaryAiGateway({
+        apiKey: "test-key",
+        model: "gpt-5.6-luna",
+        maxOutputTokens: 4096,
+        client,
+      });
+      await gateway.request({
+        invocation: {
+          ...invocation,
+          authority,
+          instruction: "x".repeat(16000),
+        },
+        projection,
+        allowedToolNames: allowedVoiceAiToolNames(authority),
+        signal: new AbortController().signal,
+      });
+      const request = client.create.mock.calls[0]![0];
+      expect(
+        new TextEncoder().encode(JSON.stringify(request)).length,
+      ).toBeLessThan(200000);
+      expect(request.max_output_tokens).toBe(4096);
+      const tool = buildSubmitTurnTool(allowedVoiceAiToolNames(authority));
+      const properties = tool.parameters.properties.toolCalls.items.properties;
+      if (!("argumentsJson" in properties))
+        throw new Error("Expected canvas action schema");
+      const description = properties.argumentsJson.description;
+      const schemas = JSON.parse(
+        description.split("Exact schemas by tool name: ")[1]!,
+      );
+      const schema = schemas.stage_canvas_changes;
+      let referenceCount = 0;
+      const checkReferences = (value: unknown): void => {
+        if (!value || typeof value !== "object") return;
+        const object = value as Record<string, unknown>;
+        if (typeof object.$ref === "string") {
+          referenceCount++;
+          expect(object.$ref.startsWith("#/$defs/")).toBe(true);
+          expect(
+            schema.$defs[object.$ref.slice("#/$defs/".length)],
+          ).toBeDefined();
+        }
+        Object.values(object).forEach(checkReferences);
+      };
+      checkReferences(schema);
+      expect(referenceCount).toBeGreaterThan(0);
+    },
+  );
   it("streams a stateless, bounded, privacy-safe collaborator request", async () => {
     const client = clientReturning(
       providerResponse({
@@ -212,7 +271,7 @@ describe("OpenAiPrimaryAiGateway", () => {
     };
     expect(
       parameters.properties.toolCalls.items.properties.toolName.enum,
-    ).toEqual(["create_contextual_comment"]);
+    ).toEqual(["create_contextual_comment", "navigate_canvas"]);
     expect(tool.strict).toBe(true);
   });
 
@@ -538,4 +597,87 @@ describe("primary AI gateway configuration", () => {
       createPrimaryAiGateway({ THINKING_CANVAS_AI_GATEWAY: "openai" }),
     ).toThrow("not configured");
   });
+});
+
+it("offers no product action in the read-only delegation schema", () => {
+  const tool = buildSubmitTurnTool([]);
+  expect(tool.parameters.properties.toolCalls.maxItems).toBe(0);
+  expect(JSON.stringify(tool)).not.toContain('"enum":[]');
+});
+
+it("exposes body edits without pretending a canvas conversation has a document text range", () => {
+  const tools = allowedVoiceAiToolNames("trusted_editor");
+  const bodyTool = buildSubmitTurnTool(tools, false);
+  const properties = bodyTool.parameters.properties.toolCalls.items.properties;
+  if (!("argumentsJson" in properties))
+    throw new Error("Expected canvas schema");
+  const schemas = JSON.parse(
+    properties.argumentsJson.description.split(
+      "Exact schemas by tool name: ",
+    )[1]!,
+  );
+  expect(JSON.stringify(schemas.stage_document_changes)).not.toContain(
+    "replace_selection",
+  );
+  expect(JSON.stringify(schemas.stage_document_changes)).toContain(
+    "replace_document",
+  );
+  expect(JSON.stringify(schemas.stage_document_changes)).toContain(
+    "append_block",
+  );
+  const rangeTool = buildSubmitTurnTool(["execute_document_changes"], true);
+  expect(JSON.stringify(rangeTool.parameters)).toContain("replace_selection");
+});
+
+it("constrains reply references to the current projection in the provider request", async () => {
+  const client = clientReturning(
+    providerResponse({
+      body: "The shape is blue.",
+      evidence: [{ objectId: ids.object, label: "Shape" }],
+      contextualTargetObjectIds: [ids.object],
+      toolCalls: [],
+    }),
+  );
+  const gateway = new OpenAiPrimaryAiGateway({ apiKey: "test-key", client });
+  await gateway.request({
+    invocation,
+    projection,
+    allowedToolNames: [],
+    signal: new AbortController().signal,
+  });
+  const tool = client.create.mock.calls[0]![0].tools![0] as ReturnType<
+    typeof buildSubmitTurnTool
+  >;
+  expect(
+    tool.parameters.properties.evidence.items.properties.objectId,
+  ).toMatchObject({ enum: [ids.object] });
+  expect(
+    tool.parameters.properties.contextualTargetObjectIds.items,
+  ).toMatchObject({ enum: [ids.object] });
+});
+
+it("requires empty references on an empty canvas without emitting an empty enum", () => {
+  const tool = buildSubmitTurnTool([], false, []);
+  expect(tool.parameters.properties.evidence.maxItems).toBe(0);
+  expect(tool.parameters.properties.contextualTargetObjectIds.maxItems).toBe(0);
+  expect(
+    tool.parameters.properties.contextualTargetObjectIds.items,
+  ).not.toHaveProperty("enum");
+});
+
+it("keeps large projections within provider enum limits and retains UUID validation", () => {
+  const objectIds = Array.from(
+    { length: 251 },
+    (_, index) =>
+      `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
+  );
+  const tool = buildSubmitTurnTool([], false, objectIds);
+  expect(tool.parameters.properties.contextualTargetObjectIds.items).toEqual({
+    type: "string",
+    format: "uuid",
+  });
+  expect(
+    buildSubmitTurnTool([], false, [ids.object, ids.object]).parameters
+      .properties.contextualTargetObjectIds.items,
+  ).toMatchObject({ enum: [ids.object] });
 });

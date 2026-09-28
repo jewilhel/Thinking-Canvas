@@ -1,0 +1,18 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+select no_plan();
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
+select lives_ok($$insert into public.voice_user_preferences values(auth.uid(),'Jason')$$,'can remember own name');
+select is((select preferred_name from public.voice_user_preferences),'Jason','own preference available for next session');
+select lives_ok($$update public.voice_user_preferences set preferred_name='Jay' where user_id=auth.uid()$$,'can correct own name');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000002',true);
+select is((select count(*) from public.voice_user_preferences),0::bigint,'another account cannot read name');
+select throws_ok($$insert into public.voice_user_preferences values('10000000-0000-4000-8000-000000000001','Other') on conflict(user_id) do update set preferred_name='Other'$$,'42501',null,'another account cannot overwrite name');
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
+select is((select preferred_name from public.voice_user_preferences),'Jay','correction persists');
+select lives_ok($$delete from public.voice_user_preferences where user_id=auth.uid()$$,'can forget own name');
+select is((select count(*) from public.voice_user_preferences),0::bigint,'forgotten name removed');
+reset role;
+select * from finish();
+rollback;

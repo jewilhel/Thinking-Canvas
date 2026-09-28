@@ -130,6 +130,45 @@ describe("connectRealtimeVoice", () => {
     expect(harness.peer.close).toHaveBeenCalled();
   });
 
+  it.each([
+    "microphone",
+    "offer",
+    "local-description",
+    "network",
+    "remote-description",
+  ])("releases acquired resources when %s fails", async (stage) => {
+    const h = createHarness();
+    const failure = new Error("test failure");
+    if (stage === "microphone")
+      vi.mocked(h.dependencies.getUserMedia).mockRejectedValueOnce(failure);
+    if (stage === "offer")
+      vi.mocked(h.peer.createOffer).mockRejectedValueOnce(failure);
+    if (stage === "local-description")
+      vi.mocked(h.peer.setLocalDescription).mockRejectedValueOnce(failure);
+    if (stage === "network")
+      h.fetchMock
+        .mockReset()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              value: "ek_test",
+              expiresAt: 1786464060,
+              sessionId: "sess_test",
+              model: "gpt-realtime-2.1",
+            }),
+          ),
+        )
+        .mockRejectedValueOnce(failure);
+    if (stage === "remote-description")
+      vi.mocked(h.peer.setRemoteDescription).mockRejectedValueOnce(failure);
+    await expect(
+      connectRealtimeVoice(canvasId, vi.fn(), h.dependencies),
+    ).rejects.toThrow("test failure");
+    expect(h.peer.close).toHaveBeenCalledTimes(1);
+    if (stage !== "microphone") expect(h.stop).toHaveBeenCalledTimes(1);
+    expect(h.audio.srcObject).toBeNull();
+  });
+
   it("does not request microphone access when token authorization fails", async () => {
     const harness = createHarness();
     harness.fetchMock.mockReset().mockResolvedValueOnce(

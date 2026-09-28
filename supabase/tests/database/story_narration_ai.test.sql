@@ -3,8 +3,21 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
 
+-- Test-owned canvas: local browser/integration activity must not alter this fixture.
+-- The surrounding transaction rolls back the complete fixture after the suite.
+insert into public.canvases (id, owner_id, title)
+values ('20000000-0000-4000-8000-000000000721', '10000000-0000-4000-8000-000000000001', 'story_narration_ai fixture');
+insert into public.canvas_members (canvas_id, user_id, role) values
+  ('20000000-0000-4000-8000-000000000721', '10000000-0000-4000-8000-000000000002', 'editor'),
+  ('20000000-0000-4000-8000-000000000721', '10000000-0000-4000-8000-000000000003', 'commenter'),
+  ('20000000-0000-4000-8000-000000000721', '10000000-0000-4000-8000-000000000004', 'viewer');
+-- Exercise the explicit authority transition from a known version, independent
+-- of the product's new-canvas default (covered by voice_comments_and_defaults).
+update public.canvas_ai_settings set enabled = false, authority = 'comment_only', version = 1
+where canvas_id = '20000000-0000-4000-8000-000000000721';
+
 delete from public.stories
-where canvas_id = '20000000-0000-4000-8000-000000000001'
+where canvas_id = '20000000-0000-4000-8000-000000000721'
   and kind = 'general';
 
 set local role authenticated;
@@ -12,7 +25,7 @@ select set_config('request.jwt.claim.role', 'authenticated', true);
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
 
 select * from public.capture_primary_story_scene(
-  '20000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000721',
   'Narrated scene',
   '{"version":1,"center":{"x":100,"y":80},"zoom":1.25}',
   '{"version":1,"kind":"viewport","bounds":{"x":0,"y":0,"width":800,"height":600}}',
@@ -21,9 +34,9 @@ select * from public.capture_primary_story_scene(
 
 select is(
   public.update_primary_story_scene_narration(
-    '20000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000721',
     (select id from public.story_scenes where title = 'Narrated scene'
-      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
+      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000721' and kind = 'general')),
     1,
     'Begin with the complete canvas.'
   ),
@@ -34,9 +47,9 @@ select is(
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
 select is(
   public.update_primary_story_scene_narration(
-    '20000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000721',
     (select id from public.story_scenes where title = 'Narrated scene'
-      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
+      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000721' and kind = 'general')),
     2,
     'Pause on the main relationship.'
   ),
@@ -46,9 +59,9 @@ select is(
 
 select throws_ok(
   $$select public.update_primary_story_scene_narration(
-    '20000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000721',
     (select id from public.story_scenes where title = 'Narrated scene'
-      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
+      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000721' and kind = 'general')),
     2,
     'Stale replacement'
   )$$,
@@ -60,9 +73,9 @@ select throws_ok(
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000004', true);
 select throws_ok(
   $$select public.update_primary_story_scene_narration(
-    '20000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000721',
     (select id from public.story_scenes where title = 'Narrated scene'
-      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
+      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000721' and kind = 'general')),
     3,
     'Viewer replacement'
   )$$,
@@ -73,13 +86,13 @@ select throws_ok(
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
 select * from public.set_canvas_ai_settings(
-  '20000000-0000-4000-8000-000000000001', true, 'trusted_editor', 0
+  '20000000-0000-4000-8000-000000000721', true, 'trusted_editor', 1
 );
 
 select * from public.create_scene_comment_thread(
-  target_canvas_id => '20000000-0000-4000-8000-000000000001',
+  target_canvas_id => '20000000-0000-4000-8000-000000000721',
   target_scene_id => (select id from public.story_scenes where title = 'Narrated scene'
-    and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
+    and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000721' and kind = 'general')),
   target_client_command_id => '72000000-0000-4000-8000-000000000001',
   target_body => 'Revise the narration, then add a closing scene.',
   target_include_primary_ai => true
@@ -99,7 +112,7 @@ select set_config(
 select set_config(
   'test.story_scene_id',
   (select id::text from public.story_scenes where title = 'Narrated scene'
-    and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')),
+    and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000721' and kind = 'general')),
   true
 );
 
@@ -200,7 +213,7 @@ select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001
 select results_eq(
   $$select title, position, narration from public.story_scenes
     where deleted_at is null
-      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000001' and kind = 'general')
+      and story_id = (select id from public.stories where canvas_id = '20000000-0000-4000-8000-000000000721' and kind = 'general')
     order by position$$,
   $$values
     ('Narrated scene'::text, 0::integer, 'Explain the relationship before moving on.'::text),
@@ -209,7 +222,7 @@ select results_eq(
 );
 
 select * from public.set_canvas_ai_settings(
-  '20000000-0000-4000-8000-000000000001', true, 'propose_changes', 1
+  '20000000-0000-4000-8000-000000000721', true, 'propose_changes', 2
 );
 
 set local role service_role;

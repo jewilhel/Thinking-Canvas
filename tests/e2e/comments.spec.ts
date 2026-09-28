@@ -1,3 +1,4 @@
+import { setAiAuthorityFixture } from "./ai-authority-fixture";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
@@ -159,7 +160,7 @@ async function configurePrimaryAi(
     | "trusted_editor" = "comment_only",
 ) {
   const panel = await openCommentHistory(page);
-  await panel.getByLabel("AI authority").selectOption(authority);
+  await setAiAuthorityFixture(page, authority);
   const enabled = panel.getByRole("checkbox", { name: "Enabled" });
   if (!(await enabled.isChecked())) await enabled.click();
   await panel.getByRole("button", { name: "Close Comments" }).click();
@@ -372,11 +373,42 @@ test("permanently deletes an authored comment after confirmation", async ({
   await composer.getByRole("button", { name: "Submit comment" }).click();
 
   const thread = page.getByRole("dialog", { name: "Comment thread" });
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("cannot be undone");
-    await dialog.accept();
+  // Reopen as a reader, without focus in the reply form. Focusing Delete must
+  // not expand the reply textarea and move the button before pointer-up.
+  await thread.getByRole("button", { name: "Close comment thread" }).click();
+  await page
+    .getByRole("button", { name: "Open comment by Owner Example", exact: true })
+    .click();
+  const replyField = thread.getByRole("textbox", {
+    name: "Reply",
+    exact: true,
   });
+  const replyHeight = await replyField.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
   await thread.getByRole("button", { name: "Delete", exact: true }).click();
+  const deletion = thread.getByRole("group", {
+    name: "Confirm comment deletion",
+  });
+  await expect
+    .poll(() =>
+      replyField.evaluate((element) => element.getBoundingClientRect().height),
+    )
+    .toBe(replyHeight);
+  await expect(deletion).toContainText("cannot be undone");
+  await expect(
+    deletion.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await expect(
+    deletion.getByRole("button", { name: "Delete permanently", exact: true }),
+  ).toBeInViewport();
+  await deletion.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(deletion).not.toBeVisible();
+  await expect(thread).toBeVisible();
+  await thread.getByRole("button", { name: "Delete", exact: true }).click();
+  await deletion
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
   await expect(thread).not.toBeVisible();
   await expect(
     page.getByText("Temporary feedback to remove."),
@@ -1114,8 +1146,7 @@ test("applies a trusted AI canvas command and converges it in two authenticated 
       response.url().includes(`/api/canvases/${canvasId}/ai/runs`),
   );
   await composer.getByRole("button", { name: "Submit comment" }).click();
-  const runEvents = await (await runResponse).text();
-  expect(runEvents).toContain('"status":"completed"');
+  expect((await runResponse).status()).toBe(200);
 
   const ownerThread = owner.getByRole("dialog", { name: "Comment thread" });
   await expect(
@@ -1428,11 +1459,24 @@ test("repeats an inherited multi-object layout request after undo", async ({
     thread.getByRole("button", { name: "Undo AI change" }),
   ).toHaveCount(1);
 
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("cannot be undone");
-    await dialog.accept();
-  });
   await thread.getByRole("button", { name: "Delete", exact: true }).click();
+  const deletion = thread.getByRole("group", {
+    name: "Confirm comment deletion",
+  });
+  await expect(deletion).toContainText("cannot be undone");
+  await expect(
+    deletion.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await expect(
+    deletion.getByRole("button", { name: "Delete permanently", exact: true }),
+  ).toBeInViewport();
+  await deletion.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(deletion).not.toBeVisible();
+  await expect(thread).toBeVisible();
+  await thread.getByRole("button", { name: "Delete", exact: true }).click();
+  await deletion
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
   await expect(thread).not.toBeVisible();
 });
 

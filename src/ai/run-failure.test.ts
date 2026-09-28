@@ -1,3 +1,5 @@
+import { APIError, APIConnectionError } from "openai";
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -29,6 +31,20 @@ describe("privacy-safe AI run failure classification", () => {
     [new AiVisualQualityError("private detail"), "visual_quality_blocked"],
     [new AiRunConflictError("private detail"), "review_stage_failed"],
     [new Error("private detail"), "provider_run_failed"],
+    [
+      new APIConnectionError({ message: "private detail" }),
+      "provider_connection_failed",
+    ],
+    [
+      new APIError(
+        503,
+        { message: "private detail" },
+        undefined,
+        new Headers(),
+      ),
+      "provider_unavailable",
+    ],
+    [new z.ZodError([]), "run_validation_failed"],
   ])(
     "maps an internal failure without persisting its message",
     (error, code) => {

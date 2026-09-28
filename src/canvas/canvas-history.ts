@@ -4,6 +4,8 @@ import {
   deleteCanvasObjectV2,
   deleteCanvasGroupV2,
   isIntrinsicShapeLabel,
+  isShapeLabelStylePath,
+  projectCanvasCompositions,
   listCanvasGroupsV2,
   listCanvasObjectsV2,
   putCanvasGroupV2,
@@ -76,7 +78,7 @@ function matchesBeforeState(
   return (
     label?.type === "text" &&
     label.text === expected.text &&
-    equal({ ...current, text: label.text }, expected)
+    equal(projectCanvasCompositions([current, label])[0], expected)
   );
 }
 
@@ -317,15 +319,15 @@ export function applyCanvasHistoryEntry(
         const expectedValue = historyPathValue(expected, path);
         const desiredValue = historyPathValue(desired, path);
         const label =
-          path.length === 1 &&
-          path[0] === "text" &&
+          ((path.length === 1 && path[0] === "text") ||
+            isShapeLabelStylePath(path)) &&
           expected.type === "shape" &&
           desired.type === "shape"
             ? intrinsicLabelForParent(document, objectId)
             : undefined;
         const currentValue =
           label?.type === "text"
-            ? label.text
+            ? historyPathValue(label, path)
             : historyPathValue(readCanvasObjectV2(document, objectId), path);
         if (!equal(currentValue, expectedValue)) {
           conflicts.push(`${objectId}:${path.join(".")}`);

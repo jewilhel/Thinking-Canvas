@@ -1,4 +1,5 @@
 "use client";
+import { canvasNavigationSchema } from "@/ai/canvas-navigation";
 
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 
@@ -300,6 +301,19 @@ export class SupabaseCommentRepository {
           }
         : null;
       return {
+        voiceSessionId:
+          runs
+            .filter((run) => run.invoking_comment_id === comment.id)
+            .map((run) => {
+              const metadata = run.projection_metadata;
+              return metadata &&
+                typeof metadata === "object" &&
+                !Array.isArray(metadata) &&
+                typeof metadata.voiceSessionId === "string"
+                ? metadata.voiceSessionId
+                : null;
+            })
+            .find(Boolean) ?? null,
         id: comment.id,
         canvasId: comment.canvas_id,
         authorId: comment.author_id,
@@ -391,6 +405,16 @@ export class SupabaseCommentRepository {
             id: run.id,
             status: run.status,
             requestedBy: run.requested_by,
+            navigation: canvasNavigationSchema
+              .array()
+              .catch([])
+              .parse(
+                run.projection_metadata &&
+                  typeof run.projection_metadata === "object" &&
+                  !Array.isArray(run.projection_metadata)
+                  ? run.projection_metadata.navigationTools
+                  : [],
+              ),
             invokingReplyId: run.invoking_reply_id,
             outputReplyId: run.output_reply_id,
             errorCode: run.error_code,

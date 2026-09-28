@@ -4,6 +4,7 @@ import { z } from "zod";
 import * as Y from "yjs";
 
 import { broadcastAiCanvasUpdate } from "@/ai/realtime-broadcast";
+import { documentContentHash } from "@/ai/conversation-document";
 import { applyDocumentSemanticUndo } from "@/ai/document-semantic-edit";
 import { buildUndoAiChangeSetUpdate } from "@/ai/review-state";
 import {
@@ -60,7 +61,15 @@ async function loadCurrentCanvas(canvasId: string) {
   );
 }
 
-export async function undoAiTransaction(canvasId: string, input: unknown) {
+export async function undoAiTransaction(
+  canvasId: string,
+  input: unknown,
+  voice?: {
+    runId: string;
+    beforeCommit: () => Promise<void>;
+    signal?: AbortSignal;
+  },
+) {
   const parsed = undoSchema.parse(input);
   const user = await getAuthenticatedUser();
   if (!user) throw new AiTransactionAccessError("Authentication required.");
@@ -68,7 +77,7 @@ export async function undoAiTransaction(canvasId: string, input: unknown) {
   const { data: changeSet, error } = await supabase
     .from("ai_change_sets")
     .select(
-      "id,status,transaction_undone_at,document_object_id,document_undo_update,ai_object_changes(id,object_id,before_state,after_state,affected_fields,created_at)",
+      "id,status,transaction_undone_at,visual_feedback_metadata,organization_undo,document_object_id,document_undo_update,ai_object_changes(id,object_id,before_state,after_state,affected_fields,created_at)",
     )
     .eq("id", parsed.changeSetId)
     .eq("canvas_id", canvasId)
@@ -86,8 +95,30 @@ export async function undoAiTransaction(canvasId: string, input: unknown) {
   }
 
   const current = await loadCurrentCanvas(canvasId);
+  const creation = changeSet.visual_feedback_metadata as {
+    documentCreationContentHash?: string;
+    documentCreationObjectId?: string;
+    organizationHistory?: string;
+  } | null;
+  if (
+    creation?.documentCreationContentHash &&
+    creation.documentCreationObjectId &&
+    (await documentContentHash(
+      current.document,
+      creation.documentCreationObjectId,
+    )) !== creation.documentCreationContentHash
+  ) {
+    throw new AiTransactionConflictError(
+      "This document was edited after creation. Undo would remove those later edits, so the document was preserved.",
+    );
+  }
   const undo = buildUndoAiChangeSetUpdate({
     document: current.document,
+    organizationHistory:
+      changeSet.organization_undo ??
+      (creation?.organizationHistory
+        ? JSON.parse(creation.organizationHistory)
+        : undefined),
     objectChanges: [...changeSet.ai_object_changes]
       .sort((left, right) => left.created_at.localeCompare(right.created_at))
       .map((change) => ({
@@ -112,14 +143,22 @@ export async function undoAiTransaction(canvasId: string, input: unknown) {
   const combinedUpdate = Y.encodeStateAsUpdate(undoDocument, beforeUndoVector);
   const update = combinedUpdate.length > 2 ? combinedUpdate : new Uint8Array();
   const service = createServiceClient();
-  const result = await service.rpc("undo_ai_change_set", {
+  await voice?.beforeCommit();
+  voice?.signal?.throwIfAborted();
+  const undoArguments = {
     target_change_set_id: parsed.changeSetId,
     target_actor_id: user.id,
     target_idempotency_key: parsed.idempotencyKey,
     target_update_data: bytesToPostgresBytea(update),
     target_expected_sequence: current.lastSequence,
     target_conflicts: [...new Set(undo.conflicts)] as Json,
-  });
+  };
+  const result = voice
+    ? await service.rpc("undo_voice_ai_change_set", {
+        ...undoArguments,
+        target_run_id: voice.runId,
+      })
+    : await service.rpc("undo_ai_change_set", undoArguments);
   const transaction = result.data?.[0];
   if (result.error || !transaction) {
     const message = result.error?.message ?? "AI change could not be undone.";

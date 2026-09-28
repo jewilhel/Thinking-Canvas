@@ -114,8 +114,11 @@ test("two browsers converge, reconnect, reload, and survive compaction", async (
 
   await owner.getByRole("button", { name: "Compact verified state" }).click();
   await expect(owner.getByTestId("collaboration-status")).toContainText(
-    "pruned 0 covered updates",
+    /Verified snapshot v\d+ through sequence \d+; pruned \d+ covered updates\./,
   );
+  // Other parallel E2E cases can add durable updates to this shared spike
+  // between compactions, so the second prune count need not be zero.
+  await expectConverged(owner, viewer, baseline + 3);
 
   await viewerContext.close();
   await editorContext.close();

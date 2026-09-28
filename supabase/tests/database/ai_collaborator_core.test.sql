@@ -3,6 +3,20 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
 
+-- Local browser runs can leave counters for these seeded fixtures. Isolate
+-- this rate-limit scenario without changing durable local data after rollback.
+delete from public.ai_rate_limit_windows
+where canvas_id = '20000000-0000-4000-8000-000000000001'
+  and user_id in (
+    '10000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000003'
+  );
+
+-- Explicit legacy no-settings fixture; new canvases now receive enabled defaults.
+-- This transaction rolls back, preserving the local fixture's actual settings.
+delete from public.canvas_ai_settings
+where canvas_id = '20000000-0000-4000-8000-000000000001';
+
 set local role authenticated;
 
 select ok(

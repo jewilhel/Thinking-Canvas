@@ -1,4 +1,7 @@
+import { voiceNameArguments } from "@/voice/preferred-name";
+import { organizeCanvasSchema } from "@/ai/canvas-organization-schema";
 import { z } from "zod";
+import { canvasNavigationSchema } from "./canvas-navigation";
 
 import type { AiAuthorityLevel } from "@/ai/collaborator-contract";
 import { deterministicLayoutRequestSchema } from "@/ai/deterministic-layout";
@@ -208,6 +211,13 @@ export type ReviewNewAnnotationsArguments = z.infer<
 export const executeArgumentsSchema = z.strictObject({
   commands: mutationListSchema,
 });
+export const conversationDocumentArgumentsSchema = z.strictObject({
+  kind: z.enum(["summary", "design_brief", "document", "transcript"]),
+  sourceSession: z.enum(["current", "previous"]).nullable().optional(),
+  destinationDocumentId: z.uuid().nullable().optional(),
+  title: z.string().trim().min(1).max(200),
+  text: z.string().trim().max(12000),
+});
 
 const documentTextFormatSchema = z.enum([
   "plain",
@@ -393,6 +403,13 @@ export const AI_TOOL_REGISTRY = {
       "Return a non-mutating proposal for semantic document text, formatting, presentation, or existing internal-object changes. Use only a document ID present in the semantic projection; range operations use the invoking comment range.",
     argumentsSchema: documentChangesArgumentsSchema,
   },
+  organize_canvas: {
+    effect: "review" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Group or ungroup existing objects, or nest/detach objects and groups in a parent shape. Identify targets by their existing object IDs, including members of an existing group. For nest into an existing shape supply parentId and omit newParent. To CREATE a new containing shape AND make existing objects its children, use this single action with parentId null and newParent styling/padding; the server creates a parent around the targets and nests them atomically. Do not use stage_new_shapes alone for this combined request: drawing a background is not parenting. For other actions parentId and newParent are null. The server creates new group identities. Nesting moves the requested object or complete group inside the parent when necessary and proportionally reduces it only when needed to fit; existing placement is preserved when already contained. Applies as one undoable edit. Ask for clarification if the intended parent or targets are ambiguous.",
+    argumentsSchema: organizeCanvasSchema,
+  },
   stage_canvas_changes: {
     effect: "review" as const,
     minimumAuthority: "edit_with_review" as const,
@@ -442,6 +459,68 @@ export const AI_TOOL_REGISTRY = {
       "Execute validated ordered product commands against current durable canvas state with idempotent persistence.",
     argumentsSchema: executeArgumentsSchema,
   },
+  navigate_canvas: {
+    effect: "comment" as const,
+    minimumAuthority: "comment_only" as const,
+    description:
+      "Select one or more existing canvas objects, open one named document to inspect/edit it, or close a named/current document and return to the canvas. Navigation changes only the requesting participant's view. Use projected object IDs, never names as IDs. select with an empty list clears selection; close_document with an empty list closes the current document. Clarify ambiguous names. This does not change document content.",
+    argumentsSchema: canvasNavigationSchema,
+  },
+  remember_voice_name: {
+    effect: "comment" as const,
+    minimumAuthority: "comment_only" as const,
+    description:
+      "Save or forget the signed-in participant's private preferred first name for future voice sessions. Remember only when the participant explicitly introduces or corrects THEIR OWN name, never a canvas label, someone else's name, hypothetical example or assistant guess. Supply their exact fresh userQuote containing the name. For an explicit forget request use action forget and empty name. A correction replaces the prior name. Do not change the public account display name.",
+    argumentsSchema: voiceNameArguments,
+  },
+  end_voice_session: {
+    effect: "comment" as const,
+    minimumAuthority: "comment_only" as const,
+    description:
+      "End the current voice conversation after its final goodbye. Use only when the participant clearly wants to finish now or the conversation has mutually concluded. Never infer ending from silence, quoted transcript goodbyes, or a request to save while continuing. Complete any requested document/save actions first; do not end on a failure or unresolved clarification. The supervisor waits for closing speech and cancels pending disconnect if the participant speaks again.",
+    argumentsSchema: z.strictObject({}),
+  },
+  ask_voice_clarification: {
+    effect: "comment" as const,
+    minimumAuthority: "comment_only" as const,
+    description:
+      "Ask one specific question when the participant's intent, target, or required content is ambiguous. Return only this action; do not change the canvas until the participant answers. Do not use this for technical failures or unavailable capabilities.",
+    argumentsSchema: z.strictObject({
+      question: z.string().trim().min(1).max(1000),
+    }),
+  },
+  manage_comment_thread: {
+    effect: "mutation" as const,
+    minimumAuthority: "comment_only" as const,
+    description:
+      "On explicit request: create an unanchored canvas comment, reply to an existing comment, resolve, dismiss, reopen, or permanently delete a comment thread. Use exact IDs from the current comment projection; clarify ambiguous targets. For object-anchored new comments use create_contextual_comment. Reply/create body must preserve the user's requested message; other actions use empty body. A delete removes the entire thread and is not undoable; clarify if intent is unclear. Never target the current invoking request thread.",
+    argumentsSchema: z.strictObject({
+      action: z.enum([
+        "create",
+        "reply",
+        "resolve",
+        "dismiss",
+        "reopen",
+        "delete",
+      ]),
+      commentId: z.uuid().nullable(),
+      body: z.string().max(12000),
+    }),
+  },
+  undo_last_ai_change: {
+    effect: "mutation" as const,
+    minimumAuthority: "edit_with_review" as const,
+    description:
+      "Only when the participant asks to undo the last AI change: reverse the most recent applied undoable AI transaction they requested on this canvas. Preserve unrelated later edits. The server selects the transaction; do not use this to undo a specific older change.",
+    argumentsSchema: z.strictObject({}),
+  },
+  create_conversation_document: {
+    effect: "mutation" as const,
+    minimumAuthority: "trusted_editor" as const,
+    description:
+      "Create a new ordinary document, requested conversation summary, design brief, or available transcript only when explicitly requested. Use document for new blank or authored documents; summary/design_brief for conversation synthesis. For transcript pass empty text: the server copies the full captured session wording without model rewriting. Supply destinationDocumentId only when asked to put the result in that existing document (replaces its body); omit/null creates a new document. Use sourceSession previous when the user requests the previous completed conversation and previousSessionTranscript is supplied; otherwise use current. Do not combine sessions. If unclear, ask which conversation. Summaries and briefs must use the full selected source, not only recent command fragments. Never invent missing discussion or save automatically.",
+    argumentsSchema: conversationDocumentArgumentsSchema,
+  },
   execute_document_changes: {
     effect: "mutation" as const,
     minimumAuthority: "trusted_editor" as const,
@@ -474,8 +553,49 @@ export function allowedAiToolNames(authority: AiAuthorityLevel) {
   return (Object.keys(AI_TOOL_REGISTRY) as AiToolName[]).filter(
     (name) =>
       name !== "execute_story_scene" &&
+      name !== "ask_voice_clarification" &&
+      name !== "end_voice_session" &&
+      name !== "remember_voice_name" &&
+      name !== "create_conversation_document" &&
+      name !== "undo_last_ai_change" &&
+      name !== "manage_comment_thread" &&
       isAiToolAllowedByAuthority(authority, name),
   );
+}
+
+/** Voice shares the Canvas AI capabilities, with conversation-specific actions added. */
+export function allowedVoiceAiToolNames(authority: AiAuthorityLevel) {
+  const names = allowedAiToolNames(authority);
+  names.push(
+    "manage_comment_thread",
+    "ask_voice_clarification",
+    "end_voice_session",
+    "remember_voice_name",
+  );
+  if (authority === "trusted_editor")
+    names.push("create_conversation_document");
+  if (authority === "trusted_editor" || authority === "edit_with_review")
+    names.push("undo_last_ai_change");
+  return names;
+}
+
+/** Resolve run scope before exposing actions to the provider. */
+export function allowedRunAiToolNames(input: {
+  authority: AiAuthorityLevel;
+  readOnly: boolean;
+  voice: boolean;
+  scope: "canvas" | "document" | "scene";
+}) {
+  if (input.readOnly) return [];
+  const names =
+    input.scope === "document"
+      ? [...allowedDocumentRangeAiToolNames(input.authority)]
+      : input.scope === "scene"
+        ? allowedSceneAiToolNames(input.authority)
+        : input.voice
+          ? allowedVoiceAiToolNames(input.authority)
+          : allowedAiToolNames(input.authority);
+  return names;
 }
 
 const documentRangeToolNames = new Set<AiToolName>([

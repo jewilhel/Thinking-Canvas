@@ -138,6 +138,30 @@ describe("validated canvas proposals", () => {
         (object) => object.id === labelId,
       )?.geometry,
     ).toMatchObject({ x: 92, y: 52 });
+
+    const labelReview = validateCanvasReviewStage({
+      document,
+      canvasId,
+      actorId,
+      commands: [
+        {
+          type: "object.patch",
+          payload: {
+            objectId,
+            objectType: "shape",
+            text: "Supporting evidence",
+          },
+        },
+      ],
+    });
+    expect(labelReview.affectedObjectIds).toEqual([objectId]);
+    expect(labelReview.objectChanges).toMatchObject([
+      {
+        objectId,
+        beforeState: { object: { text: "Evidence" } },
+        afterState: { object: { text: "Supporting evidence" } },
+      },
+    ]);
   });
 
   it("rejects nonexistent targets through the product command invariant", () => {

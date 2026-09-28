@@ -4,6 +4,8 @@ import {
   AiToolNotFoundError,
   AiToolPermissionError,
   allowedAiToolNames,
+  allowedRunAiToolNames,
+  allowedVoiceAiToolNames,
   allowedDocumentRangeAiToolNames,
   allowedSceneAiToolNames,
   storySceneArgumentsSchema,
@@ -13,11 +15,65 @@ import {
 const objectId = "61000000-0000-4000-8000-000000000001";
 
 describe("AI authority tool registry", () => {
+  it("exposes conversation documents only to writable trusted canvas voice runs", () => {
+    const base = {
+      authority: "trusted_editor",
+      readOnly: false,
+      voice: true,
+      scope: "canvas",
+    } as const;
+    expect(allowedRunAiToolNames(base)).toContain(
+      "create_conversation_document",
+    );
+    for (const override of [
+      { readOnly: true },
+      { voice: false },
+      { scope: "document" as const },
+      { scope: "scene" as const },
+      { authority: "edit_with_review" as const },
+      { authority: "comment_only" as const },
+    ]) {
+      expect(allowedRunAiToolNames({ ...base, ...override })).not.toContain(
+        "create_conversation_document",
+      );
+    }
+  });
+  it("provides full undoable voice editing without switching modes", () => {
+    const commentTools = ["create_contextual_comment", "manage_comment_thread"];
+    for (const authority of [
+      "comment_only",
+      "propose_changes",
+      "edit_with_review",
+      "trusted_editor",
+    ] as const) {
+      expect(allowedVoiceAiToolNames(authority)).toEqual(
+        expect.arrayContaining(allowedAiToolNames(authority)),
+      );
+    }
+    for (const authority of ["edit_with_review", "trusted_editor"] as const) {
+      expect(allowedVoiceAiToolNames(authority)).toEqual(
+        expect.arrayContaining([
+          ...commentTools,
+          "stage_canvas_changes",
+          "stage_document_changes",
+          "stage_new_shapes",
+          "stage_new_connectors",
+          "stage_new_annotations",
+          "stage_layout_changes",
+          "undo_last_ai_change",
+        ]),
+      );
+    }
+    expect(allowedVoiceAiToolNames("trusted_editor")).toContain(
+      "create_conversation_document",
+    );
+  });
   it("derives a cumulative fail-closed allowlist for every authority", () => {
     expect(allowedAiToolNames("comment_only")).toEqual([
       "inspect_canvas_objects",
       "inspect_comment_threads",
       "create_contextual_comment",
+      "navigate_canvas",
     ]);
     expect(allowedAiToolNames("propose_changes")).toContain(
       "propose_canvas_commands",
@@ -46,6 +102,7 @@ describe("AI authority tool registry", () => {
       "create_contextual_comment",
       "propose_canvas_commands",
       "propose_document_changes",
+      "organize_canvas",
       "stage_canvas_changes",
       "stage_document_changes",
       "stage_layout_changes",
@@ -53,6 +110,7 @@ describe("AI authority tool registry", () => {
       "stage_new_connectors",
       "stage_new_annotations",
       "execute_canvas_commands",
+      "navigate_canvas",
       "execute_document_changes",
     ]);
   });

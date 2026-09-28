@@ -1,0 +1,12 @@
+.voicePanel {
+  bottom: 5rem;
+  max-height: calc(100% - 7rem);
+}
+
+@media (max-width: 42rem) {
+  .voicePanel {
+    position: fixed;
+    bottom: 11rem;
+    max-height: min(65vh, calc(100dvh - 14rem));
+  }
+}
